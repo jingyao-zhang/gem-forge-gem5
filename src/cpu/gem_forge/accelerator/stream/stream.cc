@@ -921,6 +921,15 @@ DynStream &Stream::getFirstAliveDynStream() {
   S_PANIC(this, "No Alive DynStream.");
 }
 
+DynStream *Stream::tryGetFirstAliveDynStream() {
+  for (auto &dynS : this->dynamicStreams) {
+    if (!dynS.endDispatched) {
+      return &dynS;
+    }
+  }
+  return nullptr;
+}
+
 DynStream *Stream::getAllocatingDynStream() {
   if (!this->isConfigured()) {
     return nullptr;

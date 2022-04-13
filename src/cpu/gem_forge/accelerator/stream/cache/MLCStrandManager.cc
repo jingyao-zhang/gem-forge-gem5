@@ -147,6 +147,12 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
                    "[NoSplit] No TripCount.\n");
     return false;
   }
+  if (config->getTotalTripCount() < 256) {
+    DYN_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
+                   "[NoSplit] Short TripCount %ld.\n",
+                   config->getTotalTripCount());
+    return false;
+  }
   // 2.
   if (config->floatPlan.isFloatedToMem()) {
     DYN_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
@@ -168,6 +174,16 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
   }
 
   if (noSplitOuterTripCount == 0) {
+    /**
+     * If there is no Hint to split outer trip count, we can only split 1D
+     * continuous stream.
+     */
+    if (!linearAddrGen->isContinuous(config->addrGenFormalParams,
+                                     config->elementSize)) {
+      DYN_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
+                     "[NoSplit] Not Continuous and No SplitOuterTripCount.\n");
+      return false;
+    }
     return true;
   }
 

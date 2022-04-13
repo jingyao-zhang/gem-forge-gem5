@@ -1099,7 +1099,8 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
   auto dimensions = region.arraySizes.size();
 
   /**
-   * For now just generate tiling of bitlines.
+   * We want to search for aligned dimensions from this region or it's
+   * AlignedToRegion, and try to tile for those aligned dimensions.
    */
   auto bitlines = pumHWConfig.array_cols;
   if (region.numElement < bitlines || region.numElement % bitlines != 0) {
@@ -1109,29 +1110,37 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
   }
 
   AffinePattern::IntVecT arraySizes = region.arraySizes;
-  AffinePattern::IntVecT tileSizes;
+  AffinePattern::IntVecT tileSizes(dimensions, 1);
 
-  if (dimensions == 1) {
-    tileSizes = {bitlines};
-  } else if (dimensions == 2) {
+  auto alignDims = this->getAlignDimsForDirectRegion(region);
+  auto numAlignDims = alignDims.size();
+  assert(numAlignDims > 0 && "No AlignDims.");
+
+  if (numAlignDims == 1) {
+    // Just align to one dimension.
+    tileSizes.at(alignDims.front()) = bitlines;
+  } else if (numAlignDims == 2) {
     // Just try to get square root of bitlines?
-    int64_t x = 1;
-    int64_t y = bitlines;
-    while (x * 2 < y) {
-      x *= 2;
-      y /= 2;
-    }
-    tileSizes = {y, x};
-  } else if (dimensions == 3) {
-    int64_t x = 1;
-    int64_t y = 1;
-    int64_t z = bitlines;
-    while (x * 4 < z) {
-      x *= 2;
+    auto &x = tileSizes.at(alignDims.at(0));
+    auto &y = tileSizes.at(alignDims.at(1));
+    x = bitlines;
+    y = 1;
+    while (y * 2 < x) {
       y *= 2;
-      z /= 4;
+      x /= 2;
     }
-    tileSizes = {x, y, z};
+  } else if (dimensions == 3) {
+    auto &x = tileSizes.at(alignDims.at(0));
+    auto &y = tileSizes.at(alignDims.at(1));
+    auto &z = tileSizes.at(alignDims.at(2));
+    x = bitlines;
+    y = 1;
+    z = 1;
+    while (y * 4 < x) {
+      x /= 4;
+      y *= 2;
+      z *= 2;
+    }
   } else {
     panic("[StreamPUM] Region %s too many dimensions.", region.name);
   }
@@ -1152,4 +1161,45 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
   DPRINTF(StreamNUCAManager,
           "[StreamPUM] Map %s PAddr %#x ElemBit %d StartWdLine %d Tile %s.\n",
           region.name, startPAddr, elemBits, startWordline, pumTile);
+}
+
+std::vector<int>
+StreamNUCAManager::getAlignDimsForDirectRegion(const StreamRegion &region) {
+
+  auto dimensions = region.arraySizes.size();
+  std::vector<int> ret;
+  for (const auto &align : region.aligns) {
+    if (align.vaddrB == region.vaddr) {
+      // Found a self align.
+      auto elemOffset = align.elementOffset;
+      auto arrayDimSize = 1;
+      auto foundDim = false;
+      for (auto dim = 0; dim < dimensions; ++dim) {
+        if (elemOffset == arrayDimSize) {
+          // Found the dimension.
+          ret.push_back(dim);
+          foundDim = true;
+          break;
+        }
+        arrayDimSize *= region.arraySizes.at(dim);
+      }
+      if (!foundDim) {
+        panic("[StreamNUCA] Region %s SelfAlign %ld Not Align to Dim.",
+              region.name, align.elementOffset);
+      }
+    } else {
+      // This array aligns to some other array.
+      const auto &alignToRegion = this->getRegionFromStartVAddr(align.vaddrB);
+      assert(alignToRegion.arraySizes.size() == dimensions &&
+             "Mismatch in AlignedArray Dimensions.");
+      return this->getAlignDimsForDirectRegion(alignToRegion);
+    }
+  }
+  /**
+   * By default we align to the first dimension.
+   */
+  if (ret.empty()) {
+    ret.push_back(0);
+  }
+  return ret;
 }

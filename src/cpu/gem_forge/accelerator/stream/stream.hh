@@ -392,6 +392,10 @@ public:
    */
   DynStream &getFirstAliveDynStream();
   /**
+   * Try to get the first alive dynamic stream (End not dispatched).
+   */
+  DynStream *tryGetFirstAliveDynStream();
+  /**
    * Get the current allocating dynamic stream (may be nullptr).
    * 1. End not dispatched.
    * 2. If has TotalTripCount, it has not reached that limit.

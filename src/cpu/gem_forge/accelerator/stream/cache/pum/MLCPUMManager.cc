@@ -302,10 +302,7 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
       for (const auto &myPattern : patternInfo.atomicPatterns) {
         MLC_S_DPRINTF(sendDynId, "[PUM] SendPattern %s.\n", myPattern);
 
-        auto reusedMyPattern =
-            this->addReuseToOuterPattern(sendConfig, recvConfig, myPattern);
-
-        if (!compiler.canCompileStreamPair(reusedMyPattern, recvPattern)) {
+        if (!compiler.canCompileStreamPair(myPattern, recvPattern)) {
           MLC_S_DPRINTF(groupDynId, "[NoPUM] Rejected by DataMoveCompiler.\n");
           return false;
         }
@@ -825,16 +822,13 @@ void MLCPUMManager::compileDataMove(PUMContext &context,
     MLC_S_DPRINTF(sendDynId, "[PUM] OuterIter %ld SendPattern %s.\n",
                   group.nextOuterIter, sendPat);
 
-    auto reusedMyPattern =
-        this->addReuseToOuterPattern(sendConfig, recvConfig, sendPat);
-
-    auto commands = compiler.compile(reusedMyPattern, recvPat);
+    auto commands = compiler.compile(sendPat, recvPat);
     // Generate the meta information.
     for (auto &cmd : commands) {
       cmd.wordline_bits = patInfo.scalarElemSize * 8;
       cmd.dynStreamId = sendConfig->dynamicId;
       cmd.srcRegion = patInfo.regionName;
-      cmd.srcAccessPattern = reusedMyPattern;
+      cmd.srcAccessPattern = sendPat;
       cmd.srcMapPattern = myTile;
       cmd.dstRegion = recvPatInfo.regionName;
       cmd.dstAccessPattern = recvPat;

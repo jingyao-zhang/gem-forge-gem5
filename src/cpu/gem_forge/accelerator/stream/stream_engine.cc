@@ -843,13 +843,20 @@ bool StreamEngine::canDispatchStreamUser(const StreamUserArgs &args) {
   }
   for (const auto &streamId : args.usedStreamIds) {
     auto S = this->getStream(streamId);
-    auto &dynS = S->getFirstAliveDynStream();
+    auto dynS = S->tryGetFirstAliveDynStream();
+    if (!dynS) {
+      /**
+       * It's possible that due to NestStream, the stream has not been
+       * configured.
+       */
+      return false;
+    }
     /**
      * Additional condition for StoreStream with enabled StoreFunc, we
      * wait for config to be executed to avoid creating SQCallback for
      * floating store streams.
      */
-    if (!dynS.configExecuted) {
+    if (!dynS->configExecuted) {
       return false;
     }
     /**
@@ -870,32 +877,31 @@ bool StreamEngine::canDispatchStreamUser(const StreamUserArgs &args) {
      */
     if (S->isLoopEliminated()) {
       // We already checked that we have UnsteppedElement.
-      auto element = dynS.getFirstUnsteppedElem();
+      auto elem = dynS->getFirstUnsteppedElem();
       if (S->isInnerSecondFinalValueUsedByCore()) {
-        if (!element->isInnerSecondLastElem()) {
-          S_ELEMENT_DPRINTF(element,
+        if (!elem->isInnerSecondLastElem()) {
+          S_ELEMENT_DPRINTF(elem,
                             "Is Not InnerSecondLastElem. InnerTripCount %lu.\n",
-                            dynS.getInnerTripCount());
+                            dynS->getInnerTripCount());
           return false;
         }
-        if (element->isFirstUserDispatched()) {
-          S_ELEMENT_DPRINTF(element, "InnerSecondLastElem already has User.\n");
+        if (elem->isFirstUserDispatched()) {
+          S_ELEMENT_DPRINTF(elem, "InnerSecondLastElem already has User.\n");
           return false;
         }
       } else {
         if (!S->isInnerFinalValueUsedByCore()) {
-          DYN_S_PANIC(dynS.dynStreamId,
+          DYN_S_PANIC(dynS->dynStreamId,
                       "LoopEliminated Stream with User should have FinalValue "
                       "or SecondFinalValue needed.");
         }
-        if (!element->isInnerLastElem()) {
-          S_ELEMENT_DPRINTF(element,
-                            "Is Not InnerLastElem. InnerTripCount %lu.\n",
-                            dynS.getInnerTripCount());
+        if (!elem->isInnerLastElem()) {
+          S_ELEMENT_DPRINTF(elem, "Is Not InnerLastElem. InnerTripCount %lu.\n",
+                            dynS->getInnerTripCount());
           return false;
         }
-        if (element->isFirstUserDispatched()) {
-          S_ELEMENT_DPRINTF(element, "InnerLastElem already has User.\n");
+        if (elem->isFirstUserDispatched()) {
+          S_ELEMENT_DPRINTF(elem, "InnerLastElem already has User.\n");
           return false;
         }
       }
@@ -1207,12 +1213,16 @@ bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
     // Release in reverse order.
     auto streamId = iter->id();
     auto S = this->getStream(streamId);
-    auto &dynS = S->getFirstAliveDynStream();
-    if (dynS.hasZeroTripCount()) {
+    auto dynS = S->tryGetFirstAliveDynStream();
+    if (!dynS) {
+      // It's possible that the Stream has not configured yet (e.g., Nest).
+      return false;
+    }
+    if (dynS->hasZeroTripCount()) {
       // Streams with 0 TripCount will not allocate the last element.
       continue;
     }
-    if (!dynS.hasUnsteppedElem()) {
+    if (!dynS->hasUnsteppedElem()) {
       // We don't have element for this used stream.
       return false;
     }
@@ -1223,13 +1233,13 @@ bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
      */
     if (S->isLoopEliminated()) {
       // We already checked that we have UnsteppedElement.
-      auto element = dynS.getFirstUnsteppedElem();
+      auto elem = dynS->getFirstUnsteppedElem();
       if (staticStreamRegion.step.skipStepSecondLastElemStreams.count(S)) {
-        if (!element->isInnerSecondLastElem()) {
+        if (!elem->isInnerSecondLastElem()) {
           return false;
         }
       } else {
-        if (!element->isLastElement()) {
+        if (!elem->isLastElement()) {
           return false;
         }
       }

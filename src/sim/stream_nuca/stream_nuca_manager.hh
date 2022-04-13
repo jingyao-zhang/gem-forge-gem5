@@ -199,6 +199,14 @@ private:
   void groupDirectRegionsByAlign();
 
   /**
+   * @brief Get the tiled dimensions for the stream region.
+   *
+   * @param region
+   * @return std::vector<int>
+   */
+  std::vector<int> getAlignDimsForDirectRegion(const StreamRegion &region);
+
+  /**
    * Stats.
    */
   static bool statsRegsiterd;

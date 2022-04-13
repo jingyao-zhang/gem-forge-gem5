@@ -238,6 +238,10 @@ uint64_t CacheStreamConfigureData::getStrandElemIdxFromStreamElemIdx(
 
 uint64_t CacheStreamConfigureData::getStreamElemIdxFromStrandElemIdx(
     uint64_t strandElemIdx) const {
+  if (!this->isSplitIntoStrands()) {
+    // If not splitted, StrandElemIdx == StreamElemIdx.
+    return strandElemIdx;
+  }
   assert(this->streamConfig && "We need StrandConfig");
   // This is a strand.
   StrandElemSplitIdx elemSplit(this->strandIdx, strandElemIdx);
