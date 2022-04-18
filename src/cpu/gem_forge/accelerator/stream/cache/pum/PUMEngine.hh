@@ -45,7 +45,7 @@ private:
   int sentInterBankPackets = 0;
   int recvInterBankPackets = 0;
   std::map<NodeID, int> sentInterBankPacketMap;
-  std::map<NodeID, int> recvInterBankPacketMap;
+  std::map<NodeID, std::pair<int, int>> recvInterBankPacketMap;
   bool acked = false;
 
   int getBankIdx() const { return this->controller->getMachineID().num; }

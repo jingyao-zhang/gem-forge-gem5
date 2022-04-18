@@ -45,7 +45,10 @@ void PUMEngine::configure(MLCPUMManager *pumManager, int64_t pumContextId,
   LLC_SE_DPRINTF("[PUMEngine] Configured CompletedRound %ld.\n",
                  this->currentRound);
 
-  if (this->nextCmdIdx != this->commands.size()) {
+  if ((this->commands.empty() && this->nextCmdIdx != 0) ||
+      (!this->commands.empty() &&
+       this->nextCmdIdx + 1 != this->commands.size())) {
+    // Ignore the last sync command, which will never complete.
     LLC_SE_PANIC("Not done with previous commands. NextCmdIdx %d Commands %d.",
                  this->nextCmdIdx, this->commands.size());
   }
@@ -337,11 +340,11 @@ void PUMEngine::tick() {
     return;
   }
 
-  if (this->nextCmdIdx == this->commands.size() ||
-      this->commands[this->nextCmdIdx].type == "sync") {
-    // We are done or waiting for the sync.
+  if (this->commands[this->nextCmdIdx].type == "sync") {
+    // We are waiting for the sync.
     if (!this->acked) {
-      if (this->nextCmdIdx == this->commands.size()) {
+      if (this->nextCmdIdx + 1 == this->commands.size()) {
+        // This is the last sync. We are done.
         LLC_SE_DPRINTF("[Sync] Completed Round %d.\n", this->currentRound);
         this->currentRound++;
       }
@@ -374,19 +377,26 @@ void PUMEngine::receiveData(const RequestMsg &msg) {
 
   auto sender = msg.m_Requestors.singleElement();
   auto senderNodeId = sender.getRawNodeID();
+  auto iter = this->recvInterBankPacketMap
+                  .emplace(std::piecewise_construct,
+                           std::forward_as_tuple(senderNodeId),
+                           std::forward_as_tuple(0, -1))
+                  .first;
   if (msg.m_isPUM) {
     // This is the sync message.
-    auto iter = this->recvInterBankPacketMap.find(senderNodeId);
-    if (iter == this->recvInterBankPacketMap.end()) {
-      LLC_SE_PANIC("[PUM] Haven't received any packets from %s.", sender);
-    }
-    auto recvPackets = iter->second;
     auto sentPackets = msg.m_Len;
-    if (recvPackets != sentPackets) {
-      LLC_SE_PANIC("[PUM] Sync and Data Packets arrives out-of-order (Recv %d "
-                   "!= Sent %d).",
-                   recvPackets, sentPackets);
+    if (iter->second.second != -1) {
+      LLC_SE_PANIC("[PUM] Double Sync from %s Prev Sent %d Now %d.", sender,
+                   sentPackets, iter->second.second);
     }
+    iter->second.second = sentPackets;
+  } else {
+    // This is normal data message.
+    iter->second.first++;
+    this->recvInterBankPackets++;
+  }
+  if (iter->second.first == iter->second.second) {
+    auto recvPackets = iter->second.first;
     // Clear the entry.
     this->recvInterBankPacketMap.erase(iter);
     /**
@@ -395,10 +405,6 @@ void PUMEngine::receiveData(const RequestMsg &msg) {
      * banks. So here I can only report Done for packets from this sender.
      */
     this->sendDoneToMLC(recvPackets);
-  } else {
-    // This is normal data message.
-    this->recvInterBankPacketMap.emplace(senderNodeId, 0).first->second++;
-    this->recvInterBankPackets++;
   }
 }
 

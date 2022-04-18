@@ -78,6 +78,13 @@ private:
       assert(this->atomicPatterns.size() == 1);
       return this->atomicPatterns.front();
     }
+    int64_t getLoadComputeResultPatternIdx() const {
+      /**
+       * As a heuristic, LoadComputeResult uses the middle Pattern as the result
+       * pattern.
+       */
+      return this->atomicPatterns.size() / 2;
+    }
   };
 
   using StreamPatternInfoMapT = std::unordered_map<Stream *, PatternInfo>;
@@ -92,6 +99,9 @@ private:
     bool outerDimSplitted = false;
     bool canApplyPUM = false;
     bool appliedPUM = false;
+
+    // Records all the PatternInfo per stream.
+    StreamPatternInfoMapT patternInfo;
 
     /**
      * Information about offloaded PUMReducetion stream.
@@ -141,8 +151,6 @@ private:
     std::vector<DynStreamId> purePUMStreamIds;
     // Records all the PUMComputeStreamGroups.
     std::vector<PUMComputeStreamGroup> pumGroups;
-    // Records all the PatternInfo per stream.
-    StreamPatternInfoMapT patternInfo;
 
     /**
      * States during compiling and executing PUM.

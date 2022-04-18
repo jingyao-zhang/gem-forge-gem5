@@ -110,6 +110,7 @@ private:
 
   void remapRegion(ThreadContext *tc, StreamRegion &region);
 
+  bool canRemapDirectRegionPUM(const StreamRegion &region);
   void remapDirectRegionPUM(const StreamRegion &region);
   void remapDirectRegionNUCA(const StreamRegion &region);
   uint64_t determineInterleave(const StreamRegion &region);

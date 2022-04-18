@@ -259,7 +259,7 @@ void StreamNUCAManager::remapRegion(ThreadContext *tc, StreamRegion &region) {
   if (hasIndirectAlign) {
     this->remapIndirectRegion(tc, region);
   } else {
-    if (this->enablePUM) {
+    if (this->enablePUM && this->canRemapDirectRegionPUM(region)) {
       this->remapDirectRegionPUM(region);
     } else {
       this->remapDirectRegionNUCA(region);
@@ -1084,11 +1084,26 @@ StreamNUCAManager::decodeIndirectAlign(int64_t indirectAlign) {
   return IndirectAlignField(offset, size);
 }
 
+bool StreamNUCAManager::canRemapDirectRegionPUM(const StreamRegion &region) {
+  auto pumHWConfig = PUMHWConfiguration::getPUMHWConfig();
+
+  auto bitlines = pumHWConfig.array_cols;
+  if (region.numElement < bitlines || region.numElement % bitlines != 0) {
+    DPRINTF(
+        StreamNUCAManager,
+        "[StreamPUM] Region %s NumElem %llu not compatible with Bitlines %ld.",
+        region.name, region.numElement, bitlines);
+    return false;
+  }
+  return true;
+}
+
 void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
   if (!this->isPAddrContinuous(region)) {
     panic("[StreamPUM] Region %s %#x PAddr is not continuous.", region.name,
           region.vaddr);
   }
+  assert(this->canRemapDirectRegionPUM(region) && "Can not Map to PUM.");
   auto startVAddr = region.vaddr;
   auto startPAddr = this->translate(startVAddr);
 
@@ -1103,11 +1118,6 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
    * AlignedToRegion, and try to tile for those aligned dimensions.
    */
   auto bitlines = pumHWConfig.array_cols;
-  if (region.numElement < bitlines || region.numElement % bitlines != 0) {
-    panic(
-        "[StreamPUM] Region %s NumElem %llu not compatible with Bitlines %ld.",
-        region.name, region.numElement, bitlines);
-  }
 
   AffinePattern::IntVecT arraySizes = region.arraySizes;
   AffinePattern::IntVecT tileSizes(dimensions, 1);

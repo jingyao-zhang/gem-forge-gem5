@@ -60,6 +60,9 @@ void MLCPUMManager::findPUMComputeStreamGroups(PUMContext &context) {
     CacheStreamConfigureDataPtr realComputeConfig = config;
     if (config->stream->getEnabledStoreFunc()) {
       shouldFormGroup = true;
+    } else if (config->stream->getEnabledLoadFunc()) {
+      // We also try to support LoadCompute.
+      shouldFormGroup = true;
     } else {
       /**
        * We try to support reduction here.
@@ -209,7 +212,7 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
 
     AffinePattern pattern(scalarStart, params);
     auto &patternInfo =
-        context.patternInfo
+        group.patternInfo
             .emplace(std::piecewise_construct, std::forward_as_tuple(S),
                      std::forward_as_tuple())
             .first->second;
@@ -242,10 +245,9 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
   }
 
   // All regions should have the same tile mapping.
-  const auto &computeTile =
-      context.patternInfo.at(computeConfig->stream).pumTile;
+  const auto &computeTile = group.patternInfo.at(computeConfig->stream).pumTile;
   for (const auto &baseConfig : group.usedConfigs) {
-    const auto &tile = context.patternInfo.at(baseConfig->stream).pumTile;
+    const auto &tile = group.patternInfo.at(baseConfig->stream).pumTile;
     if (tile != computeTile) {
       MLC_S_DPRINTF(groupDynId, "[NoPUM] Mismatch Tile %s and %s from %s.\n",
                     computeTile, tile, baseConfig->dynamicId);
@@ -257,55 +259,52 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
   // patterns to at least try to make it suitable for PUM.
   this->preprocessPatternsInGroup(context, group);
 
+  for (const auto &e : group.patternInfo) {
+    for (const auto &p : e.second.atomicPatterns) {
+      S_DPRINTF(e.first, "AtomicPat %s.\n", p);
+    }
+  }
+
   // Check for DataMoveCompiler.
   for (const auto &sendConfig : group.usedConfigs) {
-    for (const auto &dep : sendConfig->depEdges) {
-      if (dep.type != CacheStreamConfigureData::DepEdge::Type::SendTo) {
-        continue;
-      }
-      if (dep.data != group.computeConfig) {
-        // Not to us.
-        continue;
-      }
 
-      const auto &sendDynId = sendConfig->dynamicId;
-      auto S = sendConfig->stream;
-      const auto &patternInfo = context.patternInfo.at(S);
-      auto myTile = patternInfo.pumTile;
+    const auto &sendDynId = sendConfig->dynamicId;
+    auto S = sendConfig->stream;
+    const auto &sendPatInfo = group.patternInfo.at(S);
+    auto myTile = sendPatInfo.pumTile;
 
-      MLC_S_DPRINTF(sendDynId, "[PUM] --- Can Compile DataMove. MyTile %s.\n",
+    MLC_S_DPRINTF(sendDynId, "[PUM] --- Can Compile DataMove. MyTile %s.\n",
+                  myTile);
+    DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(), myTile);
+
+    auto recvConfig = group.computeConfig;
+    auto recvS = recvConfig->stream;
+    const auto &recvPatternInfo = group.patternInfo.at(recvS);
+    auto recvTile = recvPatternInfo.pumTile;
+
+    if (recvTile != myTile) {
+      // TODO: Handle different mapping of source and dest stream.
+      MLC_S_DPRINTF(groupDynId,
+                    "[NoPUM] Mismatch RecvTile %s and SendTile %s.\n", recvTile,
                     myTile);
-      DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(), myTile);
+      return false;
+    }
 
-      auto recvConfig = dep.data;
-      auto recvS = recvConfig->stream;
-      const auto &recvPatternInfo = context.patternInfo.at(recvS);
-      auto recvTile = recvPatternInfo.pumTile;
+    if (recvPatternInfo.atomicPatterns.size() != 1) {
+      MLC_S_DPRINTF(groupDynId, "[NoPUM] Multi RecvPatterns.\n", recvTile,
+                    myTile);
+      return false;
+    }
+    const auto &recvPattern = recvPatternInfo.atomicPatterns.front();
+    MLC_S_DPRINTF(recvConfig->dynamicId, "[PUM] RecvPattern %s.\n",
+                  recvPattern);
 
-      if (recvTile != myTile) {
-        // TODO: Handle different mapping of source and dest stream.
-        MLC_S_DPRINTF(groupDynId,
-                      "[NoPUM] Mismatch RecvTile %s and SendTile %s.\n",
-                      recvTile, myTile);
+    for (const auto &myPattern : sendPatInfo.atomicPatterns) {
+      MLC_S_DPRINTF(sendDynId, "[PUM] SendPattern %s.\n", myPattern);
+
+      if (!compiler.canCompileStreamPair(myPattern, recvPattern)) {
+        MLC_S_DPRINTF(groupDynId, "[NoPUM] Rejected by DataMoveCompiler.\n");
         return false;
-      }
-
-      if (recvPatternInfo.atomicPatterns.size() != 1) {
-        MLC_S_DPRINTF(groupDynId, "[NoPUM] Multi RecvPatterns.\n", recvTile,
-                      myTile);
-        return false;
-      }
-      const auto &recvPattern = recvPatternInfo.atomicPatterns.front();
-      MLC_S_DPRINTF(recvConfig->dynamicId, "[PUM] RecvPattern %s.\n",
-                    recvPattern);
-
-      for (const auto &myPattern : patternInfo.atomicPatterns) {
-        MLC_S_DPRINTF(sendDynId, "[PUM] SendPattern %s.\n", myPattern);
-
-        if (!compiler.canCompileStreamPair(myPattern, recvPattern)) {
-          MLC_S_DPRINTF(groupDynId, "[NoPUM] Rejected by DataMoveCompiler.\n");
-          return false;
-        }
       }
     }
   }
@@ -327,8 +326,6 @@ void MLCPUMManager::compileContext(PUMContext &context) {
       context.totalSyncs++;
     }
   }
-  // Implicit last sync.
-  context.totalSyncs++;
 }
 
 void MLCPUMManager::compileGroup(PUMContext &context,
@@ -337,16 +334,14 @@ void MLCPUMManager::compileGroup(PUMContext &context,
   assert(group.canApplyPUM);
 
   for (const auto &sendConfig : group.usedConfigs) {
-    for (const auto &dep : sendConfig->depEdges) {
-      if (dep.type != CacheStreamConfigureData::DepEdge::Type::SendTo) {
-        continue;
-      }
-      if (dep.data != group.computeConfig) {
-        // Not to us.
-        continue;
-      }
-      this->compileDataMove(context, group, sendConfig);
-    }
+    this->compileDataMove(context, group, sendConfig);
+  }
+
+  /**
+   * LoadComputeStream also need to send to itself.
+   */
+  if (group.computeConfig->stream->getEnabledLoadFunc()) {
+    this->compileDataMove(context, group, group.computeConfig);
   }
 
   /**
@@ -354,10 +349,15 @@ void MLCPUMManager::compileGroup(PUMContext &context,
    * This is default enabled for every LLC bank.
    */
   context.commands.emplace_back();
-  auto &sync = context.commands.back();
-  sync.type = "sync";
+  context.commands.back().type = "sync";
 
   this->compileCompute(context, group);
+
+  /**
+   * Sync after compute to distinguish from next Group.
+   */
+  context.commands.emplace_back();
+  context.commands.back().type = "sync";
 
   /**
    * We try to increment the OuterIter.
@@ -370,17 +370,14 @@ void MLCPUMManager::erasePUMConfigs(PUMContext &context,
                                     const PUMComputeStreamGroup &group) {
 
   auto eraseFromNormalConfigs = [&](const ConfigPtr &target) -> void {
-    bool erased = false;
     for (auto iter = configs->begin(); iter != configs->end(); ++iter) {
       const auto &config = *iter;
       if (config == target) {
         context.purePUMStreamIds.push_back(target->dynamicId);
         configs->erase(iter);
-        erased = true;
-        break;
+        return;
       }
     }
-    assert(erased);
   };
 
   if (!group.appliedPUM) {
@@ -471,7 +468,7 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
   newDirectConfig->clearEdges();
   newReduceConfig->clearEdges();
 
-  const auto &patInfo = context.patternInfo.at(directConfig->stream);
+  const auto &patInfo = group.patternInfo.at(directConfig->stream);
 
   auto tileAndArraySize = patInfo.pumTile.getTileAndArraySize();
   auto tileSizes = tileAndArraySize.first;
@@ -656,6 +653,21 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
   // Take a copy of the configure vector.
   context.configs = **(pkt->getPtr<CacheStreamConfigureVec *>());
   this->findPUMComputeStreamGroups(context);
+
+  /**
+   * Sort the PUMGroups to schedule LoadCompute first.
+   * TODO: Really do a topological sort.
+   */
+  std::sort(context.pumGroups.begin(), context.pumGroups.end(),
+            [](const PUMComputeStreamGroup &g1,
+               const PUMComputeStreamGroup &g2) -> bool {
+              if (g2.computeConfig->stream->getEnabledLoadFunc()) {
+                return false;
+              } else {
+                return true;
+              }
+            });
+
   for (auto &group : context.pumGroups) {
     group.canApplyPUM = this->canApplyPUMToGroup(context, group);
   }
@@ -790,31 +802,64 @@ void MLCPUMManager::compileDataMove(PUMContext &context,
 
   const auto &sendDynId = sendConfig->dynamicId;
   auto S = sendConfig->stream;
-  const auto &patInfo = context.patternInfo.at(S);
+  const auto &patInfo = group.patternInfo.at(S);
   auto myTile = patInfo.pumTile;
 
-  MLC_S_DPRINTF(sendDynId, "[PUM] --- Compile DataMove. MyTile %s.\n", myTile);
   DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(), myTile);
 
   auto recvConfig = group.computeConfig;
   auto recvS = recvConfig->stream;
-  const auto &recvPatInfo = context.patternInfo.at(recvS);
+  const auto &recvPatInfo = group.patternInfo.at(recvS);
   auto recvTile = recvPatInfo.pumTile;
+
+  MLC_S_DPRINTF(recvConfig->dynamicId,
+                "[PUM] --- Compile DataMove. SendFrom %s SendTile %s.\n",
+                sendConfig->dynamicId, myTile);
 
   if (recvTile != myTile) {
     // TODO: Handle different mapping of source and dest stream.
     MLC_S_PANIC_NO_DUMP(sendDynId, "[PUM] Different Tile.");
   }
 
-  if (recvPatInfo.atomicPatterns.size() != 1) {
-    MLC_S_PANIC_NO_DUMP(recvConfig->dynamicId, "[PUM] Multi Recv.");
+  int64_t recvPatIdx = 0;
+  if (recvConfig->stream->getEnabledLoadFunc()) {
+    // This is a LoadCompute.
+    recvPatIdx = recvPatInfo.getLoadComputeResultPatternIdx();
+  } else {
+    if (recvPatInfo.atomicPatterns.size() != 1) {
+      MLC_S_PANIC_NO_DUMP(recvConfig->dynamicId, "[PUM] Multi Recv.");
+    }
   }
-  auto recvPat =
-      recvPatInfo.getPatternAdjustedByOuterIter(0, group.nextOuterIter);
+  auto recvPat = recvPatInfo.getPatternAdjustedByOuterIter(recvPatIdx,
+                                                           group.nextOuterIter);
   MLC_S_DPRINTF(recvConfig->dynamicId, "[PUM] OuterIter %ld RecvPattern %s.\n",
                 group.nextOuterIter, recvPat);
 
+  /**
+   * Find the real SendPatterns.
+   * 1. If LoadComputeStream sends to other Stream, we only need to send
+   * LoadComputeResultPattern.
+   * 2. If LoadComputeStream sends to itself, we need to send patterns other
+   * than LoadComputeResultPattern.
+   */
+
   for (auto patIdx = 0; patIdx < patInfo.atomicPatterns.size(); ++patIdx) {
+
+    if (S->getEnabledLoadFunc()) {
+      auto sendLoadComputeResultPatIdx =
+          patInfo.getLoadComputeResultPatternIdx();
+      if (recvConfig != sendConfig) {
+        // Send to other stream.
+        if (patIdx != sendLoadComputeResultPatIdx) {
+          continue;
+        }
+      } else {
+        // Send to myself.
+        if (patIdx == sendLoadComputeResultPatIdx) {
+          continue;
+        }
+      }
+    }
 
     auto sendPat =
         patInfo.getPatternAdjustedByOuterIter(patIdx, group.nextOuterIter);
@@ -850,7 +895,7 @@ void MLCPUMManager::compileCompute(PUMContext &context,
   const auto &config = group.computeConfig;
   const auto &dynId = config->dynamicId;
 
-  auto &patInfo = context.patternInfo.at(config->stream);
+  auto &patInfo = group.patternInfo.at(config->stream);
   auto scalarElemBits = patInfo.scalarElemSize * 8;
 
   DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(),
@@ -858,8 +903,14 @@ void MLCPUMManager::compileCompute(PUMContext &context,
 
   PUMCommandVecT commands;
 
-  assert(patInfo.atomicPatterns.size() == 1);
-  auto pattern = patInfo.getPatternAdjustedByOuterIter(0, group.nextOuterIter);
+  int64_t patternIdx = 0;
+  if (config->stream->getEnabledLoadFunc()) {
+    patternIdx = patInfo.getLoadComputeResultPatternIdx();
+  } else {
+    assert(patInfo.atomicPatterns.size() == 1);
+  }
+  auto pattern =
+      patInfo.getPatternAdjustedByOuterIter(patternIdx, group.nextOuterIter);
 
   MLC_S_DPRINTF(dynId,
                 "Compile Compute Tile %s OuterIter %ld AdjustedPattern %s.\n",
@@ -874,6 +925,9 @@ void MLCPUMManager::compileCompute(PUMContext &context,
                           "[PUM] Reduction should have FuncAddrGenCallback.");
     }
     func = funcAddrGenCb->getExecFunc();
+  } else if (config->stream->getEnabledLoadFunc()) {
+    // This is a LoadCompute.
+    func = config->loadCallback;
   } else {
     func = config->storeCallback;
   }
@@ -970,7 +1024,7 @@ void MLCPUMManager::compileReduction(PUMContext &context,
   // 1. We assume reduction in the inner-most dimension.
   const auto &reduceDynId = group.reduceConfig->dynamicId;
 
-  const auto &patInfo = context.patternInfo.at(group.computeConfig->stream);
+  const auto &patInfo = group.patternInfo.at(group.computeConfig->stream);
   assert(!patInfo.atomicPatterns.empty() && "No AtomicPattern.");
   const auto &reducePat = patInfo.atomicPatterns.front();
 
@@ -1118,7 +1172,7 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
 
   auto recvConfig = group.computeConfig;
   auto recvS = recvConfig->stream;
-  auto &recvPatInfo = context.patternInfo.at(recvS);
+  auto &recvPatInfo = group.patternInfo.at(recvS);
   auto recvTile = recvPatInfo.pumTile;
 
   if (recvPatInfo.atomicPatterns.size() != 1) {
@@ -1132,7 +1186,7 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
 
     const auto &sendDynId = sendConfig->dynamicId;
     auto S = sendConfig->stream;
-    auto &sendPatInfo = context.patternInfo.at(S);
+    auto &sendPatInfo = group.patternInfo.at(S);
 
     for (auto &sendPat : sendPatInfo.atomicPatterns) {
 
@@ -1164,7 +1218,7 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
 
     const auto &sendDynId = sendConfig->dynamicId;
     auto S = sendConfig->stream;
-    auto &sendPatInfo = context.patternInfo.at(S);
+    auto &sendPatInfo = group.patternInfo.at(S);
 
     for (auto &sendPat : sendPatInfo.atomicPatterns) {
 
@@ -1197,7 +1251,7 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
 
     const auto &sendDynId = sendConfig->dynamicId;
     auto S = sendConfig->stream;
-    auto &sendPatInfo = context.patternInfo.at(S);
+    auto &sendPatInfo = group.patternInfo.at(S);
     for (auto &sendPat : sendPatInfo.atomicPatterns) {
 
       auto splitPat = sendPat.splitFromDim(arrayDims);
@@ -1371,7 +1425,7 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
 
     auto outerTripCount = 1;
     if (group.outerDimSplitted) {
-      const auto &patInfo = context.patternInfo.at(S);
+      const auto &patInfo = group.patternInfo.at(S);
       assert(patInfo.splitOuterDims.size() == 1);
       outerTripCount = patInfo.splitOuterDims.front().get_total_trip();
     }
@@ -1547,7 +1601,7 @@ void MLCPUMManager::completeFinalReduction(PUMContext &context,
         dynId, "[PUM] CoreDynS released before receiving FinalReductionValue.");
   }
 
-  const auto &patInfo = context.patternInfo.at(group.computeConfig->stream);
+  const auto &patInfo = group.patternInfo.at(group.computeConfig->stream);
   assert(patInfo.atomicPatterns.size() == 1);
   auto reducedTripCount = patInfo.atomicPatterns.front().get_total_trip();
 

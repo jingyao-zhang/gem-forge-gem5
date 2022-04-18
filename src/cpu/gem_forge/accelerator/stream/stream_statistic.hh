@@ -190,9 +190,9 @@ public:
 
   /**
    * Collect the cycles between PUM sync.
-   * So far we assume we have at most 4 sync per compuation.
+   * So far we assume we have at most 16 sync per compuation.
    */
-  static constexpr int MAX_SYNCS = 4;
+  static constexpr int MAX_SYNCS = 16;
   std::array<SingleAvgSampler, MAX_SYNCS> pumCyclesBetweenSync;
   void samplePUMCyclesBetweenSync(size_t cycles, int syncIdx) {
     assert(syncIdx < MAX_SYNCS);
