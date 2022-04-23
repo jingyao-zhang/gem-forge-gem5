@@ -35,6 +35,45 @@ AffinePattern MLCPUMManager::PatternInfo::getPatternAdjustedByOuterIter(
   return pattern;
 }
 
+std::ostream &operator<<(std::ostream &os,
+                         const MLCPUMManager::PUMDataGraphNode &node) {
+  os << &node << " " << node.pumTile << " " << node.pattern << " = ";
+  switch (node.type) {
+  case MLCPUMManager::PUMDataGraphNode::TypeE::Value: {
+    os << "Value " << node.regionName;
+    break;
+  }
+  case MLCPUMManager::PUMDataGraphNode::TypeE::Sync: {
+    os << "Sync";
+    break;
+  }
+  case MLCPUMManager::PUMDataGraphNode::TypeE::Move: {
+    assert(node.operands.size() == 1 && "Missing Operand for Move.");
+    os << "Move " << node.operands.front() << " SrcPat " << node.sendPat;
+    break;
+  }
+  case MLCPUMManager::PUMDataGraphNode::TypeE::Compute: {
+    os << "Cmp";
+    for (const auto &operand : node.operands) {
+      os << " " << operand;
+    }
+    break;
+  }
+  default: {
+    panic("Not supported PUMGraphNodes.");
+  }
+  }
+  return os;
+}
+
+std::string to_string(const MLCPUMManager::PUMDataGraphNode &node) {
+  std::stringstream ss;
+  ss << node;
+  return ss.str();
+}
+
+MLCPUMManager::PUMContext::~PUMContext() { this->clear(); }
+
 MLCPUMManager::MLCPUMManager(MLCStreamEngine *_mlcSE)
     : mlcSE(_mlcSE), controller(_mlcSE->controller) {}
 
@@ -51,6 +90,14 @@ void MLCPUMManager::PUMContext::clear() {
    * Don't forget to release the commands.
    */
   this->commands.clear();
+  this->clearPUMDataGraphNodes();
+}
+
+void MLCPUMManager::PUMContext::clearPUMDataGraphNodes() {
+  for (auto node : this->pumDataGraphNodes) {
+    delete node;
+  }
+  this->pumDataGraphNodes.clear();
 }
 
 void MLCPUMManager::findPUMComputeStreamGroups(PUMContext &context) {
@@ -82,6 +129,7 @@ void MLCPUMManager::findPUMComputeStreamGroups(PUMContext &context) {
       continue;
     }
 
+    MLC_S_DPRINTF(config->dynamicId, "[PUM] Form a PUMGroup.\n");
     context.pumGroups.emplace_back();
     auto &group = context.pumGroups.back();
     group.computeConfig = config;
@@ -93,9 +141,62 @@ void MLCPUMManager::findPUMComputeStreamGroups(PUMContext &context) {
         // This is actually the RecvConfig.
         continue;
       }
+      MLC_S_DPRINTF(baseConfig->dynamicId, "[PUM]   Added as UsedConfig.\n");
       group.usedConfigs.push_back(baseConfig);
     }
   }
+
+  /**
+   * Topological sort the groups.
+   */
+  std::unordered_map<const PUMComputeStreamGroup *, int> state;
+  std::unordered_map<Stream *, const PUMComputeStreamGroup *> streamGroupMap;
+  std::vector<const PUMComputeStreamGroup *> stack;
+  std::vector<PUMComputeStreamGroup> sortedGroups;
+  for (const auto &group : context.pumGroups) {
+    stack.push_back(&group);
+    state.emplace(&group, 0);
+    streamGroupMap.emplace(group.computeConfig->stream, &group);
+  }
+  auto getGroup =
+      [&streamGroupMap](
+          const ConfigPtr &config) -> const PUMComputeStreamGroup * {
+    if (streamGroupMap.count(config->stream)) {
+      return streamGroupMap.at(config->stream);
+    }
+    return nullptr;
+  };
+  while (!stack.empty()) {
+    auto group = stack.back();
+    switch (state.at(group)) {
+    case 0: {
+      // first time.
+      for (const auto &usedConfig : group->usedConfigs) {
+        if (auto usedGroup = getGroup(usedConfig)) {
+          stack.push_back(usedGroup);
+          assert(state.emplace(usedGroup, 0).first->second != 1 &&
+                 "Found Loop");
+        }
+      }
+      state.at(group) = 1;
+      break;
+    }
+    case 1: {
+      // second time.
+      sortedGroups.emplace_back(*group);
+      state.at(group) = 2;
+      stack.pop_back();
+      break;
+    }
+    default: {
+      // Already visited.
+      stack.pop_back();
+      break;
+    }
+    }
+  }
+
+  context.pumGroups.swap(sortedGroups);
 }
 
 bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
@@ -112,49 +213,44 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
    *    with matched dimension with the StoreComputeStream.
    * 6. TODO: Enough wordlines to hold inputs and intermediate data.
    */
-  auto checkCommonConstraint = [&](const ConfigPtr &config) -> bool {
-    if (!config->stream->isLoopEliminated()) {
-      MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[NoPUM] Not Eliminated.\n");
-      return false;
-    }
-    for (const auto &dep : config->depEdges) {
-      if (dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
 
-        /**
-         * We try to support distributable reduction here.
-         */
-        if (dep.data->stream->isReduction()) {
-          if (!dep.data->stream->isReductionDistributable()) {
-            MLC_S_DPRINTF_(StreamPUM, config->dynamicId,
-                           "[NoPUM] Reduce Not Distributable %s.\n",
-                           dep.data->dynamicId);
-            return false;
-          }
-        } else {
-          MLC_S_DPRINTF_(StreamPUM, config->dynamicId,
-                         "[NoPUM] Has IndirectS %s.\n", dep.data->dynamicId);
-          return false;
-        }
-      }
-    }
+  const auto &computeConfig = group.computeConfig;
+  const auto &groupDynId = computeConfig->dynamicId;
+
+  MLC_S_DPRINTF(groupDynId, "[CheckCanPUM] -------------------.\n");
+
+  if (!computeConfig->stream->isLoopEliminated()) {
+    MLC_S_DPRINTF(groupDynId, "[NoPUM] Not Eliminated.\n");
+    return false;
+  }
+
+  /**
+   * Check some constraints on all streams: with the first one being
+   * ComputeConfig.
+   */
+  CacheStreamConfigureVec allConfigs = group.usedConfigs;
+  allConfigs.insert(allConfigs.begin(), computeConfig);
+  for (const auto &config : allConfigs) {
+
+    const auto &dynId = config->dynamicId;
+
     if (config->floatPlan.isFloatedToMem()) {
-      MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[NoPUM] Float to Mem.\n");
+      MLC_S_DPRINTF(dynId, "[NoPUM] Float to Mem.\n");
       return false;
     }
     if (config->floatPlan.getFirstFloatElementIdx() != 0) {
-      MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[NoPUM] Delayed Float.\n");
+      MLC_S_DPRINTF(dynId, "[NoPUM] Delayed Float.\n");
       return false;
     }
 
     if (!config->hasTotalTripCount()) {
-      MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[NoPUM] No TripCount.\n");
+      MLC_S_DPRINTF(dynId, "[NoPUM] No TripCount.\n");
       return false;
     }
     auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
         config->addrGenCallback);
     if (!linearAddrGen) {
-      MLC_S_DPRINTF_(StreamPUM, config->dynamicId,
-                     "[NoPUM] Not LinearAddrGen.\n");
+      MLC_S_DPRINTF(dynId, "[NoPUM] Not LinearAddrGen.\n");
       return false;
     }
 
@@ -175,19 +271,35 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
 
     Addr startPAddr;
     if (!cpuDelegator->translateVAddrOracle(startVAddr, startPAddr)) {
-      MLC_S_DPRINTF_(StreamPUM, config->dynamicId,
-                     "[NoPUM] Fault StartVAddr.\n");
+      MLC_S_DPRINTF(dynId, "[NoPUM] Fault StartVAddr.\n");
       return false;
     }
     auto rangeMap = StreamNUCAMap::getRangeMapContaining(startPAddr);
     if (!rangeMap) {
-      MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[NoPUM] No RangeMap.\n");
+      MLC_S_DPRINTF(dynId, "[NoPUM] No RangeMap.\n");
       return false;
     }
-    if (!rangeMap->isStreamPUM) {
-      MLC_S_DPRINTF_(StreamPUM, config->dynamicId,
-                     "[NoPUM] RangeMap not PUM.\n");
-      return false;
+
+    /**
+     * For UsedConfigs, split them into PUM and NonPUM categories.
+     * NOTE: NonPUMConfigs have no PatternInfo.
+     */
+    if (computeConfig == config) {
+      if (!rangeMap->isStreamPUM) {
+        MLC_S_DPRINTF(dynId, "[NoPUM] RangeMap not PUM.\n");
+        return false;
+      }
+    } else {
+      if (rangeMap->isStreamPUM &&
+          rangeMap->pumTile ==
+              group.patternInfo.at(computeConfig->stream).pumTile) {
+        MLC_S_DPRINTF(dynId, "[CheckCanPUM]   As UsedPUMConfig.\n");
+        group.usedPUMConfigs.push_back(config);
+      } else {
+        MLC_S_DPRINTF(dynId, "[CheckCanPUM]   As UsedNonPUMConfig.\n");
+        group.usedNonPUMConfigs.push_back(config);
+        continue;
+      }
     }
 
 #define AssertScalarAlign(v) assert((v) % scalarElemSize == 0)
@@ -223,30 +335,11 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
     patternInfo.scalarElemSize = scalarElemSize;
     patternInfo.atomicPatterns =
         this->decoalesceAndDevectorizePattern(config, pattern, scalarElemSize);
-
-    return true;
-  };
-
-  const auto &computeConfig = group.computeConfig;
-  const auto &groupDynId = computeConfig->dynamicId;
-  if (!checkCommonConstraint(computeConfig)) {
-    return false;
-  }
-
-  for (const auto &baseConfig : group.usedConfigs) {
-    if (!baseConfig->baseEdges.empty()) {
-      MLC_S_DPRINTF_(StreamPUM, groupDynId, "[NoPUM] UsedS with BaseEdge %s.\n",
-                     baseConfig->dynamicId);
-      return false;
-    }
-    if (!checkCommonConstraint(baseConfig)) {
-      return false;
-    }
   }
 
   // All regions should have the same tile mapping.
   const auto &computeTile = group.patternInfo.at(computeConfig->stream).pumTile;
-  for (const auto &baseConfig : group.usedConfigs) {
+  for (const auto &baseConfig : group.usedPUMConfigs) {
     const auto &tile = group.patternInfo.at(baseConfig->stream).pumTile;
     if (tile != computeTile) {
       MLC_S_DPRINTF(groupDynId, "[NoPUM] Mismatch Tile %s and %s from %s.\n",
@@ -261,12 +354,12 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
 
   for (const auto &e : group.patternInfo) {
     for (const auto &p : e.second.atomicPatterns) {
-      S_DPRINTF(e.first, "AtomicPat %s.\n", p);
+      S_DPRINTF(e.first, "[PUM]   AtomicPat %s.\n", p);
     }
   }
 
   // Check for DataMoveCompiler.
-  for (const auto &sendConfig : group.usedConfigs) {
+  for (const auto &sendConfig : group.usedPUMConfigs) {
 
     const auto &sendDynId = sendConfig->dynamicId;
     auto S = sendConfig->stream;
@@ -277,8 +370,7 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
                   myTile);
     DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(), myTile);
 
-    auto recvConfig = group.computeConfig;
-    auto recvS = recvConfig->stream;
+    auto recvS = computeConfig->stream;
     const auto &recvPatternInfo = group.patternInfo.at(recvS);
     auto recvTile = recvPatternInfo.pumTile;
 
@@ -296,8 +388,7 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
       return false;
     }
     const auto &recvPattern = recvPatternInfo.atomicPatterns.front();
-    MLC_S_DPRINTF(recvConfig->dynamicId, "[PUM] RecvPattern %s.\n",
-                  recvPattern);
+    MLC_S_DPRINTF(groupDynId, "[PUM] RecvPattern %s.\n", recvPattern);
 
     for (const auto &myPattern : sendPatInfo.atomicPatterns) {
       MLC_S_DPRINTF(sendDynId, "[PUM] SendPattern %s.\n", myPattern);
@@ -312,13 +403,791 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
   return true;
 }
 
-void MLCPUMManager::compileContext(PUMContext &context) {
-
+void MLCPUMManager::buildPUMDataGraph(PUMContext &context) {
   for (auto &group : context.pumGroups) {
     if (group.appliedPUM) {
-      this->compileGroup(context, group);
+      this->buildPUMDataGraph(context, group);
     }
   }
+}
+
+void MLCPUMManager::buildPUMDataGraph(PUMContext &context,
+                                      PUMComputeStreamGroup &group) {
+  assert(group.canApplyPUM);
+
+  PUMDataGraphNodeVec dataMoveNodes;
+  for (const auto &sendConfig : group.usedPUMConfigs) {
+    this->buildPUMDataGraphMove(context, group, sendConfig, dataMoveNodes);
+  }
+
+  /**
+   * LoadComputeStream also need to send to itself.
+   */
+  if (group.computeConfig->stream->getEnabledLoadFunc()) {
+    this->buildPUMDataGraphMove(context, group, group.computeConfig,
+                                dataMoveNodes);
+  }
+
+  /**
+   * Construct the compute node.
+   */
+  this->buildPUMDataGraphCompute(context, group, dataMoveNodes);
+
+  /**
+   * We try to increment the OuterIter.
+   */
+  group.nextOuterIter++;
+}
+
+bool MLCPUMManager::needExpandReuse(PUMContext &context,
+                                    const PUMComputeStreamGroup &group) {
+  bool shouldExpandReuse = false;
+  if (group.computeConfig->stream->getEnabledLoadFunc()) {
+    if (!group.usedNonPUMConfigs.empty()) {
+      shouldExpandReuse = true;
+    }
+  }
+  return shouldExpandReuse;
+}
+
+AffinePattern MLCPUMManager::expandReusePat(const AffinePattern &pumTile,
+                                            const AffinePattern &pat) {
+  auto arraySizes = pumTile.getArraySize();
+  auto startPos = AffinePattern::getArrayPosition(arraySizes, pat.start);
+  auto ret = pat;
+  int64_t accArraySize = 1;
+  int64_t adjustedStart = 0;
+  for (int dim = 0; dim < ret.params.size(); ++dim) {
+    assert(dim < arraySizes.size());
+    auto &p = ret.params.at(dim);
+    if (p.stride == 0) {
+      p.stride = accArraySize;
+      startPos.at(dim) = 0;
+    }
+    adjustedStart += startPos.at(dim) * accArraySize;
+    accArraySize *= arraySizes.at(dim);
+  }
+  ret.start = adjustedStart;
+  return ret;
+}
+
+void MLCPUMManager::buildPUMDataGraphMove(PUMContext &context,
+                                          PUMComputeStreamGroup &group,
+                                          const ConfigPtr &sendConfig,
+                                          PUMDataGraphNodeVec &resultNodes) {
+
+  const auto &sendDynId = sendConfig->dynamicId;
+  auto sendS = sendConfig->stream;
+  const auto &sendPatInfo = group.patternInfo.at(sendS);
+  auto sendTile = sendPatInfo.pumTile;
+
+  auto recvConfig = group.computeConfig;
+  auto recvS = recvConfig->stream;
+  const auto &recvPatInfo = group.patternInfo.at(recvS);
+  auto recvTile = recvPatInfo.pumTile;
+
+  MLC_S_DPRINTF(recvConfig->dynamicId,
+                "[PUM] --- Build DataMove Node. SendFrom %s SendTile %s.\n",
+                sendConfig->dynamicId, sendTile);
+
+  if (recvTile != sendTile) {
+    // TODO: Handle different mapping of source and dest stream.
+    MLC_S_PANIC_NO_DUMP(sendDynId, "[PUM] Different Tile.");
+  }
+
+  int64_t recvPatIdx = 0;
+  if (recvConfig->stream->getEnabledLoadFunc()) {
+    // This is a LoadCompute.
+    recvPatIdx = recvPatInfo.getLoadComputeResultPatternIdx();
+  } else {
+    if (recvPatInfo.atomicPatterns.size() != 1) {
+      MLC_S_PANIC_NO_DUMP(recvConfig->dynamicId, "[PUM] Multi Recv.");
+    }
+  }
+  auto recvPat = recvPatInfo.getPatternAdjustedByOuterIter(recvPatIdx,
+                                                           group.nextOuterIter);
+  MLC_S_DPRINTF(recvConfig->dynamicId, "[PUM] OuterIter %ld RecvPattern %s.\n",
+                group.nextOuterIter, recvPat);
+
+  /**
+   * Find the real SendPatterns.
+   * 1. If LoadComputeStream sends to other Stream, we only need to send
+   * LoadComputeResultPattern.
+   * 2. If LoadComputeStream sends to itself, we need to:
+   *  a. Send patterns other than LoadComputeResultPattern.
+   *  b. Mark LoadComputeResultPattern as one Value.
+   *
+   * If this Computation involves NonPUMConfig, then we need to expand the
+   * reused dimension.
+   */
+  bool shouldExpandReuse = this->needExpandReuse(context, group);
+  if (shouldExpandReuse) {
+    recvPat = expandReusePat(recvTile, recvPat);
+  }
+
+  for (auto patIdx = 0; patIdx < sendPatInfo.atomicPatterns.size(); ++patIdx) {
+
+    if (sendS->getEnabledLoadFunc()) {
+      auto sendLoadComputeResultPatIdx =
+          sendPatInfo.getLoadComputeResultPatternIdx();
+      if (recvConfig != sendConfig) {
+        // Send to other stream.
+        if (patIdx != sendLoadComputeResultPatIdx) {
+          continue;
+        }
+      }
+    }
+
+    auto sendPat =
+        sendPatInfo.getPatternAdjustedByOuterIter(patIdx, group.nextOuterIter);
+
+    MLC_S_DPRINTF(sendDynId, "[PUM] OuterIter %ld SendPattern %s.\n",
+                  group.nextOuterIter, sendPat);
+
+    /**
+     * Each send pattern is a ValueNode, with RecvPat as MoveNode.
+     */
+    PUMDataGraphNode *valueNode = nullptr;
+    if (sendS->getEnabledLoadFunc() && recvConfig != sendConfig) {
+      // Search for the compute node.
+      for (auto node : context.pumDataGraphNodes) {
+        if (node->type == PUMDataGraphNode::TypeE::Compute &&
+            node->pumTile == sendTile &&
+            node->group->computeConfig == sendConfig) {
+          valueNode = node;
+        }
+      }
+      if (valueNode == nullptr) {
+        panic("Failed to find PUMDataGraphNode for LoadComputeS.");
+      }
+    } else {
+      valueNode = new PUMDataGraphNode(sendPatInfo.regionName, sendTile,
+                                       sendPat, sendPatInfo.scalarElemSize,
+                                       sendPatInfo.regionVAddr);
+      context.pumDataGraphNodes.push_back(valueNode);
+
+      if (shouldExpandReuse) {
+        auto expandedSendPat = expandReusePat(sendTile, sendPat);
+        if (expandedSendPat != sendPat) {
+          // Add a MoveNode to do the reuse expansion.
+          auto expandReuseMoveNode = new PUMDataGraphNode(
+              sendPatInfo.regionName, sendTile, expandedSendPat, sendPat,
+              valueNode, recvPatInfo.scalarElemSize);
+          context.pumDataGraphNodes.push_back(expandReuseMoveNode);
+
+          // This is our new ValueNode.
+          valueNode = expandReuseMoveNode;
+        }
+      }
+    }
+
+    if (sendS->getEnabledLoadFunc() && recvConfig == sendConfig) {
+      auto sendLoadComputeResultPatIdx =
+          sendPatInfo.getLoadComputeResultPatternIdx();
+      if (patIdx == sendLoadComputeResultPatIdx) {
+        // We add the ValueNode as the ResultNode, since this requires no send.
+        resultNodes.push_back(valueNode);
+        continue;
+      }
+    }
+
+    auto moveNode = new PUMDataGraphNode(recvPatInfo.regionName, recvTile,
+                                         recvPat, valueNode->pattern, valueNode,
+                                         recvPatInfo.scalarElemSize);
+    context.pumDataGraphNodes.push_back(moveNode);
+    resultNodes.push_back(moveNode);
+  }
+}
+
+void MLCPUMManager::buildPUMDataGraphCompute(
+    PUMContext &context, PUMComputeStreamGroup &group,
+    const PUMDataGraphNodeVec &moveNodes) {
+
+  const auto &config = group.computeConfig;
+  const auto &dynId = config->dynamicId;
+
+  auto &patInfo = group.patternInfo.at(config->stream);
+
+  int64_t patternIdx = 0;
+  if (config->stream->getEnabledLoadFunc()) {
+    patternIdx = patInfo.getLoadComputeResultPatternIdx();
+  } else {
+    assert(patInfo.atomicPatterns.size() == 1);
+  }
+  auto pattern =
+      patInfo.getPatternAdjustedByOuterIter(patternIdx, group.nextOuterIter);
+
+  bool shouldExpandReuse = this->needExpandReuse(context, group);
+  if (shouldExpandReuse) {
+    pattern = expandReusePat(patInfo.pumTile, pattern);
+  }
+
+  MLC_S_DPRINTF(dynId,
+                "DataGraph Compute Tile %s OuterIter %ld AdjustedPattern %s.\n",
+                patInfo.pumTile, group.nextOuterIter, pattern);
+
+  ExecFuncPtr func = nullptr;
+  if (group.reduceConfig) {
+    auto funcAddrGenCb = std::dynamic_pointer_cast<FuncAddrGenCallback>(
+        group.reduceConfig->addrGenCallback);
+    if (!funcAddrGenCb) {
+      MLC_S_PANIC_NO_DUMP(group.reduceConfig->dynamicId,
+                          "[PUM] Reduction should have FuncAddrGenCallback.");
+    }
+    func = funcAddrGenCb->getExecFunc();
+  } else if (config->stream->getEnabledLoadFunc()) {
+    // This is a LoadCompute.
+    func = config->loadCallback;
+  } else {
+    func = config->storeCallback;
+  }
+  if (!func) {
+    MLC_S_PANIC_NO_DUMP(dynId, "[PUM] Failed to find ComputeFunc.");
+  }
+
+  auto cmpNode =
+      new PUMDataGraphNode(patInfo.regionName, patInfo.pumTile, pattern,
+                           patInfo.scalarElemSize, func, &group);
+  cmpNode->operands = moveNodes;
+  for (auto moveNode : moveNodes) {
+    moveNode->users.push_back(cmpNode);
+  }
+  context.pumDataGraphNodes.push_back(cmpNode);
+}
+
+void MLCPUMManager::mergePUMDataGraphMoveNode(PUMContext &context) {
+
+  auto &nodes = context.pumDataGraphNodes;
+
+  /**
+   * We try to merge two moves if they are both moving a ValueNode,
+   * and the ValueNode has only bounda difference.
+   */
+
+  auto isMoveNode = [](PUMDataGraphNode *node) -> bool {
+    return node->type == PUMDataGraphNode::TypeE::Move;
+  };
+
+  auto shouldMergeTwoValueMove = [](PUMDataGraphNode *moveA,
+                                    PUMDataGraphNode *moveB) -> bool {
+    auto valueA = moveA->operands.front();
+    auto valueB = moveB->operands.front();
+    if (valueA != valueB) {
+      if (valueA->type != PUMDataGraphNode::TypeE::Value ||
+          valueB->type != PUMDataGraphNode::TypeE::Value) {
+        // If not the same node, we require them to be ValueNode.
+        return false;
+      }
+      if (valueA->regionVAddr != valueB->regionVAddr) {
+        return false;
+      }
+      if (valueB->users.size() != 1) {
+        return false;
+      }
+    }
+
+    const auto &patA = moveA->sendPat;
+    const auto &patB = moveB->sendPat;
+    if (patA.params.size() != patB.params.size()) {
+      return false;
+    }
+
+    auto arraySizes = valueA->pumTile.getArraySize();
+    if (!patA.isSubRegionToArraySize(arraySizes, true /* allow reuse */) ||
+        !patB.isSubRegionToArraySize(arraySizes, true /* allow reuse */)) {
+      return false;
+    }
+
+    // We also need to check that moving dimension completely match.
+    const auto &recvA = moveA->pattern;
+    auto startsA = AffinePattern::getArrayPosition(arraySizes, patA.start);
+    auto recvStartsA = AffinePattern::getArrayPosition(arraySizes, recvA.start);
+
+    auto moveDimA = -1;
+    auto moveDistA = 0;
+    for (int dim = 0; dim < startsA.size(); ++dim) {
+      if (startsA.at(dim) != recvStartsA.at(dim)) {
+        if (moveDimA != -1) {
+          panic("Moving along multiple dimensions.");
+        }
+        moveDimA = dim;
+        moveDistA = recvStartsA.at(dim) - startsA.at(dim);
+      }
+    }
+
+    const auto &recvB = moveB->pattern;
+    auto startsB = AffinePattern::getArrayPosition(arraySizes, patB.start);
+    auto recvStartsB = AffinePattern::getArrayPosition(arraySizes, recvB.start);
+
+    auto moveDimB = -1;
+    auto moveDistB = 0;
+    for (int dim = 0; dim < startsB.size(); ++dim) {
+      if (startsB.at(dim) != recvStartsB.at(dim)) {
+        if (moveDimB != -1) {
+          panic("Moving along multiple dimensions.");
+        }
+        moveDimB = dim;
+        moveDistB = recvStartsB.at(dim) - startsB.at(dim);
+      }
+    }
+    if (moveDimA != moveDimB) {
+      // Either nothing to move or move along different dimensions.
+      return false;
+    }
+    if (moveDistA != moveDistB) {
+      // Move by different amount.
+      return false;
+    }
+
+    // Use a heuristic that the intersection should have 90% of both sub-region.
+    auto patANoReuse = AffinePattern::removeReuseInSubRegion(arraySizes, patA);
+    auto patBNoReuse = AffinePattern::removeReuseInSubRegion(arraySizes, patB);
+    auto intersect = AffinePattern::intersectSubRegions(arraySizes, patANoReuse,
+                                                        patBNoReuse);
+
+    auto patATrip = patANoReuse.getTotalTrip();
+    auto patBTrip = patBNoReuse.getTotalTrip();
+    auto intersectTrip = intersect.getTotalTrip();
+    if (intersectTrip < patATrip * 0.9 || intersectTrip < patBTrip * 0.9) {
+      // Not too much benefits to merge them
+      return false;
+    }
+
+    return true;
+  };
+
+  auto mergeTwoValueMove = [&nodes](PUMDataGraphNode *moveA,
+                                    PUMDataGraphNode *moveB) -> void {
+    auto valueA = moveA->operands.front();
+    auto valueB = moveB->operands.front();
+
+    const auto &patA = moveA->sendPat;
+    const auto &patB = moveB->sendPat;
+
+    auto arraySizes = valueA->pumTile.getArraySize();
+
+    // Merge them together.
+    auto patANoReuse = AffinePattern::removeReuseInSubRegion(arraySizes, patA);
+    auto patBNoReuse = AffinePattern::removeReuseInSubRegion(arraySizes, patB);
+    auto mergedSrc =
+        AffinePattern::unionSubRegions(arraySizes, patANoReuse, patBNoReuse);
+    auto mergedDst = AffinePattern::unionSubRegions(arraySizes, moveA->pattern,
+                                                    moveB->pattern);
+
+    // Add back the reuse dimension.
+    for (int dim = 0; dim < patA.params.size(); ++dim) {
+      const auto &p = patA.params.at(dim);
+      if (p.stride == 0) {
+        mergedSrc.params.at(dim).stride = 0;
+        mergedSrc.params.at(dim).trip = p.trip;
+      }
+    }
+
+    moveA->pattern = mergedDst;
+    moveA->sendPat = mergedSrc;
+
+    moveB->replaceUsedBy(moveA);
+
+    if (valueA != valueB) {
+      // They must be value nodes.
+      valueA->pattern = mergedSrc;
+
+      bool erasedValueB = false;
+      for (auto iter = nodes.begin(); iter != nodes.end(); ++iter) {
+        if (*iter == valueB) {
+          nodes.erase(iter);
+          erasedValueB = true;
+          break;
+        }
+      }
+      assert(erasedValueB);
+      delete valueB;
+    }
+
+    // Note: Now we remove moveB and valueB from nodes.
+    bool erasedMoveB = false;
+    for (auto iter = nodes.begin(); iter != nodes.end(); ++iter) {
+      if (*iter == moveB) {
+        nodes.erase(iter);
+        erasedMoveB = true;
+        break;
+      }
+    }
+    assert(erasedMoveB);
+    delete moveB;
+  };
+
+  while (true) {
+    bool merged = false;
+    for (int i = 0; i < nodes.size() && !merged; ++i) {
+      auto nodeI = nodes.at(i);
+      if (!isMoveNode(nodeI)) {
+        continue;
+      }
+
+      for (int j = i + 1; j < nodes.size() && !merged; ++j) {
+        auto nodeJ = nodes.at(j);
+        if (!isMoveNode(nodeJ)) {
+          continue;
+        }
+
+        if (!shouldMergeTwoValueMove(nodeI, nodeJ)) {
+          continue;
+        }
+
+        // NOTE: This will erase NodeJ and ValueJ from nodes.
+        mergeTwoValueMove(nodeI, nodeJ);
+        merged = true;
+      }
+    }
+    if (!merged) {
+      break;
+    }
+  }
+}
+
+MLCPUMManager::PUMDataGraphNodeVec
+MLCPUMManager::schedulePUMDataGraph(PUMContext &context) {
+
+  PUMDataGraphNodeVec scheduledNodes;
+
+  std::set<PUMDataGraphNode *> scheduled;
+  std::set<PUMDataGraphNode *> frontier;
+  for (auto node : context.pumDataGraphNodes) {
+    if (node->operands.empty()) {
+      frontier.insert(node);
+      scheduled.insert(node);
+      scheduledNodes.push_back(node);
+    }
+  }
+
+  while (!frontier.empty()) {
+    std::set<PUMDataGraphNode *> nextFrontier;
+    for (auto node : frontier) {
+      for (auto user : node->users) {
+        bool allOperandsScheduled = true;
+        for (auto operand : user->operands) {
+          if (!scheduled.count(operand)) {
+            allOperandsScheduled = false;
+            break;
+          }
+        }
+        if (allOperandsScheduled) {
+          nextFrontier.insert(user);
+        }
+      }
+    }
+    for (auto node : nextFrontier) {
+      scheduledNodes.push_back(node);
+      scheduled.insert(node);
+    }
+    // Insert a sync node.
+    frontier = nextFrontier;
+    if (!frontier.empty()) {
+      scheduledNodes.push_back(
+          new PUMDataGraphNode("nowhere", PUMDataGraphNode::TypeE::Sync,
+                               AffinePattern(), AffinePattern(), 0));
+    }
+  }
+
+  return scheduledNodes;
+}
+
+void MLCPUMManager::compilePUMDataGraphToCommands(PUMContext &context) {
+
+  for (auto node : context.pumDataGraphNodes) {
+    switch (node->type) {
+    case PUMDataGraphNode::TypeE::Value: {
+      // Value has nothing to compile for.
+      break;
+    }
+    case PUMDataGraphNode::TypeE::Move: {
+      // This is data move.
+      this->compileDataMove(context, node);
+      break;
+    }
+    case PUMDataGraphNode::TypeE::Sync: {
+      // This is sync node.
+      this->compileSync(context, node);
+      break;
+    }
+    case PUMDataGraphNode::TypeE::Compute: {
+      // This is compute node.
+      this->compileCompute(context, node);
+      break;
+    }
+    default: {
+      panic("Don't know how to compile PUMDataGraphNode %d.\n", node->type);
+    }
+    }
+  }
+}
+
+void MLCPUMManager::compileDataMove(PUMContext &context,
+                                    PUMDataGraphNode *node) {
+
+  auto sendNode = node->operands.front();
+  const auto &sendTile = sendNode->pumTile;
+  const auto &sendPat = node->sendPat;
+  const auto &recvTile = node->pumTile;
+  const auto &recvPat = node->pattern;
+
+  DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(), sendTile);
+
+  MLCSE_DPRINTF("[PUM] --- Compile MoveNode. SendTile %s %s -> %s %s.\n",
+                sendTile, sendPat, recvTile, recvPat);
+
+  if (recvTile != sendTile) {
+    // TODO: Handle different mapping of source and dest stream.
+    panic("[PUM] Different Tile.");
+  }
+
+  auto commands = compiler.compile(sendPat, recvPat);
+  // Generate the meta information.
+  for (auto &cmd : commands) {
+    cmd.wordline_bits = node->scalarElemSize * 8;
+    cmd.srcRegion = sendNode->regionName;
+    cmd.srcAccessPattern = sendPat;
+    cmd.srcMapPattern = sendTile;
+    cmd.dstRegion = node->regionName;
+    cmd.dstAccessPattern = recvPat;
+    cmd.dstMapPattern = sendTile;
+  }
+  if (Debug::StreamPUM) {
+    for (const auto &command : commands) {
+      MLCSE_DPRINTF("%s", command);
+    }
+  }
+  context.commands.insert(context.commands.end(), commands.begin(),
+                          commands.end());
+}
+
+void MLCPUMManager::compileSync(PUMContext &context, PUMDataGraphNode *node) {
+  /**
+   * Insert sync command after all data movement.
+   * This is default enabled for every LLC bank.
+   * NOTE: If there is no commands so far, we don't sync.
+   */
+  if (context.commands.empty()) {
+    return;
+  }
+  context.commands.emplace_back();
+  context.commands.back().type = "sync";
+}
+
+void MLCPUMManager::compileCompute(PUMContext &context,
+                                   PUMDataGraphNode *node) {
+
+  // const auto &config = group.computeConfig;
+  // const auto &dynId = config->dynamicId;
+
+  // auto &patInfo = group.patternInfo.at(config->stream);
+  // auto scalarElemBits = patInfo.scalarElemSize * 8;
+
+  DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(),
+                            node->pumTile);
+
+  PUMCommandVecT commands;
+
+  MLCSE_DPRINTF("Compile Compute Tile %s Pattern %s.\n", node->pumTile,
+                node->pattern);
+
+  ExecFuncPtr func = node->func;
+
+  for (const auto &inst : func->getStaticInsts()) {
+
+    commands.emplace_back();
+    auto &command = commands.back();
+    command.type = "cmp";
+    command.opClass = inst->opClass();
+    // Default bitline_mask is for the entire tile.
+    command.bitline_mask = AffinePattern::constructSubRegion(
+        compiler.tile_sizes,
+        AffinePattern::IntVecT(compiler.tile_sizes.size(), 0) /* starts */,
+        compiler.tile_sizes);
+
+    MLCSE_DPRINTF("[PUM] Compile Inst %s to OpClass %s.\n",
+                  inst->disassemble(0x0),
+                  Enums::OpClassStrings[inst->opClass()]);
+  }
+
+  // Compile the final reduction instruction.
+  this->compileReduction(context, *node->group, commands);
+
+  if (Debug::StreamPUM) {
+    for (const auto &command : commands) {
+      MLCSE_DPRINTF("%s", command);
+    }
+  }
+  MLCSE_DPRINTF("Before masked.\n");
+
+  // Mask the commands by the Stream.
+  commands = compiler.maskCmdsBySubRegion(commands, node->pattern);
+
+  if (Debug::StreamPUM) {
+    for (const auto &command : commands) {
+      MLCSE_DPRINTF("%s", command);
+    }
+  }
+  MLCSE_DPRINTF("Before mapped to LLC.\n");
+
+  // Generate mask for each LLC bank.
+  commands = compiler.mapCmdsToLLC(commands);
+
+  // Generate the meta information.
+  for (auto &cmd : commands) {
+    cmd.wordline_bits = node->scalarElemSize * 8;
+    cmd.srcRegion = node->regionName;
+    cmd.srcAccessPattern = node->pattern;
+    cmd.srcMapPattern = node->pumTile;
+  }
+  if (Debug::StreamPUM) {
+    for (const auto &command : commands) {
+      MLCSE_DPRINTF("%s", command);
+    }
+  }
+
+  context.commands.insert(context.commands.end(), commands.begin(),
+                          commands.end());
+}
+
+void MLCPUMManager::compileReduction(PUMContext &context,
+                                     PUMComputeStreamGroup &group,
+                                     PUMCommandVecT &commands) {
+
+  if (!group.reduceConfig) {
+    return;
+  }
+
+  /**
+   * We compile reduction into these steps:
+   * 1. Check which dimension we are trying to reduce by looking at the inner
+   * dimension stride of the assicated AffineStream. So far we only support
+   * reduction over one dimension.
+   *
+   * 2. We define the following variables:
+   *   InitElems: Initial # of elements in each tile waiting to be reduced.
+   *   FinalElems: Final # of elements in each tile to be collected.
+   * Notice that both InitElems and FinalElems will be power of 2, as we pick
+   * the tiling factor to be power of 2.
+   *
+   * 3. We will generate these command sequence:
+   *   Shift -> Reduce -> Shift -> Reduce -> ... -> Shift -> Reduce
+   *
+   * 4. Finally, the LLC PUMEngine will ready out FinalElems out and reduce
+   * across its SRAM arrays. It then send back the results to the MLCPUMManager
+   * for final reduction.
+   */
+
+  // 1. We assume reduction in the inner-most dimension.
+  const auto &reduceDynId = group.reduceConfig->dynamicId;
+
+  const auto &patInfo = group.patternInfo.at(group.computeConfig->stream);
+  assert(!patInfo.atomicPatterns.empty() && "No AtomicPattern.");
+  const auto &reducePat = patInfo.atomicPatterns.front();
+
+  int reduceStride = reducePat.params.front().stride;
+  auto ret = patInfo.pumTile.getTileAndArraySize();
+  auto tileSizes = std::move(ret.first);
+  auto arraySizes = std::move(ret.second);
+  const auto &dimensions = arraySizes.size();
+  int reduceDim = -1;
+  int64_t curDimStride = 1;
+  for (int dim = 0; dim < dimensions; ++dim) {
+    if (curDimStride == reduceStride) {
+      reduceDim = dim;
+      break;
+    }
+  }
+  if (reduceDim == -1) {
+    MLC_S_PANIC_NO_DUMP(reduceDynId, "[PUMReduce] Failed to find ReduceDim.");
+  }
+
+  /**
+   * As a hack for now, mark the last command reduction.
+   * TODO: Truly slice the function and find real reduction instructions.
+   */
+  assert(!commands.empty() && "No Commands for Reduction.");
+
+  // Let's take a copy of the final computation command.
+  auto reduceCmd = commands.back();
+  commands.pop_back();
+
+  int64_t finalElems = 1;
+  int64_t initElems = 1;
+  for (int dim = 0; dim < dimensions; ++dim) {
+    initElems *= tileSizes[dim];
+    if (dim == reduceDim) {
+      continue;
+    }
+    finalElems *= tileSizes[dim];
+  }
+  int64_t reduceRatio = tileSizes[reduceDim];
+  assert(reduceRatio > 1 && "Nothing to reduce.");
+  if (reduceRatio & (reduceRatio - 1)) {
+    MLC_S_PANIC_NO_DUMP(reduceDynId,
+                        "[PUMReduce] ReduceRatio %ld Not Power of 2.",
+                        reduceRatio);
+  }
+
+  int64_t curRatio = 2;
+  int64_t baseDist = AffinePattern::reduce_mul(
+      tileSizes.begin(), tileSizes.begin() + reduceDim + 1, 1);
+  MLC_S_DPRINTF(reduceDynId,
+                "[PUMReduce] Dim %d BaseDist %ld ReduceRatio %ld Tile %s.\n",
+                reduceDim, baseDist, reduceRatio, patInfo.pumTile);
+  while (curRatio <= reduceRatio) {
+    int64_t curDist = baseDist / curRatio;
+    MLC_S_DPRINTF(reduceDynId, "[PUMReduce] CurRatio %ld ShiftDist %ld.\n",
+                  curRatio, curDist);
+
+    commands.emplace_back();
+    commands.back().type = "intra-array";
+    commands.back().bitline_dist = -curDist;
+    // Generate all active bitline-mask according to tile_sizes.
+    commands.back().bitline_mask = AffinePattern::constructSubRegion(
+        tileSizes, AffinePattern::IntVecT(tileSizes.size(), 0), tileSizes);
+
+    MLC_S_DPRINTF(reduceDynId, "Intra-Array Reduce Cmd %s", commands.back());
+
+    // We then insert the reduce compute command.
+    commands.push_back(reduceCmd);
+
+    curRatio *= 2;
+  }
+}
+
+void MLCPUMManager::compileContext(PUMContext &context) {
+
+  this->buildPUMDataGraph(context);
+
+  if (Debug::StreamPUM) {
+    MLCSE_DPRINTF("--------------------- PUMDataGraph Nodes.\n");
+    for (const auto &node : context.pumDataGraphNodes) {
+      MLCSE_DPRINTF("-- Node %s.\n", *node);
+    }
+  }
+
+  this->mergePUMDataGraphMoveNode(context);
+
+  if (Debug::StreamPUM) {
+    MLCSE_DPRINTF("--------------------- PUMDataGraph After Merge.\n");
+    for (const auto &node : context.pumDataGraphNodes) {
+      MLCSE_DPRINTF("-- Node %s.\n", *node);
+    }
+  }
+
+  auto scheduledNodes = this->schedulePUMDataGraph(context);
+  context.pumDataGraphNodes = scheduledNodes;
+
+  if (Debug::StreamPUM) {
+    MLCSE_DPRINTF("--------------------- PUMDataGraph After Schedule.\n");
+    for (const auto &node : context.pumDataGraphNodes) {
+      MLCSE_DPRINTF("-- Node %s.\n", *node);
+    }
+  }
+
+  this->compilePUMDataGraphToCommands(context);
 
   // Remember number of syncs.
   for (const auto &command : context.commands) {
@@ -326,43 +1195,6 @@ void MLCPUMManager::compileContext(PUMContext &context) {
       context.totalSyncs++;
     }
   }
-}
-
-void MLCPUMManager::compileGroup(PUMContext &context,
-                                 PUMComputeStreamGroup &group) {
-
-  assert(group.canApplyPUM);
-
-  for (const auto &sendConfig : group.usedConfigs) {
-    this->compileDataMove(context, group, sendConfig);
-  }
-
-  /**
-   * LoadComputeStream also need to send to itself.
-   */
-  if (group.computeConfig->stream->getEnabledLoadFunc()) {
-    this->compileDataMove(context, group, group.computeConfig);
-  }
-
-  /**
-   * Insert sync command after all data movement.
-   * This is default enabled for every LLC bank.
-   */
-  context.commands.emplace_back();
-  context.commands.back().type = "sync";
-
-  this->compileCompute(context, group);
-
-  /**
-   * Sync after compute to distinguish from next Group.
-   */
-  context.commands.emplace_back();
-  context.commands.back().type = "sync";
-
-  /**
-   * We try to increment the OuterIter.
-   */
-  group.nextOuterIter++;
 }
 
 void MLCPUMManager::erasePUMConfigs(PUMContext &context,
@@ -527,15 +1359,14 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
    * at these outer dimensions.
    */
   newDirectConfig->pumContextId = context.contextId;
-  newDirectConfig->pumElemPerSync = tileAlignedAtomicPat.get_total_trip();
+  newDirectConfig->pumElemPerSync = tileAlignedAtomicPat.getTotalTrip();
   newDirectConfig->hintNoStrandSplitOuterTripCount = 1;
   if (!patInfo.splitOuterDims.empty()) {
     const auto &splitDims = patInfo.splitOuterDims.front();
     tileAlignedAtomicPat.params.insert(tileAlignedAtomicPat.params.end(),
                                        splitDims.params.begin(),
                                        splitDims.params.end());
-    newDirectConfig->hintNoStrandSplitOuterTripCount =
-        splitDims.get_total_trip();
+    newDirectConfig->hintNoStrandSplitOuterTripCount = splitDims.getTotalTrip();
     MLC_S_DPRINTF(directConfig->dynamicId,
                   "[PUMReduce] TileAlignedPat Added SplitOuterDim %s -> %s "
                   "NoStrandSplitOuterTripCount %ld.\n",
@@ -559,9 +1390,9 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
    */
   auto newInnerTripCount = tileAlignedTrips.at(reducedDim) /
                            tileSizes.at(reducedDim) * partialResultsPerTile;
-  newDirectConfig->totalTripCount = tileAlignedAtomicPat.get_total_trip();
+  newDirectConfig->totalTripCount = tileAlignedAtomicPat.getTotalTrip();
   newDirectConfig->innerTripCount = newInnerTripCount;
-  newReduceConfig->totalTripCount = tileAlignedAtomicPat.get_total_trip();
+  newReduceConfig->totalTripCount = tileAlignedAtomicPat.getTotalTrip();
   newReduceConfig->innerTripCount = newInnerTripCount;
 
   MLC_S_DPRINTF(directConfig->dynamicId,
@@ -653,20 +1484,6 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
   // Take a copy of the configure vector.
   context.configs = **(pkt->getPtr<CacheStreamConfigureVec *>());
   this->findPUMComputeStreamGroups(context);
-
-  /**
-   * Sort the PUMGroups to schedule LoadCompute first.
-   * TODO: Really do a topological sort.
-   */
-  std::sort(context.pumGroups.begin(), context.pumGroups.end(),
-            [](const PUMComputeStreamGroup &g1,
-               const PUMComputeStreamGroup &g2) -> bool {
-              if (g2.computeConfig->stream->getEnabledLoadFunc()) {
-                return false;
-              } else {
-                return true;
-              }
-            });
 
   for (auto &group : context.pumGroups) {
     group.canApplyPUM = this->canApplyPUMToGroup(context, group);
@@ -796,309 +1613,6 @@ void MLCPUMManager::kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
       this->controller->cyclesToTicks(latency));
 }
 
-void MLCPUMManager::compileDataMove(PUMContext &context,
-                                    PUMComputeStreamGroup &group,
-                                    const ConfigPtr &sendConfig) {
-
-  const auto &sendDynId = sendConfig->dynamicId;
-  auto S = sendConfig->stream;
-  const auto &patInfo = group.patternInfo.at(S);
-  auto myTile = patInfo.pumTile;
-
-  DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(), myTile);
-
-  auto recvConfig = group.computeConfig;
-  auto recvS = recvConfig->stream;
-  const auto &recvPatInfo = group.patternInfo.at(recvS);
-  auto recvTile = recvPatInfo.pumTile;
-
-  MLC_S_DPRINTF(recvConfig->dynamicId,
-                "[PUM] --- Compile DataMove. SendFrom %s SendTile %s.\n",
-                sendConfig->dynamicId, myTile);
-
-  if (recvTile != myTile) {
-    // TODO: Handle different mapping of source and dest stream.
-    MLC_S_PANIC_NO_DUMP(sendDynId, "[PUM] Different Tile.");
-  }
-
-  int64_t recvPatIdx = 0;
-  if (recvConfig->stream->getEnabledLoadFunc()) {
-    // This is a LoadCompute.
-    recvPatIdx = recvPatInfo.getLoadComputeResultPatternIdx();
-  } else {
-    if (recvPatInfo.atomicPatterns.size() != 1) {
-      MLC_S_PANIC_NO_DUMP(recvConfig->dynamicId, "[PUM] Multi Recv.");
-    }
-  }
-  auto recvPat = recvPatInfo.getPatternAdjustedByOuterIter(recvPatIdx,
-                                                           group.nextOuterIter);
-  MLC_S_DPRINTF(recvConfig->dynamicId, "[PUM] OuterIter %ld RecvPattern %s.\n",
-                group.nextOuterIter, recvPat);
-
-  /**
-   * Find the real SendPatterns.
-   * 1. If LoadComputeStream sends to other Stream, we only need to send
-   * LoadComputeResultPattern.
-   * 2. If LoadComputeStream sends to itself, we need to send patterns other
-   * than LoadComputeResultPattern.
-   */
-
-  for (auto patIdx = 0; patIdx < patInfo.atomicPatterns.size(); ++patIdx) {
-
-    if (S->getEnabledLoadFunc()) {
-      auto sendLoadComputeResultPatIdx =
-          patInfo.getLoadComputeResultPatternIdx();
-      if (recvConfig != sendConfig) {
-        // Send to other stream.
-        if (patIdx != sendLoadComputeResultPatIdx) {
-          continue;
-        }
-      } else {
-        // Send to myself.
-        if (patIdx == sendLoadComputeResultPatIdx) {
-          continue;
-        }
-      }
-    }
-
-    auto sendPat =
-        patInfo.getPatternAdjustedByOuterIter(patIdx, group.nextOuterIter);
-
-    MLC_S_DPRINTF(sendDynId, "[PUM] OuterIter %ld SendPattern %s.\n",
-                  group.nextOuterIter, sendPat);
-
-    auto commands = compiler.compile(sendPat, recvPat);
-    // Generate the meta information.
-    for (auto &cmd : commands) {
-      cmd.wordline_bits = patInfo.scalarElemSize * 8;
-      cmd.dynStreamId = sendConfig->dynamicId;
-      cmd.srcRegion = patInfo.regionName;
-      cmd.srcAccessPattern = sendPat;
-      cmd.srcMapPattern = myTile;
-      cmd.dstRegion = recvPatInfo.regionName;
-      cmd.dstAccessPattern = recvPat;
-      cmd.dstMapPattern = myTile;
-    }
-    if (Debug::StreamPUM) {
-      for (const auto &command : commands) {
-        MLC_S_DPRINTF(sendDynId, "%s", command);
-      }
-    }
-    context.commands.insert(context.commands.end(), commands.begin(),
-                            commands.end());
-  }
-}
-
-void MLCPUMManager::compileCompute(PUMContext &context,
-                                   PUMComputeStreamGroup &group) {
-
-  const auto &config = group.computeConfig;
-  const auto &dynId = config->dynamicId;
-
-  auto &patInfo = group.patternInfo.at(config->stream);
-  auto scalarElemBits = patInfo.scalarElemSize * 8;
-
-  DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(),
-                            patInfo.pumTile);
-
-  PUMCommandVecT commands;
-
-  int64_t patternIdx = 0;
-  if (config->stream->getEnabledLoadFunc()) {
-    patternIdx = patInfo.getLoadComputeResultPatternIdx();
-  } else {
-    assert(patInfo.atomicPatterns.size() == 1);
-  }
-  auto pattern =
-      patInfo.getPatternAdjustedByOuterIter(patternIdx, group.nextOuterIter);
-
-  MLC_S_DPRINTF(dynId,
-                "Compile Compute Tile %s OuterIter %ld AdjustedPattern %s.\n",
-                patInfo.pumTile, group.nextOuterIter, pattern);
-
-  ExecFuncPtr func = nullptr;
-  if (group.reduceConfig) {
-    auto funcAddrGenCb = std::dynamic_pointer_cast<FuncAddrGenCallback>(
-        group.reduceConfig->addrGenCallback);
-    if (!funcAddrGenCb) {
-      MLC_S_PANIC_NO_DUMP(group.reduceConfig->dynamicId,
-                          "[PUM] Reduction should have FuncAddrGenCallback.");
-    }
-    func = funcAddrGenCb->getExecFunc();
-  } else if (config->stream->getEnabledLoadFunc()) {
-    // This is a LoadCompute.
-    func = config->loadCallback;
-  } else {
-    func = config->storeCallback;
-  }
-  if (!func) {
-    MLC_S_PANIC_NO_DUMP(dynId, "[PUM] Failed to find ComputeFunc.");
-  }
-
-  for (const auto &inst : func->getStaticInsts()) {
-
-    commands.emplace_back();
-    auto &command = commands.back();
-    command.type = "cmp";
-    command.opClass = inst->opClass();
-    // Default bitline_mask is for the entire tile.
-    command.bitline_mask = AffinePattern::constructSubRegion(
-        compiler.tile_sizes,
-        AffinePattern::IntVecT(compiler.tile_sizes.size(), 0) /* starts */,
-        compiler.tile_sizes);
-
-    MLC_S_DPRINTF(dynId, "[PUM] Compile Inst %s to OpClass %s.\n",
-                  inst->disassemble(0x0),
-                  Enums::OpClassStrings[inst->opClass()]);
-  }
-
-  // Compile the final reduction instruction.
-  this->compileReduction(context, group, commands);
-
-  if (Debug::StreamPUM) {
-    for (const auto &command : commands) {
-      MLC_S_DPRINTF(config->dynamicId, "%s", command);
-    }
-  }
-  MLC_S_DPRINTF(config->dynamicId, "Before masked.\n");
-
-  // Mask the commands by the Stream.
-  commands = compiler.maskCmdsBySubRegion(commands, pattern);
-
-  if (Debug::StreamPUM) {
-    for (const auto &command : commands) {
-      MLC_S_DPRINTF(config->dynamicId, "%s", command);
-    }
-  }
-  MLC_S_DPRINTF(config->dynamicId, "Before mapped to LLC.\n");
-
-  // Generate mask for each LLC bank.
-  commands = compiler.mapCmdsToLLC(commands);
-
-  // Generate the meta information.
-  for (auto &cmd : commands) {
-    cmd.wordline_bits = scalarElemBits;
-    cmd.dynStreamId = config->dynamicId;
-    cmd.srcRegion = patInfo.regionName;
-    cmd.srcAccessPattern = patInfo.pattern;
-    cmd.srcMapPattern = patInfo.pumTile;
-  }
-  if (Debug::StreamPUM) {
-    for (const auto &command : commands) {
-      MLC_S_DPRINTF(config->dynamicId, "%s", command);
-    }
-  }
-
-  context.commands.insert(context.commands.end(), commands.begin(),
-                          commands.end());
-}
-
-void MLCPUMManager::compileReduction(PUMContext &context,
-                                     PUMComputeStreamGroup &group,
-                                     PUMCommandVecT &commands) {
-
-  if (!group.reduceConfig) {
-    return;
-  }
-
-  /**
-   * We compile reduction into these steps:
-   * 1. Check which dimension we are trying to reduce by looking at the inner
-   * dimension stride of the assicated AffineStream. So far we only support
-   * reduction over one dimension.
-   *
-   * 2. We define the following variables:
-   *   InitElems: Initial # of elements in each tile waiting to be reduced.
-   *   FinalElems: Final # of elements in each tile to be collected.
-   * Notice that both InitElems and FinalElems will be power of 2, as we pick
-   * the tiling factor to be power of 2.
-   *
-   * 3. We will generate these command sequence:
-   *   Shift -> Reduce -> Shift -> Reduce -> ... -> Shift -> Reduce
-   *
-   * 4. Finally, the LLC PUMEngine will ready out FinalElems out and reduce
-   * across its SRAM arrays. It then send back the results to the MLCPUMManager
-   * for final reduction.
-   */
-
-  // 1. We assume reduction in the inner-most dimension.
-  const auto &reduceDynId = group.reduceConfig->dynamicId;
-
-  const auto &patInfo = group.patternInfo.at(group.computeConfig->stream);
-  assert(!patInfo.atomicPatterns.empty() && "No AtomicPattern.");
-  const auto &reducePat = patInfo.atomicPatterns.front();
-
-  int reduceStride = reducePat.params.front().stride;
-  auto ret = patInfo.pumTile.getTileAndArraySize();
-  auto tileSizes = std::move(ret.first);
-  auto arraySizes = std::move(ret.second);
-  const auto &dimensions = arraySizes.size();
-  int reduceDim = -1;
-  int64_t curDimStride = 1;
-  for (int dim = 0; dim < dimensions; ++dim) {
-    if (curDimStride == reduceStride) {
-      reduceDim = dim;
-      break;
-    }
-  }
-  if (reduceDim == -1) {
-    MLC_S_PANIC_NO_DUMP(reduceDynId, "[PUMReduce] Failed to find ReduceDim.");
-  }
-
-  /**
-   * As a hack for now, mark the last command reduction.
-   * TODO: Truly slice the function and find real reduction instructions.
-   */
-  assert(!commands.empty() && "No Commands for Reduction.");
-
-  // Let's take a copy of the final computation command.
-  auto reduceCmd = commands.back();
-  commands.pop_back();
-
-  int64_t finalElems = 1;
-  int64_t initElems = 1;
-  for (int dim = 0; dim < dimensions; ++dim) {
-    initElems *= tileSizes[dim];
-    if (dim == reduceDim) {
-      continue;
-    }
-    finalElems *= tileSizes[dim];
-  }
-  int64_t reduceRatio = tileSizes[reduceDim];
-  assert(reduceRatio > 1 && "Nothing to reduce.");
-  if (reduceRatio & (reduceRatio - 1)) {
-    MLC_S_PANIC_NO_DUMP(reduceDynId,
-                        "[PUMReduce] ReduceRatio %ld Not Power of 2.",
-                        reduceRatio);
-  }
-
-  int64_t curRatio = 2;
-  int64_t baseDist = AffinePattern::reduce_mul(
-      tileSizes.begin(), tileSizes.begin() + reduceDim + 1, 1);
-  MLC_S_DPRINTF(reduceDynId,
-                "[PUMReduce] Dim %d BaseDist %ld ReduceRatio %ld Tile %s.\n",
-                reduceDim, baseDist, reduceRatio, patInfo.pumTile);
-  while (curRatio <= reduceRatio) {
-    int64_t curDist = baseDist / curRatio;
-    MLC_S_DPRINTF(reduceDynId, "[PUMReduce] CurRatio %ld ShiftDist %ld.\n",
-                  curRatio, curDist);
-
-    commands.emplace_back();
-    commands.back().type = "intra-array";
-    commands.back().bitline_dist = -curDist;
-    // Generate all active bitline-mask according to tile_sizes.
-    commands.back().bitline_mask = AffinePattern::constructSubRegion(
-        tileSizes, AffinePattern::IntVecT(tileSizes.size(), 0), tileSizes);
-
-    MLC_S_DPRINTF(reduceDynId, "Intra-Array Reduce Cmd %s", commands.back());
-
-    // We then insert the reduce compute command.
-    commands.push_back(reduceCmd);
-
-    curRatio *= 2;
-  }
-}
-
 AffinePatternVecT MLCPUMManager::decoalesceAndDevectorizePattern(
     const ConfigPtr &config, const AffinePattern &pattern, int scalarElemSize) {
   AffinePatternVecT ret;
@@ -1175,14 +1689,9 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
   auto &recvPatInfo = group.patternInfo.at(recvS);
   auto recvTile = recvPatInfo.pumTile;
 
-  if (recvPatInfo.atomicPatterns.size() != 1) {
-    MLC_S_DPRINTF(groupDynId, "[NoPUM] Multi RecvPatterns.\n");
-    return;
-  }
-
   MLC_S_DPRINTF(groupDynId, "[PUM] Preprocess Patterns in Group.\n");
 
-  for (const auto &sendConfig : group.usedConfigs) {
+  for (const auto &sendConfig : group.usedPUMConfigs) {
 
     const auto &sendDynId = sendConfig->dynamicId;
     auto S = sendConfig->stream;
@@ -1214,7 +1723,7 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
 
   bool shouldTrySplitOuterDim = true;
   MLC_S_DPRINTF(groupDynId, "[PUM]   Check ShouldTrySplitOuterDim.\n");
-  for (const auto &sendConfig : group.usedConfigs) {
+  for (const auto &sendConfig : group.usedPUMConfigs) {
 
     const auto &sendDynId = sendConfig->dynamicId;
     auto S = sendConfig->stream;
@@ -1247,7 +1756,7 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
 
   // Try to split the outer dimension.
   group.outerDimSplitted = true;
-  for (const auto &sendConfig : group.usedConfigs) {
+  for (const auto &sendConfig : group.usedPUMConfigs) {
 
     const auto &sendDynId = sendConfig->dynamicId;
     auto S = sendConfig->stream;
@@ -1262,11 +1771,13 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
     }
   }
 
-  auto recvSplitPat = recvPat.splitFromDim(arrayDims);
-  MLC_S_DPRINTF(groupDynId, "[PUM]     RecvPat Split into %s %s.\n", recvPat,
-                recvSplitPat);
+  for (auto &recvPat : recvPatInfo.atomicPatterns) {
+    auto recvSplitPat = recvPat.splitFromDim(arrayDims);
+    MLC_S_DPRINTF(groupDynId, "[PUM]     RecvPat Split into %s %s.\n", recvPat,
+                  recvSplitPat);
 
-  recvPatInfo.splitOuterDims.push_back(recvSplitPat);
+    recvPatInfo.splitOuterDims.push_back(recvSplitPat);
+  }
 }
 
 AffinePattern
@@ -1402,6 +1913,8 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
 
     const auto &config = group.computeConfig;
     auto S = config->stream;
+    // Record that we have made some progress.
+    S->incrementOffloadedStepped();
     auto dynS = S->getDynStream(config->dynamicId);
     if (!dynS) {
       MLC_S_PANIC_NO_DUMP(config->dynamicId, "No CoreDynS.");
@@ -1410,24 +1923,35 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
       MLC_S_PANIC_NO_DUMP(config->dynamicId,
                           "CoreSE should not issue for PUM.");
     }
+
+    auto outerTripCount = 1;
+    if (group.outerDimSplitted) {
+      const auto &patInfo = group.patternInfo.at(S);
+      assert(patInfo.splitOuterDims.size() >= 1);
+      outerTripCount = patInfo.splitOuterDims.front().getTotalTrip();
+      for (const auto &split : patInfo.splitOuterDims) {
+        assert(split.getTotalTrip() == outerTripCount &&
+               "Mismatch in Outer TotalTripCount.");
+      }
+    }
+
     if (S->isStoreComputeStream() || S->isAtomicComputeStream() ||
         S->isUpdateStream()) {
       // These are streams waiting for Ack.
       assert(config->hasTotalTripCount());
       auto tripCount = config->getTotalTripCount();
-      for (int64_t elemIdx = 0; elemIdx < tripCount; ++elemIdx) {
+
+      // Be careful to only ack elements of the last compute round.
+      auto innerTripCount = tripCount / outerTripCount;
+
+      auto ackElemStart = innerTripCount * (group.nextOuterIter - 1);
+      auto ackElemEnd = innerTripCount * group.nextOuterIter;
+      MLC_S_DPRINTF(config->dynamicId, "[PUM] Ack Elem in [%ld, %ld).\n",
+                    ackElemStart, ackElemEnd);
+
+      for (int64_t elemIdx = ackElemStart; elemIdx < ackElemEnd; ++elemIdx) {
         dynS->cacheAckedElements.insert(elemIdx);
       }
-    }
-    if (group.reduceConfig) {
-      // this->completeFinalReduction(context, group);
-    }
-
-    auto outerTripCount = 1;
-    if (group.outerDimSplitted) {
-      const auto &patInfo = group.patternInfo.at(S);
-      assert(patInfo.splitOuterDims.size() == 1);
-      outerTripCount = patInfo.splitOuterDims.front().get_total_trip();
     }
 
     if (group.nextOuterIter < outerTripCount) {
@@ -1603,7 +2127,7 @@ void MLCPUMManager::completeFinalReduction(PUMContext &context,
 
   const auto &patInfo = group.patternInfo.at(group.computeConfig->stream);
   assert(patInfo.atomicPatterns.size() == 1);
-  auto reducedTripCount = patInfo.atomicPatterns.front().get_total_trip();
+  auto reducedTripCount = patInfo.atomicPatterns.front().getTotalTrip();
 
   assert(reduceConfig->hasInnerTripCount());
   auto innerTripCount = reduceConfig->getInnerTripCount();

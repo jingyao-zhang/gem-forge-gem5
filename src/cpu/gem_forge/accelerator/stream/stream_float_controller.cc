@@ -271,6 +271,7 @@ void StreamFloatController::endFloatStreams(const DynStreamVec &dynStreams) {
 
 void StreamFloatController::floatDirectLoadStreams(const Args &args) {
   auto &floatedMap = args.floatedMap;
+  std::vector<DynStream *> floatedDirectLoadStreams;
   for (auto dynS : args.dynStreams) {
     auto S = dynS->stream;
     if (floatedMap.count(S)) {
@@ -299,6 +300,7 @@ void StreamFloatController::floatDirectLoadStreams(const Args &args) {
     // Get the CacheStreamConfigureData.
     auto config = S->allocateCacheConfigureData(dynS->configSeqNum);
 
+    floatedDirectLoadStreams.push_back(dynS);
     floatedMap.emplace(S, config);
     args.rootConfigVec.push_back(config);
 
@@ -307,6 +309,27 @@ void StreamFloatController::floatDirectLoadStreams(const Args &args) {
         this->policy->shouldPseudoFloatStream(*dynS)) {
       dynS->setPseudoFloatedToCache(true);
       config->isPseudoOffload = true;
+    }
+  }
+
+  // Handle forwarding dependence for LoadComputeStream.
+  for (auto dynS : floatedDirectLoadStreams) {
+    auto S = dynS->stream;
+    auto config = floatedMap.at(S);
+    for (const auto &baseEdge : dynS->baseEdges) {
+      if (baseEdge.type != DynStream::StreamDepEdge::TypeE::Value) {
+        continue;
+      }
+      auto baseS = this->se->getStream(baseEdge.baseStaticId);
+      auto baseConfigIter = floatedMap.find(baseS);
+      assert(baseConfigIter != floatedMap.end() && "BaseValueS not floated.");
+
+      assert(baseS != S);
+      auto baseConfig = baseConfigIter->second;
+      baseConfig->addSendTo(config, baseEdge.baseElemReuseCnt,
+                            baseEdge.baseElemSkipCnt);
+      config->addBaseOn(baseConfig, baseEdge.baseElemReuseCnt,
+                        baseEdge.baseElemSkipCnt);
     }
   }
 }
@@ -501,8 +524,7 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
   }
 }
 
-void StreamFloatController::floatDirectStoreComputeStreams(
-    const Args &args) {
+void StreamFloatController::floatDirectStoreComputeStreams(const Args &args) {
   auto &floatedMap = args.floatedMap;
   for (auto dynS : args.dynStreams) {
     auto S = dynS->stream;
@@ -519,8 +541,7 @@ void StreamFloatController::floatDirectStoreComputeStreams(
   }
 }
 
-void StreamFloatController::floatDirectUpdateStreams(
-    const Args &args) {
+void StreamFloatController::floatDirectUpdateStreams(const Args &args) {
   auto &floatedMap = args.floatedMap;
   for (auto dynS : args.dynStreams) {
     auto S = dynS->stream;

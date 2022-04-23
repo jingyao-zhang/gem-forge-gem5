@@ -157,6 +157,15 @@ public:
                                             std::move(array_sizes));
   }
 
+  IntVecT getArraySize() const {
+    auto dimension = params.size() / 2;
+    IntVecT array_sizes;
+    for (auto i = 0; i < dimension; ++i) {
+      array_sizes.push_back(params[i].trip * params[i + dimension].trip);
+    }
+    return array_sizes;
+  }
+
   int64_t getCanonicalTotalTileSize() const {
     auto dimension = params.size() / 2;
     auto totalTileSize = 1;
@@ -238,7 +247,7 @@ public:
     return ret;
   }
 
-  int64_t get_total_trip() const {
+  int64_t getTotalTrip() const {
     int64_t ret = 1;
     for (const auto &p : params) {
       ret *= p.trip;
@@ -246,10 +255,10 @@ public:
     return ret;
   }
 
-  bool is_empty() const { return get_total_trip() == 0; }
+  bool is_empty() const { return getTotalTrip() == 0; }
 
   bool check_is_reverse(const AffinePattern &reverse) const {
-    for (int64_t i = 0; i < get_total_trip(); ++i) {
+    for (int64_t i = 0; i < getTotalTrip(); ++i) {
       auto f = this->operator()(i);
       auto reverse_i = reverse(f);
       if (reverse_i != i) {
@@ -440,13 +449,20 @@ public:
     return sub_regions;
   }
 
+  static AffinePattern removeReuseInSubRegion(const IntVecT &arraySizes,
+                                              const AffinePattern &pattern);
+
   static AffinePattern intersectSubRegions(const IntVecT &array_sizes,
                                            const AffinePattern &region1,
                                            const AffinePattern &region2);
 
+  static AffinePattern unionSubRegions(const IntVecT &array_sizes,
+                                       const AffinePattern &region1,
+                                       const AffinePattern &region2);
+
   IntVecT generate_all_values() const {
-    IntVecT values(get_total_trip(), 0);
-    for (auto i = 0; i < get_total_trip(); ++i) {
+    IntVecT values(getTotalTrip(), 0);
+    for (auto i = 0; i < getTotalTrip(); ++i) {
       values[i] = operator()(i);
     }
     return values;

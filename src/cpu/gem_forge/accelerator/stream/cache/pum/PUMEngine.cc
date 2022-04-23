@@ -87,6 +87,14 @@ void PUMEngine::configure(MLCPUMManager *pumManager, int64_t pumContextId,
     }
     this->commands.push_back(c);
   }
+
+  if (Debug::StreamPUM) {
+    LLC_SE_DPRINTF("[PUMEngine]   Configured with CMD.\n");
+    for (int i = 0; i < this->commands.size(); ++i) {
+      LLC_SE_DPRINTF("[PUMEngine]   CMD %ld %s.", i,
+                     this->commands.at(i).to_string(myBankIdx));
+    }
+  }
 }
 
 void PUMEngine::kickNextCommand() {
@@ -146,12 +154,14 @@ void PUMEngine::kickNextCommand() {
     scheduledArrays.insert(usedArrays.begin(), usedArrays.end());
     auto cmdLat = this->estimateCommandLatency(command);
     this->nextCmdIdx++;
-    LLC_SE_DPRINTF("  CMD Latency %lld.\n", cmdLat);
+    LLC_SE_DPRINTF("  CMD Latency %lld NextCmdIdx %ld.\n", cmdLat,
+                   this->nextCmdIdx);
     if (cmdLat > latency) {
       latency = cmdLat;
     }
   }
 
+  LLC_SE_DPRINTF("Schedule Next Tick after Latency %ld.\n", latency);
   this->nextCmdReadyCycle = this->controller->curCycle() + latency;
   this->se->scheduleEvent(latency);
 }
@@ -181,7 +191,7 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
     auto myBankIdx = this->getBankIdx();
 
     auto llcTreeLeafBandwidthBits = this->hwConfig->tree_leaf_bw_bytes * 8;
-    auto bitlinesPerArray = command.bitline_mask.get_total_trip();
+    auto bitlinesPerArray = command.bitline_mask.getTotalTrip();
     auto latencyPerWordline =
         (bitlinesPerArray + llcTreeLeafBandwidthBits - 1) /
         llcTreeLeafBandwidthBits;
@@ -227,7 +237,7 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
           /**
            * Still intra-bank level.
            */
-          levelArrays += splitPattern.get_total_trip();
+          levelArrays += splitPattern.getTotalTrip();
         }
       }
       accumulatedLatency += levelArrays * latencyPerArray;

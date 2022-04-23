@@ -96,6 +96,8 @@ private:
     ConfigPtr computeConfig;
     ConfigPtr reduceConfig;
     CacheStreamConfigureVec usedConfigs;
+    CacheStreamConfigureVec usedPUMConfigs;
+    CacheStreamConfigureVec usedNonPUMConfigs;
     bool outerDimSplitted = false;
     bool canApplyPUM = false;
     bool appliedPUM = false;
@@ -128,6 +130,99 @@ private:
   };
 
   /**
+   * Represent the PUM DataGraph.
+   */
+  struct PUMDataGraphNode {
+
+    enum TypeE {
+      // A value that already in PUM transposed format.
+      Value,
+      // A move node, may have reuse.
+      Move,
+      // A load node, uses normal streams to poplulate PUM region.
+      Load,
+      // A compute node execute the function.
+      Compute,
+      // A sync node represents the global barrier.
+      Sync,
+    };
+    // Common fields.
+    std::string regionName;
+    const TypeE type;
+    const AffinePattern pumTile;
+    AffinePattern pattern;
+    int scalarElemSize;
+    int startWordline = 0;
+    std::vector<PUMDataGraphNode *> operands;
+    std::vector<PUMDataGraphNode *> users;
+
+    void replaceUsedBy(PUMDataGraphNode *newNode) {
+      for (auto user : this->users) {
+        bool replaced = false;
+        for (auto &operand : user->operands) {
+          if (operand == this) {
+            replaced = true;
+            operand = newNode;
+          }
+        }
+        assert(replaced);
+        newNode->users.push_back(user);
+      }
+    }
+
+    PUMDataGraphNode(const std::string &_regionName, TypeE _type,
+                     const AffinePattern &_pumTile,
+                     const AffinePattern &_pattern, int _scalarElemSize)
+        : regionName(_regionName), type(_type), pumTile(_pumTile),
+          pattern(_pattern), scalarElemSize(_scalarElemSize) {}
+
+    /**
+     * Fields for Value node.
+     */
+    Addr regionVAddr = 0;
+    PUMDataGraphNode(const std::string &_regionName,
+                     const AffinePattern &_pumTile,
+                     const AffinePattern &_pattern, int _scalarElemSize,
+                     Addr _regionVAddr)
+        : regionName(_regionName), type(TypeE::Value), pumTile(_pumTile),
+          pattern(_pattern), scalarElemSize(_scalarElemSize),
+          regionVAddr(_regionVAddr) {}
+
+    /**
+     * Fields for Move node.
+     */
+    AffinePattern sendPat;
+    PUMDataGraphNode(const std::string &_regionName,
+                     const AffinePattern &_pumTile,
+                     const AffinePattern &_pattern,
+                     const AffinePattern &_sendPat, PUMDataGraphNode *_sendNode,
+                     int _scalarElemSize)
+        : regionName(_regionName), type(TypeE::Move), pumTile(_pumTile),
+          pattern(_pattern), scalarElemSize(_scalarElemSize),
+          sendPat(_sendPat) {
+      this->operands.push_back(_sendNode);
+      _sendNode->users.push_back(this);
+    }
+
+    /**
+     * Fields for Compute node.
+     */
+    ExecFuncPtr func = nullptr;
+    PUMComputeStreamGroup *group = nullptr;
+    PUMDataGraphNode(const std::string &_regionName,
+                     const AffinePattern &_pumTile,
+                     const AffinePattern &_pattern, int _scalarElemSize,
+                     ExecFuncPtr _func, PUMComputeStreamGroup *_group)
+        : regionName(_regionName), type(TypeE::Compute), pumTile(_pumTile),
+          pattern(_pattern), scalarElemSize(_scalarElemSize), func(_func),
+          group(_group) {}
+  };
+
+  friend std::ostream &operator<<(std::ostream &os,
+                                  const MLCPUMManager::PUMDataGraphNode &node);
+  friend std::string to_string(const MLCPUMManager::PUMDataGraphNode &node);
+
+  /**
    * Track states of PUM.
    */
   static constexpr int64_t InvalidPUMContextId =
@@ -140,6 +235,8 @@ private:
     static int64_t allocateContextId() { return nextContextId++; }
 
   public:
+    ~PUMContext();
+
     /**
      * Information collected during analysis whether we can apply PUM or not.
      */
@@ -155,6 +252,8 @@ private:
     /**
      * States during compiling and executing PUM.
      */
+    // Records the PUMDataGraph.
+    std::vector<PUMDataGraphNode *> pumDataGraphNodes;
     PUMCommandVecT commands;
     int configuredBanks = 0;
     int totalSentPackets = 0;
@@ -163,6 +262,7 @@ private:
     int totalSyncs = 0;
     int reachedSync = 0;
     void clear();
+    void clearPUMDataGraphNodes();
 
     enum StateE {
       Initialized, // Initialized.
@@ -207,32 +307,64 @@ private:
   bool canApplyPUMToGroup(PUMContext &context, PUMComputeStreamGroup &group);
 
   /**
-   * Compile the context once. It may require multiple compilation if we
-   * splitted the outer dimension.
+   * Build the PUMDataGraph.
    */
-  void compileContext(PUMContext &context);
+  using PUMDataGraphNodeVec = std::vector<PUMDataGraphNode *>;
+  void buildPUMDataGraph(PUMContext &context);
+  void buildPUMDataGraph(PUMContext &context, PUMComputeStreamGroup &group);
+  void buildPUMDataGraphMove(PUMContext &context, PUMComputeStreamGroup &group,
+                             const ConfigPtr &sendConfig,
+                             PUMDataGraphNodeVec &resultNodes);
+  void buildPUMDataGraphCompute(PUMContext &context,
+                                PUMComputeStreamGroup &group,
+                                const PUMDataGraphNodeVec &moveNodes);
+  bool needExpandReuse(PUMContext &context, const PUMComputeStreamGroup &group);
+  AffinePattern expandReusePat(const AffinePattern &pumTile,
+                               const AffinePattern &pat);
 
   /**
-   * Compute the Group to PUM.
+   * Try to merge some Move nodes if they are moving the same array but only
+   * small boundary difference.
    */
-  void compileGroup(PUMContext &context, PUMComputeStreamGroup &group);
+  void mergePUMDataGraphMoveNode(PUMContext &context);
 
   /**
-   * Compile data move for one forward edge.
+   * Schedule PUMDataGraph nodes and insert sync nodes.
+   * So far just BFS.
    */
-  void compileDataMove(PUMContext &context, PUMComputeStreamGroup &group,
-                       const ConfigPtr &sendConfig);
+  PUMDataGraphNodeVec schedulePUMDataGraph(PUMContext &context);
+
+  /**
+   * Compile scheduled PUMDataGraph into commands.
+   */
+  void compilePUMDataGraphToCommands(PUMContext &context);
+
+  /**
+   * Compile data move for one node.
+   */
+  void compileDataMove(PUMContext &context, PUMDataGraphNode *node);
+
+  /**
+   * Compile one sync node.
+   */
+  void compileSync(PUMContext &context, PUMDataGraphNode *node);
 
   /**
    * Compile the computation instruction.
    */
-  void compileCompute(PUMContext &context, PUMComputeStreamGroup &group);
+  void compileCompute(PUMContext &context, PUMDataGraphNode *node);
 
   /**
    * Compile the final reduction instruction.
    */
   void compileReduction(PUMContext &context, PUMComputeStreamGroup &group,
                         PUMCommandVecT &commands);
+
+  /**
+   * Compile the context once. It may require multiple compilation if we
+   * splitted the outer dimension.
+   */
+  void compileContext(PUMContext &context);
 
   /**
    * Decoalesce and devectorize stream pattern.
@@ -310,5 +442,10 @@ private:
   void sendOneReductionResult(PUMContext &context,
                               PUMComputeStreamGroup &group);
 };
+
+std::ostream &operator<<(std::ostream &os,
+                         const MLCPUMManager::PUMDataGraphNode &node);
+
+std::string to_string(const MLCPUMManager::PUMDataGraphNode &node);
 
 #endif

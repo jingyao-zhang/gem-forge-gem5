@@ -288,13 +288,7 @@ DataMoveCompiler::compileStreamPair(AffinePattern srcStream,
 AffinePattern
 DataMoveCompiler::removeReuseInSubRegion(const AffinePattern &pattern) const {
   assert(isSubRegion(pattern, true));
-  ParamVecT fixed_params;
-  for (const auto &p : pattern.params) {
-    auto stride = (p.stride == 0) ? 1 : p.stride;
-    auto trip = (p.stride == 0) ? 1 : p.trip;
-    fixed_params.emplace_back(stride, trip);
-  }
-  return AffinePattern(pattern.start, fixed_params);
+  return AffinePattern::removeReuseInSubRegion(this->array_sizes, pattern);
 }
 
 PUMCommandVecT DataMoveCompiler::compileAligns(
@@ -666,7 +660,7 @@ DataMoveCompiler::maskCmdsBySubRegion(const PUMCommandVecT &commands,
       DPRINTF(StreamPUM,
               "[MaskSubRegion] Intersect CMD Bitline %s Mask %s = %s.\n",
               c.bitline_mask, bitline_mask, intersect);
-      if (intersect.get_total_trip() == 0) {
+      if (intersect.getTotalTrip() == 0) {
         // Empty intersection.
         continue;
       }
@@ -858,7 +852,7 @@ void DataMoveCompiler::mapCmdToLLC(
     for (const auto &llc_sub_region : llcBankSubRegions[i]) {
       auto intersect = AffinePattern::intersectSubRegions(
           tile_nums, command.tile_mask, llc_sub_region);
-      if (intersect.get_total_trip() == 0) {
+      if (intersect.getTotalTrip() == 0) {
         // Empty intersection.
         continue;
       }
@@ -906,7 +900,7 @@ void DataMoveCompiler::mapCmdToLLC(
             auto dstIntersect = AffinePattern::intersectSubRegions(
                 this->tile_nums, llcTiles.back().dstTilePattern,
                 dstLLCBankSubRegion);
-            if (dstIntersect.get_total_trip() == 0) {
+            if (dstIntersect.getTotalTrip() == 0) {
               continue;
             }
             dstPatterns.push_back(dstIntersect);
@@ -1054,7 +1048,7 @@ PUMCommandVecT
 DataMoveCompiler::filterEmptyCmds(const PUMCommandVecT &commands) const {
   PUMCommandVecT ret;
   for (const auto &c : commands) {
-    if (c.bitline_mask.get_total_trip() == 0) {
+    if (c.bitline_mask.getTotalTrip() == 0) {
       continue;
     }
     ret.push_back(c);
