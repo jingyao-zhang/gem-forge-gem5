@@ -37,7 +37,8 @@ AffinePattern MLCPUMManager::PatternInfo::getPatternAdjustedByOuterIter(
 
 std::ostream &operator<<(std::ostream &os,
                          const MLCPUMManager::PUMDataGraphNode &node) {
-  os << &node << " " << node.pumTile << " " << node.pattern << " = ";
+  os << &node << " " << node.pumTile << " " << node.splitOutDim << " "
+     << node.pattern << " = ";
   switch (node.type) {
   case MLCPUMManager::PUMDataGraphNode::TypeE::Value: {
     os << "Value " << node.regionName;
@@ -72,7 +73,52 @@ std::string to_string(const MLCPUMManager::PUMDataGraphNode &node) {
   return ss.str();
 }
 
-MLCPUMManager::PUMContext::~PUMContext() { this->clear(); }
+MLCPUMManager::PUMDataGraphNode *MLCPUMManager::PUMDataGraphNode::newValueNode(
+    const std::string &_regionName, const AffinePattern &_pumTile,
+    const AffinePattern &_pattern, const AffinePattern &_splitOutDim,
+    int _scalarElemSize, Addr _regionVAddr) {
+  auto node = new PUMDataGraphNode(_regionName, TypeE::Value, _pumTile,
+                                   _pattern, _splitOutDim, _scalarElemSize);
+  node->regionVAddr = _regionVAddr;
+  return node;
+}
+
+MLCPUMManager::PUMDataGraphNode *MLCPUMManager::PUMDataGraphNode::newMoveNode(
+    const std::string &_regionName, const AffinePattern &_pumTile,
+    const AffinePattern &_pattern, const AffinePattern &_splitOutDim,
+    const AffinePattern &_sendPat, const AffinePattern &_sendSplitOutDim,
+    PUMDataGraphNode *_sendNode, int _scalarElemSize) {
+  auto node = new PUMDataGraphNode(_regionName, TypeE::Move, _pumTile, _pattern,
+                                   _splitOutDim, _scalarElemSize);
+  node->sendPat = _sendPat;
+  node->sendSplitOutDim = _sendSplitOutDim;
+  node->operands.push_back(_sendNode);
+  _sendNode->users.push_back(node);
+  return node;
+}
+
+MLCPUMManager::PUMDataGraphNode *MLCPUMManager::PUMDataGraphNode::newCmpNode(
+    const std::string &_regionName, const AffinePattern &_pumTile,
+    const AffinePattern &_pattern, const AffinePattern &_splitOutDim,
+    int _scalarElemSize, ExecFuncPtr _func, PUMComputeStreamGroup *_group) {
+  auto node = new PUMDataGraphNode(_regionName, TypeE::Compute, _pumTile,
+                                   _pattern, _splitOutDim, _scalarElemSize);
+  node->func = _func;
+  node->group = _group;
+  return node;
+}
+
+MLCPUMManager::PUMDataGraphNode *
+MLCPUMManager::PUMDataGraphNode::newSyncNode() {
+  auto node = new PUMDataGraphNode("nowhere", TypeE::Sync, AffinePattern(),
+                                   AffinePattern(), AffinePattern(), 0);
+  return node;
+}
+
+MLCPUMManager::PUMContext::~PUMContext() {
+  this->clear();
+  this->clearPUMDataGraphNodes();
+}
 
 MLCPUMManager::MLCPUMManager(MLCStreamEngine *_mlcSE)
     : mlcSE(_mlcSE), controller(_mlcSE->controller) {}
@@ -90,7 +136,6 @@ void MLCPUMManager::PUMContext::clear() {
    * Don't forget to release the commands.
    */
   this->commands.clear();
-  this->clearPUMDataGraphNodes();
 }
 
 void MLCPUMManager::PUMContext::clearPUMDataGraphNodes() {
@@ -409,6 +454,32 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context) {
       this->buildPUMDataGraph(context, group);
     }
   }
+
+  if (Debug::StreamPUM) {
+    MLCSE_DPRINTF("--------------------- PUMDataGraph Nodes.\n");
+    for (const auto &node : context.pumDataGraphNodes) {
+      MLCSE_DPRINTF("-- Node %s.\n", *node);
+    }
+  }
+
+  this->mergePUMDataGraphMoveNode(context);
+
+  if (Debug::StreamPUM) {
+    MLCSE_DPRINTF("--------------------- PUMDataGraph After Merge.\n");
+    for (const auto &node : context.pumDataGraphNodes) {
+      MLCSE_DPRINTF("-- Node %s.\n", *node);
+    }
+  }
+
+  auto scheduledNodes = this->schedulePUMDataGraph(context);
+  context.pumDataGraphNodes = scheduledNodes;
+
+  if (Debug::StreamPUM) {
+    MLCSE_DPRINTF("--------------------- PUMDataGraph After Schedule.\n");
+    for (const auto &node : context.pumDataGraphNodes) {
+      MLCSE_DPRINTF("-- Node %s.\n", *node);
+    }
+  }
 }
 
 void MLCPUMManager::buildPUMDataGraph(PUMContext &context,
@@ -432,11 +503,6 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context,
    * Construct the compute node.
    */
   this->buildPUMDataGraphCompute(context, group, dataMoveNodes);
-
-  /**
-   * We try to increment the OuterIter.
-   */
-  group.nextOuterIter++;
 }
 
 bool MLCPUMManager::needExpandReuse(PUMContext &context,
@@ -451,7 +517,8 @@ bool MLCPUMManager::needExpandReuse(PUMContext &context,
 }
 
 AffinePattern MLCPUMManager::expandReusePat(const AffinePattern &pumTile,
-                                            const AffinePattern &pat) {
+                                            const AffinePattern &pat,
+                                            AffinePattern &splitOutDim) {
   auto arraySizes = pumTile.getArraySize();
   auto startPos = AffinePattern::getArrayPosition(arraySizes, pat.start);
   auto ret = pat;
@@ -468,6 +535,10 @@ AffinePattern MLCPUMManager::expandReusePat(const AffinePattern &pumTile,
     accArraySize *= arraySizes.at(dim);
   }
   ret.start = adjustedStart;
+  // Clear all stride in split out dim so that they stay at same location.
+  for (int dim = 0; dim < splitOutDim.params.size(); ++dim) {
+    splitOutDim.params.at(dim).stride = 0;
+  }
   return ret;
 }
 
@@ -504,10 +575,11 @@ void MLCPUMManager::buildPUMDataGraphMove(PUMContext &context,
       MLC_S_PANIC_NO_DUMP(recvConfig->dynamicId, "[PUM] Multi Recv.");
     }
   }
-  auto recvPat = recvPatInfo.getPatternAdjustedByOuterIter(recvPatIdx,
-                                                           group.nextOuterIter);
-  MLC_S_DPRINTF(recvConfig->dynamicId, "[PUM] OuterIter %ld RecvPattern %s.\n",
-                group.nextOuterIter, recvPat);
+
+  auto recvPat = recvPatInfo.getPattern(recvPatIdx);
+  auto recvSplitOutDim = recvPatInfo.getSplitOutDim(recvPatIdx);
+  MLC_S_DPRINTF(recvConfig->dynamicId, "[PUM] RecvPat %s RecvSplitOutDim %s.\n",
+                recvPat, recvSplitOutDim);
 
   /**
    * Find the real SendPatterns.
@@ -522,7 +594,7 @@ void MLCPUMManager::buildPUMDataGraphMove(PUMContext &context,
    */
   bool shouldExpandReuse = this->needExpandReuse(context, group);
   if (shouldExpandReuse) {
-    recvPat = expandReusePat(recvTile, recvPat);
+    recvPat = expandReusePat(recvTile, recvPat, recvSplitOutDim);
   }
 
   for (auto patIdx = 0; patIdx < sendPatInfo.atomicPatterns.size(); ++patIdx) {
@@ -538,11 +610,11 @@ void MLCPUMManager::buildPUMDataGraphMove(PUMContext &context,
       }
     }
 
-    auto sendPat =
-        sendPatInfo.getPatternAdjustedByOuterIter(patIdx, group.nextOuterIter);
+    auto sendPat = sendPatInfo.getPattern(patIdx);
+    auto sendSplitOutDim = sendPatInfo.getSplitOutDim(patIdx);
 
-    MLC_S_DPRINTF(sendDynId, "[PUM] OuterIter %ld SendPattern %s.\n",
-                  group.nextOuterIter, sendPat);
+    MLC_S_DPRINTF(sendDynId, "[PUM] SendPat %s SendSplitOutDim %s.\n", sendPat,
+                  sendSplitOutDim);
 
     /**
      * Each send pattern is a ValueNode, with RecvPat as MoveNode.
@@ -561,18 +633,21 @@ void MLCPUMManager::buildPUMDataGraphMove(PUMContext &context,
         panic("Failed to find PUMDataGraphNode for LoadComputeS.");
       }
     } else {
-      valueNode = new PUMDataGraphNode(sendPatInfo.regionName, sendTile,
-                                       sendPat, sendPatInfo.scalarElemSize,
-                                       sendPatInfo.regionVAddr);
+      valueNode = PUMDataGraphNode::newValueNode(
+          sendPatInfo.regionName, sendTile, sendPat, sendSplitOutDim,
+          sendPatInfo.scalarElemSize, sendPatInfo.regionVAddr);
       context.pumDataGraphNodes.push_back(valueNode);
 
       if (shouldExpandReuse) {
-        auto expandedSendPat = expandReusePat(sendTile, sendPat);
+        AffinePattern expandedSendSplitOutDim;
+        auto expandedSendPat =
+            expandReusePat(sendTile, sendPat, expandedSendSplitOutDim);
         if (expandedSendPat != sendPat) {
           // Add a MoveNode to do the reuse expansion.
-          auto expandReuseMoveNode = new PUMDataGraphNode(
-              sendPatInfo.regionName, sendTile, expandedSendPat, sendPat,
-              valueNode, recvPatInfo.scalarElemSize);
+          auto expandReuseMoveNode = PUMDataGraphNode::newMoveNode(
+              sendPatInfo.regionName, sendTile, expandedSendPat,
+              expandedSendSplitOutDim, sendPat, sendSplitOutDim, valueNode,
+              recvPatInfo.scalarElemSize);
           context.pumDataGraphNodes.push_back(expandReuseMoveNode);
 
           // This is our new ValueNode.
@@ -591,9 +666,10 @@ void MLCPUMManager::buildPUMDataGraphMove(PUMContext &context,
       }
     }
 
-    auto moveNode = new PUMDataGraphNode(recvPatInfo.regionName, recvTile,
-                                         recvPat, valueNode->pattern, valueNode,
-                                         recvPatInfo.scalarElemSize);
+    auto moveNode = PUMDataGraphNode::newMoveNode(
+        recvPatInfo.regionName, recvTile, recvPat, recvSplitOutDim,
+        valueNode->pattern, valueNode->splitOutDim, valueNode,
+        recvPatInfo.scalarElemSize);
     context.pumDataGraphNodes.push_back(moveNode);
     resultNodes.push_back(moveNode);
   }
@@ -614,17 +690,17 @@ void MLCPUMManager::buildPUMDataGraphCompute(
   } else {
     assert(patInfo.atomicPatterns.size() == 1);
   }
-  auto pattern =
-      patInfo.getPatternAdjustedByOuterIter(patternIdx, group.nextOuterIter);
+
+  auto pattern = patInfo.getPattern(patternIdx);
+  auto splitOutDim = patInfo.getSplitOutDim(patternIdx);
 
   bool shouldExpandReuse = this->needExpandReuse(context, group);
   if (shouldExpandReuse) {
-    pattern = expandReusePat(patInfo.pumTile, pattern);
+    pattern = expandReusePat(patInfo.pumTile, pattern, splitOutDim);
   }
 
-  MLC_S_DPRINTF(dynId,
-                "DataGraph Compute Tile %s OuterIter %ld AdjustedPattern %s.\n",
-                patInfo.pumTile, group.nextOuterIter, pattern);
+  MLC_S_DPRINTF(dynId, "DataGraph Compute Tile %s Pat %s SplitOutDim %s.\n",
+                patInfo.pumTile, pattern, splitOutDim);
 
   ExecFuncPtr func = nullptr;
   if (group.reduceConfig) {
@@ -645,9 +721,9 @@ void MLCPUMManager::buildPUMDataGraphCompute(
     MLC_S_PANIC_NO_DUMP(dynId, "[PUM] Failed to find ComputeFunc.");
   }
 
-  auto cmpNode =
-      new PUMDataGraphNode(patInfo.regionName, patInfo.pumTile, pattern,
-                           patInfo.scalarElemSize, func, &group);
+  auto cmpNode = PUMDataGraphNode::newCmpNode(
+      patInfo.regionName, patInfo.pumTile, pattern, splitOutDim,
+      patInfo.scalarElemSize, func, &group);
   cmpNode->operands = moveNodes;
   for (auto moveNode : moveNodes) {
     moveNode->users.push_back(cmpNode);
@@ -884,9 +960,7 @@ MLCPUMManager::schedulePUMDataGraph(PUMContext &context) {
     // Insert a sync node.
     frontier = nextFrontier;
     if (!frontier.empty()) {
-      scheduledNodes.push_back(
-          new PUMDataGraphNode("nowhere", PUMDataGraphNode::TypeE::Sync,
-                               AffinePattern(), AffinePattern(), 0));
+      scheduledNodes.push_back(PUMDataGraphNode::newSyncNode());
     }
   }
 
@@ -894,6 +968,15 @@ MLCPUMManager::schedulePUMDataGraph(PUMContext &context) {
 }
 
 void MLCPUMManager::compilePUMDataGraphToCommands(PUMContext &context) {
+
+  for (const auto &group : context.pumGroups) {
+    if (!group.appliedPUM) {
+      continue;
+    }
+    if (context.nextOutIter != group.nextOuterIter) {
+      panic("Mismatch in NextOutIter is not handled yet.");
+    }
+  }
 
   for (auto node : context.pumDataGraphNodes) {
     switch (node->type) {
@@ -921,6 +1004,17 @@ void MLCPUMManager::compilePUMDataGraphToCommands(PUMContext &context) {
     }
     }
   }
+
+  /**
+   * We try to increment the OuterIter.
+   */
+  for (auto &group : context.pumGroups) {
+    if (!group.appliedPUM) {
+      continue;
+    }
+    group.nextOuterIter++;
+  }
+  context.nextOutIter++;
 }
 
 void MLCPUMManager::compileDataMove(PUMContext &context,
@@ -928,9 +1022,9 @@ void MLCPUMManager::compileDataMove(PUMContext &context,
 
   auto sendNode = node->operands.front();
   const auto &sendTile = sendNode->pumTile;
-  const auto &sendPat = node->sendPat;
+  auto sendPat = node->adjustSendPatByOutIter(context.nextOutIter);
   const auto &recvTile = node->pumTile;
-  const auto &recvPat = node->pattern;
+  auto recvPat = node->adjustPatByOutIter(context.nextOutIter);
 
   DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(), sendTile);
 
@@ -989,8 +1083,9 @@ void MLCPUMManager::compileCompute(PUMContext &context,
 
   PUMCommandVecT commands;
 
+  auto pattern = node->adjustPatByOutIter(context.nextOutIter);
   MLCSE_DPRINTF("Compile Compute Tile %s Pattern %s.\n", node->pumTile,
-                node->pattern);
+                pattern);
 
   ExecFuncPtr func = node->func;
 
@@ -1022,7 +1117,7 @@ void MLCPUMManager::compileCompute(PUMContext &context,
   MLCSE_DPRINTF("Before masked.\n");
 
   // Mask the commands by the Stream.
-  commands = compiler.maskCmdsBySubRegion(commands, node->pattern);
+  commands = compiler.maskCmdsBySubRegion(commands, pattern);
 
   if (Debug::StreamPUM) {
     for (const auto &command : commands) {
@@ -1038,7 +1133,7 @@ void MLCPUMManager::compileCompute(PUMContext &context,
   for (auto &cmd : commands) {
     cmd.wordline_bits = node->scalarElemSize * 8;
     cmd.srcRegion = node->regionName;
-    cmd.srcAccessPattern = node->pattern;
+    cmd.srcAccessPattern = pattern;
     cmd.srcMapPattern = node->pumTile;
   }
   if (Debug::StreamPUM) {
@@ -1158,34 +1253,6 @@ void MLCPUMManager::compileReduction(PUMContext &context,
 }
 
 void MLCPUMManager::compileContext(PUMContext &context) {
-
-  this->buildPUMDataGraph(context);
-
-  if (Debug::StreamPUM) {
-    MLCSE_DPRINTF("--------------------- PUMDataGraph Nodes.\n");
-    for (const auto &node : context.pumDataGraphNodes) {
-      MLCSE_DPRINTF("-- Node %s.\n", *node);
-    }
-  }
-
-  this->mergePUMDataGraphMoveNode(context);
-
-  if (Debug::StreamPUM) {
-    MLCSE_DPRINTF("--------------------- PUMDataGraph After Merge.\n");
-    for (const auto &node : context.pumDataGraphNodes) {
-      MLCSE_DPRINTF("-- Node %s.\n", *node);
-    }
-  }
-
-  auto scheduledNodes = this->schedulePUMDataGraph(context);
-  context.pumDataGraphNodes = scheduledNodes;
-
-  if (Debug::StreamPUM) {
-    MLCSE_DPRINTF("--------------------- PUMDataGraph After Schedule.\n");
-    for (const auto &node : context.pumDataGraphNodes) {
-      MLCSE_DPRINTF("-- Node %s.\n", *node);
-    }
-  }
 
   this->compilePUMDataGraphToCommands(context);
 
@@ -1520,6 +1587,9 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
   for (auto &group : context.pumGroups) {
     this->addPUMReduceStream(context, normalConfigs, group);
   }
+
+  // Build the PUMDataGraph.
+  this->buildPUMDataGraph(context);
 
   // Really compile for the first time.
   this->compileContext(context);

@@ -74,6 +74,19 @@ private:
 
     AffinePattern getPatternAdjustedByOuterIter(int64_t patternIdx,
                                                 int64_t outerIter) const;
+    AffinePattern getPattern(int64_t patIdx) const {
+      assert(patIdx < this->atomicPatterns.size());
+      return this->atomicPatterns.at(patIdx);
+    }
+    AffinePattern getSplitOutDim(int64_t patIdx) const {
+      assert(patIdx < this->atomicPatterns.size());
+      if (patIdx < this->splitOuterDims.size()) {
+        return this->splitOuterDims.at(patIdx);
+      } else {
+        // Return a default empty pattern.
+        return AffinePattern();
+      }
+    }
     const AffinePattern &getSingleAtomicPat() const {
       assert(this->atomicPatterns.size() == 1);
       return this->atomicPatterns.front();
@@ -151,6 +164,7 @@ private:
     const TypeE type;
     const AffinePattern pumTile;
     AffinePattern pattern;
+    AffinePattern splitOutDim; // Split outer dimension.
     int scalarElemSize;
     int startWordline = 0;
     std::vector<PUMDataGraphNode *> operands;
@@ -170,38 +184,49 @@ private:
       }
     }
 
-    PUMDataGraphNode(const std::string &_regionName, TypeE _type,
-                     const AffinePattern &_pumTile,
-                     const AffinePattern &_pattern, int _scalarElemSize)
-        : regionName(_regionName), type(_type), pumTile(_pumTile),
-          pattern(_pattern), scalarElemSize(_scalarElemSize) {}
+    AffinePattern adjustPatByOutIter(const AffinePattern &pat,
+                                     const AffinePattern &splitOutDim,
+                                     int64_t outIter) const {
+      if (splitOutDim.getTotalTrip() == 0) {
+        // There is no SplitOutDim.
+        return pat;
+      } else {
+        auto outOffset = splitOutDim(outIter);
+        auto ret = pat;
+        ret.start += outOffset;
+        return ret;
+      }
+    }
+
+    AffinePattern adjustPatByOutIter(int64_t outIter) const {
+      return this->adjustPatByOutIter(this->pattern, this->splitOutDim,
+                                      outIter);
+    }
 
     /**
      * Fields for Value node.
      */
     Addr regionVAddr = 0;
-    PUMDataGraphNode(const std::string &_regionName,
-                     const AffinePattern &_pumTile,
-                     const AffinePattern &_pattern, int _scalarElemSize,
-                     Addr _regionVAddr)
-        : regionName(_regionName), type(TypeE::Value), pumTile(_pumTile),
-          pattern(_pattern), scalarElemSize(_scalarElemSize),
-          regionVAddr(_regionVAddr) {}
+    static PUMDataGraphNode *newValueNode(const std::string &_regionName,
+                                          const AffinePattern &_pumTile,
+                                          const AffinePattern &_pattern,
+                                          const AffinePattern &_splitOutDim,
+                                          int _scalarElemSize,
+                                          Addr _regionVAddr);
 
     /**
      * Fields for Move node.
      */
     AffinePattern sendPat;
-    PUMDataGraphNode(const std::string &_regionName,
-                     const AffinePattern &_pumTile,
-                     const AffinePattern &_pattern,
-                     const AffinePattern &_sendPat, PUMDataGraphNode *_sendNode,
-                     int _scalarElemSize)
-        : regionName(_regionName), type(TypeE::Move), pumTile(_pumTile),
-          pattern(_pattern), scalarElemSize(_scalarElemSize),
-          sendPat(_sendPat) {
-      this->operands.push_back(_sendNode);
-      _sendNode->users.push_back(this);
+    AffinePattern sendSplitOutDim;
+    static PUMDataGraphNode *newMoveNode(
+        const std::string &_regionName, const AffinePattern &_pumTile,
+        const AffinePattern &_pattern, const AffinePattern &_splitOutDim,
+        const AffinePattern &_sendPat, const AffinePattern &_sendSplitOutDim,
+        PUMDataGraphNode *_sendNode, int _scalarElemSize);
+    AffinePattern adjustSendPatByOutIter(int64_t outIter) const {
+      return this->adjustPatByOutIter(this->sendPat, this->sendSplitOutDim,
+                                      outIter);
     }
 
     /**
@@ -209,13 +234,27 @@ private:
      */
     ExecFuncPtr func = nullptr;
     PUMComputeStreamGroup *group = nullptr;
-    PUMDataGraphNode(const std::string &_regionName,
+    static PUMDataGraphNode *newCmpNode(const std::string &_regionName,
+                                        const AffinePattern &_pumTile,
+                                        const AffinePattern &_pattern,
+                                        const AffinePattern &_splitOutDim,
+                                        int _scalarElemSize, ExecFuncPtr _func,
+                                        PUMComputeStreamGroup *_group);
+
+    /**
+     * Fields for Sync node.
+     */
+    static PUMDataGraphNode *newSyncNode();
+
+  private:
+    // A basic constructor for basic fields.
+    PUMDataGraphNode(const std::string &_regionName, TypeE _type,
                      const AffinePattern &_pumTile,
-                     const AffinePattern &_pattern, int _scalarElemSize,
-                     ExecFuncPtr _func, PUMComputeStreamGroup *_group)
-        : regionName(_regionName), type(TypeE::Compute), pumTile(_pumTile),
-          pattern(_pattern), scalarElemSize(_scalarElemSize), func(_func),
-          group(_group) {}
+                     const AffinePattern &_pattern,
+                     const AffinePattern &_splitOutDim, int _scalarElemSize)
+        : regionName(_regionName), type(_type), pumTile(_pumTile),
+          pattern(_pattern), splitOutDim(_splitOutDim),
+          scalarElemSize(_scalarElemSize) {}
   };
 
   friend std::ostream &operator<<(std::ostream &os,
@@ -248,12 +287,14 @@ private:
     std::vector<DynStreamId> purePUMStreamIds;
     // Records all the PUMComputeStreamGroups.
     std::vector<PUMComputeStreamGroup> pumGroups;
+    // Records the PUMDataGraph.
+    std::vector<PUMDataGraphNode *> pumDataGraphNodes;
 
     /**
      * States during compiling and executing PUM.
      */
-    // Records the PUMDataGraph.
-    std::vector<PUMDataGraphNode *> pumDataGraphNodes;
+    // Next Out Iter.
+    int64_t nextOutIter = 0;
     PUMCommandVecT commands;
     int configuredBanks = 0;
     int totalSentPackets = 0;
@@ -320,7 +361,8 @@ private:
                                 const PUMDataGraphNodeVec &moveNodes);
   bool needExpandReuse(PUMContext &context, const PUMComputeStreamGroup &group);
   AffinePattern expandReusePat(const AffinePattern &pumTile,
-                               const AffinePattern &pat);
+                               const AffinePattern &pat,
+                               AffinePattern &splitOutDim);
 
   /**
    * Try to merge some Move nodes if they are moving the same array but only
