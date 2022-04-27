@@ -46,6 +46,13 @@ public:
   void receiveStreamConfigure(PacketPtr pkt);
 
   /**
+   * Some work needs to be done after MLC SE finish configuring.
+   * For example, to know how many strands of each LoadStream so that we
+   * can correctly set the number of expected Acks.
+   */
+  void postMLCSEConfigure();
+
+  /**
    * Receive a StreamEnd message and release the PUM context.
    */
   void receiveStreamEnd(PacketPtr pkt);
@@ -230,6 +237,20 @@ private:
     }
 
     /**
+     * Fields for Load node.
+     * Represents a LoadStream collecting data for PUM computation.
+     * It shares the field of sendPat and sendSplitOutDim.
+     */
+    ConfigPtr sendConfig;
+    ConfigPtr recvConfig;
+    static PUMDataGraphNode *
+    newLoadNode(const std::string &_regionName, AffinePattern &_pumTile,
+                const AffinePattern &_pattern,
+                const AffinePattern &_splitOutDim,
+                const AffinePattern &_sendPat, ConfigPtr _sendConfig,
+                ConfigPtr _recvConfig, int _scalarElemSize);
+
+    /**
      * Fields for Compute node.
      */
     ExecFuncPtr func = nullptr;
@@ -296,10 +317,10 @@ private:
     // Next Out Iter.
     int64_t nextOutIter = 0;
     PUMCommandVecT commands;
-    int configuredBanks = 0;
+    std::vector<int> expectedAcksEverySync;
     int totalSentPackets = 0;
     int totalRecvPackets = 0;
-    int totalAckBanks = 0;
+    int receivedAcks = 0;
     int totalSyncs = 0;
     int reachedSync = 0;
     void clear();
@@ -316,6 +337,7 @@ private:
     /**
      * Stats for PUM computation.
      */
+    bool waitingPostConfig = true;    // Expecting post configuration.
     Cycles initCycle = Cycles(0);     // When I was intialized.
     Cycles lastKickCycle = Cycles(0); // Last time I was kicked.
     Cycles lastSyncCycle = Cycles(0); // Last time I was synced.
@@ -343,6 +365,14 @@ private:
                           PUMComputeStreamGroup &group);
 
   /**
+   * Add the special LoadStream if the PUMComputeStreamGroup uses NonPUMConfigs.
+   * This is a normal offloaded stream with special broadcast support to load
+   * data in non-PUM region to PUM transposed format.
+   */
+  void addPUMLoadStream(PUMContext &context, CacheStreamConfigureVec *configs,
+                        PUMDataGraphNode *loadNode);
+
+  /**
    * Check if PUM can be applied to a PUMComputeStreamGroup.
    */
   bool canApplyPUMToGroup(PUMContext &context, PUMComputeStreamGroup &group);
@@ -354,6 +384,9 @@ private:
   void buildPUMDataGraph(PUMContext &context);
   void buildPUMDataGraph(PUMContext &context, PUMComputeStreamGroup &group);
   void buildPUMDataGraphMove(PUMContext &context, PUMComputeStreamGroup &group,
+                             const ConfigPtr &sendConfig,
+                             PUMDataGraphNodeVec &resultNodes);
+  void buildPUMDataGraphLoad(PUMContext &context, PUMComputeStreamGroup &group,
                              const ConfigPtr &sendConfig,
                              PUMDataGraphNodeVec &resultNodes);
   void buildPUMDataGraphCompute(PUMContext &context,

@@ -347,6 +347,18 @@ private:
                             int payloadSize);
 
   /**
+   * Send the stream data to PUM. Used for PUMSendTo edge.
+   * @param payloadSize: the network should model the payload of this size.
+   * This is used for LoadComputeStream, where the effective sizes is actually
+   * smaller.
+   */
+  void issueStreamDataToPUM(LLCDynStreamPtr stream,
+                            const DynStreamSliceId &sliceId,
+                            const DataBlock &dataBlock,
+                            const CacheStreamConfigureData::DepEdge &sendToEdge,
+                            int payloadSize);
+
+  /**
    * Set the TotalTripCount in MLC. Used to implement StreamLoopBound.
    */
   void sendOffloadedLoopBoundRetToMLC(LLCDynStreamPtr stream,
@@ -357,6 +369,12 @@ private:
    * Find streams that should be migrated.
    */
   void findMigratingStreams();
+
+  /**
+   * Check if next element is handled here or not.
+   * 
+   */
+  bool isNextElemHandledHere(LLCDynStreamPtr dynS) const;
 
   /**
    * Migrate streams.

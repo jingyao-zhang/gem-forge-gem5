@@ -383,6 +383,7 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
     if (config->pumElemPerSync > 0) {
       assert((config->pumElemPerSync % context.totalStrands) == 0);
       strand->pumElemPerSync = config->pumElemPerSync / context.totalStrands;
+      strand->waitPUMRoundStart = config->waitPUMRoundStart;
     }
 
     /**********************************************************************
@@ -418,6 +419,10 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
     for (auto &dep : config->depEdges) {
       if (dep.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
         strand->addSendTo(dep.data, dep.reuse, dep.skip);
+      }
+      if (dep.type == CacheStreamConfigureData::DepEdge::Type::PUMSendTo) {
+        strand->addPUMSendTo(dep.data, dep.broadcastPat, dep.recvPat,
+                             dep.recvTile);
       }
       // UsedBy dependence will also be splitted and connected later.
     }

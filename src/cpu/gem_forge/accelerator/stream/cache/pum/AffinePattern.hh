@@ -69,6 +69,8 @@ public:
     return !this->operator==(other);
   }
 
+  int64_t numDimension() const { return this->params.size(); }
+
   static int64_t reduce_mul(IntVecT::const_iterator s,
                             IntVecT::const_iterator t, int64_t init) {
     int64_t ret = init;
@@ -469,6 +471,7 @@ public:
   }
 
   AffinePattern splitFromDim(int64_t dim);
+  void mergeOutDim(const AffinePattern &splitOutDim);
 };
 
 std::ostream &operator<<(std::ostream &os, const AffinePattern &pattern);

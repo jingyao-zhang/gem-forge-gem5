@@ -266,6 +266,11 @@ public:
    * TODO: indirect element.
    */
   DynStreamSliceId indirectAtomicSliceId;
+
+  /**
+   * Remember that I have sent to PUM.
+   */
+  bool sentToPUM = false;
 };
 
 #endif

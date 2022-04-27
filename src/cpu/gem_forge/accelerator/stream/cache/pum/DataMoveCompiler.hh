@@ -143,6 +143,9 @@ public:
   PUMCommandVecT maskCmdsBySubRegion(const PUMCommandVecT &commands,
                                      const AffinePattern &sub_region) const;
 
+  void generateSubRegionMasks(const AffinePattern &sub_region,
+                              AffinePatternVecT &final_bitline_masks,
+                              AffinePatternVecT &final_tile_masks) const;
   void recursiveMaskSubRegionAtDim(const AffinePattern &sub_region, int64_t dim,
                                    MaskVecT &bitline_maskes,
                                    MaskVecT &tile_masks,
@@ -158,6 +161,11 @@ public:
   PUMCommandVecT maskCmdsByReuses(const PUMCommandVecT &commands,
                                   const AffinePattern &subRegion,
                                   const std::vector<ReuseInfoT> &reuses) const;
+
+  /**
+   * Generate TileMask for each LLC bank.
+   */
+  std::vector<AffinePatternVecT> getLLCBankSubRegions() const;
 
   /**
    * Map commands to LLC.

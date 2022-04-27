@@ -188,6 +188,7 @@ bool AffinePattern::isSubRegionToArraySize(const IntVecT &array_sizes,
 AffinePattern AffinePattern::splitFromDim(int64_t dim) {
 
   assert(dim < this->params.size());
+  assert(dim > 0);
 
   AffinePattern::ParamVecT outerDims;
   for (int i = dim; i < this->params.size(); ++i) {
@@ -198,4 +199,14 @@ AffinePattern AffinePattern::splitFromDim(int64_t dim) {
   }
   AffinePattern splitPat(0, outerDims);
   return splitPat;
+}
+
+void AffinePattern::mergeOutDim(const AffinePattern &splitOutDim) {
+  if (splitOutDim.getTotalTrip() == 0) {
+    return;
+  }
+  assert(splitOutDim.start == 0);
+  for (const auto &p : splitOutDim.params) {
+    this->params.push_back(p);
+  }
 }

@@ -7,6 +7,7 @@
 #include "LLCStreamRangeBuilder.hh"
 #include "MLCStreamEngine.hh"
 #include "StreamRequestBuffer.hh"
+#include "pum/DataMoveCompiler.hh"
 #include "pum/PUMEngine.hh"
 
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
@@ -26,6 +27,7 @@
 #include "debug/LLCRubyStreamNotIssue.hh"
 #include "debug/LLCRubyStreamReduce.hh"
 #include "debug/LLCRubyStreamStore.hh"
+#include "debug/StreamPUM.hh"
 #include "debug/StreamRangeSync.hh"
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
@@ -453,9 +455,14 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
    * However, for LoadComputeStream, we should send after the value
    * is computed.
    */
-  if (!dynS->sendToEdges.empty() && !S->isLoadComputeStream()) {
+  if (!S->isLoadComputeStream()) {
     for (const auto &edge : dynS->sendToEdges) {
       this->issueStreamDataToLLC(
+          dynS, sliceId, dataBlock, edge,
+          RubySystem::getBlockSizeBytes() /* PayloadSize */);
+    }
+    for (const auto &edge : dynS->sendToPUMEdges) {
+      this->issueStreamDataToPUM(
           dynS, sliceId, dataBlock, edge,
           RubySystem::getBlockSizeBytes() /* PayloadSize */);
     }
@@ -633,6 +640,23 @@ void LLCStreamEngine::receiveStoreStreamData(LLCDynStreamPtr dynS,
   }
 }
 
+bool LLCStreamEngine::isNextElemHandledHere(LLCDynStreamPtr dynS) const {
+  auto nextVAddrAndMachineType = dynS->peekNextAllocVAddrAndMachineType();
+  auto nextVAddr = nextVAddrAndMachineType.first;
+  auto nextMachineType = nextVAddrAndMachineType.second;
+  Addr nextPAddr;
+  if (!dynS->translateToPAddr(nextVAddr, nextPAddr)) {
+    // If the address is faulted, we stay here.
+    return true;
+  }
+  // Check if it is still on this bank.
+  if (this->isPAddrHandledByMe(nextPAddr, nextMachineType)) {
+    // Still here.
+    return true;
+  }
+  return false;
+}
+
 bool LLCStreamEngine::canMigrateStream(LLCDynStream *dynS) const {
   /**
    * In this implementation, the stream will aggressively
@@ -640,17 +664,7 @@ bool LLCStreamEngine::canMigrateStream(LLCDynStream *dynS) const {
    * allocated to the previous element. Therefore, we do not need to
    * check if the next element is allocated.
    */
-  auto nextVAddrAndMachineType = dynS->peekNextAllocVAddrAndMachineType();
-  auto nextVAddr = nextVAddrAndMachineType.first;
-  auto nextMachineType = nextVAddrAndMachineType.second;
-  Addr nextPAddr;
-  if (!dynS->translateToPAddr(nextVAddr, nextPAddr)) {
-    // If the address is faulted, we stay here.
-    return false;
-  }
-  // Check if it is still on this bank.
-  if (this->isPAddrHandledByMe(nextPAddr, nextMachineType)) {
-    // Still here.
+  if (this->isNextElemHandledHere(dynS)) {
     return false;
   }
   if (dynS->hasLoopBound() && dynS->isLoopBoundBrokenOut()) {
@@ -660,16 +674,19 @@ bool LLCStreamEngine::canMigrateStream(LLCDynStream *dynS) const {
    * We can only enable AdvanceMigrate for DirectStreams.
    * PointerChaseStream can never advance migrate.
    * Streams with LoopBound function can not advance migrate.
+   * Streams with PUMSendTo edges can not advance migrate.
    */
   if (!this->controller->isStreamAdvanceMigrateEnabled() ||
-      dynS->isPointerChase() || dynS->hasLoopBound()) {
+      dynS->isPointerChase() || dynS->hasLoopBound() ||
+      !dynS->sendToPUMEdges.empty()) {
     if (dynS->hasIndirectDependent() || dynS->isPointerChase() ||
-        dynS->hasLoopBound()) {
+        dynS->hasLoopBound() || !dynS->sendToEdges.empty()) {
       if (dynS->inflyRequests > 0) {
         // We are still waiting data for indirect usages:
         // 1. Indirect streams.
         // 2. Update request.
         // 3. Pointer chasing.
+        // 4. Send to PUM.
         LLC_S_DPRINTF(dynS->getDynStrandId(),
                       "[Delay Migrate] InflyRequests %llu.\n",
                       dynS->inflyRequests);
@@ -1334,8 +1351,9 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
   if (dynS->configData->needSyncWithPUMEngine()) {
     auto nextElemIdx = dynS->peekNextAllocElemIdx();
     auto waitForPUMRounds = dynS->configData->waitForPUMRounds(nextElemIdx);
-    if (!this->pumEngine->hasCompletedRound(dynS->configData->pumContextId,
-                                            waitForPUMRounds)) {
+    if (this->pumEngine->shouldWaitPUMRound(
+            dynS->configData->pumContextId, waitForPUMRounds,
+            dynS->configData->waitPUMRoundStart)) {
       LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynS->getDynStrandId(),
                      "[Not Issue] Elem %lu Waiting for PUM Round %ld.\n",
                      nextElemIdx, waitForPUMRounds);
@@ -2348,6 +2366,140 @@ void LLCStreamEngine::issueStreamDataToLLC(
     LLC_SLICE_PANIC(sliceId, "Translation fault on the ReceiverStream: %s.",
                     recvConfig->dynamicId);
   }
+}
+
+void LLCStreamEngine::issueStreamDataToPUM(
+    LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId,
+    const DataBlock &dataBlock,
+    const CacheStreamConfigureData::DepEdge &sendToEdge, int payloadSize) {
+  /**
+   * Unlike sending Data to another Stream, sending Data to PUM usually involves
+   * multicasting. We first get the SubRegion for multicast, and then determine
+   * the receiving banks and masks.
+   */
+  auto recvConfig = sendToEdge.data;
+
+  assert(sliceId.getNumElements() == 1 && "Coalesced SendToPUM stream.");
+  assert(!dynS->isOneIterationBehind() && "PUMSendTo with OneIterBehind.");
+
+  auto strandElemIdx = sliceId.getStartIdx();
+  auto streamElemIdx =
+      dynS->configData->getStreamElemIdxFromStrandElemIdx(strandElemIdx);
+
+  auto broadcastPat = sendToEdge.broadcastPat;
+  int64_t adjustStart = sendToEdge.recvPat(streamElemIdx);
+  LLC_SLICE_DPRINTF(sliceId,
+                    "[PUMSendTo] StreamElemIdx %lu BroadcastPat %s RecvPat %s "
+                    "AdjustStart %ld.\n",
+                    streamElemIdx, broadcastPat, sendToEdge.recvPat,
+                    adjustStart);
+
+  broadcastPat.start += adjustStart;
+
+  DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(),
+                            sendToEdge.recvTile);
+
+  // Split the broadcast SubRegion into masks.
+  AffinePatternVecT bitline_masks;
+  AffinePatternVecT tile_masks;
+  compiler.generateSubRegionMasks(broadcastPat, bitline_masks, tile_masks);
+  if (Debug::StreamPUM) {
+    LLC_SLICE_DPRINTF(sliceId, "[PUMSendTo] ---- Get masks Broadcast %s.\n",
+                      broadcastPat);
+    for (int i = 0; i < bitline_masks.size(); ++i) {
+      LLC_SLICE_DPRINTF(sliceId, "  Tile %s Bitline %s.\n", tile_masks[i],
+                        bitline_masks[i]);
+    }
+  }
+
+  // Intersect with each LLC bank.
+  std::vector<AffinePatternVecT> llcBankSubRegions =
+      compiler.getLLCBankSubRegions();
+  auto numLLCBanks = llcBankSubRegions.size();
+  LLC_SLICE_DPRINTF(sliceId, "[PUMSendTo] ---- Intersect with LLCSubRegion.\n");
+  for (auto maskIdx = 0; maskIdx < bitline_masks.size(); ++maskIdx) {
+
+    NetDest recvBanks;
+
+    for (auto bankIdx = 0; bankIdx < numLLCBanks; ++bankIdx) {
+      bool hasIntersection = false;
+      for (const auto &llcSubRegion : llcBankSubRegions.at(bankIdx)) {
+        const auto &tileMask = tile_masks[maskIdx];
+        auto tileIntersect = AffinePattern::intersectSubRegions(
+            compiler.tile_nums, tileMask, llcSubRegion);
+
+        if (tileIntersect.getTotalTrip() == 0) {
+          continue;
+        }
+
+        LLC_SLICE_DPRINTF(
+            sliceId, "Bank %d IntersectTile %s = TileMask %s /\\ LLC %s.\n",
+            bankIdx, tileIntersect, tileMask, llcSubRegion);
+        hasIntersection = true;
+      }
+
+      if (hasIntersection) {
+        MachineID recvMachineId(MachineType_L2Cache, bankIdx);
+        recvBanks.add(recvMachineId);
+      }
+    }
+
+    assert(recvBanks.count() > 0 && "No RecvBanks.");
+
+    // Construct a packet and send out.
+    this->pumEngine->sendPUMDataToLLC(sliceId, recvBanks,
+                                      dynS->getMemElementSize());
+    for (const auto &dstNodeId : recvBanks.getAllDest()) {
+      dynS->sentPUMDataPacketMap.emplace(dstNodeId, 0).first->second++;
+    }
+    dynS->sentPUMPackets += recvBanks.count();
+  }
+
+  /**
+   * We need to sync when we reach the end of the current ComputeRound.
+   * Since elements are released out-of-order, we need to check:
+   * 1. I am the first unreleased element.
+   * 2. All elements between myself and the first one of the next round are
+   * released.
+   */
+  auto elem = dynS->getElemPanic(strandElemIdx, "SendToPUM");
+  elem->sentToPUM = true;
+  assert(dynS->configData->needSyncWithPUMEngine() &&
+         "PUMSendTo should always sync.");
+  assert(!dynS->idxToElementMap.empty() && "Already no element?");
+  if (dynS->idxToElementMap.begin()->first != strandElemIdx) {
+    // I am not the first unreleased one yet. Nothing to do.
+    return;
+  }
+
+  auto waitPUMRound = dynS->configData->waitForPUMRounds(strandElemIdx);
+  auto nextRoundStrandElemIdx =
+      dynS->configData->getFirstPUMRoundElemIdx(waitPUMRound + 1);
+  LLC_SLICE_DPRINTF(sliceId,
+                    "[PUMSendTo] WaitRound %ld NextRoundFirstStrandElemIdx %lu "
+                    "TotalSentPkts %ld.\n",
+                    waitPUMRound, nextRoundStrandElemIdx, dynS->sentPUMPackets);
+  bool allElemInCurrentRoundSent = true;
+  for (auto elemIdx = strandElemIdx + 1; elemIdx < nextRoundStrandElemIdx;
+       ++elemIdx) {
+    auto elem = dynS->getElement(elemIdx);
+    if (!elem || !elem->sentToPUM) {
+      // This is not allocated yet.
+      allElemInCurrentRoundSent = false;
+      break;
+    }
+  }
+  if (!allElemInCurrentRoundSent) {
+    return;
+  }
+
+  // We have reached the end of one round.
+  LLC_SLICE_DPRINTF(sliceId, "[PUMSendTo] Reached the end of OneRound.\n");
+  this->pumEngine->sendSyncToLLCs(dynS->sentPUMDataPacketMap, sliceId);
+  auto sentPUMPkts = dynS->sentPUMPackets;
+  dynS->sentPUMPackets = 0;
+  dynS->sentPUMDataPacketMap.clear();
+  this->pumEngine->sendSyncToMLC(sentPUMPkts);
 }
 
 void LLCStreamEngine::sendOffloadedLoopBoundRetToMLC(LLCDynStreamPtr stream,

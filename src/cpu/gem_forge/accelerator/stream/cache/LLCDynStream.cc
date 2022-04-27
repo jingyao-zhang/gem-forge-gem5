@@ -43,6 +43,9 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
     if (depEdge.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
       this->sendToEdges.emplace_back(depEdge);
     }
+    if (depEdge.type == CacheStreamConfigureData::DepEdge::Type::PUMSendTo) {
+      this->sendToPUMEdges.emplace_back(depEdge);
+    }
   }
 
   // Remember the BaseOn configs.

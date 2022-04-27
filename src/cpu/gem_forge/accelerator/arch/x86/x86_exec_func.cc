@@ -90,6 +90,18 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
                         (machInst >> 32) & 0xff, (machInst >> 40) & 0xff,
                         (machInst >> 48) & 0xff, (machInst >> 56) & 0xff);
       decoder.moreBytes(pc, fetchPC, machInst);
+      if (!decoder.instReady()) {
+        fetchPC += sizeof(machInst);
+        assert(prox.tryReadBlob(fetchPC, &machInst, sizeof(machInst)) &&
+               "Failed to read in next machine inst.");
+        EXEC_FUNC_DPRINTF("Feed in %#x %#x %#x %#x %#x %#x %#x %#x %#x.\n",
+                          fetchPC, (machInst >> 0) & 0xff,
+                          (machInst >> 8) & 0xff, (machInst >> 16) & 0xff,
+                          (machInst >> 24) & 0xff, (machInst >> 32) & 0xff,
+                          (machInst >> 40) & 0xff, (machInst >> 48) & 0xff,
+                          (machInst >> 56) & 0xff);
+        decoder.moreBytes(pc, fetchPC, machInst);
+      }
     }
     assert(decoder.instReady() && "Decoder should have the inst ready.");
     auto staticInst = decoder.decode(pc);

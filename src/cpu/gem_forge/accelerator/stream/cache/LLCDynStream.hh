@@ -279,6 +279,10 @@ public:
   uint64_t lastComputedReductionElemIdx = 0;
 
   std::vector<CacheStreamConfigureData::DepEdge> sendToEdges;
+  std::vector<CacheStreamConfigureData::DepEdge> sendToPUMEdges;
+  // Number of PUMData packets sent to each bank.
+  int64_t sentPUMPackets = 0;
+  std::map<NodeID, int> sentPUMDataPacketMap;
 
   /**
    * Remember the base stream.

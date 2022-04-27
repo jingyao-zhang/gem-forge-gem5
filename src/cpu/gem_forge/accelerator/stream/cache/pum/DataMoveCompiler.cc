@@ -607,6 +607,16 @@ void DataMoveCompiler::recursiveMaskSubRegionAtDim(
   }
 }
 
+void DataMoveCompiler::generateSubRegionMasks(
+    const AffinePattern &sub_region, AffinePatternVecT &final_bitline_masks,
+    AffinePatternVecT &final_tile_masks) const {
+  MaskVecT bitline_masks;
+  MaskVecT tile_masks;
+  recursiveMaskSubRegionAtDim(sub_region, this->dimension - 1, bitline_masks,
+                              tile_masks, final_bitline_masks,
+                              final_tile_masks);
+}
+
 PUMCommandVecT
 DataMoveCompiler::maskCmdsBySubRegion(const PUMCommandVecT &commands,
                                       const AffinePattern &sub_region) const {
@@ -641,15 +651,12 @@ DataMoveCompiler::maskCmdsBySubRegion(const PUMCommandVecT &commands,
 
     And then go to the next dimension.
    */
-  PUMCommandVecT masked_commands;
-  MaskVecT bitline_masks;
-  MaskVecT tile_masks;
   AffinePatternVecT final_bitline_masks;
   AffinePatternVecT final_tile_masks;
-  recursiveMaskSubRegionAtDim(sub_region, dimension - 1, bitline_masks,
-                              tile_masks, final_bitline_masks,
-                              final_tile_masks);
+  this->generateSubRegionMasks(sub_region, final_bitline_masks,
+                               final_tile_masks);
 
+  PUMCommandVecT masked_commands;
   for (const auto &command : commands) {
     DPRINTF(StreamPUM, "[MaskSubRegion] Masking CMD %s", command);
     for (int i = 0; i < final_bitline_masks.size(); ++i) {
@@ -800,6 +807,18 @@ PUMCommandVecT DataMoveCompiler::maskCmdsByReuses(
   return ret;
 }
 
+std::vector<AffinePatternVecT> DataMoveCompiler::getLLCBankSubRegions() const {
+  auto tilePerLLCBank = this->llc_config.get_array_per_bank();
+  auto numLLCBanks = this->llc_config.get_total_banks();
+  std::vector<AffinePatternVecT> llcBankSubRegions;
+  for (auto i = 0; i < numLLCBanks; ++i) {
+    llcBankSubRegions.push_back(
+        AffinePattern::break_continuous_range_into_canonical_sub_regions(
+            this->tile_nums, i * tilePerLLCBank, tilePerLLCBank));
+  }
+  return llcBankSubRegions;
+}
+
 PUMCommandVecT
 DataMoveCompiler::mapCmdsToLLC(const PUMCommandVecT &commands) const {
   /**
@@ -820,16 +839,10 @@ DataMoveCompiler::mapCmdsToLLC(const PUMCommandVecT &commands) const {
     3. With in each slice, we then split commands according to the tree
     structure.
    */
-  auto tilePerLLCBank = llc_config.get_array_per_bank();
-  auto numLLCBanks = llc_config.get_total_banks();
 
   // Construct the sub-region for each LLC bank.
-  std::vector<AffinePatternVecT> llcBankSubRegions;
-  for (auto i = 0; i < numLLCBanks; ++i) {
-    llcBankSubRegions.push_back(
-        AffinePattern::break_continuous_range_into_canonical_sub_regions(
-            tile_nums, i * tilePerLLCBank, tilePerLLCBank));
-  }
+  std::vector<AffinePatternVecT> llcBankSubRegions =
+      this->getLLCBankSubRegions();
 
   // Process all commands.
   PUMCommandVecT ret;

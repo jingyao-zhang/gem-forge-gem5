@@ -20,13 +20,19 @@ void PUMEngine::receiveKick(const RequestMsg &msg) {
       LLC_SE_PANIC("[PUM] RecvConfig with NextCmdIdx %d != 0.", nextCmdIdx);
     }
     this->receivedConfig = true;
+    this->startedRound++;
     this->kickNextCommand();
   }
 }
 
 bool PUMEngine::hasCompletedRound(int64_t pumContextId, int rounds) const {
   assert(this->pumContextId == pumContextId);
-  return this->currentRound >= rounds;
+  return this->completedRound >= rounds;
+}
+
+bool PUMEngine::hasStartedRound(int64_t pumContextId, int rounds) const {
+  assert(this->pumContextId == pumContextId);
+  return this->startedRound >= rounds;
 }
 
 void PUMEngine::configure(MLCPUMManager *pumManager, int64_t pumContextId,
@@ -40,10 +46,11 @@ void PUMEngine::configure(MLCPUMManager *pumManager, int64_t pumContextId,
 
   if (pumContextId != this->pumContextId) {
     // Only clear this when we are haveing a new context.
-    this->currentRound = 0;
+    this->completedRound = -1;
+    this->startedRound = -1;
   }
-  LLC_SE_DPRINTF("[PUMEngine] Configured CompletedRound %ld.\n",
-                 this->currentRound);
+  LLC_SE_DPRINTF("[PUMEngine] Configured CompletedRound %d StartedRound %d.\n",
+                 this->completedRound, this->startedRound);
 
   if ((this->commands.empty() && this->nextCmdIdx != 0) ||
       (!this->commands.empty() &&
@@ -56,10 +63,11 @@ void PUMEngine::configure(MLCPUMManager *pumManager, int64_t pumContextId,
   this->pumManager = pumManager;
   this->pumContextId = pumContextId;
   this->nextCmdIdx = 0;
-  this->sentInterBankPackets = 0;
-  this->recvInterBankPackets = 0;
+  this->sentPUMDataPkts = 0;
+  this->recvDataPkts = 0;
   this->sentInterBankPacketMap.clear();
-  this->recvInterBankPacketMap.clear();
+  this->recvPUMDataPktMap.clear();
+  this->recvStreamDataPktMap.clear();
   this->acked = false;
   this->commands.clear();
   this->receivedConfig = false;
@@ -166,6 +174,27 @@ void PUMEngine::kickNextCommand() {
   this->se->scheduleEvent(latency);
 }
 
+void PUMEngine::sendPUMDataToLLC(const DynStreamSliceId &sliceId,
+                                 const NetDest &recvBanks, int bytes) {
+  auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
+  msg->m_addr = 0;
+  msg->m_Type = CoherenceRequestType_STREAM_PUM_DATA;
+  msg->m_Requestors.add(this->controller->getMachineID());
+  msg->m_Destination = recvBanks;
+  msg->m_MessageSize = this->controller->getMessageSizeType(bytes);
+  if (sliceId.isValid()) {
+    // This is a PUMData from normal stream.
+    msg->m_sliceIds.add(sliceId);
+    LLC_SLICE_DPRINTF(sliceId, "[PUMEngine] Send PUMData -> %s.\n", recvBanks);
+  } else {
+    LLC_SE_DPRINTF("[PUMEngine] Send Inter-Bank Data -> %s.\n", recvBanks);
+  }
+
+  this->se->streamIndirectIssueMsgBuffer->enqueue(
+      msg, this->controller->clockEdge(),
+      this->controller->cyclesToTicks(Cycles(1)));
+}
+
 Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
 
   if (command.type == "intra-array") {
@@ -252,7 +281,6 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
       auto dstBankIdx = entry.first;
       auto bitlines = entry.second;
       auto totalBits = bitlines * command.wordline_bits;
-      auto totalPackets = 0;
 
       NetDest dstBanks;
       if (command.hasReuse()) {
@@ -276,33 +304,20 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
         dstBanks.add(dstMachineId);
       }
 
-      for (auto i = 0; i < totalBits;
-           i += packetDataBits, totalPackets += dstBanks.count()) {
+      for (auto i = 0; i < totalBits; i += packetDataBits) {
 
         auto bits = packetDataBits;
         if (i + bits > totalBits) {
           bits = totalBits - bits;
         }
 
-        auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
-        msg->m_addr = 0;
-        msg->m_Type = CoherenceRequestType_STREAM_PUM_DATA;
-        msg->m_Requestors.add(this->controller->getMachineID());
-        msg->m_Destination = dstBanks;
-        msg->m_MessageSize =
-            this->controller->getMessageSizeType((bits + 7) / 8);
-
-        LLC_SE_DPRINTF("[PUMEngine] Send Inter-Bank Data -> %s.\n", dstBanks);
+        this->sendPUMDataToLLC(DynStreamSliceId(), dstBanks, (bits + 7) / 8);
 
         for (const auto &dstNodeId : dstBanks.getAllDest()) {
           this->sentInterBankPacketMap.emplace(dstNodeId, 0).first->second++;
         }
-
-        this->se->streamIndirectIssueMsgBuffer->enqueue(
-            msg, this->controller->clockEdge(),
-            this->controller->cyclesToTicks(Cycles(1)));
+        this->sentPUMDataPkts += dstBanks.count();
       }
-      this->sentInterBankPackets += totalPackets;
     }
 
     return Cycles(accumulatedLatency);
@@ -355,15 +370,16 @@ void PUMEngine::tick() {
     if (!this->acked) {
       if (this->nextCmdIdx + 1 == this->commands.size()) {
         // This is the last sync. We are done.
-        LLC_SE_DPRINTF("[Sync] Completed Round %d.\n", this->currentRound);
-        this->currentRound++;
+        LLC_SE_DPRINTF("[Sync] Completed Round %d.\n",
+                       this->completedRound + 1);
+        this->completedRound++;
       }
-      LLC_SE_DPRINTF("[Sync] SentPackets %d.\n", this->sentInterBankPackets);
-      this->sendSyncToLLCs();
-      auto sentPackets = this->sentInterBankPackets;
-      this->acked = true;
-      this->sentInterBankPackets = 0;
+      LLC_SE_DPRINTF("[Sync] SentPackets %d.\n", this->sentPUMDataPkts);
+      this->sendSyncToLLCs(this->sentInterBankPacketMap, DynStreamSliceId());
+      auto sentPackets = this->sentPUMDataPkts;
+      this->sentPUMDataPkts = 0;
       this->sentInterBankPacketMap.clear();
+      this->acked = true;
       this->sendSyncToMLC(sentPackets);
     }
     return;
@@ -385,9 +401,18 @@ void PUMEngine::synced() {
 void PUMEngine::receiveData(const RequestMsg &msg) {
   assert(this->pumManager);
 
+  if (msg.m_sliceIds.isValid()) {
+    this->receiveDataFromStream(msg);
+  } else {
+    this->receiveDataFromPUM(msg);
+  }
+}
+
+void PUMEngine::receiveDataFromPUM(const RequestMsg &msg) {
+
   auto sender = msg.m_Requestors.singleElement();
   auto senderNodeId = sender.getRawNodeID();
-  auto iter = this->recvInterBankPacketMap
+  auto iter = this->recvPUMDataPktMap
                   .emplace(std::piecewise_construct,
                            std::forward_as_tuple(senderNodeId),
                            std::forward_as_tuple(0, -1))
@@ -395,25 +420,84 @@ void PUMEngine::receiveData(const RequestMsg &msg) {
   if (msg.m_isPUM) {
     // This is the sync message.
     auto sentPackets = msg.m_Len;
-    if (iter->second.second != -1) {
-      LLC_SE_PANIC("[PUM] Double Sync from %s Prev Sent %d Now %d.", sender,
-                   sentPackets, iter->second.second);
+    LLC_SE_DPRINTF("[Sync] Recv Done %d from %s Current %d.\n", sentPackets,
+                   sender, iter->second.second);
+    if (iter->second.second == -1) {
+      iter->second.second = sentPackets;
+    } else {
+      iter->second.second += sentPackets;
     }
-    iter->second.second = sentPackets;
   } else {
     // This is normal data message.
     iter->second.first++;
-    this->recvInterBankPackets++;
+    this->recvDataPkts++;
   }
   if (iter->second.first == iter->second.second) {
     auto recvPackets = iter->second.first;
     // Clear the entry.
-    this->recvInterBankPacketMap.erase(iter);
+    this->recvPUMDataPktMap.erase(iter);
     /**
      * At this point, we know we have received all messages from this sender.
      * However, we don't know if we will still receive more data from other
      * banks. So here I can only report Done for packets from this sender.
      */
+    LLC_SE_DPRINTF(
+        "[Sync] Sent Done %d from %s to MLC TotalRecvPkt %d RemainEntry %d.\n",
+        recvPackets, sender, this->recvDataPkts,
+        this->recvPUMDataPktMap.size());
+    for (const auto &entry : this->recvPUMDataPktMap) {
+      auto sender = MachineID::getMachineIDFromRawNodeID(entry.first);
+      LLC_SE_DPRINTF("[Sync] Remain Entry from %s %d %d.\n", sender,
+                     entry.second.first, entry.second.second);
+    }
+    this->sendDoneToMLC(recvPackets);
+  }
+}
+
+void PUMEngine::receiveDataFromStream(const RequestMsg &msg) {
+
+  const auto &sliceId = msg.m_sliceIds.singleSliceId();
+  auto sender = sliceId.getDynStrandId();
+  auto iter =
+      this->recvStreamDataPktMap
+          .emplace(std::piecewise_construct, std::forward_as_tuple(sender),
+                   std::forward_as_tuple(0, -1))
+          .first;
+  if (msg.m_isPUM) {
+    // This is the sync message.
+    auto sentPackets = msg.m_Len;
+    LLC_SE_DPRINTF("[Sync] Recv Done %d from %s Current %d.\n", sentPackets,
+                   sliceId, iter->second.second);
+    if (iter->second.second == -1) {
+      iter->second.second = sentPackets;
+    } else {
+      iter->second.second += sentPackets;
+    }
+  } else {
+    // This is normal data message.
+    LLC_SE_DPRINTF("[Sync] Recv Data %d from %s Current %d.\n",
+                   iter->second.first, sliceId, iter->second.second);
+    iter->second.first++;
+    this->recvDataPkts++;
+  }
+  if (iter->second.first == iter->second.second) {
+    auto recvPackets = iter->second.first;
+    // Clear the entry.
+    this->recvStreamDataPktMap.erase(iter);
+    /**
+     * At this point, we know we have received all messages from this sender.
+     * However, we don't know if we will still receive more data from other
+     * banks. So here I can only report Done for packets from this sender.
+     */
+    LLC_SE_DPRINTF(
+        "[Sync] Sent Done %d from %s to MLC TotalRecvPkt %d RemainEntry %d.\n",
+        recvPackets, sliceId, this->recvDataPkts,
+        this->recvStreamDataPktMap.size());
+    for (const auto &entry : this->recvStreamDataPktMap) {
+      auto sender = entry.first;
+      LLC_SE_DPRINTF("[Sync] Remain Entry from %s %d %d.\n", sender,
+                     entry.second.first, entry.second.second);
+    }
     this->sendDoneToMLC(recvPackets);
   }
 }
@@ -427,6 +511,7 @@ void PUMEngine::sendSyncToMLC(int sentPackets) {
   /**
    * This is represented as a StreamAck message.
    */
+  LLC_SE_DPRINTF("[Sync] Sent Sync %d to MLC.\n", sentPackets);
   this->sendAckToMLC(CoherenceResponseType_STREAM_ACK, sentPackets);
 }
 
@@ -459,19 +544,20 @@ void PUMEngine::sendAckToMLC(CoherenceResponseType type, int ackCount) {
   }
 }
 
-void PUMEngine::sendSyncToLLCs() {
-
-  for (const auto &entry : this->sentInterBankPacketMap) {
+void PUMEngine::sendSyncToLLCs(const SentPktMapT &sentMap,
+                               const DynStreamSliceId &sliceId) {
+  for (const auto &entry : sentMap) {
     auto nodeId = entry.first;
     auto packets = entry.second;
     auto machineId = MachineID::getMachineIDFromRawNodeID(nodeId);
     LLC_SE_DPRINTF("[Sync] Sent Packets %d to %s.\n", packets, machineId);
     // Send a done msg to the destination bank.
-    this->sendSyncToLLC(machineId, packets);
+    this->sendSyncToLLC(machineId, packets, sliceId);
   }
 }
 
-void PUMEngine::sendSyncToLLC(MachineID recvBank, int sentPackets) {
+void PUMEngine::sendSyncToLLC(MachineID recvBank, int sentPackets,
+                              const DynStreamSliceId &sliceId) {
 
   /**
    * This is represented as a StreamAck message.
@@ -485,6 +571,9 @@ void PUMEngine::sendSyncToLLC(MachineID recvBank, int sentPackets) {
   msg->m_isPUM = true;
   msg->m_Len = sentPackets; // Reuse the Len field.
   msg->m_Destination.add(recvBank);
+  if (sliceId.isValid()) {
+    msg->m_sliceIds.add(sliceId);
+  }
 
   // Charge some latency.
   Cycles latency(1);

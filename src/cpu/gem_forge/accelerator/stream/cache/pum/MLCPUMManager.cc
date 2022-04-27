@@ -53,6 +53,10 @@ std::ostream &operator<<(std::ostream &os,
     os << "Move " << node.operands.front() << " SrcPat " << node.sendPat;
     break;
   }
+  case MLCPUMManager::PUMDataGraphNode::TypeE::Load: {
+    os << "Load " << node.sendConfig->dynamicId << " SrcPat " << node.sendPat;
+    break;
+  }
   case MLCPUMManager::PUMDataGraphNode::TypeE::Compute: {
     os << "Cmp";
     for (const auto &operand : node.operands) {
@@ -97,6 +101,19 @@ MLCPUMManager::PUMDataGraphNode *MLCPUMManager::PUMDataGraphNode::newMoveNode(
   return node;
 }
 
+MLCPUMManager::PUMDataGraphNode *MLCPUMManager::PUMDataGraphNode::newLoadNode(
+    const std::string &_regionName, AffinePattern &_pumTile,
+    const AffinePattern &_pattern, const AffinePattern &_splitOutDim,
+    const AffinePattern &_sendPat, ConfigPtr _sendConfig, ConfigPtr _recvConfig,
+    int _scalarElemSize) {
+  auto node = new PUMDataGraphNode(_regionName, TypeE::Load, _pumTile, _pattern,
+                                   _splitOutDim, _scalarElemSize);
+  node->sendPat = _sendPat;
+  node->sendConfig = _sendConfig;
+  node->recvConfig = _recvConfig;
+  return node;
+}
+
 MLCPUMManager::PUMDataGraphNode *MLCPUMManager::PUMDataGraphNode::newCmpNode(
     const std::string &_regionName, const AffinePattern &_pumTile,
     const AffinePattern &_pattern, const AffinePattern &_splitOutDim,
@@ -126,10 +143,10 @@ MLCPUMManager::MLCPUMManager(MLCStreamEngine *_mlcSE)
 MLCPUMManager::~MLCPUMManager() {}
 
 void MLCPUMManager::PUMContext::clear() {
-  this->configuredBanks = 0;
+  this->expectedAcksEverySync.clear();
   this->totalSentPackets = 0;
   this->totalRecvPackets = 0;
-  this->totalAckBanks = 0;
+  this->receivedAcks = 0;
   this->reachedSync = 0;
   this->totalSyncs = 0;
   /**
@@ -292,6 +309,7 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
       MLC_S_DPRINTF(dynId, "[NoPUM] No TripCount.\n");
       return false;
     }
+
     auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
         config->addrGenCallback);
     if (!linearAddrGen) {
@@ -334,6 +352,13 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
         MLC_S_DPRINTF(dynId, "[NoPUM] RangeMap not PUM.\n");
         return false;
       }
+      const int64_t tripCountThreshold = 2048;
+      if (config->getTotalTripCount() <= tripCountThreshold) {
+        MLC_S_DPRINTF(dynId, "[NoPUM] TripCount %ld < Threshold %ld.\n",
+                      tripCountThreshold);
+        return false;
+      }
+
     } else {
       if (rangeMap->isStreamPUM &&
           rangeMap->pumTile ==
@@ -343,7 +368,6 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
       } else {
         MLC_S_DPRINTF(dynId, "[CheckCanPUM]   As UsedNonPUMConfig.\n");
         group.usedNonPUMConfigs.push_back(config);
-        continue;
       }
     }
 
@@ -497,6 +521,13 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context,
   if (group.computeConfig->stream->getEnabledLoadFunc()) {
     this->buildPUMDataGraphMove(context, group, group.computeConfig,
                                 dataMoveNodes);
+  }
+
+  /**
+   * NonPUMUsedConfigs are represented as Load nodes.
+   */
+  for (const auto &sendConfig : group.usedNonPUMConfigs) {
+    this->buildPUMDataGraphLoad(context, group, sendConfig, dataMoveNodes);
   }
 
   /**
@@ -672,6 +703,88 @@ void MLCPUMManager::buildPUMDataGraphMove(PUMContext &context,
         recvPatInfo.scalarElemSize);
     context.pumDataGraphNodes.push_back(moveNode);
     resultNodes.push_back(moveNode);
+  }
+}
+
+void MLCPUMManager::buildPUMDataGraphLoad(PUMContext &context,
+                                          PUMComputeStreamGroup &group,
+                                          const ConfigPtr &sendConfig,
+                                          PUMDataGraphNodeVec &resultNodes) {
+
+  const auto &sendDynId = sendConfig->dynamicId;
+  auto sendS = sendConfig->stream;
+  const auto &sendPatInfo = group.patternInfo.at(sendS);
+
+  auto recvConfig = group.computeConfig;
+  auto recvS = recvConfig->stream;
+  const auto &recvPatInfo = group.patternInfo.at(recvS);
+  auto recvTile = recvPatInfo.pumTile;
+
+  MLC_S_DPRINTF(recvConfig->dynamicId,
+                "[PUM] --- Build Load Node. SendFrom %s.\n",
+                sendConfig->dynamicId);
+
+  int64_t recvPatIdx = 0;
+  if (recvConfig->stream->getEnabledLoadFunc()) {
+    // This is a LoadCompute.
+    recvPatIdx = recvPatInfo.getLoadComputeResultPatternIdx();
+  } else {
+    if (recvPatInfo.atomicPatterns.size() != 1) {
+      MLC_S_PANIC_NO_DUMP(recvConfig->dynamicId, "[PUM] Multi Recv.");
+    }
+  }
+
+  auto recvPat = recvPatInfo.getPattern(recvPatIdx);
+  auto recvSplitOutDim = recvPatInfo.getSplitOutDim(recvPatIdx);
+  MLC_S_DPRINTF(recvConfig->dynamicId, "[PUM] RecvPat %s RecvSplitOutDim %s.\n",
+                recvPat, recvSplitOutDim);
+
+  /**
+   * Find the real SendPatterns.
+   * 1. If LoadComputeStream sends to other Stream, we only need to send
+   * LoadComputeResultPattern.
+   * 2. If LoadComputeStream sends to itself, we need to:
+   *  a. Send patterns other than LoadComputeResultPattern.
+   *  b. Mark LoadComputeResultPattern as one Value.
+   *
+   * If this Computation involves NonPUMConfig, then we need to expand the
+   * reused dimension.
+   */
+  bool shouldExpandReuse = this->needExpandReuse(context, group);
+  if (shouldExpandReuse) {
+    recvPat = expandReusePat(recvTile, recvPat, recvSplitOutDim);
+  }
+
+  for (auto patIdx = 0; patIdx < sendPatInfo.atomicPatterns.size(); ++patIdx) {
+
+    if (sendS->getEnabledLoadFunc()) {
+      auto sendLoadComputeResultPatIdx =
+          sendPatInfo.getLoadComputeResultPatternIdx();
+      if (recvConfig != sendConfig) {
+        // Send to other stream.
+        if (patIdx != sendLoadComputeResultPatIdx) {
+          continue;
+        }
+      }
+    }
+
+    auto sendPat = sendPatInfo.getPattern(patIdx);
+    auto sendSplitOutDim = sendPatInfo.getSplitOutDim(patIdx);
+
+    MLC_S_DPRINTF(sendDynId, "[PUM] SendPat %s SendSplitOutDim %s.\n", sendPat,
+                  sendSplitOutDim);
+
+    /**
+     * Each send pattern is a ValueNode, with RecvPat as MoveNode.
+     */
+    assert(recvConfig != sendConfig);
+    assert(!sendS->getEnabledLoadFunc());
+
+    auto loadNode = PUMDataGraphNode::newLoadNode(
+        recvPatInfo.regionName, recvTile, recvPat, recvSplitOutDim, sendPat,
+        sendConfig, recvConfig, recvPatInfo.scalarElemSize);
+    context.pumDataGraphNodes.push_back(loadNode);
+    resultNodes.push_back(loadNode);
   }
 }
 
@@ -980,8 +1093,10 @@ void MLCPUMManager::compilePUMDataGraphToCommands(PUMContext &context) {
 
   for (auto node : context.pumDataGraphNodes) {
     switch (node->type) {
-    case PUMDataGraphNode::TypeE::Value: {
+    case PUMDataGraphNode::TypeE::Value:
+    case PUMDataGraphNode::TypeE::Load: {
       // Value has nothing to compile for.
+      // Load node is already offloaded as special PUMLoadStream.
       break;
     }
     case PUMDataGraphNode::TypeE::Move: {
@@ -1262,6 +1377,30 @@ void MLCPUMManager::compileContext(PUMContext &context) {
       context.totalSyncs++;
     }
   }
+
+  // For now, we expect one Ack from each bank per sync.
+  assert(context.expectedAcksEverySync.empty());
+  auto totalBanks =
+      this->controller->getNumCols() * this->controller->getNumRows();
+  for (int i = 0; i < context.totalSyncs; ++i) {
+    context.expectedAcksEverySync.push_back(totalBanks);
+  }
+
+  // The first sync will have extra Sync from each strand of LoadNode.
+  assert(!context.expectedAcksEverySync.empty());
+  for (const auto &node : context.pumDataGraphNodes) {
+    if (node->type != PUMDataGraphNode::TypeE::Load) {
+      continue;
+    }
+
+    const auto &sendConfig = node->sendConfig;
+    auto mlcS =
+        this->mlcSE->getStreamFromStrandId(DynStrandId(sendConfig->dynamicId));
+    assert(mlcS && "Failed to find MLC SendS.");
+
+    context.expectedAcksEverySync.front() +=
+        mlcS->getDynStrandId().totalStrands;
+  }
 }
 
 void MLCPUMManager::erasePUMConfigs(PUMContext &context,
@@ -1427,6 +1566,7 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
    */
   newDirectConfig->pumContextId = context.contextId;
   newDirectConfig->pumElemPerSync = tileAlignedAtomicPat.getTotalTrip();
+  newDirectConfig->waitPUMRoundStart = false; // By default wait on Complete.
   newDirectConfig->hintNoStrandSplitOuterTripCount = 1;
   if (!patInfo.splitOuterDims.empty()) {
     const auto &splitDims = patInfo.splitOuterDims.front();
@@ -1539,6 +1679,161 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
   assert(erasedPurePUMId);
 }
 
+void MLCPUMManager::addPUMLoadStream(PUMContext &context,
+                                     CacheStreamConfigureVec *configs,
+                                     PUMDataGraphNode *loadNode) {
+  /**
+   * We will use a special LaodStream to broadcast data to PUM transposed
+   * format. Specifically, we will copy the original LoadConfig and modify it's
+   * SendTo edge to a special PUMSendTo edge.
+   *
+   * 1. The pattern is expanded to align with tile boundaries, and try to reduce
+   * M elements with in that tile in that dimension. For example, if we have:
+   *  - a 2D array of size MxN
+   *  - tile size TmxTn
+   *  - reduce dimension 0 (column)
+   *  - reduce the sub-region [R1, R2) x [C1, C2)
+   *  - PUM will produce P partial results in each tile.
+   *
+   * First we align the sub-region to tile boundary:
+   *   TR1 = (R1 / Tm) * Tm, TR2 = ((R2 + Tm - 1) / Tm) * Tm
+   *   TC1 = (C1 / Tn) * Tn, TC2 = ((C2 + Tn - 1) / Tn) * Tn
+   *
+   * Then we try to reduce P results from each tile:
+   *   TR1*N+TC1 : 1 : P : Tn : (TC2-TC1)/Tn : N : TR2-TR1
+   *
+   * The second dimension is when we get the final reduction
+   *
+   * 2. We will have to properly change the edges between streams.
+   *  - The NewReduceConfig and NewDirectConfig should point to each other,
+   *  - NewReduceConfig should only use NewDirectConfig.
+   *  - Any user of NewReduceConfig is kept the same.
+   *
+   * 3. We should really split the compuation into Reduce and Non-Reduce part,
+   * and let PUM handle all Non-Reduce part while partial Reduce. Then here we
+   * should change the computation of NewReduceConfig to only do Reduce part.
+   *
+   * However, right now we don;t have support to split the computation in the
+   * compiler, thus here we replace it with an empty function.
+   */
+
+  const auto &sendConfig = loadNode->sendConfig;
+  const auto &sendDynId = sendConfig->dynamicId;
+  const auto &sendPat = loadNode->sendPat;
+
+  const auto &recvConfig = loadNode->recvConfig;
+  const auto &recvPat = loadNode->pattern;
+  const auto &recvSplitOutDim = loadNode->splitOutDim;
+
+  MLC_S_DPRINTF(sendDynId,
+                "[PUMLoad] ---- SendPat %s RecvPat %s RecvSplitOutDim %s.\n",
+                sendPat, recvPat, recvSplitOutDim);
+
+  auto sendLoopLevel = sendConfig->stream->getLoopLevel();
+  auto recvLoopLevel = recvConfig->stream->getLoopLevel();
+
+  if (sendLoopLevel > recvLoopLevel) {
+    MLC_S_PANIC_NO_DUMP(sendDynId,
+                        "[PUMLoad] Can not handle inner-to-outer PUMLoad.");
+  }
+
+  auto loopLevelDiff = recvLoopLevel - sendLoopLevel;
+  if (recvPat.numDimension() < loopLevelDiff) {
+    MLC_S_PANIC_NO_DUMP(
+        sendDynId,
+        "[PUMLoad] Can not handle reused PUMLoad across SplitOutDim.");
+  }
+
+  /**
+   * As a heuristic, if the recv pattern is large, expand it to the whole array
+   * so that we can get simple masks.
+   * TODO: Implement this.
+   */
+
+  /**
+   * The first step is to reorganize the recv patterns:
+   * 1. Dimension [0, LoopLevelDiff) is considered BroadcastPattern.
+   * 2. Dimension [LoopLevelDiff, OutMost), is considered now SplitOutDim.
+   * 3. The original SplitOutDim is considered now Wait for round.
+   */
+  auto broadcastPat = recvPat;
+  auto newRecvPat = broadcastPat.splitFromDim(loopLevelDiff);
+  newRecvPat.mergeOutDim(recvSplitOutDim);
+
+  // Fill in missing dimensions of BroadcastPattern.
+  auto arraySizes = loadNode->pumTile.getArraySize();
+  int64_t accArraySize = 1;
+  for (int dim = 0; dim < arraySizes.size(); ++dim) {
+    if (broadcastPat.params.size() <= dim) {
+      // Add back one dimention with the correct stride and trip equals 1.
+      broadcastPat.params.push_back(AffinePattern::Param(accArraySize, 1));
+    }
+    accArraySize *= arraySizes[dim];
+  }
+
+  MLC_S_DPRINTF(sendDynId, "[PUMLoad]   BroadcastPat %s NewRecvPat %s.\n",
+                broadcastPat, newRecvPat);
+
+  /**
+   * Make a copy of both configurations, and clear the edges.
+   */
+  auto newSendConfig = std::make_shared<CacheStreamConfigureData>(*sendConfig);
+  newSendConfig->clearEdges();
+
+  // Set the PUMSendToEdge.
+  newSendConfig->addPUMSendTo(recvConfig, broadcastPat, newRecvPat,
+                              loadNode->pumTile);
+
+  // PUMSendTo Streams can not be sliced.
+  newSendConfig->shouldBeSlicedToCacheLines = false;
+
+  /**
+   * We set the information to coordinate the PUMLoadStream and PUMEngine.
+   * TODO: Correctly set the Sync count as now we have multiple syncs per
+   * TODO: compute round.
+   */
+  auto pumElemPerSync = sendPat.getTotalTrip();
+  if (recvSplitOutDim.getTotalTrip() != 0) {
+    pumElemPerSync = sendPat.getTotalTrip() / recvSplitOutDim.getTotalTrip();
+    MLC_S_DPRINTF(sendDynId, "[PUMLoad]   PUMElemPerSync = %ld / %ld = %ld.\n",
+                  sendPat.getTotalTrip(), recvSplitOutDim.getTotalTrip(),
+                  pumElemPerSync);
+  } else {
+    MLC_S_DPRINTF(sendDynId, "[PUMLoad]   PUMElemPerSync = %ld.\n",
+                  pumElemPerSync);
+  }
+  newSendConfig->pumContextId = context.contextId;
+  newSendConfig->pumElemPerSync = pumElemPerSync;
+  newSendConfig->waitPUMRoundStart = true;
+
+  /**
+   * If we have SplitOutDim, notify MLCStrandManager that streams should not be
+   * splitted at these outer-dimensions.
+   */
+  newSendConfig->hintNoStrandSplitOuterTripCount = 1;
+  if (recvSplitOutDim.getTotalTrip() != 0) {
+    newSendConfig->hintNoStrandSplitOuterTripCount =
+        recvSplitOutDim.getTotalTrip();
+  }
+
+  /**
+   * Insert back the new reduce configurations. Also remove it from
+   * PurePUMConfigs.
+   */
+  configs->push_back(newSendConfig);
+
+  bool erasedPurePUMId = false;
+  for (auto iter = context.purePUMStreamIds.begin();
+       iter != context.purePUMStreamIds.end(); ++iter) {
+    if ((*iter) == sendDynId) {
+      context.purePUMStreamIds.erase(iter);
+      erasedPurePUMId = true;
+      break;
+    }
+  }
+  assert(erasedPurePUMId);
+}
+
 void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
 
   if (this->controller->myParams->stream_pum_mode != 1) {
@@ -1591,15 +1886,33 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
   // Build the PUMDataGraph.
   this->buildPUMDataGraph(context);
 
-  // Really compile for the first time.
-  this->compileContext(context);
+  // LoadNode is preoffloaded as special PUMLoadStream.
+  for (auto node : context.pumDataGraphNodes) {
+    if (node->type == PUMDataGraphNode::TypeE::Load) {
+      this->addPUMLoadStream(context, normalConfigs, node);
+    }
+  }
 
+  return;
+}
+
+void MLCPUMManager::postMLCSEConfigure() {
+
+  // Really compile for the first time.
+  if (this->contexts.empty()) {
+    return;
+  }
+  auto &context = this->contexts.back();
+  if (!context.waitingPostConfig) {
+    return;
+  }
+  context.waitingPostConfig = false;
+
+  this->compileContext(context);
   if (this->contexts.size() == 1) {
     // Start PUM only if we reached the front of the queue.
     this->configurePUMEngine(context);
   }
-
-  return;
 }
 
 void MLCPUMManager::configurePUMEngine(PUMContext &context) {
@@ -1607,8 +1920,6 @@ void MLCPUMManager::configurePUMEngine(PUMContext &context) {
     for (int col = 0; col < this->controller->getNumCols(); ++col) {
       int nodeId = row * this->controller->getNumCols() + col;
       MachineID dstMachineId(MachineType_L2Cache, nodeId);
-
-      context.configuredBanks++;
 
       /**
        * We still configure here. But PUMEngine will not start until received
@@ -1918,8 +2229,14 @@ void MLCPUMManager::reachSync(int sentPackets) {
 
   auto &context = this->getFirstKickedContext();
   assert(context.isActive() && "No Active PUM.");
-  context.totalAckBanks++;
+  context.receivedAcks++;
   context.totalSentPackets += sentPackets;
+  assert(context.reachedSync < context.totalSyncs && "Sync overflow.");
+  MLCSE_DPRINTF(
+      "MLC ReachedSync %d Recv Ack %d ExpectedAck %d TotalSentPkt + %d = %d.\n",
+      context.reachedSync, context.receivedAcks,
+      context.expectedAcksEverySync.at(context.reachedSync), sentPackets,
+      context.totalSentPackets);
   this->checkSync(context);
 }
 
@@ -1927,6 +2244,8 @@ void MLCPUMManager::receivePacket(int recvPackets) {
   auto &context = this->getFirstKickedContext();
   assert(context.isActive() && "No Active PUM.");
   context.totalRecvPackets += recvPackets;
+  MLCSE_DPRINTF("MLC TotalRecvPkt + %d = %d.\n", recvPackets,
+                context.totalRecvPackets);
   this->checkSync(context);
 }
 
@@ -1938,13 +2257,14 @@ void MLCPUMManager::checkSync(PUMContext &context) {
     return;
   }
 
-  if (context.totalAckBanks == context.configuredBanks &&
+  auto expectedAcks = context.expectedAcksEverySync.at(context.reachedSync);
+  if (context.receivedAcks == expectedAcks &&
       context.totalSentPackets == context.totalRecvPackets) {
 
     MLCSE_DPRINTF("Synced %d Total %d.\n", context.reachedSync,
                   context.totalSyncs);
     context.reachedSync++;
-    context.totalAckBanks = 0;
+    context.receivedAcks = 0;
     context.totalSentPackets = 0;
     context.totalRecvPackets = 0;
 

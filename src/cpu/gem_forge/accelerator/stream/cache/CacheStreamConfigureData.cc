@@ -41,6 +41,17 @@ void CacheStreamConfigureData::addSendTo(CacheStreamConfigureDataPtr &data,
   this->depEdges.emplace_back(DepEdge::Type::SendTo, data, reuse, skip);
 }
 
+void CacheStreamConfigureData::addPUMSendTo(
+    const CacheStreamConfigureDataPtr &data, const AffinePattern &broadcastPat,
+    const AffinePattern &recvPat, const AffinePattern &recvTile) {
+  this->depEdges.emplace_back(
+      CacheStreamConfigureData::DepEdge::Type::PUMSendTo, data, 1 /* reuse */,
+      0 /* skip */);
+  this->depEdges.back().broadcastPat = broadcastPat;
+  this->depEdges.back().recvPat = recvPat;
+  this->depEdges.back().recvTile = recvTile;
+}
+
 void CacheStreamConfigureData::addBaseOn(CacheStreamConfigureDataPtr &data,
                                          int reuse, int skip) {
   if (reuse <= 0 || skip < 0) {

@@ -19,6 +19,8 @@ struct DynStrandId {
   StrandIndex strandIdx = InvalidStrandIdx;
   StrandIndex totalStrands = 0;
 
+  bool isValid() const { return strandIdx != InvalidStrandIdx; }
+
   DynStrandId() = default;
 
   explicit DynStrandId(const DynStreamId &_dynStreamId,

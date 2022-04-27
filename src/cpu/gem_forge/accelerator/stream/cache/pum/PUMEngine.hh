@@ -23,6 +23,24 @@ public:
   void tick();
 
   bool hasCompletedRound(int64_t pumContextId, int rounds) const;
+  bool hasStartedRound(int64_t pumContextId, int rounds) const;
+  bool shouldWaitPUMRound(int64_t pumContextId, int rounds,
+                          bool waitOnStart) const {
+    if (waitOnStart) {
+      return !this->hasStartedRound(pumContextId, rounds);
+    } else {
+      return !this->hasCompletedRound(pumContextId, rounds);
+    }
+  }
+
+  void sendPUMDataToLLC(const DynStreamSliceId &sliceId,
+                        const NetDest &recvBanks, int bytes);
+
+  using SentPktMapT = std::map<NodeID, int>;
+  void sendSyncToLLCs(const SentPktMapT &sentMap,
+                      const DynStreamSliceId &sliceId);
+
+  void sendSyncToMLC(int sentPackets);
 
 private:
   LLCStreamEngine *se;
@@ -39,13 +57,15 @@ private:
   int64_t pumContextId = InvalidPUMContextId;
   PUMCommandVecT commands;
   bool receivedConfig = false;
-  int currentRound = 0;
+  int startedRound = -1;
+  int completedRound = -1;
   int nextCmdIdx = 0;
   Cycles nextCmdReadyCycle;
-  int sentInterBankPackets = 0;
-  int recvInterBankPackets = 0;
-  std::map<NodeID, int> sentInterBankPacketMap;
-  std::map<NodeID, std::pair<int, int>> recvInterBankPacketMap;
+  int sentPUMDataPkts = 0;
+  int recvDataPkts = 0;
+  SentPktMapT sentInterBankPacketMap;
+  std::map<NodeID, std::pair<int, int>> recvPUMDataPktMap;
+  std::map<DynStrandId, std::pair<int, int>> recvStreamDataPktMap;
   bool acked = false;
 
   int getBankIdx() const { return this->controller->getMachineID().num; }
@@ -62,10 +82,12 @@ private:
   void synced();
 
   void sendDoneToMLC(int recvPackets);
-  void sendSyncToMLC(int sentPackets);
   void sendAckToMLC(CoherenceResponseType type, int ackCount);
-  void sendSyncToLLCs();
-  void sendSyncToLLC(MachineID recvBank, int sentPackets);
+  void sendSyncToLLC(MachineID recvBank, int sentPackets,
+                     const DynStreamSliceId &sliceId);
+
+  void receiveDataFromPUM(const RequestMsg &msg);
+  void receiveDataFromStream(const RequestMsg &msg);
 };
 
 #endif

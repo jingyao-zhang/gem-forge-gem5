@@ -55,14 +55,16 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
                    "Everything handled by PUM. No Normal Streams.\n");
     delete configs;
     delete pkt;
-    return;
+  } else {
+    this->strandManager->receiveStreamConfigure(pkt);
+    if (this->controller->isStreamRangeSyncEnabled()) {
+      // Enable the range check.
+      this->scheduleEvent(Cycles(1));
+    }
   }
 
-  this->strandManager->receiveStreamConfigure(pkt);
-  if (this->controller->isStreamRangeSyncEnabled()) {
-    // Enable the range check.
-    this->scheduleEvent(Cycles(1));
-  }
+  // Either way, we have to call PUMManager::postMLCSEConfigure.
+  this->pumManager->postMLCSEConfigure();
 }
 
 void MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {

@@ -545,6 +545,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   // ! Sean: StreamAwareCache
   // Stream indirect request.
   in_port(streamIndirectToL2Cache_in, RequestMsg, streamIndirectToL2Cache, rank = 1) {
+    DPRINTF(RubySlicc, "Checking IndirectStreamReq.\n");
     if(streamIndirectToL2Cache_in.isReady(clockEdge())) {
       peek(streamIndirectToL2Cache_in,  RequestMsg) {
 
@@ -573,6 +574,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         incrementLLCIndReqQueueStats();
         Tick delay := streamIndirectToL2Cache_in.dequeue(clockEdge());
         profileMsgDelay(3, ticksToCycles(delay));
+        
+        // Recycle any messages that are ready this cycle in case we missed it.
+        if (streamIndirectToL2Cache_in.isReady(clockEdge())) {
+          streamIndirectToL2Cache_in.recycle(clockEdge(), cyclesToTicks(recycle_latency));
+        }
       }
     }
   }
