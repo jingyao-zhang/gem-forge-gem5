@@ -266,6 +266,21 @@ parser.add_option("--gem-forge-stream-nuca-enable-ind-page-remap", type="int",
 parser.add_option("--gem-forge-stream-pum-mode", type="int",
                   action="store", default="0",
                   help="0: Disable; 1: Enable stream PUM; 2: Enable stream PUM mapping only.")
+parser.add_option("--gem-forge-stream-pum-enable-tiling", type="int",
+                  action="store", default="1",
+                  help="Enable PUM tiling.")
+parser.add_option("--gem-forge-stream-pum-num-bitlines", type="int",
+                  action="store", default="256",
+                  help="Number of bitlines per SRAM array.")
+parser.add_option("--gem-forge-stream-pum-num-wordlines", type="int",
+                  action="store", default="256",
+                  help="Number of wordlines per SRAM array.")
+parser.add_option("--gem-forge-stream-pum-enable-parallel-intra-array-shift", type="int",
+                  action="store", default="1",
+                  help="Whether intra-array shift can happen in parallel.")
+parser.add_option("--gem-forge-stream-pum-enable-parallel-inter-array-shift", type="int",
+                  action="store", default="1",
+                  help="Whether inter-array shift can happen in parallel.")
 
 # Stream in Mem Options.
 parser.add_option("--gem-forge-stream-engine-enable-float-mem", action="store_true", default=False,

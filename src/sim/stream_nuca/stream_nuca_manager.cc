@@ -5,6 +5,7 @@
 #include "base/trace.hh"
 #include "cpu/gem_forge/accelerator/stream/cache/pum/PUMHWConfiguration.hh"
 #include "cpu/thread_context.hh"
+#include "params/Process.hh"
 
 #include <iomanip>
 #include <unordered_set>
@@ -22,25 +23,26 @@ Stats::DistributionNoReset StreamNUCAManager::indRegionMemMinBanks;
 Stats::ScalarNoReset StreamNUCAManager::indRegionMemToLLCRemappedHops;
 Stats::DistributionNoReset StreamNUCAManager::indRegionMemRemappedBanks;
 
-StreamNUCAManager::StreamNUCAManager(Process *_process, bool _enabledMemStream,
-                                     bool _enabledNUCA, bool _enablePUM,
-                                     const std::string &_directRegionFitPolicy,
-                                     bool _enableIndirectPageRemap)
-    : process(_process), enabledMemStream(_enabledMemStream),
-      enabledNUCA(_enabledNUCA), enablePUM(_enablePUM),
-      enableIndirectPageRemap(_enableIndirectPageRemap) {
-  if (_directRegionFitPolicy == "crop") {
+StreamNUCAManager::StreamNUCAManager(Process *_process, ProcessParams *_params)
+    : process(_process), enabledMemStream(_params->enableMemStream),
+      enabledNUCA(_params->enableStreamNUCA),
+      enablePUM(_params->enableStreamPUMMapping),
+      enablePUMTiling(_params->enableStreamPUMTiling),
+      enableIndirectPageRemap(_params->streamNUCAEnableIndPageRemap) {
+  const auto &directRegionFitPolicy = _params->streamNUCADirectRegionFitPolicy;
+  if (directRegionFitPolicy == "crop") {
     this->directRegionFitPolicy = DirectRegionFitPolicy::CROP;
-  } else if (_directRegionFitPolicy == "drop") {
+  } else if (directRegionFitPolicy == "drop") {
     this->directRegionFitPolicy = DirectRegionFitPolicy::DROP;
   } else {
-    panic("Unknown DirectRegionFitPolicy %s.", _directRegionFitPolicy);
+    panic("Unknown DirectRegionFitPolicy %s.", directRegionFitPolicy);
   }
 }
 
 StreamNUCAManager::StreamNUCAManager(const StreamNUCAManager &other)
     : process(other.process), enabledMemStream(other.enabledMemStream),
       enabledNUCA(other.enabledNUCA), enablePUM(other.enablePUM),
+      enablePUMTiling(other.enablePUMTiling),
       directRegionFitPolicy(other.directRegionFitPolicy),
       enableIndirectPageRemap(other.enableIndirectPageRemap) {
   panic("StreamNUCAManager does not have copy constructor.");
@@ -1131,34 +1133,73 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
     tileSizes.at(alignDims.front()) = bitlines;
   } else if (numAlignDims == 2) {
     // Just try to get square root of bitlines?
-    auto &x = tileSizes.at(alignDims.at(0));
-    auto &y = tileSizes.at(alignDims.at(1));
-    x = bitlines;
-    y = 1;
-    while (y * 2 < x) {
-      y *= 2;
-      x /= 2;
+    if (this->enablePUMTiling) {
+      auto &x = tileSizes.at(alignDims.at(0));
+      auto &y = tileSizes.at(alignDims.at(1));
+      x = bitlines;
+      y = 1;
+      while (y * 2 < x) {
+        y *= 2;
+        x /= 2;
+      }
+    } else {
+      // Tiling is not enabled, however, we tile to handle the case when dim0 <
+      // bitlines.
+      auto &x = tileSizes.at(0);
+      auto &y = tileSizes.at(1);
+      x = bitlines;
+      y = 1;
+      auto size0 = arraySizes.at(0);
+      if (size0 < bitlines) {
+        assert(bitlines % size0 == 0);
+        x = size0;
+        y = bitlines / size0;
+      }
     }
   } else if (dimensions == 3) {
-    auto &x = tileSizes.at(alignDims.at(0));
-    auto &y = tileSizes.at(alignDims.at(1));
-    auto &z = tileSizes.at(alignDims.at(2));
-    x = bitlines;
-    y = 1;
-    z = 1;
-    while (y * 4 < x) {
-      x /= 4;
-      y *= 2;
-      z *= 2;
+    if (this->enablePUMTiling) {
+      auto &x = tileSizes.at(alignDims.at(0));
+      auto &y = tileSizes.at(alignDims.at(1));
+      auto &z = tileSizes.at(alignDims.at(2));
+      x = bitlines;
+      y = 1;
+      z = 1;
+      while (y * 4 < x) {
+        x /= 4;
+        y *= 2;
+        z *= 2;
+      }
+    } else {
+      // Tiling is not enabled, however, we tile to handle the case when dim0 <
+      // bitlines.
+      auto &x = tileSizes.at(0);
+      auto &y = tileSizes.at(1);
+      auto &z = tileSizes.at(2);
+      x = bitlines;
+      y = 1;
+      z = 1;
+      auto size0 = arraySizes.at(0);
+      if (size0 < bitlines) {
+        assert(bitlines % size0 == 0);
+        x = size0;
+        y = bitlines / size0;
+        z = 1;
+      }
     }
   } else {
     panic("[StreamPUM] Region %s too many dimensions.", region.name);
   }
 
   for (auto dim = 0; dim < dimensions; ++dim) {
-    if (arraySizes[dim] % tileSizes[dim] != 0) {
+    auto arraySize = arraySizes[dim];
+    auto tileSize = tileSizes[dim];
+    if (arraySize < tileSize) {
+      panic("[StreamPUM] Region %s Dim %d %ld < %ld.", region.name, dim,
+            arraySize, tileSize);
+    }
+    if (arraySize % tileSize != 0) {
       panic("[StreamPUM] Region %s Dim %d %ld %% %ld != 0.", region.name, dim,
-            arraySizes[dim], tileSizes[dim]);
+            arraySize, tileSize);
     }
   }
 

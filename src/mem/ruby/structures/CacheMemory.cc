@@ -76,6 +76,8 @@ CacheMemory::CacheMemory(const Params *p)
     m_use_occupancy = dynamic_cast<WeightedLRUPolicy*>(
                                     m_replacementPolicy_ptr) ? true : false;
     m_query_stream_nuca = p->query_stream_nuca;
+    m_num_bitlines = p->num_bitlines;
+    m_num_wordlines = p->num_wordlines;
 }
 
 void
@@ -106,8 +108,8 @@ CacheMemory::init()
         cacheParams.blockSize = m_block_size;
         cacheParams.numSet = m_cache_num_sets;
         cacheParams.assoc = m_cache_assoc;
-        cacheParams.wordlines = 512;
-        cacheParams.bitlines = 512;
+        cacheParams.wordlines = m_num_wordlines;
+        cacheParams.bitlines = m_num_bitlines;
         cacheParams.arrayTreeDegree = 2;
         cacheParams.arrayTreeLeafBandwidth = 4;
         cacheParams.arrayPerWay = 

@@ -56,3 +56,5 @@ class RubyCache(SimObject):
     # ! Sean: Stream NUCA.
     # Whether we should query StreamNUCAMap for remapped set.
     query_stream_nuca = Param.Bool(False, "query StreamNUCA for set.")
+    num_bitlines = Param.Int(256, "Number of bitlines per SRAM array.")
+    num_wordlines = Param.Int(256, "Number of wordlines per SRAM array.")

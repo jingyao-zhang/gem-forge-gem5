@@ -308,6 +308,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                                skip_index_num_bits=l2_bits,
                                replacement_policy=BRRIPRP(),
                                query_stream_nuca=True,
+                               num_bitlines=options.gem_forge_stream_pum_num_bitlines,
+                               num_wordlines=options.gem_forge_stream_pum_num_wordlines,
                                )
 
             l2_cntrl = L2Cache_Controller(
@@ -376,6 +378,10 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 neighbor_migration_valve_type=\
                     options.gem_forge_stream_engine_llc_neighbor_migration_valve_type,
                 enable_stream_float_mem=options.gem_forge_stream_engine_enable_float_mem,
+                stream_pum_enable_parallel_intra_array_shift=\
+                    options.gem_forge_stream_pum_enable_parallel_intra_array_shift,
+                stream_pum_enable_parallel_inter_array_shift=\
+                    options.gem_forge_stream_pum_enable_parallel_inter_array_shift,
                 )
 
             exec("ruby_system.l2_cntrl%d = l2_cntrl"

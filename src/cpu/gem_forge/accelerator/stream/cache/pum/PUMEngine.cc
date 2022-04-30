@@ -199,9 +199,18 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
 
   if (command.type == "intra-array") {
     /**
-     * Intra array is easy, just charge one cycle for each wordline.
+     * Intra array is easy:
+     * 1. If enabled parallel intra-array shift, just charge one cycle for each
+     * wordline.
+     * 2. Otherwise, charge one cycle for each bitline shifted.
+     *
      */
-    return Cycles(command.wordline_bits);
+    if (this->controller->myParams
+            ->stream_pum_enable_parallel_intra_array_shift) {
+      return Cycles(command.wordline_bits);
+    } else {
+      return Cycles(command.wordline_bits * std::abs(command.bitline_dist));
+    }
   }
 
   if (command.type == "inter-array") {
@@ -230,7 +239,9 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
 
     auto accumulatedLatency = 0;
     auto numLevels = command.inter_array_splits.size();
-    for (int level = 0; level < numLevels; ++level) {
+    auto numSubTreeNodes = hwConfig->tree_degree;
+    for (int level = 0; level < numLevels;
+         ++level, numSubTreeNodes *= hwConfig->tree_degree) {
       auto levelArrays = 0;
       for (const auto &splitPattern : command.inter_array_splits[level]) {
         // TODO: Intersect with LLC array masks.
@@ -265,8 +276,27 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
         } else {
           /**
            * Still intra-bank level.
+           * 1. If enabled parallel inter-array shift, we charge how many arrays
+           * shifted in each sub-tree.
+           * 2. Otherwise, we need to perform shift in each sub-tree
+           * sequentially.
            */
-          levelArrays += splitPattern.getTotalTrip();
+          if (this->controller->myParams
+                  ->stream_pum_enable_parallel_inter_array_shift) {
+            levelArrays += splitPattern.getTotalTrip();
+          } else {
+            if (level + 2 == numLevels) {
+              // This is the inter-way level. Can always shift in parallel.
+              levelArrays += splitPattern.getTotalTrip();
+            } else {
+              // Intra-way inter-array level.
+              auto numLeafNodes = this->hwConfig->array_per_way;
+              assert(numSubTreeNodes <= numLeafNodes);
+              assert(numLeafNodes % numSubTreeNodes == 0);
+              auto levelSubTrees = numLeafNodes / numSubTreeNodes;
+              levelArrays += splitPattern.getTotalTrip() * levelSubTrees;
+            }
+          }
         }
       }
       accumulatedLatency += levelArrays * latencyPerArray;

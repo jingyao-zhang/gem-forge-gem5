@@ -72,6 +72,8 @@ def get_processes(options):
             options.gem_forge_stream_nuca_enable_ind_page_remap
         process.enableStreamPUMMapping = \
             options.gem_forge_stream_pum_mode != 0
+        process.enableStreamPUMTiling = \
+            options.gem_forge_stream_pum_enable_tiling
 
         multiprocesses.append(process)
         idx += 1

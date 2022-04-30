@@ -215,6 +215,8 @@ class CacheMemory : public SimObject
     bool m_resource_stalls;
     int m_block_size;
     bool m_query_stream_nuca;
+    int m_num_bitlines;
+    int m_num_wordlines;
 
     /**
      * We store all the ReplacementData in a 2-dimensional array. By doing

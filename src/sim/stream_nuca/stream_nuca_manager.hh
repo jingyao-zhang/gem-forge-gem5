@@ -8,10 +8,7 @@
 
 class StreamNUCAManager {
 public:
-  StreamNUCAManager(Process *_process, bool _enabledMemStream,
-                    bool _enabledNUCA, bool _enablePUM,
-                    const std::string &_directRegionFitPolicy,
-                    bool _enableIndirectPageRemap);
+  StreamNUCAManager(Process *_process, ProcessParams *_params);
 
   /**
    * We panic on copy. Required for process clone.
@@ -95,6 +92,7 @@ private:
   const bool enabledMemStream;
   const bool enabledNUCA;
   const bool enablePUM;
+  const bool enablePUMTiling;
   enum DirectRegionFitPolicy {
     CROP,
     DROP,

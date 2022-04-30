@@ -80,6 +80,7 @@ class Process(SimObject):
     streamNUCAEnableIndPageRemap = Param.Bool(False,
         "Enable remap indirect page.")
     enableStreamPUMMapping = Param.Bool(False, "Enable StreamPUM Mapping.")
+    enableStreamPUMTiling = Param.Bool(False, "Enable StreamPUM Tiling.")
 
     @classmethod
     def export_methods(cls, code):
