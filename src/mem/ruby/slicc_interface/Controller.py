@@ -146,3 +146,7 @@ class RubyStreamAwareController(RubyController):
         Param.Bool(False, "Whether intra-array shift can happen in parallel.")
     stream_pum_enable_parallel_inter_array_shift = \
         Param.Bool(False, "Whether inter-array shift can happen in parallel.")
+    stream_pum_optimize_dfg = \
+        Param.Bool(True, "Whether MLCPUMManager optimizes the PUM tDFG.")
+    stream_pum_compile_lat_per_cmd = \
+        Param.UInt32(100, "How many cycles charged to compile one cmd.")

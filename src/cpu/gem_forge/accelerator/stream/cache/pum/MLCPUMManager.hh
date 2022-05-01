@@ -337,7 +337,10 @@ private:
     /**
      * Stats for PUM computation.
      */
-    bool waitingPostConfig = true;    // Expecting post configuration.
+    bool waitingPostConfig = true;       // Expecting post configuration.
+    bool waitingFirstCompileDone = true; // Wait for  the first compilation.
+    Cycles firstCompileReadyCycle = Cycles(0);
+
     Cycles initCycle = Cycles(0);     // When I was intialized.
     Cycles lastKickCycle = Cycles(0); // Last time I was kicked.
     Cycles lastSyncCycle = Cycles(0); // Last time I was synced.
@@ -478,6 +481,10 @@ private:
   void kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
                      bool isIdea);
 
+public:
+  void kickPUMEngineEventImpl(int64_t contextId);
+
+private:
   void checkSync(PUMContext &context);
 
   /**

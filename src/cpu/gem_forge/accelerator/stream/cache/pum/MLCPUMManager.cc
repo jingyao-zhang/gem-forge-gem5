@@ -1933,9 +1933,63 @@ void MLCPUMManager::configurePUMEngine(PUMContext &context) {
     }
   }
   assert(context.state == PUMContext::StateE::Initialized);
+  /**
+   * Accumulate the latency to compile the kernel template.
+   * So far we charge a fixed 100 cycles latency for non-sync commands.
+   * Then we schedule the event of the MLC SE to kick this context.
+   */
+  if (context.waitingFirstCompileDone) {
+    assert(context.firstCompileReadyCycle == Cycles(0));
+
+    int totalCompileLatency = 0;
+    const int compileLatencyPerCommand =
+        this->controller->myParams->stream_pum_compile_lat_per_cmd;
+    for (const auto &command : context.commands) {
+      if (command.type == "sync") {
+        continue;
+      }
+      totalCompileLatency += compileLatencyPerCommand;
+    }
+    context.firstCompileReadyCycle =
+        this->controller->curCycle() + Cycles(totalCompileLatency);
+
+    auto contextId = context.contextId;
+    auto event = new EventFunctionWrapper(
+        [this, contextId]() -> void {
+          this->kickPUMEngineEventImpl(contextId);
+        },
+        "MLCPUMManager::kick", true /* del */
+    );
+
+    this->controller->schedule(
+        event, this->controller->cyclesToTicks(context.firstCompileReadyCycle));
+
+    return;
+  }
+
+  // This is not the first time compiling. Assuming pipelined compilation,
+  // we do not charge compilation latency any more.
   context.state = PUMContext::StateE::Kicked;
   context.lastKickCycle = this->controller->curCycle();
   this->kickPUMEngine(context, MessageSizeType_Data, false /* isIdea */);
+}
+
+void MLCPUMManager::kickPUMEngineEventImpl(int64_t contextId) {
+  for (auto &context : this->contexts) {
+    if (context.contextId != contextId) {
+      continue;
+    }
+    // Found the context.
+    assert(context.waitingFirstCompileDone);
+    assert(context.state == PUMContext::StateE::Initialized);
+    assert(context.firstCompileReadyCycle <= this->controller->curCycle());
+    context.waitingFirstCompileDone = false;
+    context.state = PUMContext::StateE::Kicked;
+    context.lastKickCycle = this->controller->curCycle();
+    this->kickPUMEngine(context, MessageSizeType_Data, false /* isIdea */);
+    return;
+  }
+  // Sliently ignore the case when we do not find the context.
 }
 
 void MLCPUMManager::kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
