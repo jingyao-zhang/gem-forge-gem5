@@ -846,6 +846,11 @@ void MLCPUMManager::buildPUMDataGraphCompute(
 
 void MLCPUMManager::mergePUMDataGraphMoveNode(PUMContext &context) {
 
+  if (!this->controller->myParams->stream_pum_optimize_dfg) {
+    MLCSE_DPRINTF("[PUM] Disabled DFG Optimization.\n");
+    return;
+  }
+
   auto &nodes = context.pumDataGraphNodes;
 
   /**
@@ -1037,6 +1042,43 @@ void MLCPUMManager::mergePUMDataGraphMoveNode(PUMContext &context) {
 
 MLCPUMManager::PUMDataGraphNodeVec
 MLCPUMManager::schedulePUMDataGraph(PUMContext &context) {
+  if (this->controller->myParams->stream_pum_optimize_dfg) {
+    return this->schedulePUMDataGraphBFS(context);
+  } else {
+    return this->schedulePUMDataGraphLinear(context);
+  }
+}
+
+MLCPUMManager::PUMDataGraphNodeVec
+MLCPUMManager::schedulePUMDataGraphLinear(PUMContext &context) {
+
+  /**
+   * This is used when we don't optimize the DFG. Here we simply
+   * insert Sync node before and after CMP node.
+   */
+
+  PUMDataGraphNodeVec scheduledNodes;
+
+  for (auto node : context.pumDataGraphNodes) {
+    if (node->type != PUMDataGraphNode::TypeE::Compute) {
+      scheduledNodes.push_back(node);
+      continue;
+    }
+    // Check if the previous node is Sync.
+    if (!scheduledNodes.empty() &&
+        scheduledNodes.back()->type != PUMDataGraphNode::TypeE::Sync) {
+      scheduledNodes.push_back(PUMDataGraphNode::newSyncNode());
+    }
+    scheduledNodes.push_back(node);
+    // Insert a sync after that.
+    scheduledNodes.push_back(PUMDataGraphNode::newSyncNode());
+  }
+
+  return scheduledNodes;
+}
+
+MLCPUMManager::PUMDataGraphNodeVec
+MLCPUMManager::schedulePUMDataGraphBFS(PUMContext &context) {
 
   PUMDataGraphNodeVec scheduledNodes;
 
@@ -2340,6 +2382,19 @@ void MLCPUMManager::checkSync(PUMContext &context) {
           context, MessageSizeType_Control,
           this->controller->myParams->enable_stream_idea_ack /* isIdea */);
     }
+  }
+}
+
+void MLCPUMManager::reportProgress(int64_t contextId) {
+  const auto &context = this->getContextById(contextId);
+  for (const auto &group : context.pumGroups) {
+    if (!group.appliedPUM) {
+      continue;
+    }
+    // Record that we have made some progress.
+    const auto &config = group.computeConfig;
+    auto S = config->stream;
+    S->incrementOffloadedStepped();
   }
 }
 

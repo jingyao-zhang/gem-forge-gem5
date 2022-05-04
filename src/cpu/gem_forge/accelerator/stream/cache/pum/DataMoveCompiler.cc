@@ -48,7 +48,17 @@ bool DataMoveCompiler::canTurnStrideIntoMask(
               pattern, dim, dimStride, mod);
 
       auto tile = this->tile_sizes[dim];
-      if (dimStride > tile || tile % dimStride != 0) {
+      bool canMaskStride = true;
+      if (dimStride <= tile) {
+        if (tile % dimStride != 0) {
+          canMaskStride = false;
+        }
+      } else {
+        if (dimStride % tile != 0) {
+          canMaskStride = false;
+        }
+      }
+      if (!canMaskStride) {
         DPRINTF(StreamPUM,
                 "[PUM] Pattern %s Dim %d Stride %ld Not Align to Tile %ld.\n",
                 pattern, dim, dimStride, tile);
@@ -88,7 +98,17 @@ DataMoveCompiler::turnStrideIntoMask(AffinePattern &pattern) const {
               pattern, dim, dimStride, mod);
 
       auto tile = this->tile_sizes[dim];
-      if (dimStride > tile || tile % dimStride != 0) {
+      bool canMaskStride = true;
+      if (dimStride <= tile) {
+        if (tile % dimStride != 0) {
+          canMaskStride = false;
+        }
+      } else {
+        if (dimStride % tile != 0) {
+          canMaskStride = false;
+        }
+      }
+      if (!canMaskStride) {
         panic("[PUM] Pattern %s Dim %d Stride %ld Not Align to Tile %ld.",
               pattern, dim, dimStride, tile);
       }

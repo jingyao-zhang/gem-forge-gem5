@@ -285,7 +285,7 @@ parser.add_option("--gem-forge-stream-pum-optimize-dfg", type="int",
                   action="store", default="1",
                   help="Enable tDFG optimization (e.g., merging, scheduling).")
 parser.add_option("--gem-forge-stream-pum-compile-lat-per-cmd", type="int",
-                  action="store", default="100",
+                  action="store", default="10",
                   help="Compiling latency per cmd.")
 
 # Stream in Mem Options.

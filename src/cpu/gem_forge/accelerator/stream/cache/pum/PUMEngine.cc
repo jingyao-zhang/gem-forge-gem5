@@ -155,6 +155,7 @@ void PUMEngine::kickNextCommand() {
     }
 
     LLC_SE_DPRINTF("[Kick] NextCmd %s", command.to_string(myBankIdx));
+    this->pumManager->reportProgress(this->pumContextId);
 
     /**
      * Estimate the latency of each command.
@@ -431,6 +432,7 @@ void PUMEngine::synced() {
 void PUMEngine::receiveData(const RequestMsg &msg) {
   assert(this->pumManager);
 
+  this->pumManager->reportProgress(this->pumContextId);
   if (msg.m_sliceIds.isValid()) {
     this->receiveDataFromStream(msg);
   } else {

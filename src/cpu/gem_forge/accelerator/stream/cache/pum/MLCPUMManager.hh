@@ -62,6 +62,7 @@ public:
    */
   void reachSync(int sentPackets);
   void receivePacket(int recvPackets);
+  void reportProgress(int64_t contextId);
 
   MachineID getMachineID() const { return this->controller->getMachineID(); }
 
@@ -411,6 +412,8 @@ private:
    * So far just BFS.
    */
   PUMDataGraphNodeVec schedulePUMDataGraph(PUMContext &context);
+  PUMDataGraphNodeVec schedulePUMDataGraphLinear(PUMContext &context);
+  PUMDataGraphNodeVec schedulePUMDataGraphBFS(PUMContext &context);
 
   /**
    * Compile scheduled PUMDataGraph into commands.
