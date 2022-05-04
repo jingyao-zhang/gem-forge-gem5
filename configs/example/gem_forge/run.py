@@ -276,7 +276,7 @@ parser.add_option("--gem-forge-stream-pum-num-wordlines", type="int",
                   action="store", default="256",
                   help="Number of wordlines per SRAM array.")
 parser.add_option("--gem-forge-stream-pum-enable-parallel-intra-array-shift", type="int",
-                  action="store", default="1",
+                  action="store", default="0",
                   help="Whether intra-array shift can happen in parallel.")
 parser.add_option("--gem-forge-stream-pum-enable-parallel-inter-array-shift", type="int",
                   action="store", default="1",

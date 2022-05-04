@@ -232,6 +232,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   RequestStatisticPtr getRequestStatistic(PacketPtr);
   void recordLLCReqQueueStats(RequestStatisticPtr, DynStreamSliceIdVec, bool);
   void incrementLLCIndReqQueueStats();
+  
+  Cycles adjustResponseLat(Cycles responseLat, Addr paddr);
 
   bool isStreamSublineEnabled();
   MessageSizeType getMessageSizeType(int);
@@ -652,7 +654,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   action(d_sendDataToRequestor, "d", desc="Send data from cache to reqeustor") {
     peek(L1RequestL2Network_in, RequestMsg) {
-      enqueue(responseL2Network_out, ResponseMsg, l2_response_latency) {
+      Cycles lat := adjustResponseLat(l2_response_latency, address);
+      enqueue(responseL2Network_out, ResponseMsg, lat) {
         assert(is_valid(cache_entry));
         out_msg.addr := address;
         out_msg.Type := CoherenceResponseType:DATA;
@@ -671,7 +674,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   action(dd_sendExclusiveDataToRequestor, "dd", desc="Send data from cache to reqeustor") {
     peek(L1RequestL2Network_in, RequestMsg) {
-      enqueue(responseL2Network_out, ResponseMsg, l2_response_latency) {
+      Cycles lat := adjustResponseLat(l2_response_latency, address);
+      enqueue(responseL2Network_out, ResponseMsg, lat) {
         assert(is_valid(cache_entry));
         out_msg.addr := address;
         out_msg.Type := CoherenceResponseType:DATA_EXCLUSIVE;
@@ -720,7 +724,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   action(du_sendUncacheDataToRequestors, "du", desc="Send uncache data from cache to all reqeustors") {
     peek(L1RequestL2Network_in, RequestMsg) {
-      enqueue(responseL2Network_out, ResponseMsg, l2_response_latency) {
+      Cycles lat := adjustResponseLat(l2_response_latency, address);
+      enqueue(responseL2Network_out, ResponseMsg, lat) {
         assert(is_valid(cache_entry));
         out_msg.addr := address;
         out_msg.Type := CoherenceResponseType:DATA_EXCLUSIVE;
@@ -785,7 +790,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   action(ds_sendSharedDataToRequestor, "ds", desc="Send data from cache to reqeustor") {
     peek(L1RequestL2Network_in, RequestMsg) {
-      enqueue(responseL2Network_out, ResponseMsg, l2_response_latency) {
+      Cycles lat := adjustResponseLat(l2_response_latency, address);
+      enqueue(responseL2Network_out, ResponseMsg, lat) {
         assert(is_valid(cache_entry));
         out_msg.addr := address;
         out_msg.Type := CoherenceResponseType:DATA;
@@ -1158,7 +1164,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     assert(is_valid(cache_entry));
     if (cache_entry.sliceIds.isValid()) {
       // This should never be used for StreamStore.
-      se.receiveStreamDataVec(l2_response_latency, address, cache_entry.sliceIds, cache_entry.DataBlk, cache_entry.DataBlk);
+      Cycles lat := adjustResponseLat(l2_response_latency, address);
+      se.receiveStreamDataVec(lat, address, cache_entry.sliceIds, cache_entry.DataBlk, cache_entry.DataBlk);
       // Clear the sliceId.
       cache_entry.sliceIds.clear();
     }

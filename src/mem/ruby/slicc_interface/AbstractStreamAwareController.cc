@@ -339,3 +339,13 @@ bool AbstractStreamAwareController::isMyNeighbor(MachineID machineId) const {
   int col = machineId.getNum() % cols;
   return std::abs(myRow - row) + std::abs(myCol - col) == 1;
 }
+
+Cycles AbstractStreamAwareController::adjustResponseLat(Cycles responseLat,
+                                                        Addr paddr) const {
+  auto range = StreamNUCAMap::getRangeMapContaining(paddr);
+  if (!range || !range->isStreamPUM) {
+    return responseLat;
+  }
+  // Charge the number of wordlines as the latency.
+  return Cycles(range->elementBits);
+}

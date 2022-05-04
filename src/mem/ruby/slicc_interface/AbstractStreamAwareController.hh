@@ -42,6 +42,15 @@ public:
    */
   Addr getAddressToOurLLC() const;
 
+  /**
+   * @brief Adjust the response latency of the cache.
+   * Currently, this is used to charge extra latency to access cache lines
+   * in transposed layout in in-memory computing.
+   * 
+   * @return Cycles.
+   */
+  Cycles adjustResponseLat(Cycles responseLat, Addr paddr) const;
+
   int getNumCoresPerRow() const { return this->numCoresPerRow; }
   bool isStreamFloatEnabled() const { return this->enableStreamFloat; }
   bool isStreamSublineEnabled() const { return this->enableStreamSubline; }
