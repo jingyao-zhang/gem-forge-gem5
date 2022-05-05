@@ -364,6 +364,33 @@ void AVXOpBase::doInsert(ExecContext *xc) const {
   }
 }
 
+// void AVXOpBase::doBroadcast(ExecContext *xc) const {
+//   /**
+//    * We first copy from src2, and then insert src1.
+//    */
+//   auto select = imm8;
+//   auto vSrcRegs = srcVL / sizeof(uint64_t);
+//   auto vDestRegs = destVL / sizeof(uint64_t);
+//   FloatInt src;
+//   FloatInt dest[vDestRegs];
+
+//   src.ul = xc->readFloatRegOperandBits(this, 0);
+//   if (srcVL == 4 && destVL == 64) {
+//     // Broadcast 32bit into 512bit.
+//     for (int i = 0; i < vDestRegs; ++i) {
+//       dest[i].ui.i1 = src.ui.i1;
+//       dest[i].ui.i2 = src.ui.i1;
+//       // hack("Insert256 %d -> %d %lu.\n", i, i + destOffset, dest[i].ul);
+//     }
+//   } else {
+//     panic("Unsupported Broadcast SrcVL %d DestVL %d.\n", srcVL, destVL);
+//   }
+
+//   for (int i = 0; i < vDestRegs; ++i) {
+//     xc->setFloatRegOperandBits(this, i, dest[i].ul);
+//   }
+// }
+
 void AVXOpBase::doFloatCompare(ExecContext *xc, bool isSingle) const {
   uint64_t result = 0;
   auto vSrcRegs = srcVL / sizeof(uint64_t);

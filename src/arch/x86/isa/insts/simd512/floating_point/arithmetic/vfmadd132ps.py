@@ -57,14 +57,14 @@ def macroop VFMADD132PSBROADCAST_ZMM_ZMM {
 
 def macroop VFMADD132PSBROADCAST_ZMM_M {
     ldfp ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=4
-    vbroadcast32 dest=ufp1, src=ufp1, destVL=64
+    vbroadcast srcSize=4, dest=ufp1, src=ufp1, destVL=64
     vfmaddf dest=xmm0, src1=xmm0, src2=ufp1, src3=xmm0v, size=4, VL=64
 };
 
 def macroop VFMADD132PSBROADCAST_ZMM_P {
     rdip t7
     ldfp ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=4
-    vbroadcast32 dest=ufp1, src=ufp1, destVL=64
+    vbroadcast srcSize=4, dest=ufp1, src=ufp1, destVL=64
     vfmaddf dest=xmm0, src1=xmm0, src2=ufp1, src3=xmm0v, size=4, VL=64
 };
 

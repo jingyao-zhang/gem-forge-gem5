@@ -394,10 +394,10 @@ let {{
             }
         '''
 
-    class Vbroadcast32(AVXOp):
-        def __init__(self, dest, src, destVL):
-            super(Vbroadcast32, self).__init__(
-                dest=dest, src1=src, destVL=destVL
+    class Vbroadcast(AVXOp):
+        def __init__(self, dest, src, srcSize, destVL):
+            super(Vbroadcast, self).__init__(
+                dest=dest, src1=src, srcSize=srcSize, destVL=destVL
             )
         srcType = 'AVXOpBase::SrcType::Reg'
         constructorCode = '''
@@ -408,28 +408,14 @@ let {{
         code = '''
             FloatInt src;
             src.ul = xc->readFloatRegOperandBits(this, 0);
-            src.ui.i2 = src.ui.i1;
             auto vDestRegs = destVL / sizeof(uint64_t);
-            for (int i = 0; i < vDestRegs; ++i) {
-                xc->setFloatRegOperandBits(this, i, src.ul);
+            if (srcSize == 4) {
+                src.ui.i2 = src.ui.i1;
+            } else if (srcSize == 8) {
+                // 8 bytes -- nothing to broadcast.
+            } else {
+                panic("Invalid srcSize for broadcast.");
             }
-        '''
-
-    class Vbroadcast64(AVXOp):
-        def __init__(self, dest, src, destVL):
-            super(Vbroadcast64, self).__init__(
-                dest=dest, src1=src, destVL=destVL
-            )
-        srcType = 'AVXOpBase::SrcType::Reg'
-        constructorCode = '''
-            this->addAVXDestRegs();
-            _numSrcRegs = 1;
-            _srcRegIdx[0] = RegId(FloatRegClass, src1);
-        '''
-        code = '''
-            FloatInt src;
-            src.ul = xc->readFloatRegOperandBits(this, 0);
-            auto vDestRegs = destVL / sizeof(uint64_t);
             for (int i = 0; i < vDestRegs; ++i) {
                 xc->setFloatRegOperandBits(this, i, src.ul);
             }

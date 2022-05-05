@@ -130,6 +130,8 @@ protected:
   void doExtract(ExecContext *xc) const;
   // A helper function to perform insert operation
   void doInsert(ExecContext *xc) const;
+  // // A helper function to perform broadcast operation
+  // void doBroadcast(ExecContext *xc) const;
   // A helper function to perform vcmpf operation.
   void doFloatCompare(ExecContext *xc, bool isSingle = false) const;
 
