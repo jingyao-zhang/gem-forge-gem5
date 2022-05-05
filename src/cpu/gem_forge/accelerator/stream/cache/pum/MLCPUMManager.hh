@@ -5,6 +5,7 @@
 #include "../MLCStreamEngine.hh"
 
 #include "DataMoveCompiler.hh"
+#include <unordered_set>
 
 class MLCPUMManager {
 public:
@@ -46,11 +47,9 @@ public:
   void receiveStreamConfigure(PacketPtr pkt);
 
   /**
-   * Some work needs to be done after MLC SE finish configuring.
-   * For example, to know how many strands of each LoadStream so that we
-   * can correctly set the number of expected Acks.
+   * Magic: Used to notify prefetch stream has completed.
    */
-  void postMLCSEConfigure();
+  void notifyPrefetchStreamComplete();
 
   /**
    * Receive a StreamEnd message and release the PUM context.
@@ -69,6 +68,13 @@ private:
   using ConfigPtr = CacheStreamConfigureDataPtr;
   MLCStreamEngine *mlcSE;
   AbstractStreamAwareController *controller;
+
+  /**
+   * Number of in-flight prefetch streams.
+   * Assumption: PUM currently has no time slicing capabilities.
+   */
+  int inFlightPrefetchStreams = 0;
+  PacketPtr savedPkt = nullptr;
 
   struct PatternInfo {
     AffinePattern pattern;
@@ -441,6 +447,32 @@ private:
    */
   void compileContext(PUMContext &context);
 
+  /**
+   * Run prefetch stage.
+   */
+  void runPrefetchStage(CacheStreamConfigureVec *configs);
+
+  /**
+   * Run PUM execution stage.
+   */
+  void runPUMExecutionStage();
+
+  /**
+   * Dispatch stream configurations to MLCSE.
+   */
+  void dispatchStreamConfigs(CacheStreamConfigureVec *configs) const;
+
+  /**
+   * Some work needs to be done after MLC SE finish configuring.
+   * For example, to know how many strands of each LoadStream so that we
+   * can correctly set the number of expected Acks.
+   */
+  void postMLCSEConfigure();
+
+  /**
+   * Conditionally prefetches data from DRAM->LLC.
+   */
+  CacheStreamConfigureVec generatePrefetchStreams(PUMComputeStreamGroup &group);
   /**
    * Decoalesce and devectorize stream pattern.
    */

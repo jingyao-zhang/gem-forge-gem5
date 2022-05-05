@@ -70,11 +70,12 @@ public:
     uint64_t numElement;
     std::vector<int64_t> arraySizes;
     bool isIndirect;
+    bool isCached;
     StreamRegion(const std::string &_name, Addr _vaddr, uint64_t _elementSize,
                  int64_t _numElement, const std::vector<int64_t> &_arraySizes)
         : name(_name), vaddr(_vaddr), elementSize(_elementSize),
           numElement(_numElement), arraySizes(_arraySizes), isIndirect(false),
-          cachedElements(_numElement) {}
+          isCached(false), cachedElements(_numElement) {}
 
     std::vector<StreamAlign> aligns;
     /**

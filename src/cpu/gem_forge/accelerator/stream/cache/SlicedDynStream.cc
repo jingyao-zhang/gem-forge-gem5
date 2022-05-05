@@ -21,11 +21,14 @@ SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
       isPtChase(_configData->isPointerChase), ptrChaseState(_configData),
       tailElemIdx(0), sliceHeadElemIdx(0) {
 
+  DYN_S_DPRINTF(this->strandId, "[Sliced] Constructor here 0.\n");
+
   // Try to compute element per slice.
   if (auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
           this->addrGenCallback)) {
     auto innerStride = linearAddrGen->getInnerStride(this->formalParams);
     auto blockBytes = RubySystem::getBlockSizeBytes();
+    DYN_S_DPRINTF(this->strandId, "[Sliced] Inner stride %d.\n", innerStride);
     if (innerStride <= blockBytes) {
       this->elemPerSlice = blockBytes / innerStride;
     } else {
@@ -43,6 +46,7 @@ SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
       }
     }
   }
+  DYN_S_DPRINTF(this->strandId, "[Sliced] Constructor here 1.\n");
 
   if (this->isPtChase || !_configData->shouldBeSlicedToCacheLines) {
     DYN_S_DPRINTF(this->strandId, "[Sliced] Disabled slicing.\n");
