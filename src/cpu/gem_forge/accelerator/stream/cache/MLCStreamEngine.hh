@@ -89,6 +89,11 @@ public:
    */
   MLCDynStream *getStreamFromStrandId(const DynStrandId &id);
 
+  /**
+   * Magic: Notify MLCPUMManager that a prefetch stream has completed.
+   */
+  void notifyMLCPUMManagerPrefetchDone() const;
+
 private:
   AbstractStreamAwareController *controller;
   MessageBuffer *responseToUpperMsgBuffer;

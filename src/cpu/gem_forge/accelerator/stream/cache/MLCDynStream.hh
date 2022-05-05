@@ -117,6 +117,7 @@ protected:
   DynStrandId strandId;
   CacheStreamConfigureDataPtr config;
   bool isPointerChase;
+  bool isPUMPrefetch;
   bool isPseudoOffload;
   const bool isMLCDirect;
 

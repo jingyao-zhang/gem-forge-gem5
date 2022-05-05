@@ -48,23 +48,23 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 
   this->pumManager->receiveStreamConfigure(pkt);
 
-  auto configs = *(pkt->getPtr<CacheStreamConfigureVec *>());
-  if (configs->empty()) {
-    // Everything is now handled as PUM.
-    MLCSE_DPRINTF_(StreamPUM,
-                   "Everything handled by PUM. No Normal Streams.\n");
-    delete configs;
-    delete pkt;
-  } else {
-    this->strandManager->receiveStreamConfigure(pkt);
-    if (this->controller->isStreamRangeSyncEnabled()) {
-      // Enable the range check.
-      this->scheduleEvent(Cycles(1));
-    }
-  }
+  // auto configs = *(pkt->getPtr<CacheStreamConfigureVec *>());
+  // if (configs->empty()) {
+  //// Everything is now handled as PUM.
+  // MLCSE_DPRINTF_(StreamPUM,
+  //"Everything handled by PUM. No Normal Streams.\n");
+  // delete configs;
+  // delete pkt;
+  //} else {
+  // this->strandManager->receiveStreamConfigure(pkt);
+  // if (this->controller->isStreamRangeSyncEnabled()) {
+  //// Enable the range check.
+  // this->scheduleEvent(Cycles(1));
+  //}
+  //}
 
-  // Either way, we have to call PUMManager::postMLCSEConfigure.
-  this->pumManager->postMLCSEConfigure();
+  //// Either way, we have to call PUMManager::postMLCSEConfigure.
+  // this->pumManager->postMLCSEConfigure();
 }
 
 void MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
@@ -177,6 +177,10 @@ void MLCStreamEngine::receiveStreamDataForSingleSlice(
 
 MLCDynStream *MLCStreamEngine::getStreamFromStrandId(const DynStrandId &id) {
   return this->strandManager->getStreamFromStrandId(id);
+}
+
+void MLCStreamEngine::notifyMLCPUMManagerPrefetchDone() const {
+  this->pumManager->notifyPrefetchStreamComplete();
 }
 
 bool MLCStreamEngine::isStreamRequest(const DynStreamSliceId &slice) {

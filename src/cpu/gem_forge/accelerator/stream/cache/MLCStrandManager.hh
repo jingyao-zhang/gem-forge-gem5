@@ -4,6 +4,10 @@
 #include "MLCStreamEngine.hh"
 
 class MLCStrandManager {
+private:
+  using ConfigPtr = CacheStreamConfigureDataPtr;
+  using ConfigVec = CacheStreamConfigureVec;
+
 public:
   MLCStrandManager(MLCStreamEngine *_mlcSE);
   ~MLCStrandManager();
@@ -11,7 +15,7 @@ public:
   /**
    * Receive a StreamConfig message and configure all streams.
    */
-  void receiveStreamConfigure(PacketPtr pkt);
+  void receiveStreamConfigure(ConfigVec *configs, MasterID masterId);
 
   /**
    * Receive a StreamEnd message and end all streams.
@@ -49,9 +53,6 @@ public:
 private:
   MLCStreamEngine *mlcSE;
   AbstractStreamAwareController *controller;
-
-  using ConfigPtr = CacheStreamConfigureDataPtr;
-  using ConfigVec = CacheStreamConfigureVec;
 
   std::unordered_map<DynStrandId, MLCDynStream *, DynStrandIdHasher> strandMap;
 

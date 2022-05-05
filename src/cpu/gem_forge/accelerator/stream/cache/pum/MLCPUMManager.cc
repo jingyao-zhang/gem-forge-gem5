@@ -4,6 +4,7 @@
 #include "../LLCStreamEngine.hh"
 #include "../MLCStrandManager.hh"
 
+#include "cpu/gem_forge/accelerator/stream/cache/CacheStreamConfigureData.hh"
 #include "sim/stream_nuca/stream_nuca_manager.hh"
 #include "sim/stream_nuca/stream_nuca_map.hh"
 
@@ -1456,6 +1457,175 @@ void MLCPUMManager::compileContext(PUMContext &context) {
   }
 }
 
+void MLCPUMManager::runPrefetchStage(CacheStreamConfigureVec *configs) {
+  assert(configs != nullptr && !configs->empty());
+  assert(this->savedPkt != nullptr);
+
+  MLCSE_DPRINTF("Starting prefetch stage.\n");
+
+  // Dispatch & track prefetch streams.
+  auto configsCpy = *configs;
+  this->dispatchStreamConfigs(configs);
+
+  this->inFlightPrefetchStreams = 0;
+  for (const auto &config : configsCpy) {
+    this->inFlightPrefetchStreams += config->totalStrands;
+    MLC_S_DPRINTF(config->dynamicId, "Prefetch strand count %d.\n",
+                  config->totalStrands);
+  }
+}
+
+void MLCPUMManager::runPUMExecutionStage() {
+  assert(this->savedPkt != nullptr);
+
+  MLCSE_DPRINTF("Starting PUM execution stage.\n");
+
+  // Configure any normal streams.
+  auto normalConfigs = *(this->savedPkt->getPtr<CacheStreamConfigureVec *>());
+  if (normalConfigs->empty()) {
+    MLCSE_DPRINTF("Everything handled by PUM. No Normal Streams.\n");
+  } else {
+    this->dispatchStreamConfigs(normalConfigs);
+  }
+  // Done with packet. Free it!
+  delete this->savedPkt;
+  this->savedPkt = nullptr;
+
+  // Finish configuring PUM.
+  this->postMLCSEConfigure();
+}
+
+void MLCPUMManager::dispatchStreamConfigs(
+    CacheStreamConfigureVec *configs) const {
+  assert(this->savedPkt != nullptr);
+  assert(!configs->empty());
+
+  this->mlcSE->strandManager->receiveStreamConfigure(
+      configs, this->savedPkt->req->masterId());
+  if (this->mlcSE->controller->isStreamRangeSyncEnabled()) {
+    // Enable the range check.
+    this->mlcSE->scheduleEvent(Cycles(1));
+  }
+}
+
+CacheStreamConfigureVec
+MLCPUMManager::generatePrefetchStreams(PUMComputeStreamGroup &group) {
+  assert(group.canApplyPUM);
+
+  auto genPrefetchStream =
+      [&](const ConfigPtr &config) -> CacheStreamConfigureDataPtr {
+    // Get NUCA region.
+    auto S = config->stream;
+    auto cpuDelegator = S->getCPUDelegator();
+    auto threadContext = cpuDelegator->getSingleThreadContext();
+    auto streamNUCAManager = threadContext->getStreamNUCAManager();
+
+    auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
+        config->addrGenCallback);
+    const auto &addrParams = config->addrGenFormalParams;
+    auto startVAddr = linearAddrGen->getStartAddr(addrParams);
+    const auto &streamNUCARegion =
+        streamNUCAManager->getContainingStreamRegion(startVAddr);
+
+    // If cached, done :)
+    if (streamNUCARegion.isCached)
+      return std::shared_ptr<CacheStreamConfigureData>(nullptr);
+
+    // Hack.
+    // Assume prefetch streams will always be fetched (thus cached in cache).
+    auto &streamNUCARegion_ =
+        const_cast<StreamNUCAManager::StreamRegion &>(streamNUCARegion);
+    streamNUCARegion_.isCached = true;
+
+    // Otherwise, generate and issue prefetch stream.
+    auto prefetchConfig = std::make_shared<CacheStreamConfigureData>(*config);
+    prefetchConfig->isPUMPrefetch = true;
+
+    // Clear dependencies.
+    prefetchConfig->clearEdges();
+    for (auto &param : prefetchConfig->storeFormalParams) {
+      param.invariant.uint64() = 0;
+      param.isInvariant = true;
+    }
+    for (auto &param : prefetchConfig->loadFormalParams) {
+      param.invariant.uint64() = 0;
+      param.isInvariant = true;
+    }
+
+    // Generate address.
+    prefetchConfig->initVAddr = streamNUCARegion.vaddr;
+    Addr pa;
+    if (!cpuDelegator->translateVAddrOracle(prefetchConfig->initVAddr, pa)) {
+      assert(false && "[PUM] Prefetch unable to translate VA->PA");
+    }
+    prefetchConfig->initPAddr = pa;
+    prefetchConfig->initPAddrValid = true;
+
+    // Opt: prefetch patterns only describes an element from each of the
+    // required cache-lines.
+    auto clSize = RubySystem::getBlockSizeBytes();
+    prefetchConfig->elementSize = clSize;
+
+    auto totalBytes =
+        streamNUCARegion.numElement * streamNUCARegion.elementSize;
+    auto numCLs =
+        (totalBytes + streamNUCARegion.vaddr % clSize + clSize - 1) / clSize;
+
+    prefetchConfig->addrGenFormalParams.clear();
+
+    // Stride.
+    prefetchConfig->addrGenFormalParams.emplace_back();
+    prefetchConfig->addrGenFormalParams.back().invariant.uint64() = clSize;
+    prefetchConfig->addrGenFormalParams.back().isInvariant = true;
+
+    // Trip count.
+    prefetchConfig->addrGenFormalParams.emplace_back();
+    prefetchConfig->addrGenFormalParams.back().invariant.uint64() = numCLs;
+    prefetchConfig->addrGenFormalParams.back().isInvariant = true;
+
+    // Starting.
+    prefetchConfig->addrGenFormalParams.emplace_back();
+    prefetchConfig->addrGenFormalParams.back().invariant.uint64() =
+        prefetchConfig->initVAddr;
+    prefetchConfig->addrGenFormalParams.back().isInvariant = true;
+
+    return prefetchConfig;
+  };
+
+  // Fetch for compute.
+  CacheStreamConfigureVec configs;
+
+#define ADD_PREFETCH_STREAM(stream)                                            \
+  {                                                                            \
+    auto pStream = genPrefetchStream(stream);                                  \
+    if (pStream != nullptr) {                                                  \
+      configs.emplace_back(pStream);                                           \
+    }                                                                          \
+  }
+
+  // Generate for compute stream.
+  // TODO: Potential optimization since this is not necessary if the entire
+  // region will be overwritten
+  ADD_PREFETCH_STREAM(group.computeConfig);
+
+  // Generate for dependencies.
+  for (const auto &baseConfig : group.usedConfigs)
+    ADD_PREFETCH_STREAM(baseConfig);
+
+#undef ADD_PREFETCH_STREAM
+
+  return configs;
+}
+
+void MLCPUMManager::notifyPrefetchStreamComplete() {
+  MLCSE_DPRINTF("Prefetch stream complete (%d remaining).\n",
+                this->inFlightPrefetchStreams - 1);
+  if (--(this->inFlightPrefetchStreams) == 0) {
+    MLCSE_DPRINTF("Completed prefetch stage.\n");
+    runPUMExecutionStage();
+  }
+}
+
 void MLCPUMManager::erasePUMConfigs(PUMContext &context,
                                     CacheStreamConfigureVec *configs,
                                     const PUMComputeStreamGroup &group) {
@@ -1903,6 +2073,7 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
   for (auto &group : context.pumGroups) {
     group.canApplyPUM = this->canApplyPUMToGroup(context, group);
   }
+
   bool appliedPUM = false;
   for (auto &group : context.pumGroups) {
     if (group.canApplyPUM) {
@@ -1949,6 +2120,26 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
     if (node->type == PUMDataGraphNode::TypeE::Load) {
       this->addPUMLoadStream(context, normalConfigs, node);
     }
+  }
+
+  CacheStreamConfigureVec *prefetchConfigs = new CacheStreamConfigureVec;
+  for (auto &group : context.pumGroups) {
+    if (group.appliedPUM) {
+      // Prefetch necessary data.
+      auto pConfigs = this->generatePrefetchStreams(group);
+      prefetchConfigs->insert(prefetchConfigs->end(), pConfigs.begin(),
+                              pConfigs.end());
+    }
+  }
+  MLCSE_DPRINTF("%d prefetch streams generated.\n", prefetchConfigs->size());
+
+  assert(this->savedPkt == nullptr);
+  this->savedPkt = pkt;
+
+  if (prefetchConfigs->empty()) {
+    this->runPUMExecutionStage();
+  } else {
+    this->runPrefetchStage(prefetchConfigs);
   }
 
   return;

@@ -33,6 +33,8 @@ MLCDynDirectStream::MLCDynDirectStream(
                           _controller->getMLCStreamBufferToSegmentRatio())),
       indirectStreams(_indirectStreams) {
 
+  MLC_S_DPRINTF(this->getDynStreamId(), "MLCDynDirectStream complete 0\n");
+
   /**
    * Initialize the LLC bank.
    * Be careful that for MidwayFloat, we reset the InitPAddr.
@@ -57,6 +59,8 @@ MLCDynDirectStream::MLCDynDirectStream(
     }
     _configData->initPAddr = paddr;
   }
+
+  MLC_S_DPRINTF(this->getDynStreamId(), "MLCDynDirectStream complete 1\n");
 
   this->tailPAddr = _configData->initPAddr;
 
@@ -104,6 +108,8 @@ MLCDynDirectStream::MLCDynDirectStream(
         originalMaxNumSlicesPerSegment, maxRatio, this->maxNumSlicesPerSegment);
   }
 
+  MLC_S_DPRINTF(this->getDynStreamId(), "MLCDynDirectStream complete 2\n");
+
   /**
    * If this comes with IndirectAtomicComputeStream with RangeSync and
    * CoreIssue, we limit the run ahead length.
@@ -129,6 +135,8 @@ MLCDynDirectStream::MLCDynDirectStream(
       }
     }
   }
+
+  MLC_S_DPRINTF(this->getDynStreamId(), "MLCDynDirectStream complete 3\n");
 
   while (this->tailSliceIdx < this->maxNumSlicesPerSegment &&
          !this->slicedStream.hasOverflowed()) {
@@ -345,7 +353,7 @@ void MLCDynDirectStream::trySendCreditToLLC() {
      * Additional sanity check that the RemoteStream does not have too many
      * slices.
      */
-    {
+    if (!this->config->isPUMPrefetch) {
       auto remoteDynS = LLCDynStream::getLLCStreamPanic(this->getDynStrandId(),
                                                         "trySendCredit()");
       auto inflyElementTotalSize = remoteDynS->idxToElementMap.size() *

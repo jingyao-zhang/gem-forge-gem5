@@ -26,9 +26,10 @@ MLCStrandManager::~MLCStrandManager() {
   this->strandMap.clear();
 }
 
-void MLCStrandManager::receiveStreamConfigure(PacketPtr pkt) {
+void MLCStrandManager::receiveStreamConfigure(ConfigVec *configs,
+                                              MasterID masterId) {
 
-  auto configs = *(pkt->getPtr<ConfigVec *>());
+  // auto configs = *(pkt->getPtr<ConfigVec *>());
 
   this->checkShouldBeSliced(*configs);
 
@@ -41,7 +42,8 @@ void MLCStrandManager::receiveStreamConfigure(PacketPtr pkt) {
 
   mlcSE->computeReuseInformation(*configs);
   for (auto config : *configs) {
-    this->configureStream(config, pkt->req->masterId());
+    // this->configureStream(config, pkt->req->masterId());
+    this->configureStream(config, masterId);
   }
 
   // We initalize all LLCDynStreams here (see LLCDynStream.hh)
@@ -49,7 +51,7 @@ void MLCStrandManager::receiveStreamConfigure(PacketPtr pkt) {
 
   // Release the configure vec.
   delete configs;
-  delete pkt;
+  // delete pkt;
 }
 
 void MLCStrandManager::checkShouldBeSliced(ConfigVec &configs) const {

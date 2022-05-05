@@ -488,6 +488,26 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
     }
   }
 
+  // Alert MLC prefetch stream is done.
+  if (dynS->configData->isPUMPrefetch) {
+    assert(dynS->hasTotalTripCount());
+
+    auto tc = dynS->getTotalTripCount();
+    auto elemIdx = sliceId.getEndIdx();
+
+    if (elemIdx >= tc) {
+      LLC_SLICE_DPRINTF(sliceId, "PUM prefetch done.\n");
+      MachineID mlcMachineID(MachineType_L1Cache,
+                             dynS->getDynStreamId().coreId);
+      auto mlcCtrl = AbstractStreamAwareController::getController(mlcMachineID);
+      auto mlcSE = mlcCtrl->getMLCStreamEngine();
+
+      assert(mlcSE);
+
+      mlcSE->notifyMLCPUMManagerPrefetchDone();
+    }
+  }
+
   /**
    * The following logic is only for IndirectStream.
    * For DirectStream, these cases are handled in processSlice().
@@ -1645,6 +1665,12 @@ LLCStreamEngine::getDirectStreamReqType(LLCDynStream *stream) const {
   default:
     panic("Invalid offloaded stream type.\n");
   }
+
+  // (Override) Prefetch streams are always uncached.
+  if (stream->configData->isPUMPrefetch) {
+    reqType = CoherenceRequestType_GETH;
+  }
+
   return reqType;
 }
 

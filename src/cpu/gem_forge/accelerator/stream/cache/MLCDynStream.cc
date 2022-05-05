@@ -26,6 +26,7 @@ MLCDynStream::MLCDynStream(CacheStreamConfigureDataPtr _configData,
       strandId(_configData->dynamicId, _configData->strandIdx,
                _configData->totalStrands),
       config(_configData), isPointerChase(_configData->isPointerChase),
+      isPUMPrefetch(_configData->isPUMPrefetch),
       isPseudoOffload(_configData->isPseudoOffload), isMLCDirect(_isMLCDirect),
       controller(_controller), responseMsgBuffer(_responseMsgBuffer),
       requestToLLCMsgBuffer(_requestToLLCMsgBuffer),
@@ -66,6 +67,9 @@ MLCDynStream::MLCDynStream(CacheStreamConfigureDataPtr _configData,
       this->sendToEdges.push_back(depEdge);
     }
   }
+
+  MLC_S_DPRINTF_(StreamRangeSync, this->getDynStrandId(),
+                 "MLCDynStream Constructor Done");
 }
 
 MLCDynStream::~MLCDynStream() {
@@ -76,6 +80,9 @@ MLCDynStream::~MLCDynStream() {
 }
 
 MLCDynStream::WaitType MLCDynStream::checkWaiting() const {
+  if (this->isPUMPrefetch) {
+    return WaitType::Nothing;
+  }
   if (this->isPseudoOffload) {
     MLC_S_DPRINTF(this->getDynStrandId(), "PseudoFloat. Wait Nothing.\n");
     return WaitType::Nothing;
