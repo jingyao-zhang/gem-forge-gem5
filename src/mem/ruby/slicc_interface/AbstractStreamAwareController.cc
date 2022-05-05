@@ -158,6 +158,21 @@ void AbstractStreamAwareController::regStats() {
       .flags(Stats::pdf)
       .flags(Stats::nozero);
 
+#define pum_stats(Type)                                                        \
+  m_statPUM##Type.name(name() + ".pum" #Type)                                  \
+      .desc("PUM " #Type ".")                                                  \
+      .flags(Stats::nozero)
+
+  pum_stats(TotalCycles);
+  pum_stats(CompileCycles);
+  pum_stats(ComputeCycles);
+  pum_stats(DataMoveCycles);
+  pum_stats(ReduceCycles);
+  pum_stats(MixCycles);
+  pum_stats(ComputeCmds);
+  pum_stats(ComputeOps);
+#undef pum_cycles
+
   // Register stats callback.
   Stats::registerResetCallback(
       new MakeCallback<PCRequestRecorder, &PCRequestRecorder::reset>(

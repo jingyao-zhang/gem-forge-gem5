@@ -121,7 +121,8 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
     auto numMicroops = macroop->getNumMicroops();
     for (auto upc = 0; upc < numMicroops; ++upc) {
       auto microop = staticInst->fetchMicroop(upc);
-      EXEC_FUNC_DPRINTF("  Decode MicroInst %s.\n",
+      EXEC_FUNC_DPRINTF("  Decode MicroInst %s %s.\n",
+                        Enums::OpClassStrings[microop->opClass()],
                         microop->disassemble(pc.pc()).c_str());
       this->instructions.push_back(microop);
       this->pcs.push_back(pc);

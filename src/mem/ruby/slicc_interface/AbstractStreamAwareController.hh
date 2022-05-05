@@ -327,6 +327,15 @@ public:
   Stats::Scalar m_statLLCDeadlockAtomics;
   Stats::Distribution m_statLLCNumInflyComputations;
   Stats::Distribution m_statLLCNumReadyComputations;
+
+  Stats::Scalar m_statPUMTotalCycles;
+  Stats::Scalar m_statPUMCompileCycles;
+  Stats::Scalar m_statPUMComputeCycles;
+  Stats::Scalar m_statPUMDataMoveCycles;
+  Stats::Scalar m_statPUMReduceCycles;
+  Stats::Scalar m_statPUMMixCycles;
+  Stats::Scalar m_statPUMComputeCmds;
+  Stats::Scalar m_statPUMComputeOps;
 };
 
 #endif

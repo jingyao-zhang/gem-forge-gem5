@@ -162,12 +162,29 @@ void PUMEngine::kickNextCommand() {
      */
     scheduledArrays.insert(usedArrays.begin(), usedArrays.end());
     auto cmdLat = this->estimateCommandLatency(command);
+
+    /**
+     * Record the number of bitline ops we have done for compute cmd.
+     */
+    if (command.type == "cmp" && command.opClass != No_OpClass) {
+      auto bitlineOps = scheduledArrays.size() * command.bitline_mask.getTotalTrip();
+      this->controller->m_statPUMComputeCmds++;
+      this->controller->m_statPUMComputeOps += bitlineOps;
+    }
+
     this->nextCmdIdx++;
     LLC_SE_DPRINTF("  CMD Latency %lld NextCmdIdx %ld.\n", cmdLat,
                    this->nextCmdIdx);
     if (cmdLat > latency) {
       latency = cmdLat;
     }
+  }
+
+  auto commandType = this->commands.at(firstSchedCmdIdx).type;
+  if (commandType == "cmp") {
+    this->controller->m_statPUMComputeCycles += latency;
+  } else if (commandType == "intra-array" || commandType == "inter-array") {
+    this->controller->m_statPUMDataMoveCycles += latency;
   }
 
   LLC_SE_DPRINTF("Schedule Next Tick after Latency %ld.\n", latency);

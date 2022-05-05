@@ -1396,14 +1396,25 @@ void MLCPUMManager::compileReduction(PUMContext &context,
     commands.emplace_back();
     commands.back().type = "intra-array";
     commands.back().bitline_dist = -curDist;
-    // Generate all active bitline-mask according to tile_sizes.
-    commands.back().bitline_mask = AffinePattern::constructSubRegion(
-        tileSizes, AffinePattern::IntVecT(tileSizes.size(), 0), tileSizes);
+
+    // Generate the bitline mask.
+    auto moveSizes = tileSizes;
+    moveSizes.at(reduceDim) /= curRatio;
+    auto moveStarts = AffinePattern::IntVecT(tileSizes.size(), 0);
+    moveStarts.at(reduceDim) = moveSizes.at(reduceDim);
+
+    commands.back().bitline_mask =
+        AffinePattern::constructSubRegion(tileSizes, moveStarts, moveSizes);
 
     MLC_S_DPRINTF(reduceDynId, "Intra-Array Reduce Cmd %s", commands.back());
 
     // We then insert the reduce compute command.
     commands.push_back(reduceCmd);
+
+    // Fix the bitline mask for the reduce commd.
+    auto reduceStarts = AffinePattern::IntVecT(tileSizes.size(), 0);
+    commands.back().bitline_mask =
+        AffinePattern::constructSubRegion(tileSizes, reduceStarts, moveSizes);
 
     curRatio *= 2;
   }
@@ -1913,6 +1924,11 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
   // Record the initialize cycle.
   context.initCycle = this->controller->curCycle();
 
+  // If this is the first context, record the cycle.
+  if (this->contexts.size() == 1) {
+    this->firstContextInitCycle = this->controller->curCycle();
+  }
+
   /**
    * Clear the PUMConfigs from the original ConfigVec so that MLCStreamEngine
    * can continue to handle normal streams.
@@ -1992,6 +2008,7 @@ void MLCPUMManager::configurePUMEngine(PUMContext &context) {
       }
       totalCompileLatency += compileLatencyPerCommand;
     }
+    this->controller->m_statPUMCompileCycles += totalCompileLatency;
     context.firstCompileReadyCycle =
         this->controller->curCycle() + Cycles(totalCompileLatency);
 
@@ -2373,6 +2390,13 @@ void MLCPUMManager::checkSync(PUMContext &context) {
       }
     }
 
+    // We check if the current expected sync is more than number of LLC banks.
+    // If so, we record this cycles as MixCycles.
+    if (context.expectedAcksEverySync.at(context.reachedSync - 1) >
+        this->controller->getNumCols() * this->controller->getNumRows()) {
+      this->controller->m_statPUMMixCycles += cyclesBetweenSync;
+    }
+
     if (context.reachedSync == context.totalSyncs) {
       // This is the last Sync.
       this->completeOneComputeRound(context);
@@ -2506,7 +2530,9 @@ void MLCPUMManager::tryKickNextComputeRound(PUMContext &context) {
             group.computeConfig->dynamicId,
             "[PUMReduce] The CoreDynS %s No Ack for Round %ld Elem %lu.\n",
             depId, group.nextOuterIter, ackedElemIdx);
-
+        if (context.lastBlockedByReduceCycle == Cycles(0)) {
+          context.lastBlockedByReduceCycle = this->controller->curCycle();
+        }
         return;
       }
     }
@@ -2515,6 +2541,13 @@ void MLCPUMManager::tryKickNextComputeRound(PUMContext &context) {
   // We can start next round.
   context.clear();
   context.state = PUMContext::StateE::Initialized;
+
+  // Record the BlockedByReduce as mixed cycles.
+  if (context.lastBlockedByReduceCycle != Cycles(0)) {
+    this->controller->m_statPUMReduceCycles +=
+        this->controller->curCycle() - context.lastBlockedByReduceCycle;
+    context.lastBlockedByReduceCycle = Cycles(0);
+  }
   this->compileContext(context);
   this->configurePUMEngine(context);
 }
@@ -2597,6 +2630,13 @@ void MLCPUMManager::receiveStreamEnd(PacketPtr pkt) {
   bool isDone = (context.state == PUMContext::StateE::Done);
 
   this->contexts.erase(iter);
+
+  // If this is the last context, record the total PUM cycles.
+  if (this->contexts.empty()) {
+    Cycles totalPUMCycles =
+        this->controller->curCycle() - this->firstContextInitCycle;
+    this->controller->m_statPUMTotalCycles += totalPUMCycles;
+  }
 
   // Kick next one if found.
   if (isDone) {

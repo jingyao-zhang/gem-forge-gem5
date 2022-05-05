@@ -342,12 +342,16 @@ private:
     bool waitingFirstCompileDone = true; // Wait for  the first compilation.
     Cycles firstCompileReadyCycle = Cycles(0);
 
-    Cycles initCycle = Cycles(0);     // When I was intialized.
-    Cycles lastKickCycle = Cycles(0); // Last time I was kicked.
-    Cycles lastSyncCycle = Cycles(0); // Last time I was synced.
+    Cycles initCycle = Cycles(0);                // When I was intialized.
+    Cycles lastKickCycle = Cycles(0);            // Last time I was kicked.
+    Cycles lastSyncCycle = Cycles(0);            // Last time I was synced.
+    Cycles lastBlockedByReduceCycle = Cycles(0); // Last time blocked by reduce.
   };
   using PUMContextListT = std::list<PUMContext>;
   PUMContextListT contexts;
+
+  // Last time I received the first context.
+  Cycles firstContextInitCycle = Cycles(0);
 
   /**
    * Find all PUMComputeStreamGroups.
