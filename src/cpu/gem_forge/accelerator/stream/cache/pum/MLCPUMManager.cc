@@ -1622,6 +1622,11 @@ void MLCPUMManager::notifyPrefetchStreamComplete() {
                 this->inFlightPrefetchStreams - 1);
   if (--(this->inFlightPrefetchStreams) == 0) {
     MLCSE_DPRINTF("Completed prefetch stage.\n");
+    // Record the prefetch cycles.
+    assert(!this->contexts.empty() && "There is no context to be prefetched.");
+    auto &context = this->contexts.front();
+    auto prefetchCycles = this->controller->curCycle() - context.initCycle;
+    this->controller->m_statPUMPrefetchCycles += prefetchCycles;
     runPUMExecutionStage();
   }
 }

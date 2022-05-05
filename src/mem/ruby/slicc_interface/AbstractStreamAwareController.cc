@@ -164,6 +164,7 @@ void AbstractStreamAwareController::regStats() {
       .flags(Stats::nozero)
 
   pum_stats(TotalCycles);
+  pum_stats(PrefetchCycles);
   pum_stats(CompileCycles);
   pum_stats(ComputeCycles);
   pum_stats(DataMoveCycles);
