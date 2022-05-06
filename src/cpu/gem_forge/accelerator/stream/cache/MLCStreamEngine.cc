@@ -179,8 +179,9 @@ MLCDynStream *MLCStreamEngine::getStreamFromStrandId(const DynStrandId &id) {
   return this->strandManager->getStreamFromStrandId(id);
 }
 
-void MLCStreamEngine::notifyMLCPUMManagerPrefetchDone() const {
-  this->pumManager->notifyPrefetchStreamComplete();
+void MLCStreamEngine::notifyMLCPUMManagerPrefetchDone(
+    int64_t numSentPkts) const {
+  this->pumManager->notifyPrefetchStreamComplete(numSentPkts);
 }
 
 bool MLCStreamEngine::isStreamRequest(const DynStreamSliceId &slice) {

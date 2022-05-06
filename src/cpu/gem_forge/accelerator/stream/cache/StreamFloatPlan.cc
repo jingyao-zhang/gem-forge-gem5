@@ -71,6 +71,13 @@ bool StreamFloatPlan::isFloatedToMem() const {
   return false;
 }
 
+bool StreamFloatPlan::isMixedFloat() const {
+  if (this->changePoints.size() > 1) {
+    return true;
+  }
+  return false;
+}
+
 StreamFloatPlan::ElementIdx StreamFloatPlan::getFirstFloatElementIdx() const {
   if (this->finalized) {
     return this->finalizedFirstFloatElementIdx;

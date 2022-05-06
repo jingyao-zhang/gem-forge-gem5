@@ -359,6 +359,19 @@ private:
                             int payloadSize);
 
   /**
+   * Send the PUMPrefetch MemStream Data back to LLC.
+   */
+  void issuePUMPrefetchStreamDataToLLC(LLCDynStreamPtr stream,
+                                       const DynStreamSliceId &sliceId,
+                                       const DataBlock &dataBlock);
+
+  /**
+   * Notify the MLCPUMManager when a PUMPrefetchStream is done.
+   */
+  void tryFinishPUMPrefetchStream(LLCDynStreamPtr dynS,
+                                  const DynStreamSliceId &sliceId);
+
+  /**
    * Set the TotalTripCount in MLC. Used to implement StreamLoopBound.
    */
   void sendOffloadedLoopBoundRetToMLC(LLCDynStreamPtr stream,
@@ -372,7 +385,7 @@ private:
 
   /**
    * Check if next element is handled here or not.
-   * 
+   *
    */
   bool isNextElemHandledHere(LLCDynStreamPtr dynS) const;
 

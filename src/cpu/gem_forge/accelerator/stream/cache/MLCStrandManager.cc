@@ -117,7 +117,7 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
   /**
    * We can split streams into strands iff.
    * 1. With known trip count (no StreamLoopBound).
-   * 2. Float plan is just the LLC.
+   * 2. Float plan is pure the LLC or Mem.
    * 3. Must be LinearAddrGen (i.e. No PtrChase).
    * 4. Check that all stream can split with Non-Zero NoSplitOuterTripCount.
    * Specifically:
@@ -139,7 +139,13 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
                    std::forward_as_tuple(config->dynamicId),
                    std::forward_as_tuple())
           .first->second;
-  perStreamContext.splitInterleave = 16;
+  if (config->floatPlan.isFloatedToMem()) {
+    // We assume MemCtrl interleavs at 4kB -> 64 cache lines.
+    perStreamContext.splitInterleave = 64;
+  } else {
+    // We assume LLC interleavs at 1kB -> 16 cache lines.
+    perStreamContext.splitInterleave = 16;
+  }
 
   // 1.
   auto noSplitOuterTripCount = context.noSplitOuterTripCount;
@@ -156,9 +162,9 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
     return false;
   }
   // 2.
-  if (config->floatPlan.isFloatedToMem()) {
+  if (config->floatPlan.isMixedFloat()) {
     DYN_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
-                   "[NoSplit] Float to Mem.\n");
+                   "[NoSplit] Mixed Float.\n");
     return false;
   }
   if (config->floatPlan.getFirstFloatElementIdx() != 0) {

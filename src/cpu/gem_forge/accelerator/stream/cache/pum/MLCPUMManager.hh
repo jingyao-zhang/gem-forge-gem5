@@ -49,7 +49,7 @@ public:
   /**
    * Magic: Used to notify prefetch stream has completed.
    */
-  void notifyPrefetchStreamComplete();
+  void notifyPrefetchStreamComplete(int64_t numSentPkts);
 
   /**
    * Receive a StreamEnd message and release the PUM context.
@@ -61,6 +61,7 @@ public:
    */
   void reachSync(int sentPackets);
   void receivePacket(int recvPackets);
+  void receivePrefetchPacket(int recvPackets);
   void reportProgress(int64_t contextId);
 
   MachineID getMachineID() const { return this->controller->getMachineID(); }
@@ -75,6 +76,8 @@ private:
    * Assumption: PUM currently has no time slicing capabilities.
    */
   int inFlightPrefetchStreams = 0;
+  int64_t totalSentPrefetchPkts = 0;
+  int64_t totalRecvPrefetchPkts = 0;
   PacketPtr savedPkt = nullptr;
 
   struct PatternInfo {
@@ -512,6 +515,7 @@ private:
                                        const ConfigPtr &innerConfig,
                                        const AffinePattern &pattern) const;
 
+  void setPUMManagerAtPUMEngine();
   void configurePUMEngine(PUMContext &context);
 
   /**

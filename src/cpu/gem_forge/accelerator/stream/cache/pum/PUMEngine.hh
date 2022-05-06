@@ -18,6 +18,7 @@ public:
 
   void receiveKick(const RequestMsg &msg);
   void receiveData(const RequestMsg &msg);
+  void setPUMManager(MLCPUMManager *pumManager);
   void configure(MLCPUMManager *pumManager, int64_t pumContextId,
                  const PUMCommandVecT &commands);
   void tick();
@@ -34,7 +35,8 @@ public:
   }
 
   void sendPUMDataToLLC(const DynStreamSliceId &sliceId,
-                        const NetDest &recvBanks, int bytes);
+                        const NetDest &recvBanks, int bytes,
+                        bool isPUMPrefetch = false);
 
   using SentPktMapT = std::map<NodeID, int>;
   void sendSyncToLLCs(const SentPktMapT &sentMap,

@@ -466,6 +466,11 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
           dynS, sliceId, dataBlock, edge,
           RubySystem::getBlockSizeBytes() /* PayloadSize */);
     }
+    if (dynS->configData->isPUMPrefetch &&
+        this->myMachineType() == MachineType_Directory) {
+      // We need to send back the prefetched line to LLC.
+      this->issuePUMPrefetchStreamDataToLLC(dynS, sliceId, dataBlock);
+    }
   }
 
   // Evaluate LoopBound.
@@ -490,22 +495,7 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
 
   // Alert MLC prefetch stream is done.
   if (dynS->configData->isPUMPrefetch) {
-    assert(dynS->hasTotalTripCount());
-
-    auto tc = dynS->getTotalTripCount();
-    auto elemIdx = sliceId.getEndIdx();
-
-    if (elemIdx >= tc) {
-      LLC_SLICE_DPRINTF(sliceId, "PUM prefetch done.\n");
-      MachineID mlcMachineID(MachineType_L1Cache,
-                             dynS->getDynStreamId().coreId);
-      auto mlcCtrl = AbstractStreamAwareController::getController(mlcMachineID);
-      auto mlcSE = mlcCtrl->getMLCStreamEngine();
-
-      assert(mlcSE);
-
-      mlcSE->notifyMLCPUMManagerPrefetchDone();
-    }
+    this->tryFinishPUMPrefetchStream(dynS, sliceId);
   }
 
   /**
@@ -2526,6 +2516,52 @@ void LLCStreamEngine::issueStreamDataToPUM(
   dynS->sentPUMPackets = 0;
   dynS->sentPUMDataPacketMap.clear();
   this->pumEngine->sendSyncToMLC(sentPUMPkts);
+}
+
+void LLCStreamEngine::issuePUMPrefetchStreamDataToLLC(
+    LLCDynStreamPtr stream, const DynStreamSliceId &sliceId,
+    const DataBlock &dataBlock) {
+
+  auto vaddr = sliceId.vaddr;
+  Addr paddr;
+  assert(stream->translateToPAddr(vaddr, paddr) &&
+         "Failed to Translate PUMPrefetchStream.");
+
+  auto paddrLine = makeLineAddress(paddr);
+  auto destLLCBank =
+      this->controller->mapAddressToLLCOrMem(paddrLine, MachineType_L2Cache);
+
+  LLC_SLICE_DPRINTF(sliceId, "[PUMPrefetch] Send PUMPrefetchData to %s.\n",
+                    destLLCBank);
+
+  NetDest recvBanks;
+  recvBanks.add(destLLCBank);
+  bool isPUMPrefetch = true;
+  this->pumEngine->sendPUMDataToLLC(
+      sliceId, recvBanks, RubySystem::getBlockSizeBytes(), isPUMPrefetch);
+  for (const auto &dstNodeId : recvBanks.getAllDest()) {
+    stream->sentPUMDataPacketMap.emplace(dstNodeId, 0).first->second++;
+  }
+  stream->sentPUMPackets += recvBanks.count();
+}
+
+void LLCStreamEngine::tryFinishPUMPrefetchStream(
+    LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId) {
+  assert(dynS->hasTotalTripCount());
+
+  auto tc = dynS->getTotalTripCount();
+  auto elemIdx = sliceId.getEndIdx();
+
+  if (elemIdx >= tc) {
+    LLC_SLICE_DPRINTF(sliceId, "PUM prefetch done.\n");
+    MachineID mlcMachineID(MachineType_L1Cache, dynS->getDynStreamId().coreId);
+    auto mlcCtrl = AbstractStreamAwareController::getController(mlcMachineID);
+    auto mlcSE = mlcCtrl->getMLCStreamEngine();
+
+    assert(mlcSE);
+
+    mlcSE->notifyMLCPUMManagerPrefetchDone(dynS->sentPUMPackets);
+  }
 }
 
 void LLCStreamEngine::sendOffloadedLoopBoundRetToMLC(LLCDynStreamPtr stream,

@@ -49,6 +49,7 @@ public:
    * Some query functions.
    */
   bool isFloatedToMem() const;
+  bool isMixedFloat() const;
   ElementIdx getFirstFloatElementIdx() const;
   MachineType getMachineTypeAtElem(ElementIdx elementIdx) const;
 

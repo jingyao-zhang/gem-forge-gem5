@@ -87,11 +87,12 @@ structure(RequestMsg, desc="...", interface="Message") {
   PrefetchBit Prefetch,             desc="Is this a prefetch request";
   RequestStatisticPtr requestStatistic, default="nullptr", desc="Hook to update statistic of this core request";
   // ! Sean: StreamAwareCache
-  PacketPtr pkt,                    desc="Hack to store packet";
-  DynStreamSliceIdVec sliceIds,     desc="Stream slice ids";
-  DataBlock streamStoreBlk,         desc="StreamStore value";
-  DynStrandId sendToStrandId,       desc="StreamForward receiver strand id";
-  bool isPUM, default="false",      desc="Mark this as StreamPUM msg";
+  PacketPtr pkt,                       desc="Hack to store packet";
+  DynStreamSliceIdVec sliceIds,        desc="Stream slice ids";
+  DataBlock streamStoreBlk,            desc="StreamStore value";
+  DynStrandId sendToStrandId,          desc="StreamForward receiver strand id";
+  bool isPUM, default="false",         desc="Mark this as StreamPUM msg";
+  bool isPUMPrefetch, default="false", desc="Mark this as StreamPUM PrefetchData msg";
 
   int getStatsType() {
     return Type;

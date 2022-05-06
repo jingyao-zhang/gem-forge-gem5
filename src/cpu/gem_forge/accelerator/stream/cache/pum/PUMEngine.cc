@@ -35,6 +35,14 @@ bool PUMEngine::hasStartedRound(int64_t pumContextId, int rounds) const {
   return this->startedRound >= rounds;
 }
 
+void PUMEngine::setPUMManager(MLCPUMManager *pumManager) {
+  // We need to know the PUMManager for PUMPrefetchStream.
+  if (this->pumManager) {
+    assert(this->pumManager == pumManager);
+  }
+  this->pumManager = pumManager;
+}
+
 void PUMEngine::configure(MLCPUMManager *pumManager, int64_t pumContextId,
                           const PUMCommandVecT &commands) {
 
@@ -60,7 +68,7 @@ void PUMEngine::configure(MLCPUMManager *pumManager, int64_t pumContextId,
                  this->nextCmdIdx, this->commands.size());
   }
 
-  this->pumManager = pumManager;
+  this->setPUMManager(pumManager);
   this->pumContextId = pumContextId;
   this->nextCmdIdx = 0;
   this->sentPUMDataPkts = 0;
@@ -167,7 +175,8 @@ void PUMEngine::kickNextCommand() {
      * Record the number of bitline ops we have done for compute cmd.
      */
     if (command.type == "cmp" && command.opClass != No_OpClass) {
-      auto bitlineOps = scheduledArrays.size() * command.bitline_mask.getTotalTrip();
+      auto bitlineOps =
+          scheduledArrays.size() * command.bitline_mask.getTotalTrip();
       this->controller->m_statPUMComputeCmds++;
       this->controller->m_statPUMComputeOps += bitlineOps;
     }
@@ -193,7 +202,8 @@ void PUMEngine::kickNextCommand() {
 }
 
 void PUMEngine::sendPUMDataToLLC(const DynStreamSliceId &sliceId,
-                                 const NetDest &recvBanks, int bytes) {
+                                 const NetDest &recvBanks, int bytes,
+                                 bool isPUMPrefetch) {
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = 0;
   msg->m_Type = CoherenceRequestType_STREAM_PUM_DATA;
@@ -206,6 +216,10 @@ void PUMEngine::sendPUMDataToLLC(const DynStreamSliceId &sliceId,
     LLC_SLICE_DPRINTF(sliceId, "[PUMEngine] Send PUMData -> %s.\n", recvBanks);
   } else {
     LLC_SE_DPRINTF("[PUMEngine] Send Inter-Bank Data -> %s.\n", recvBanks);
+  }
+  if (isPUMPrefetch) {
+    assert(sliceId.isValid() && "Should come from PUMPrefetchStream.");
+    msg->m_isPUMPrefetch = true;
   }
 
   this->se->streamIndirectIssueMsgBuffer->enqueue(
@@ -447,8 +461,17 @@ void PUMEngine::synced() {
 }
 
 void PUMEngine::receiveData(const RequestMsg &msg) {
-  assert(this->pumManager);
 
+  /**
+   * So far if this is from PUMPrefetchStream, we simply discard it.
+   */
+
+  assert(this->pumManager);
+  if (msg.m_isPUMPrefetch) {
+    assert(msg.m_sliceIds.isValid());
+    this->pumManager->receivePrefetchPacket(1);
+    return;
+  }
   this->pumManager->reportProgress(this->pumContextId);
   if (msg.m_sliceIds.isValid()) {
     this->receiveDataFromStream(msg);

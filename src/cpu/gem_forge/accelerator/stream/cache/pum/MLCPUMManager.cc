@@ -1468,6 +1468,8 @@ void MLCPUMManager::runPrefetchStage(CacheStreamConfigureVec *configs) {
   this->dispatchStreamConfigs(configs);
 
   this->inFlightPrefetchStreams = 0;
+  this->totalSentPrefetchPkts = 0;
+  this->totalRecvPrefetchPkts = 0;
   for (const auto &config : configsCpy) {
     this->inFlightPrefetchStreams += config->totalStrands;
     MLC_S_DPRINTF(config->dynamicId, "Prefetch strand count %d.\n",
@@ -1589,6 +1591,15 @@ MLCPUMManager::generatePrefetchStreams(PUMComputeStreamGroup &group) {
         prefetchConfig->initVAddr;
     prefetchConfig->addrGenFormalParams.back().isInvariant = true;
 
+    /**
+     * Set the float plan to offload to the memory controller.
+     */
+    uint64_t firstMemFloatElemIdx = 0;
+    prefetchConfig->floatPlan = StreamFloatPlan();
+    prefetchConfig->floatPlan.addFloatChangePoint(firstMemFloatElemIdx,
+                                                  MachineType_Directory);
+    prefetchConfig->floatPlan.finalize();
+
     return prefetchConfig;
   };
 
@@ -1617,10 +1628,31 @@ MLCPUMManager::generatePrefetchStreams(PUMComputeStreamGroup &group) {
   return configs;
 }
 
-void MLCPUMManager::notifyPrefetchStreamComplete() {
-  MLCSE_DPRINTF("Prefetch stream complete (%d remaining).\n",
-                this->inFlightPrefetchStreams - 1);
-  if (--(this->inFlightPrefetchStreams) == 0) {
+void MLCPUMManager::notifyPrefetchStreamComplete(int64_t numSentPkts) {
+  this->totalSentPrefetchPkts += numSentPkts;
+  MLCSE_DPRINTF(
+      "Prefetch stream complete (%d remaining). SentPrefetchPkt + %ld = %ld.\n",
+      this->inFlightPrefetchStreams - 1, numSentPkts,
+      this->totalSentPrefetchPkts);
+  this->inFlightPrefetchStreams--;
+  if (this->inFlightPrefetchStreams == 0 &&
+      this->totalRecvPrefetchPkts == this->totalSentPrefetchPkts) {
+    MLCSE_DPRINTF("Completed prefetch stage.\n");
+    // Record the prefetch cycles.
+    assert(!this->contexts.empty() && "There is no context to be prefetched.");
+    auto &context = this->contexts.front();
+    auto prefetchCycles = this->controller->curCycle() - context.initCycle;
+    this->controller->m_statPUMPrefetchCycles += prefetchCycles;
+    runPUMExecutionStage();
+  }
+}
+
+void MLCPUMManager::receivePrefetchPacket(int recvPackets) {
+  this->totalRecvPrefetchPkts += recvPackets;
+  MLCSE_DPRINTF("Recv Prefetch Data + %ld = %ld.\n", recvPackets,
+                this->totalRecvPrefetchPkts);
+  if (this->inFlightPrefetchStreams == 0 &&
+      this->totalRecvPrefetchPkts == this->totalSentPrefetchPkts) {
     MLCSE_DPRINTF("Completed prefetch stage.\n");
     // Record the prefetch cycles.
     assert(!this->contexts.empty() && "There is no context to be prefetched.");
@@ -2068,6 +2100,8 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
     return;
   }
 
+  this->setPUMManagerAtPUMEngine();
+
   this->contexts.emplace_back();
   auto &context = this->contexts.back();
 
@@ -2166,6 +2200,24 @@ void MLCPUMManager::postMLCSEConfigure() {
   if (this->contexts.size() == 1) {
     // Start PUM only if we reached the front of the queue.
     this->configurePUMEngine(context);
+  }
+}
+
+void MLCPUMManager::setPUMManagerAtPUMEngine() {
+  for (int row = 0; row < this->controller->getNumRows(); ++row) {
+    for (int col = 0; col < this->controller->getNumCols(); ++col) {
+      int nodeId = row * this->controller->getNumCols() + col;
+      MachineID dstMachineId(MachineType_L2Cache, nodeId);
+
+      /**
+       * We still configure here. But PUMEngine will not start until received
+       * the Kick.
+       */
+      auto llcCntrl =
+          AbstractStreamAwareController::getController(dstMachineId);
+      auto llcSE = llcCntrl->getLLCStreamEngine();
+      llcSE->getPUMEngine()->setPUMManager(this);
+    }
   }
 }
 

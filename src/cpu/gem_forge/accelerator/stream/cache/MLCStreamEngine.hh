@@ -92,7 +92,7 @@ public:
   /**
    * Magic: Notify MLCPUMManager that a prefetch stream has completed.
    */
-  void notifyMLCPUMManagerPrefetchDone() const;
+  void notifyMLCPUMManagerPrefetchDone(int64_t numSentPkts) const;
 
 private:
   AbstractStreamAwareController *controller;
