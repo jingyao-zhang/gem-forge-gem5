@@ -1,7 +1,10 @@
 
 Import('*')
 
-DebugFlag('StreamPUM')
+DebugFlag('LLCStreamPUM')
+DebugFlag('MLCStreamPUM')
+CompoundFlag('StreamPUM',
+             ['LLCStreamPUM', 'MLCStreamPUM'])
 
 Source('AffinePattern.cc')
 Source('PUMCommand.cc')

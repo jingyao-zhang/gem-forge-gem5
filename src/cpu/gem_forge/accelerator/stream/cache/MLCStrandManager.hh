@@ -20,7 +20,8 @@ public:
   /**
    * Receive a StreamEnd message and end all streams.
    */
-  void receiveStreamEnd(PacketPtr pkt);
+  void receiveStreamEnd(const std::vector<DynStreamId> &endIds,
+                        MasterID masterId);
 
   /**
    * Function called to check CoreCommitProgress for RangeSync.

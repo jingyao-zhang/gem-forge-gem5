@@ -85,6 +85,29 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
   }
 
   LLC_S_DPRINTF_(LLCRubyStreamLife, this->getDynStrandId(), "Created.\n");
+
+  /**
+   * Release the previous PUMPrefetchStream.
+   */
+  if (GlobalLLCDynStreamMap.count(this->getDynStrandId())) {
+    std::vector<LLCDynStreamPtr> pumPrefetchStreams;
+    auto iter = GlobalLLCDynStreamMap.begin();
+    while (iter != GlobalLLCDynStreamMap.end()) {
+      if (iter->first.dynStreamId == this->getDynStreamId()) {
+        auto dynS = iter->second;
+        assert(dynS->configData->isPUMPrefetch &&
+               "This should be PUMPrefetchStream.");
+        assert(dynS->state == State::TERMINATED &&
+               "PUMPrefetchStream should be terminated.");
+        pumPrefetchStreams.push_back(dynS);
+      }
+      ++iter;
+    }
+    for (auto pumPrefetchDynS : pumPrefetchStreams) {
+      delete pumPrefetchDynS;
+    }
+  }
+
   assert(GlobalLLCDynStreamMap.emplace(this->getDynStrandId(), this).second);
   this->sanityCheckStreamLife();
 }
@@ -729,6 +752,18 @@ void LLCDynStream::registerElementInitCallback(uint64_t elementIdx,
       .first->second.push_back(callback);
 }
 
+void LLCDynStream::registerElemPostReleaseCallback(uint64_t elemIdx,
+                                                   ElementCallback callback) {
+  if (this->isElementReleased(elemIdx)) {
+    LLC_S_PANIC(this->getDynStrandId(),
+                "Register ElemPostReleaseCallback for Elem %llu.", elemIdx);
+  }
+  this->elemPostReleaseCallbacks
+      .emplace(std::piecewise_construct, std::forward_as_tuple(elemIdx),
+               std::forward_as_tuple())
+      .first->second.push_back(callback);
+}
+
 void LLCDynStream::registerSliceAllocCallback(uint64_t sliceIdx,
                                               SliceCallback callback) {
   if (this->getNextAllocSliceIdx() >= sliceIdx) {
@@ -778,12 +813,29 @@ void LLCDynStream::eraseElement(uint64_t elementIdx) {
   LLC_ELEMENT_DPRINTF(iter->second, "Erased element.\n");
   this->getStaticS()->incrementOffloadedStepped();
   this->idxToElementMap.erase(iter);
+  this->invokeElemPostReleaseCallback(elementIdx);
 }
 
-void LLCDynStream::eraseElement(IdxToElementMapT::iterator elementIter) {
-  LLC_ELEMENT_DPRINTF(elementIter->second, "Erased element.\n");
+void LLCDynStream::eraseElement(IdxToElementMapT::iterator elemIter) {
+  LLC_ELEMENT_DPRINTF(elemIter->second, "Erased element.\n");
   this->getStaticS()->incrementOffloadedStepped();
-  this->idxToElementMap.erase(elementIter);
+  auto elemIdx = elemIter->first;
+  this->idxToElementMap.erase(elemIter);
+  this->invokeElemPostReleaseCallback(elemIdx);
+}
+
+void LLCDynStream::invokeElemPostReleaseCallback(uint64_t elemIdx) {
+
+  /**
+   * We call ElementReleaseCallback here.
+   */
+  auto iter = this->elemPostReleaseCallbacks.find(elemIdx);
+  if (iter != this->elemPostReleaseCallbacks.end()) {
+    for (auto &callback : iter->second) {
+      callback(this->getDynStreamId(), elemIdx);
+    }
+    this->elemPostReleaseCallbacks.erase(iter);
+  }
 }
 
 bool LLCDynStream::isBasedOn(const DynStreamId &baseId) const {

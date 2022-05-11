@@ -499,10 +499,11 @@ DynStreamFormalParamV MLCStrandManager::splitAffinePattern(
   }
 }
 
-void MLCStrandManager::configureStream(ConfigPtr configs, MasterID masterId) {
-  MLC_S_DPRINTF_(MLCRubyStreamLife, configs->dynamicId,
-                 "Received StreamConfigure, TotalTripCount %lu.\n",
-                 configs->totalTripCount);
+void MLCStrandManager::configureStream(ConfigPtr config, MasterID masterId) {
+  MLC_S_DPRINTF_(MLCRubyStreamLife,
+                 DynStrandId(config->dynamicId, config->strandIdx),
+                 "[Strand] Received StreamConfig, TotalTripCount %lu.\n",
+                 config->totalTripCount);
   /**
    * Do not release the pkt and streamConfigureData as they should be
    * forwarded to the LLC bank and released there. However, we do need to fix
@@ -510,9 +511,9 @@ void MLCStrandManager::configureStream(ConfigPtr configs, MasterID masterId) {
    * be done before initializing the MLCDynStream so that it ! knows the
    * initial llc bank.
    */
-  if (!configs->initPAddrValid) {
-    configs->initPAddr = this->controller->getAddressToOurLLC();
-    configs->initPAddrValid = true;
+  if (!config->initPAddrValid) {
+    config->initPAddr = this->controller->getAddressToOurLLC();
+    config->initPAddrValid = true;
   }
 
   /**
@@ -521,14 +522,14 @@ void MLCStrandManager::configureStream(ConfigPtr configs, MasterID masterId) {
    * data.
    */
   std::vector<MLCDynIndirectStream *> indirectStreams;
-  for (const auto &edge : configs->depEdges) {
+  for (const auto &edge : config->depEdges) {
     if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
       const auto &indirectStreamConfig = edge.data;
       // Let's create an indirect stream.
       auto indirectStream = new MLCDynIndirectStream(
           indirectStreamConfig, this->controller,
           mlcSE->responseToUpperMsgBuffer, mlcSE->requestToLLCMsgBuffer,
-          configs->dynamicId /* Root dynamic stream id. */);
+          config->dynamicId /* Root dynamic stream id. */);
       this->strandMap.emplace(indirectStream->getDynStrandId(), indirectStream);
       indirectStreams.push_back(indirectStream);
 
@@ -546,7 +547,7 @@ void MLCStrandManager::configureStream(ConfigPtr configs, MasterID masterId) {
           auto IIS = new MLCDynIndirectStream(
               ISDepEdge.data, this->controller, mlcSE->responseToUpperMsgBuffer,
               mlcSE->requestToLLCMsgBuffer,
-              configs->dynamicId /* Root dynamic stream id. */);
+              config->dynamicId /* Root dynamic stream id. */);
           this->strandMap.emplace(IIS->getDynStrandId(), IIS);
 
           indirectStreams.push_back(IIS);
@@ -559,7 +560,7 @@ void MLCStrandManager::configureStream(ConfigPtr configs, MasterID masterId) {
   }
   // Create the direct stream.
   auto directStream = new MLCDynDirectStream(
-      configs, this->controller, mlcSE->responseToUpperMsgBuffer,
+      config, this->controller, mlcSE->responseToUpperMsgBuffer,
       mlcSE->requestToLLCMsgBuffer, indirectStreams);
   this->strandMap.emplace(directStream->getDynStrandId(), directStream);
 
@@ -569,23 +570,23 @@ void MLCStrandManager::configureStream(ConfigPtr configs, MasterID masterId) {
    * streams ! should be cut.
    */
   {
-    auto reuseIter = mlcSE->reverseReuseInfoMap.find(configs->dynamicId);
+    auto reuseIter = mlcSE->reverseReuseInfoMap.find(config->dynamicId);
     if (reuseIter != mlcSE->reverseReuseInfoMap.end()) {
       auto cutElementIdx = reuseIter->second.targetCutElementIdx;
       auto cutLineVAddr = reuseIter->second.targetCutLineVAddr;
-      if (configs->totalTripCount == -1 ||
-          configs->totalTripCount > cutElementIdx) {
-        configs->totalTripCount = cutElementIdx;
-        configs->hasBeenCuttedByMLC = true;
+      if (config->totalTripCount == -1 ||
+          config->totalTripCount > cutElementIdx) {
+        config->totalTripCount = cutElementIdx;
+        config->hasBeenCuttedByMLC = true;
         directStream->setLLCCutLineVAddr(cutLineVAddr);
-        assert(configs->depEdges.empty() &&
+        assert(config->depEdges.empty() &&
                "Reuse stream with indirect stream is not supported.");
       }
     }
   }
 
   // Configure Remote SE.
-  this->sendConfigToRemoteSE(configs, masterId);
+  this->sendConfigToRemoteSE(config, masterId);
 }
 
 void MLCStrandManager::sendConfigToRemoteSE(ConfigPtr streamConfigureData,
@@ -642,14 +643,11 @@ void MLCStrandManager::sendConfigToRemoteSE(ConfigPtr streamConfigureData,
       this->controller->cyclesToTicks(latency));
 }
 
-void MLCStrandManager::receiveStreamEnd(PacketPtr pkt) {
-  auto endIds = *(pkt->getPtr<std::vector<DynStreamId> *>());
-  for (const auto &endId : *endIds) {
-    this->endStream(endId, pkt->req->masterId());
+void MLCStrandManager::receiveStreamEnd(const std::vector<DynStreamId> &endIds,
+                                        MasterID masterId) {
+  for (const auto &endId : endIds) {
+    this->endStream(endId, masterId);
   }
-  // Release the vector and packet.
-  delete endIds;
-  delete pkt;
 }
 
 void MLCStrandManager::endStream(const DynStreamId &endId, MasterID masterId) {

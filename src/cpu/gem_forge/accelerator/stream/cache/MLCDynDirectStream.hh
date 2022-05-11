@@ -110,7 +110,7 @@ protected:
   std::list<LLCSegmentPosition> llcSegmentsAllocated;
   std::list<LLCSegmentPosition> llcSegments;
 
-  bool blockedOnReceiverElementInit = false;
+  bool blockedSendingCredit = false;
 
   void allocateLLCSegment();
   void pushNewLLCSegment(Addr startPAddr, uint64_t startSliceIdx);

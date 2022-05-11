@@ -137,6 +137,7 @@ CacheStreamConfigureData::splitLinearParam1D(const StrandSplitInfo &strandSplit,
   addStrandParam(strandStride);
   addStrandParam(strandTripCount);
   addStrandParam(strandStart);
+  hack("Split 1D Continuous %s.\n", this->dynamicId);
   hack("start %#x stride %d tripCount %llu.\n", start, stride, tripCount);
   hack("interleave %d initOffset %d totalStrands %llu.\n", interleave,
        strandSplit.initOffset, totalStrands);

@@ -406,6 +406,8 @@ public:
                                    ElementCallback callback);
 
   bool isElementReleased(uint64_t elementIdx) const;
+  void registerElemPostReleaseCallback(uint64_t elementIdx,
+                                       ElementCallback callback);
   uint64_t getNextUnreleasedElementIdx() const;
   LLCStreamElementPtr getElement(uint64_t elementIdx) const;
   LLCStreamElementPtr getElemPanic(uint64_t elementIdx,
@@ -414,8 +416,9 @@ public:
   /**
    * Erase the element for myself only.
    */
-  void eraseElement(uint64_t elementIdx);
-  void eraseElement(IdxToElementMapT::iterator elementIter);
+  void eraseElement(uint64_t elemIdx);
+  void eraseElement(IdxToElementMapT::iterator elemIter);
+  void invokeElemPostReleaseCallback(uint64_t elemIdx);
 
   /**
    * Slice callback.
@@ -439,6 +442,11 @@ private:
    */
   uint64_t nextInitStrandElemIdx = 0;
   std::map<uint64_t, ElementCallbackList> elementInitCallbacks;
+
+  /**
+   * Callbacks when an element is released.
+   */
+  std::map<uint64_t, ElementCallbackList> elemPostReleaseCallbacks;
 
   uint64_t nextCommitElementIdx = 0;
   LLCStreamCommitController *commitController = nullptr;

@@ -1,9 +1,9 @@
 #include "PUMEngine.hh"
 #include "MLCPUMManager.hh"
 
-#include "debug/StreamPUM.hh"
+#include "debug/LLCStreamPUM.hh"
 
-#define DEBUG_TYPE StreamPUM
+#define DEBUG_TYPE LLCStreamPUM
 #include "../../stream_log.hh"
 
 PUMEngine::PUMEngine(LLCStreamEngine *_se)
@@ -104,7 +104,7 @@ void PUMEngine::configure(MLCPUMManager *pumManager, int64_t pumContextId,
     this->commands.push_back(c);
   }
 
-  if (Debug::StreamPUM) {
+  if (Debug::LLCStreamPUM) {
     LLC_SE_DPRINTF("[PUMEngine]   Configured with CMD.\n");
     for (int i = 0; i < this->commands.size(); ++i) {
       LLC_SE_DPRINTF("[PUMEngine]   CMD %ld %s.", i,

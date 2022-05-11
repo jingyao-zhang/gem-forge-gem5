@@ -71,8 +71,15 @@ void MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream end when stream float is disabled.\n");
 
-  this->pumManager->receiveStreamEnd(pkt);
-  this->strandManager->receiveStreamEnd(pkt);
+  auto *endIds = *(pkt->getPtr<std::vector<DynStreamId> *>());
+  auto masterId = pkt->req->masterId();
+
+  delete pkt;
+
+  this->pumManager->receiveStreamEnd(*endIds);
+  this->strandManager->receiveStreamEnd(*endIds, masterId);
+
+  delete endIds;
 }
 
 void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {

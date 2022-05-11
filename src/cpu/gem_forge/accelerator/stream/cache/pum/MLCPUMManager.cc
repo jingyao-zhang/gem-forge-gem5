@@ -8,13 +8,13 @@
 #include "sim/stream_nuca/stream_nuca_manager.hh"
 #include "sim/stream_nuca/stream_nuca_map.hh"
 
-#include "debug/StreamPUM.hh"
+#include "debug/MLCStreamPUM.hh"
 
-#define DEBUG_TYPE StreamPUM
+#define DEBUG_TYPE MLCStreamPUM
 #include "../../stream_log.hh"
 
 #define MLCSE_DPRINTF(format, args...)                                         \
-  DPRINTF(StreamPUM, "[MLC_SE%d]: [PUM] " format,                              \
+  DPRINTF(MLCStreamPUM, "[MLC_SE%d]: [PUM] " format,                           \
           this->controller->getMachineID().num, ##args)
 #define MLCSE_PANIC(format, args...)                                           \
   panic("[MLC_SE%d]: [PUM] " format, this->controller->getMachineID().num,     \
@@ -480,7 +480,7 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context) {
     }
   }
 
-  if (Debug::StreamPUM) {
+  if (Debug::MLCStreamPUM) {
     MLCSE_DPRINTF("--------------------- PUMDataGraph Nodes.\n");
     for (const auto &node : context.pumDataGraphNodes) {
       MLCSE_DPRINTF("-- Node %s.\n", *node);
@@ -489,7 +489,7 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context) {
 
   this->mergePUMDataGraphMoveNode(context);
 
-  if (Debug::StreamPUM) {
+  if (Debug::MLCStreamPUM) {
     MLCSE_DPRINTF("--------------------- PUMDataGraph After Merge.\n");
     for (const auto &node : context.pumDataGraphNodes) {
       MLCSE_DPRINTF("-- Node %s.\n", *node);
@@ -499,7 +499,7 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context) {
   auto scheduledNodes = this->schedulePUMDataGraph(context);
   context.pumDataGraphNodes = scheduledNodes;
 
-  if (Debug::StreamPUM) {
+  if (Debug::MLCStreamPUM) {
     MLCSE_DPRINTF("--------------------- PUMDataGraph After Schedule.\n");
     for (const auto &node : context.pumDataGraphNodes) {
       MLCSE_DPRINTF("-- Node %s.\n", *node);
@@ -1205,7 +1205,7 @@ void MLCPUMManager::compileDataMove(PUMContext &context,
     cmd.dstAccessPattern = recvPat;
     cmd.dstMapPattern = sendTile;
   }
-  if (Debug::StreamPUM) {
+  if (Debug::MLCStreamPUM) {
     for (const auto &command : commands) {
       MLCSE_DPRINTF("%s", command);
     }
@@ -1267,7 +1267,7 @@ void MLCPUMManager::compileCompute(PUMContext &context,
   // Compile the final reduction instruction.
   this->compileReduction(context, *node->group, commands);
 
-  if (Debug::StreamPUM) {
+  if (Debug::MLCStreamPUM) {
     for (const auto &command : commands) {
       MLCSE_DPRINTF("%s", command);
     }
@@ -1277,7 +1277,7 @@ void MLCPUMManager::compileCompute(PUMContext &context,
   // Mask the commands by the Stream.
   commands = compiler.maskCmdsBySubRegion(commands, pattern);
 
-  if (Debug::StreamPUM) {
+  if (Debug::MLCStreamPUM) {
     for (const auto &command : commands) {
       MLCSE_DPRINTF("%s", command);
     }
@@ -1294,7 +1294,7 @@ void MLCPUMManager::compileCompute(PUMContext &context,
     cmd.srcAccessPattern = pattern;
     cmd.srcMapPattern = node->pumTile;
   }
-  if (Debug::StreamPUM) {
+  if (Debug::MLCStreamPUM) {
     for (const auto &command : commands) {
       MLCSE_DPRINTF("%s", command);
     }
@@ -1457,15 +1457,16 @@ void MLCPUMManager::compileContext(PUMContext &context) {
   }
 }
 
-void MLCPUMManager::runPrefetchStage(CacheStreamConfigureVec *configs) {
+void MLCPUMManager::runPrefetchStage(PUMContext &context,
+                                     CacheStreamConfigureVec *configs) {
   assert(configs != nullptr && !configs->empty());
-  assert(this->savedPkt != nullptr);
+  assert(context.savedPkt);
 
   MLCSE_DPRINTF("Starting prefetch stage.\n");
 
   // Dispatch & track prefetch streams.
   auto configsCpy = *configs;
-  this->dispatchStreamConfigs(configs);
+  this->dispatchStreamConfigs(configs, context.savedPkt->req->masterId());
 
   this->inFlightPrefetchStreams = 0;
   this->totalSentPrefetchPkts = 0;
@@ -1477,33 +1478,41 @@ void MLCPUMManager::runPrefetchStage(CacheStreamConfigureVec *configs) {
   }
 }
 
-void MLCPUMManager::runPUMExecutionStage() {
-  assert(this->savedPkt != nullptr);
+void MLCPUMManager::runPUMExecutionStage(PUMContext &context) {
+  assert(context.savedPkt);
 
   MLCSE_DPRINTF("Starting PUM execution stage.\n");
 
   // Configure any normal streams.
-  auto normalConfigs = *(this->savedPkt->getPtr<CacheStreamConfigureVec *>());
+  auto normalConfigs = *(context.savedPkt->getPtr<CacheStreamConfigureVec *>());
   if (normalConfigs->empty()) {
     MLCSE_DPRINTF("Everything handled by PUM. No Normal Streams.\n");
   } else {
-    this->dispatchStreamConfigs(normalConfigs);
+    this->dispatchStreamConfigs(normalConfigs,
+                                context.savedPkt->req->masterId());
   }
   // Done with packet. Free it!
-  delete this->savedPkt;
-  this->savedPkt = nullptr;
+  delete context.savedPkt;
+  context.savedPkt = nullptr;
 
   // Finish configuring PUM.
-  this->postMLCSEConfigure();
+  this->postMLCSEConfigure(context);
 }
 
-void MLCPUMManager::dispatchStreamConfigs(
-    CacheStreamConfigureVec *configs) const {
-  assert(this->savedPkt != nullptr);
+void MLCPUMManager::runMLCConfigWithoutPUM(PacketPtr pkt) {
+  auto normalConfigs = *(pkt->getPtr<CacheStreamConfigureVec *>());
+  assert(!normalConfigs->empty());
+
+  this->dispatchStreamConfigs(normalConfigs, pkt->req->masterId());
+  // Done with packet. Free it!
+  delete pkt;
+}
+
+void MLCPUMManager::dispatchStreamConfigs(CacheStreamConfigureVec *configs,
+                                          MasterID masterId) const {
   assert(!configs->empty());
 
-  this->mlcSE->strandManager->receiveStreamConfigure(
-      configs, this->savedPkt->req->masterId());
+  this->mlcSE->strandManager->receiveStreamConfigure(configs, masterId);
   if (this->mlcSE->controller->isStreamRangeSyncEnabled()) {
     // Enable the range check.
     this->mlcSE->scheduleEvent(Cycles(1));
@@ -1529,9 +1538,27 @@ MLCPUMManager::generatePrefetchStreams(PUMComputeStreamGroup &group) {
     const auto &streamNUCARegion =
         streamNUCAManager->getContainingStreamRegion(startVAddr);
 
-    // If cached, done :)
-    if (streamNUCARegion.isCached)
+    // If this is not transposed, done.
+    Addr regionPAddr;
+    if (!cpuDelegator->translateVAddrOracle(streamNUCARegion.vaddr,
+                                            regionPAddr)) {
+      assert(false && "[PUM] Prefetch unable to translate VA->PA");
+    }
+    if (!StreamNUCAMap::getRangeMapByStartPAddr(regionPAddr).isStreamPUM) {
       return std::shared_ptr<CacheStreamConfigureData>(nullptr);
+    }
+
+    if (streamNUCARegion.name == "gfm.conv3d.k") {
+      // Avoid prefetching for the kernel weight in conv3d.
+      return std::shared_ptr<CacheStreamConfigureData>(nullptr);
+    }
+
+    // If cached, done :)
+    if (streamNUCARegion.isCached) {
+      return std::shared_ptr<CacheStreamConfigureData>(nullptr);
+    }
+
+    MLCSE_DPRINTF("Prefetch stream %s.\n", config->dynamicId);
 
     // Hack.
     // Assume prefetch streams will always be fetched (thus cached in cache).
@@ -1556,11 +1583,7 @@ MLCPUMManager::generatePrefetchStreams(PUMComputeStreamGroup &group) {
 
     // Generate address.
     prefetchConfig->initVAddr = streamNUCARegion.vaddr;
-    Addr pa;
-    if (!cpuDelegator->translateVAddrOracle(prefetchConfig->initVAddr, pa)) {
-      assert(false && "[PUM] Prefetch unable to translate VA->PA");
-    }
-    prefetchConfig->initPAddr = pa;
+    prefetchConfig->initPAddr = regionPAddr;
     prefetchConfig->initPAddrValid = true;
 
     // Opt: prefetch patterns only describes an element from each of the
@@ -1591,8 +1614,11 @@ MLCPUMManager::generatePrefetchStreams(PUMComputeStreamGroup &group) {
         prefetchConfig->initVAddr;
     prefetchConfig->addrGenFormalParams.back().isInvariant = true;
 
+    // Fix the TripCount in config.
+    prefetchConfig->totalTripCount = numCLs;
+
     /**
-     * Set the float plan to offload to the memory controller.
+     * Set the float plan to offload to the LLC controller.
      */
     uint64_t firstMemFloatElemIdx = 0;
     prefetchConfig->floatPlan = StreamFloatPlan();
@@ -1637,30 +1663,40 @@ void MLCPUMManager::notifyPrefetchStreamComplete(int64_t numSentPkts) {
   this->inFlightPrefetchStreams--;
   if (this->inFlightPrefetchStreams == 0 &&
       this->totalRecvPrefetchPkts == this->totalSentPrefetchPkts) {
-    MLCSE_DPRINTF("Completed prefetch stage.\n");
-    // Record the prefetch cycles.
     assert(!this->contexts.empty() && "There is no context to be prefetched.");
     auto &context = this->contexts.front();
-    auto prefetchCycles = this->controller->curCycle() - context.initCycle;
-    this->controller->m_statPUMPrefetchCycles += prefetchCycles;
-    runPUMExecutionStage();
+    this->finishPrefetchStream(context);
   }
 }
 
 void MLCPUMManager::receivePrefetchPacket(int recvPackets) {
   this->totalRecvPrefetchPkts += recvPackets;
-  MLCSE_DPRINTF("Recv Prefetch Data + %ld = %ld.\n", recvPackets,
-                this->totalRecvPrefetchPkts);
+  // MLCSE_DPRINTF("Recv Prefetch Data + %ld = %ld.\n", recvPackets,
+  //               this->totalRecvPrefetchPkts);
   if (this->inFlightPrefetchStreams == 0 &&
       this->totalRecvPrefetchPkts == this->totalSentPrefetchPkts) {
-    MLCSE_DPRINTF("Completed prefetch stage.\n");
-    // Record the prefetch cycles.
     assert(!this->contexts.empty() && "There is no context to be prefetched.");
     auto &context = this->contexts.front();
-    auto prefetchCycles = this->controller->curCycle() - context.initCycle;
-    this->controller->m_statPUMPrefetchCycles += prefetchCycles;
-    runPUMExecutionStage();
+    this->finishPrefetchStream(context);
   }
+}
+
+void MLCPUMManager::finishPrefetchStream(PUMContext &context) {
+  MLCSE_DPRINTF("Completed prefetch stage.\n");
+
+  // Release all prefetch streams in the MLC SE.
+  assert(context.savedPkt);
+  auto masterId = context.savedPkt->req->masterId();
+  std::vector<DynStreamId> prefetchDynIds;
+  for (const auto &prefetchConfig : context.prefetchConfigs) {
+    prefetchDynIds.push_back(prefetchConfig->dynamicId);
+  }
+  this->mlcSE->strandManager->receiveStreamEnd(prefetchDynIds, masterId);
+
+  // Record the prefetch cycles.
+  auto prefetchCycles = this->controller->curCycle() - context.initCycle;
+  this->controller->m_statPUMPrefetchCycles += prefetchCycles;
+  runPUMExecutionStage(context);
 }
 
 void MLCPUMManager::erasePUMConfigs(PUMContext &context,
@@ -2097,6 +2133,7 @@ void MLCPUMManager::addPUMLoadStream(PUMContext &context,
 void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
 
   if (this->controller->myParams->stream_pum_mode != 1) {
+    this->runMLCConfigWithoutPUM(pkt);
     return;
   }
 
@@ -2128,6 +2165,7 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
 
   if (!appliedPUM) {
     this->contexts.pop_back();
+    this->runMLCConfigWithoutPUM(pkt);
     return;
   }
 
@@ -2170,34 +2208,29 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
                               pConfigs.end());
     }
   }
+  // Remember the prefetch configs.
+  context.prefetchConfigs = *prefetchConfigs;
   MLCSE_DPRINTF("%d prefetch streams generated.\n", prefetchConfigs->size());
 
-  assert(this->savedPkt == nullptr);
-  this->savedPkt = pkt;
+  assert(!context.savedPkt);
+  context.savedPkt = pkt;
 
   if (prefetchConfigs->empty()) {
-    this->runPUMExecutionStage();
+    this->runPUMExecutionStage(context);
   } else {
-    this->runPrefetchStage(prefetchConfigs);
+    this->runPrefetchStage(context, prefetchConfigs);
   }
 
   return;
 }
 
-void MLCPUMManager::postMLCSEConfigure() {
+void MLCPUMManager::postMLCSEConfigure(PUMContext &context) {
 
-  // Really compile for the first time.
-  if (this->contexts.empty()) {
-    return;
-  }
-  auto &context = this->contexts.back();
-  if (!context.waitingPostConfig) {
-    return;
-  }
+  assert(context.waitingPostConfig);
   context.waitingPostConfig = false;
 
   this->compileContext(context);
-  if (this->contexts.size() == 1) {
+  if (this->contexts.front().contextId == context.contextId) {
     // Start PUM only if we reached the front of the queue.
     this->configurePUMEngine(context);
   }
@@ -2800,9 +2833,7 @@ void MLCPUMManager::tryKickNextComputeRound(PUMContext &context) {
   this->configurePUMEngine(context);
 }
 
-void MLCPUMManager::receiveStreamEnd(PacketPtr pkt) {
-
-  auto &endIds = **(pkt->getPtr<std::vector<DynStreamId> *>());
+void MLCPUMManager::receiveStreamEnd(std::vector<DynStreamId> &endIds) {
 
   /**
    * Search in contexts to find the matching one.

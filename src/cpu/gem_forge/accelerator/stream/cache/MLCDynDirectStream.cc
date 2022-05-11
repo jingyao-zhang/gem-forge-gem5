@@ -311,7 +311,7 @@ void MLCDynDirectStream::trySendCreditToLLC() {
    * Find the first LLCSegment in ALLOCATED state and try issue credit.
    * Unless we are currently blocked by Receiver's element initialization.
    */
-  if (this->blockedOnReceiverElementInit) {
+  if (this->blockedSendingCredit) {
     return;
   }
 
@@ -353,7 +353,7 @@ void MLCDynDirectStream::trySendCreditToLLC() {
      * Additional sanity check that the RemoteStream does not have too many
      * slices.
      */
-    if (!this->config->isPUMPrefetch) {
+    {
       auto remoteDynS = LLCDynStream::getLLCStreamPanic(this->getDynStrandId(),
                                                         "trySendCredit()");
       auto inflyElementTotalSize = remoteDynS->idxToElementMap.size() *
@@ -365,6 +365,22 @@ void MLCDynDirectStream::trySendCreditToLLC() {
             "Delayed sending Credit since InflyElement %dx%d > %dB.\n",
             remoteDynS->idxToElementMap.size(),
             this->getStaticStream()->getMemElementSize(), inflyBytesThreshold);
+
+        /**
+         * PUMPrefetchStream won't send back anything, we here we register a
+         * release callback to continue issuing credits.
+         */
+        if (this->config->isPUMPrefetch) {
+          auto elemReleaseCallback = [this](const DynStreamId &dynStreamId,
+                                            uint64_t elemIdx) -> void {
+            this->blockedSendingCredit = false;
+            this->trySendCreditToLLC();
+          };
+          this->blockedSendingCredit = true;
+          remoteDynS->registerElemPostReleaseCallback(
+              remoteDynS->idxToElementMap.begin()->first, elemReleaseCallback);
+        }
+
         return;
       }
     }
@@ -452,10 +468,10 @@ void MLCDynDirectStream::trySendCreditToLLC() {
                     tailStreamElemIdx);
       auto elementInitCallback = [this](const DynStreamId &dynStreamId,
                                         uint64_t elementIdx) -> void {
-        this->blockedOnReceiverElementInit = false;
+        this->blockedSendingCredit = false;
         this->trySendCreditToLLC();
       };
-      this->blockedOnReceiverElementInit = true;
+      this->blockedSendingCredit = true;
       waitForRecvS->registerElementInitCallback(waitForRecvStrandElemIdx,
                                                 elementInitCallback);
       return;
@@ -848,10 +864,11 @@ void MLCDynDirectStream::pushNewLLCSegment(Addr startPAddr,
   assert(!segment.sliceIds.sliceIds.empty() && "Empty segment.");
   MLC_S_DPRINTF_(StreamRangeSync, this->getDynStrandId(),
                  "[Commit] Push new LLC segment SliceIdx [%llu, %llu) "
-                 "ElementIdx [%llu, %llu).\n",
+                 "StrandElemIdx [%llu, %llu) TripCount %ld.\n",
                  segment.startSliceIdx, segment.endSliceIdx,
                  segment.sliceIds.firstSliceId().getStartIdx(),
-                 segment.endSliceId.getStartIdx());
+                 segment.endSliceId.getStartIdx(),
+                 this->slicedStream.getTotalTripCount());
 }
 
 MLCDynDirectStream::LLCSegmentPosition &

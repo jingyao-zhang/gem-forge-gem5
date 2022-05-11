@@ -1,7 +1,7 @@
 #include "DataMoveCompiler.hh"
 
 #include "base/trace.hh"
-#include "debug/StreamPUM.hh"
+#include "debug/MLCStreamPUM.hh"
 
 DataMoveCompiler::DataMoveCompiler(const PUMHWConfiguration &_llc_config,
                                    const AffinePattern &_tile_pattern)
@@ -28,7 +28,7 @@ bool DataMoveCompiler::canTurnStrideIntoMask(
   auto curDimStride = 1;
   auto dims = pattern.params.size();
   if (dims > this->dimension) {
-    DPRINTF(StreamPUM, "[NoMask] Too many Dim %d ArrayDim %d.\n", dims,
+    DPRINTF(MLCStreamPUM, "[NoMask] Too many Dim %d ArrayDim %d.\n", dims,
             this->dimension);
     return false;
   }
@@ -36,7 +36,8 @@ bool DataMoveCompiler::canTurnStrideIntoMask(
     auto elemStride = pattern.params[dim].stride;
 
     if (elemStride % curDimStride != 0) {
-      DPRINTF(StreamPUM, "[NoMask] Illegal Stride %ld Pattern %s TilePat %s.\n",
+      DPRINTF(MLCStreamPUM,
+              "[NoMask] Illegal Stride %ld Pattern %s TilePat %s.\n",
               elemStride, pattern, this->tile_pattern);
       return false;
     }
@@ -44,7 +45,7 @@ bool DataMoveCompiler::canTurnStrideIntoMask(
     if (elemStride != 0 && elemStride != curDimStride) {
       auto dimStride = elemStride / curDimStride;
       auto mod = starts[dim] % dimStride;
-      DPRINTF(StreamPUM, "[PUM] Pattern %s Dim %d Strided by %ld Mod %ld.\n",
+      DPRINTF(MLCStreamPUM, "[PUM] Pattern %s Dim %d Strided by %ld Mod %ld.\n",
               pattern, dim, dimStride, mod);
 
       auto tile = this->tile_sizes[dim];
@@ -59,7 +60,7 @@ bool DataMoveCompiler::canTurnStrideIntoMask(
         }
       }
       if (!canMaskStride) {
-        DPRINTF(StreamPUM,
+        DPRINTF(MLCStreamPUM,
                 "[PUM] Pattern %s Dim %d Stride %ld Not Align to Tile %ld.\n",
                 pattern, dim, dimStride, tile);
         return false;
@@ -94,7 +95,7 @@ DataMoveCompiler::turnStrideIntoMask(AffinePattern &pattern) const {
     if (elemStride != 0 && elemStride != curDimStride) {
       auto dimStride = elemStride / curDimStride;
       auto mod = starts[dim] % dimStride;
-      DPRINTF(StreamPUM, "[PUM] Pattern %s Dim %d Strided by %ld Mod %ld.\n",
+      DPRINTF(MLCStreamPUM, "[PUM] Pattern %s Dim %d Strided by %ld Mod %ld.\n",
               pattern, dim, dimStride, mod);
 
       auto tile = this->tile_sizes[dim];
@@ -124,8 +125,9 @@ DataMoveCompiler::turnStrideIntoMask(AffinePattern &pattern) const {
    * This only works when we missing outer dimension.
    */
   for (int dim = dims; dim < this->dimension; ++dim) {
-    DPRINTF(StreamPUM, "[PUM] Add OuterDim to Pattern %s Dim %d Stride %ld.\n",
-            pattern, dim, curDimStride);
+    DPRINTF(MLCStreamPUM,
+            "[PUM] Add OuterDim to Pattern %s Dim %d Stride %ld.\n", pattern,
+            dim, curDimStride);
     pattern.params.emplace_back(curDimStride, 1 /* trip */);
     curDimStride *= this->array_sizes[dim];
   }
@@ -135,7 +137,8 @@ DataMoveCompiler::turnStrideIntoMask(AffinePattern &pattern) const {
   }
 
   // Rewrite the pattern to get rid of stride.
-  DPRINTF(StreamPUM, "[PUM] Rewrite Pattern %s to Remove Stride.\n", pattern);
+  DPRINTF(MLCStreamPUM, "[PUM] Rewrite Pattern %s to Remove Stride.\n",
+          pattern);
   for (const auto &mask : masks) {
     auto dim = mask.dim;
     auto &p = pattern.params[dim];
@@ -145,21 +148,21 @@ DataMoveCompiler::turnStrideIntoMask(AffinePattern &pattern) const {
       panic("[PUM] Overflow after rewritten Dim %d NewTrip %ld.", dim, p.trip);
     }
   }
-  DPRINTF(StreamPUM, "[PUM] Rewritten -> %s.\n", pattern);
+  DPRINTF(MLCStreamPUM, "[PUM] Rewritten -> %s.\n", pattern);
   return masks;
 }
 
 bool DataMoveCompiler::canCompileStreamPair(AffinePattern srcStream,
                                             AffinePattern dstStream) const {
 
-  DPRINTF(StreamPUM, "[CanPUM] Src %s -> Dst %s.\n", srcStream, dstStream);
+  DPRINTF(MLCStreamPUM, "[CanPUM] Src %s -> Dst %s.\n", srcStream, dstStream);
 
   if (!this->canTurnStrideIntoMask(srcStream)) {
-    DPRINTF(StreamPUM, "[NoPUM] Can not Mask Src.\n");
+    DPRINTF(MLCStreamPUM, "[NoPUM] Can not Mask Src.\n");
     return false;
   }
   if (!this->canTurnStrideIntoMask(dstStream)) {
-    DPRINTF(StreamPUM, "[NoPUM] Can not Mask Dst.\n");
+    DPRINTF(MLCStreamPUM, "[NoPUM] Can not Mask Dst.\n");
     return false;
   }
 
@@ -167,27 +170,27 @@ bool DataMoveCompiler::canCompileStreamPair(AffinePattern srcStream,
   auto dstMasks = this->turnStrideIntoMask(dstStream);
 
   if (srcMasks.size() > 1) {
-    DPRINTF(StreamPUM, "[NoPUM] Multi SrcMasks.\n");
+    DPRINTF(MLCStreamPUM, "[NoPUM] Multi SrcMasks.\n");
     return false;
   }
 
   if (dstMasks.size() > 1) {
-    DPRINTF(StreamPUM, "[NoPUM] Multi DstMasks.\n");
+    DPRINTF(MLCStreamPUM, "[NoPUM] Multi DstMasks.\n");
     return false;
   }
 
   if (!isSubRegion(dstStream)) {
-    DPRINTF(StreamPUM, "[NoPUM] Dst Not SubRegion.\n");
+    DPRINTF(MLCStreamPUM, "[NoPUM] Dst Not SubRegion.\n");
     return false;
   }
 
   if (!isSubRegion(srcStream, true)) {
-    DPRINTF(StreamPUM, "[NoPUM] Src Not SubRegion with reuse.\n");
+    DPRINTF(MLCStreamPUM, "[NoPUM] Src Not SubRegion with reuse.\n");
     return false;
   }
 
   if (srcStream.params.size() != dstStream.params.size()) {
-    DPRINTF(StreamPUM, "[NoPUM] Mismatch in Params Num.\n");
+    DPRINTF(MLCStreamPUM, "[NoPUM] Mismatch in Params Num.\n");
     return false;
   }
 
@@ -195,7 +198,7 @@ bool DataMoveCompiler::canCompileStreamPair(AffinePattern srcStream,
   auto dstTrips = dstStream.getTrips();
   for (auto i = 0; i < srcTrips.size(); ++i) {
     if (srcTrips[i] != dstTrips[i]) {
-      DPRINTF(StreamPUM, "[NoPUM] Mismatch in Trips.\n");
+      DPRINTF(MLCStreamPUM, "[NoPUM] Mismatch in Trips.\n");
       return false;
     }
   }
@@ -258,47 +261,47 @@ DataMoveCompiler::compileStreamPair(AffinePattern srcStream,
    */
 
   // 1.
-  DPRINTF(StreamPUM, "---------------- Compile Aligns ------------\n");
+  DPRINTF(MLCStreamPUM, "---------------- Compile Aligns ------------\n");
   auto commands = compileAligns(aligns);
 
   // 2.
-  DPRINTF(StreamPUM, "---------------- Mask SubRegion ------------\n");
+  DPRINTF(MLCStreamPUM, "---------------- Mask SubRegion ------------\n");
   auto reducedSrcSubRegion = removeReuseInSubRegion(srcStream);
   commands = maskCmdsBySubRegion(commands, reducedSrcSubRegion);
-  if (Debug::StreamPUM) {
-    DPRINTF(StreamPUM, "-------- After Mask SubRegion\n");
+  if (Debug::MLCStreamPUM) {
+    DPRINTF(MLCStreamPUM, "-------- After Mask SubRegion\n");
     for (const auto &c : commands) {
-      DPRINTF(StreamPUM, "%s", c);
+      DPRINTF(MLCStreamPUM, "%s", c);
     }
   }
 
   // 3.
-  DPRINTF(StreamPUM, "---------------- Mask Reuses ---------------\n");
+  DPRINTF(MLCStreamPUM, "---------------- Mask Reuses ---------------\n");
   commands = maskCmdsByReuses(commands, reducedSrcSubRegion, reuses);
-  if (Debug::StreamPUM) {
-    DPRINTF(StreamPUM, "-------- After Mask Reuses\n");
+  if (Debug::MLCStreamPUM) {
+    DPRINTF(MLCStreamPUM, "-------- After Mask Reuses\n");
     for (const auto &c : commands) {
-      DPRINTF(StreamPUM, "%s", c);
+      DPRINTF(MLCStreamPUM, "%s", c);
     }
   }
 
   // 4. Map commands to LLC configuration.
-  DPRINTF(StreamPUM, "---------------- Map to LLC ----------------\n");
+  DPRINTF(MLCStreamPUM, "---------------- Map to LLC ----------------\n");
   commands = mapCmdsToLLC(commands);
-  if (Debug::StreamPUM) {
-    DPRINTF(StreamPUM, "-------- After Map to LLC\n");
+  if (Debug::MLCStreamPUM) {
+    DPRINTF(MLCStreamPUM, "-------- After Map to LLC\n");
     for (const auto &c : commands) {
-      DPRINTF(StreamPUM, "%s", c);
+      DPRINTF(MLCStreamPUM, "%s", c);
     }
   }
 
   // // 5. Filter out empty commands.
-  // DPRINTF(StreamPUM, "---------------- Filter Empty Cmd ----------\n");
+  // DPRINTF(MLCStreamPUM, "---------------- Filter Empty Cmd ----------\n");
   // commands = filterEmptyCmds(commands);
   // if (Debug::StreamPUM) {
-  //   DPRINTF(StreamPUM, "-------- After Filter Empty Cmd\n");
+  //   DPRINTF(MLCStreamPUM, "-------- After Filter Empty Cmd\n");
   //   for (const auto &c : commands) {
-  //     DPRINTF(StreamPUM, "%s", c);
+  //     DPRINTF(MLCStreamPUM, "%s", c);
   //   }
   // }
 
@@ -331,7 +334,7 @@ PUMCommandVecT DataMoveCompiler::compileAlign(int64_t dim,
     Finally, we need to split traffic across tiles with different level
     of LLC configuration.
    */
-  DPRINTF(StreamPUM, "Compile Align Dim %ld Distance %ld.\n", dim, distance);
+  DPRINTF(MLCStreamPUM, "Compile Align Dim %ld Distance %ld.\n", dim, distance);
   assert(dim < dimension);
   PUMCommandVecT commands;
 
@@ -350,7 +353,7 @@ PUMCommandVecT DataMoveCompiler::compileAlign(int64_t dim,
     commands.back().bitline_mask = AffinePattern::constructSubRegion(
         tile_sizes, AffinePattern::IntVecT(tile_sizes.size(), 0), tile_sizes);
 
-    DPRINTF(StreamPUM, "Intra-Array Cmd %s", commands.back());
+    DPRINTF(MLCStreamPUM, "Intra-Array Cmd %s", commands.back());
   }
 
   /**
@@ -426,7 +429,7 @@ PUMCommandVecT DataMoveCompiler::compileAlign(int64_t dim,
       commands.back().tile_dist = flatTileDistNear;
       commands.back().bitline_mask = front2_pattern;
       commands.back().dst_bitline_mask = back_pattern;
-      DPRINTF(StreamPUM, "Inter-Array Cmd %s", commands.back());
+      DPRINTF(MLCStreamPUM, "Inter-Array Cmd %s", commands.back());
     }
 
     // Second chunk -> forward (May be empty if bitlineSep == 0)
@@ -436,7 +439,7 @@ PUMCommandVecT DataMoveCompiler::compileAlign(int64_t dim,
       commands.back().tile_dist = flatTileDistFar;
       commands.back().bitline_mask = back2_pattern;
       commands.back().dst_bitline_mask = front_pattern;
-      DPRINTF(StreamPUM, "Inter-Array Cmd %s", commands.back());
+      DPRINTF(MLCStreamPUM, "Inter-Array Cmd %s", commands.back());
     }
   }
 
@@ -449,7 +452,7 @@ PUMCommandVecT DataMoveCompiler::compileAlign(int64_t dim,
       commands.back().tile_dist = flatTileDistFar;
       commands.back().bitline_mask = front_pattern;
       commands.back().dst_bitline_mask = back2_pattern;
-      DPRINTF(StreamPUM, "Inter-Array Cmd %s", commands.back());
+      DPRINTF(MLCStreamPUM, "Inter-Array Cmd %s", commands.back());
     }
 
     // Second chunk -> backward (May be already handled as Intra-Array)
@@ -459,7 +462,7 @@ PUMCommandVecT DataMoveCompiler::compileAlign(int64_t dim,
       commands.back().tile_dist = flatTileDistNear;
       commands.back().bitline_mask = back_pattern;
       commands.back().dst_bitline_mask = front2_pattern;
-      DPRINTF(StreamPUM, "Inter-Array Cmd %s", commands.back());
+      DPRINTF(MLCStreamPUM, "Inter-Array Cmd %s", commands.back());
     }
   }
 
@@ -678,13 +681,13 @@ DataMoveCompiler::maskCmdsBySubRegion(const PUMCommandVecT &commands,
 
   PUMCommandVecT masked_commands;
   for (const auto &command : commands) {
-    DPRINTF(StreamPUM, "[MaskSubRegion] Masking CMD %s", command);
+    DPRINTF(MLCStreamPUM, "[MaskSubRegion] Masking CMD %s", command);
     for (int i = 0; i < final_bitline_masks.size(); ++i) {
       const auto &bitline_mask = final_bitline_masks.at(i);
       const auto &tile_mask = final_tile_masks.at(i);
       auto c = command;
       auto intersect = intersectBitlineMasks(c.bitline_mask, bitline_mask);
-      DPRINTF(StreamPUM,
+      DPRINTF(MLCStreamPUM,
               "[MaskSubRegion] Intersect CMD Bitline %s Mask %s = %s.\n",
               c.bitline_mask, bitline_mask, intersect);
       if (intersect.getTotalTrip() == 0) {
@@ -705,7 +708,7 @@ DataMoveCompiler::maskCmdsBySubRegion(const PUMCommandVecT &commands,
         for (int dim = 0; dim < start.size(); ++dim) {
           if (movedStart[dim] + trips[dim] <= 0 ||
               movedStart[dim] >= this->tile_sizes[dim]) {
-            DPRINTF(StreamPUM,
+            DPRINTF(MLCStreamPUM,
                     "Skipped Empty Intra-Array Cmd at Dim %d Start %ld Dist "
                     "%ld MovedStart %ld Trip %d TileSize %ld.\n",
                     dim, start[dim], dist[dim], movedStart[dim], trips[dim],
@@ -791,8 +794,8 @@ PUMCommandVecT DataMoveCompiler::maskCmdsByReuses(
       AffinePattern::getArrayPosition(this->tile_sizes, cmd.bitline_dist);
   auto reuseDimTileSize = this->tile_sizes.at(reuseDim);
 
-  DPRINTF(StreamPUM, "[PUMReuse] Handle Cmd %s", cmd);
-  DPRINTF(StreamPUM,
+  DPRINTF(MLCStreamPUM, "[PUMReuse] Handle Cmd %s", cmd);
+  DPRINTF(MLCStreamPUM,
           "[PUMReuse] Dim %ld Count %ld BitlineStart %ld BitlineDist %ld "
           "TileSize %ld.\n",
           reuseDim, reuseCount, srcBitlineSubRegionStart.at(reuseDim),
@@ -804,7 +807,7 @@ PUMCommandVecT DataMoveCompiler::maskCmdsByReuses(
   if (dstBitlineStart / reuseDimTileSize ==
       ((reuseDstBitline - 1) / reuseDimTileSize)) {
     // Reuse can be handled in the same tile.
-    DPRINTF(StreamPUM, "[PUMReuse] Reuse within the same tile.\n");
+    DPRINTF(MLCStreamPUM, "[PUMReuse] Reuse within the same tile.\n");
     return ret;
   }
 
@@ -812,7 +815,7 @@ PUMCommandVecT DataMoveCompiler::maskCmdsByReuses(
   auto bitlineReuseCount =
       reuseDimTileSize - (dstBitlineStart % reuseDimTileSize);
   auto extraAlignDist = bitlineReuseCount + bitlineDist.at(reuseDim);
-  DPRINTF(StreamPUM, "[PUMReuse] Extra Inter-Array Cmd Align %ld.\n",
+  DPRINTF(MLCStreamPUM, "[PUMReuse] Extra Inter-Array Cmd Align %ld.\n",
           extraAlignDist);
 
   auto extraCmds = this->compileAlign(reuseDim, extraAlignDist);

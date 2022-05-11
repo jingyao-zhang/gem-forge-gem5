@@ -54,7 +54,7 @@ public:
   /**
    * Receive a StreamEnd message and release the PUM context.
    */
-  void receiveStreamEnd(PacketPtr pkt);
+  void receiveStreamEnd(std::vector<DynStreamId> &endIds);
 
   /**
    * APIs for PUMEngine.
@@ -78,8 +78,6 @@ private:
   int inFlightPrefetchStreams = 0;
   int64_t totalSentPrefetchPkts = 0;
   int64_t totalRecvPrefetchPkts = 0;
-  PacketPtr savedPkt = nullptr;
-
   struct PatternInfo {
     AffinePattern pattern;
     AffinePattern pumTile;
@@ -320,6 +318,10 @@ private:
     std::vector<PUMComputeStreamGroup> pumGroups;
     // Records the PUMDataGraph.
     std::vector<PUMDataGraphNode *> pumDataGraphNodes;
+    // Remembers the PrefetchConfigs.
+    CacheStreamConfigureVec prefetchConfigs;
+    // Saved pkt when waiting for prefetching.
+    PacketPtr savedPkt = nullptr;
 
     /**
      * States during compiling and executing PUM.
@@ -463,29 +465,41 @@ private:
   /**
    * Run prefetch stage.
    */
-  void runPrefetchStage(CacheStreamConfigureVec *configs);
+  void runPrefetchStage(PUMContext &context, CacheStreamConfigureVec *configs);
 
   /**
    * Run PUM execution stage.
    */
-  void runPUMExecutionStage();
+  void runPUMExecutionStage(PUMContext &context);
+
+  /**
+   * Invoke MLC SE when there is no PUM config.
+   */
+  void runMLCConfigWithoutPUM(PacketPtr pkt);
 
   /**
    * Dispatch stream configurations to MLCSE.
    */
-  void dispatchStreamConfigs(CacheStreamConfigureVec *configs) const;
+  void dispatchStreamConfigs(CacheStreamConfigureVec *configs,
+                             MasterID masterId) const;
 
   /**
    * Some work needs to be done after MLC SE finish configuring.
    * For example, to know how many strands of each LoadStream so that we
    * can correctly set the number of expected Acks.
    */
-  void postMLCSEConfigure();
+  void postMLCSEConfigure(PUMContext &context);
 
   /**
    * Conditionally prefetches data from DRAM->LLC.
    */
   CacheStreamConfigureVec generatePrefetchStreams(PUMComputeStreamGroup &group);
+
+  /**
+   * Clean up PrefetchStreams and start normal PUM execution.
+   */
+  void finishPrefetchStream(PUMContext &context);
+
   /**
    * Decoalesce and devectorize stream pattern.
    */

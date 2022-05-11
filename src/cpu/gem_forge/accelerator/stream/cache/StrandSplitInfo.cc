@@ -1,5 +1,9 @@
 #include "StrandSplitInfo.hh"
 
+#include "base/trace.hh"
+
+#include "debug/MLCRubyStrandSplit.hh"
+
 #include <cassert>
 
 StrandSplitInfo::StrandSplitInfo(uint64_t _initOffset, uint64_t _interleave,
@@ -48,6 +52,10 @@ StrandSplitInfo::getStrandTripCount(TripCount streamTripCount,
   auto finalStrandIdx = strandElemSplit.strandIdx;
   auto finalStrandElemIdx = strandElemSplit.elemIdx;
   auto tripCount = finalStrandElemIdx;
+  DPRINTF(MLCRubyStrandSplit,
+          "StreamTrip %ld StrandIdx %d FinalStrandIdx %d "
+          "FinalStrandElemIdx %lu.\n",
+          streamTripCount, strandIdx, finalStrandIdx, finalStrandElemIdx);
   if (strandIdx < finalStrandIdx) {
     tripCount = (finalStrandElemIdx / this->interleave + 1) * this->interleave;
     if (strandIdx == 0) {

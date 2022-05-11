@@ -2,7 +2,7 @@
 
 #include "base/trace.hh"
 
-#include "debug/StreamPUM.hh"
+#include "debug/MLCStreamPUM.hh"
 
 std::ostream &operator<<(std::ostream &os, const AffinePattern &pattern) {
   os << pattern.start;
@@ -175,7 +175,7 @@ bool AffinePattern::isSubRegionToArraySize(const IntVecT &array_sizes,
     auto q = trips[i];
     auto s = array_sizes[i];
     if (p + q > s) {
-      DPRINTF(StreamPUM,
+      DPRINTF(MLCStreamPUM,
               "[PUM] Not SubRegion as Overflow in Dim %d Start %ld Trips %ld "
               "Stride %ld ArraySize %ld.\n",
               i, p, q, r, s);

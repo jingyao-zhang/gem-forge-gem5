@@ -112,6 +112,15 @@ StreamFloatPolicy::shouldFloatStream(DynStream &dynS) {
     this->cacheCapacity = getCacheCapacity(S->se);
   }
   /**
+   * ! Crazy hack to avoid float akk and bk in GaussElim.
+   * ! This causes problem in the coherence protocol with the
+   * ! PUMPrefetchStream (Invalid Transaction at L2 when IVV with MemInvGetR).
+   */
+  if (S->getStreamName() == "bb13-gfm.gaussian_elim.bk.ld" ||
+      S->getStreamName() == "bb13-gfm.gaussian_elim.akk.ld") {
+    return FloatDecision();
+  }
+  /**
    * This is the root of floating streams:
    * 1. DirectLoadStream.
    * 2. PointerChaseLoadStream.

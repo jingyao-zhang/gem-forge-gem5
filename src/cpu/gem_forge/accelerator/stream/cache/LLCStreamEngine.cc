@@ -27,7 +27,7 @@
 #include "debug/LLCRubyStreamNotIssue.hh"
 #include "debug/LLCRubyStreamReduce.hh"
 #include "debug/LLCRubyStreamStore.hh"
-#include "debug/StreamPUM.hh"
+#include "debug/LLCStreamPUM.hh"
 #include "debug/StreamRangeSync.hh"
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
@@ -2419,7 +2419,7 @@ void LLCStreamEngine::issueStreamDataToPUM(
   AffinePatternVecT bitline_masks;
   AffinePatternVecT tile_masks;
   compiler.generateSubRegionMasks(broadcastPat, bitline_masks, tile_masks);
-  if (Debug::StreamPUM) {
+  if (Debug::LLCStreamPUM) {
     LLC_SLICE_DPRINTF(sliceId, "[PUMSendTo] ---- Get masks Broadcast %s.\n",
                       broadcastPat);
     for (int i = 0; i < bitline_masks.size(); ++i) {
