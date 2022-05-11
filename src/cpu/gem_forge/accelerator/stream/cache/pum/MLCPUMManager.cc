@@ -1544,7 +1544,8 @@ MLCPUMManager::generatePrefetchStreams(PUMComputeStreamGroup &group) {
                                             regionPAddr)) {
       assert(false && "[PUM] Prefetch unable to translate VA->PA");
     }
-    if (!StreamNUCAMap::getRangeMapByStartPAddr(regionPAddr).isStreamPUM) {
+    auto &nucaMapEntry = StreamNUCAMap::getRangeMapByStartPAddr(regionPAddr);
+    if (!nucaMapEntry.isStreamPUM) {
       return std::shared_ptr<CacheStreamConfigureData>(nullptr);
     }
 
@@ -1554,17 +1555,17 @@ MLCPUMManager::generatePrefetchStreams(PUMComputeStreamGroup &group) {
     }
 
     // If cached, done :)
-    if (streamNUCARegion.isCached) {
+    if (nucaMapEntry.isCached) {
       return std::shared_ptr<CacheStreamConfigureData>(nullptr);
     }
 
     MLCSE_DPRINTF("Prefetch stream %s.\n", config->dynamicId);
 
-    // Hack.
-    // Assume prefetch streams will always be fetched (thus cached in cache).
-    auto &streamNUCARegion_ =
-        const_cast<StreamNUCAManager::StreamRegion &>(streamNUCARegion);
-    streamNUCARegion_.isCached = true;
+    /**
+     * ! Hack: Assume prefetch streams will fetch the whole region.
+     * This avoids us creating multiple prefetch streams for one region.
+     */
+    nucaMapEntry.isCached = true;
 
     // Otherwise, generate and issue prefetch stream.
     auto prefetchConfig = std::make_shared<CacheStreamConfigureData>(*config);

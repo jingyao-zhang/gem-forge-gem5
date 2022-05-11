@@ -698,7 +698,13 @@ void stream_nuca_remap(ThreadContext *tc) {
 uint64_t stream_nuca_get_cached_bytes(ThreadContext *tc, Addr start) {
     DPRINTF(PseudoInst, "PseudoInst::stream_nuca_get_cached_bytes(%p).\n",
         start);
-    return tc->getProcessPtr()->streamNUCAManager->getCachedBytes(start);
+    /**
+     * Changed the semantics of get_cached_bytes to also mark the region as
+     * cached. So far this is only used to track PUM regions.
+     */
+    auto streamNUCAManager = tc->getProcessPtr()->streamNUCAManager;
+    streamNUCAManager->markRegionCached(start);
+    return streamNUCAManager->getCachedBytes(start);
 }
 
 } // namespace PseudoInst

@@ -114,6 +114,7 @@ public:
     Addr startPAddr;
     Addr endPAddr;
     bool isStreamPUM = false;
+    bool isCached = false;
     /**
      * StreamNUCA mapping.
      */

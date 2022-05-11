@@ -51,6 +51,7 @@ public:
   void defineAlign(Addr A, Addr B, int64_t elementOffset);
   void remap(ThreadContext *tc);
   uint64_t getCachedBytes(Addr start);
+  void markRegionCached(Addr regionVAddr);
 
   struct StreamAlign {
     Addr vaddrA;
@@ -67,12 +68,11 @@ public:
     uint64_t numElement;
     std::vector<int64_t> arraySizes;
     bool isIndirect;
-    bool isCached;
     StreamRegion(const std::string &_name, Addr _vaddr, uint64_t _elementSize,
                  int64_t _numElement, const std::vector<int64_t> &_arraySizes)
         : name(_name), vaddr(_vaddr), elementSize(_elementSize),
           numElement(_numElement), arraySizes(_arraySizes), isIndirect(false),
-          isCached(false), cachedElements(_numElement) {}
+          cachedElements(_numElement) {}
 
     std::vector<StreamAlign> aligns;
     /**

@@ -1072,6 +1072,21 @@ uint64_t StreamNUCAManager::getCachedBytes(Addr start) {
   return region.cachedElements * region.elementSize;
 }
 
+void StreamNUCAManager::markRegionCached(Addr regionVAddr) {
+  if (!this->enabledNUCA) {
+    return;
+  }
+  const auto &region = this->getRegionFromStartVAddr(regionVAddr);
+  Addr regionPAddr;
+  if (!this->process->pTable->translate(regionVAddr, regionPAddr)) {
+    panic("Failed to translate RegionVAddr %#x.\n", regionVAddr);
+  }
+  auto &nucaMapEntry = StreamNUCAMap::getRangeMapByStartPAddr(regionPAddr);
+  nucaMapEntry.isCached = true;
+  DPRINTF(StreamNUCAManager, "[StreamNUCA] Region %s Marked Cached.\n",
+          region.name);
+}
+
 StreamNUCAManager::IndirectAlignField
 StreamNUCAManager::decodeIndirectAlign(int64_t indirectAlign) {
   assert(indirectAlign < 0 && "This is not IndirectAlign.");
