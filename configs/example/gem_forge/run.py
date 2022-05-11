@@ -287,6 +287,8 @@ parser.add_option("--gem-forge-stream-pum-optimize-dfg", type="int",
 parser.add_option("--gem-forge-stream-pum-compile-lat-per-cmd", type="int",
                   action="store", default="10",
                   help="Compiling latency per cmd.")
+parser.add_option("--gem-forge-stream-pum-prefetch-level", type="choice", default="llc",
+                  choices=['llc', 'mem'], help="Where to execute the PUMPrefetch stream.")
 
 # Stream in Mem Options.
 parser.add_option("--gem-forge-stream-engine-enable-float-mem", action="store_true", default=False,

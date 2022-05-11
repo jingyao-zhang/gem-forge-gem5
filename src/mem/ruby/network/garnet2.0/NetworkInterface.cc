@@ -337,6 +337,7 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
         net_msg_ptr->getMessageSize())/m_net_ptr->getNiFlitSize());
 
     // loop to convert all multicast messages into unicast messages
+    DPRINTF(RubyNetwork, "Try Flitisize Message %s.\n", *msg_ptr);
     for (int ctr = 0; ctr < dest_nodes.size(); ctr++) {
 
         // this will return a free output virtual channel

@@ -150,3 +150,5 @@ class RubyStreamAwareController(RubyController):
         Param.Bool(True, "Whether MLCPUMManager optimizes the PUM tDFG.")
     stream_pum_compile_lat_per_cmd = \
         Param.UInt32(100, "How many cycles charged to compile one cmd.")
+    stream_pum_prefetch_level = \
+        Param.String("llc", "Where should PUMPrefetchStreams be offloaded.")

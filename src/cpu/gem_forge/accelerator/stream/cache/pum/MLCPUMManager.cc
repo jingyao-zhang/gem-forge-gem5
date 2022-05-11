@@ -1621,10 +1621,14 @@ MLCPUMManager::generatePrefetchStreams(PUMComputeStreamGroup &group) {
     /**
      * Set the float plan to offload to the LLC controller.
      */
+    MachineType prefetchLevel = MachineType_L2Cache;
+    if (this->controller->myParams->stream_pum_prefetch_level == "mem") {
+      prefetchLevel = MachineType_Directory;
+    }
     uint64_t firstMemFloatElemIdx = 0;
     prefetchConfig->floatPlan = StreamFloatPlan();
     prefetchConfig->floatPlan.addFloatChangePoint(firstMemFloatElemIdx,
-                                                  MachineType_Directory);
+                                                  prefetchLevel);
     prefetchConfig->floatPlan.finalize();
 
     return prefetchConfig;
@@ -1641,14 +1645,18 @@ MLCPUMManager::generatePrefetchStreams(PUMComputeStreamGroup &group) {
     }                                                                          \
   }
 
+
+  /**
+   * Generate PUMPrefetchStream for used config first will help us create
+   * PUMPrefetchStream on LoadStream first.
+   */
+  for (const auto &baseConfig : group.usedConfigs)
+    ADD_PREFETCH_STREAM(baseConfig);
+
   // Generate for compute stream.
   // TODO: Potential optimization since this is not necessary if the entire
   // region will be overwritten
   ADD_PREFETCH_STREAM(group.computeConfig);
-
-  // Generate for dependencies.
-  for (const auto &baseConfig : group.usedConfigs)
-    ADD_PREFETCH_STREAM(baseConfig);
 
 #undef ADD_PREFETCH_STREAM
 
