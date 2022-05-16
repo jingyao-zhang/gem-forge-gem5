@@ -1180,7 +1180,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     peek(L1RequestL2Network_in, RequestMsg) {
       assert(is_valid(cache_entry));
       if (in_msg.sliceIds.isValid()) {
-        se.receiveStreamDataVec(l2_response_latency, address, in_msg.sliceIds, cache_entry.DataBlk, in_msg.streamStoreBlk);
+        Cycles lat := adjustResponseLat(l2_response_latency, address);
+        se.receiveStreamDataVec(lat, address, in_msg.sliceIds, cache_entry.DataBlk, in_msg.streamStoreBlk);
       }
     }
   }

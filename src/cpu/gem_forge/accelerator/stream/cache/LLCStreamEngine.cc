@@ -343,7 +343,7 @@ void LLCStreamEngine::enqueueIncomingStreamDataMsg(
   this->incomingStreamDataQueue.emplace(iter.base(), readyCycle, paddrLine,
                                         sliceId, dataBlock, storeValueBlock);
   // Some sanity check.
-  if (this->incomingStreamDataQueue.size() > 100) {
+  if (this->incomingStreamDataQueue.size() > 1000) {
     LLC_SLICE_PANIC(sliceId, "IncomingElementDataQueue overflow.");
   }
 }
@@ -488,7 +488,7 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
         // Not ready yet. Break.
         break;
       }
-      this->triggerIndirectElement(dynS, element);
+      this->triggerIndirectElem(dynS, element);
       element->setIndirectTriggered();
     }
   }
@@ -552,10 +552,10 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
     while (!dynS->idxToElementMap.empty()) {
       auto elementIter = dynS->idxToElementMap.begin();
       const auto &element = elementIter->second;
-      if (!element->areBaseElementsReady()) {
+      if (!element->areBaseElemsReady()) {
         LLC_ELEMENT_DPRINTF(element,
                             "Cannot release AreBaseElementsReady %d.\n",
-                            element->areBaseElementsReady());
+                            element->areBaseElemsReady());
         break;
       }
       if (S->isStoreComputeStream()) {
@@ -1402,7 +1402,7 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
           break;
         }
         if (!element->isReady()) {
-          if (!element->areBaseElementsReady() ||
+          if (!element->areBaseElemsReady() ||
               dynS->incompleteComputations >=
                   this->controller->myParams
                       ->llc_stream_engine_max_infly_computation) {
@@ -1410,7 +1410,7 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
             // computations equals to the LLC SE throughput.
             break;
           }
-          if (element->areBaseElementsReady() &&
+          if (element->areBaseElemsReady() &&
               !element->isComputationScheduled()) {
             this->pushReadyComputation(element);
           }
@@ -1421,14 +1421,14 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
         auto element = dynS->getElemPanic(idx, "Check StoreValue Ready.");
         // Simply schedule the computation.
         if (!element->isReady()) {
-          if (element->areBaseElementsReady() &&
+          if (element->areBaseElemsReady() &&
               !element->isComputationScheduled()) {
             this->pushReadyComputation(element);
           }
           LLC_SLICE_DPRINTF_(
               LLCRubyStreamNotIssue, nextSliceId,
               "StoreValue from Elem %llu not ready, delay issuing.\n", idx);
-          if (!element->areBaseElementsReady()) {
+          if (!element->areBaseElemsReady()) {
             statistic.sampleLLCStreamEngineIssueReason(
                 StreamStatistic::LLCStreamEngineIssueReason::BaseValueNotReady);
           } else {
@@ -2959,7 +2959,7 @@ bool LLCStreamEngine::tryToProcessIndirectAtomicUnlockReq(
   while (!dynS->idxToElementMap.empty()) {
     auto elementIter = dynS->idxToElementMap.begin();
     const auto &element = elementIter->second;
-    if (!element->isReady() || !element->areBaseElementsReady() ||
+    if (!element->isReady() || !element->areBaseElemsReady() ||
         !element->hasSecondIndirectAtomicReqSeen()) {
       break;
     }
@@ -2968,15 +2968,15 @@ bool LLCStreamEngine::tryToProcessIndirectAtomicUnlockReq(
   return true;
 }
 
-void LLCStreamEngine::triggerIndirectElement(LLCDynStreamPtr stream,
-                                             LLCStreamElementPtr element) {
+void LLCStreamEngine::triggerIndirectElem(LLCDynStreamPtr stream,
+                                          LLCStreamElementPtr elem) {
   if (stream->getIndStreams().empty() && stream->predicatedStreams.empty()) {
     // There is no stream dependent on my data.
     return;
   }
 
-  auto idx = element->idx;
-  assert(element->isReady());
+  auto idx = elem->idx;
+  assert(elem->isReady());
 
   // First we handle any indirect element.
   for (auto IS : stream->getIndStreams()) {
@@ -2987,28 +2987,27 @@ void LLCStreamEngine::triggerIndirectElement(LLCDynStreamPtr stream,
      * iteration i + 1. Also we should be careful to not overflow the
      * boundary.
      */
-    auto indirectElementIdx = idx;
+    auto indirectElemIdx = idx;
     if (IS->isOneIterationBehind()) {
-      indirectElementIdx = idx + 1;
+      indirectElemIdx = idx + 1;
     }
-    if (IS->hasTotalTripCount() &&
-        indirectElementIdx > IS->getTotalTripCount()) {
+    if (IS->hasTotalTripCount() && indirectElemIdx > IS->getTotalTripCount()) {
       // Ignore overflow elements.
-      LLC_ELEMENT_DPRINTF(element,
+      LLC_ELEMENT_DPRINTF(elem,
                           "[TriggerInd] Skip IS %s TotalTripCount "
                           "%lld < ElemIdx %llu.\n",
                           IS->getDynStrandId(), IS->getTotalTripCount(),
-                          indirectElementIdx);
+                          indirectElemIdx);
       continue;
     }
 
     // We should have the element.
-    if (!IS->idxToElementMap.count(indirectElementIdx)) {
+    if (!IS->idxToElementMap.count(indirectElemIdx)) {
       LLC_S_PANIC(IS->getDynStrandId(), "Missing IndirectElement %llu.",
-                  indirectElementIdx);
+                  indirectElemIdx);
     }
 
-    auto &indirectElement = IS->idxToElementMap.at(indirectElementIdx);
+    auto &indirectElem = IS->idxToElementMap.at(indirectElemIdx);
 
     /**
      * Check if the stream has predication.
@@ -3025,19 +3024,19 @@ void LLCStreamEngine::triggerIndirectElement(LLCDynStreamPtr stream,
                     "Reduction/StoreCompute.");
       }
     }
-    LLC_S_DPRINTF(
-        IS->getDynStrandId(), "Check if element %llu BaseElementsReady %d.\n",
-        indirectElement->idx, indirectElement->areBaseElementsReady());
-    if (indirectElement->areBaseElementsReady()) {
+    LLC_S_DPRINTF(IS->getDynStrandId(),
+                  "Check if element %llu BaseElemReady %d.\n",
+                  indirectElem->idx, indirectElem->areBaseElemsReady());
+    if (indirectElem->areBaseElemsReady()) {
       if (IS->getStaticS()->isReduction() ||
           IS->getStaticS()->isPointerChaseIndVar()) {
         // Reduction now is handled as computation.
-        this->pushReadyComputation(indirectElement);
+        this->pushReadyComputation(indirectElem);
       } else {
-        IS->markElementReadyToIssue(indirectElementIdx);
+        IS->markElementReadyToIssue(indirectElemIdx);
       }
     } else {
-      for (const auto &baseE : indirectElement->baseElements) {
+      for (const auto &baseE : indirectElem->baseElements) {
         LLC_S_DPRINTF(IS->getDynStrandId(), "BaseElements Ready %d %s %llu.\n",
                       baseE->isReady(), baseE->strandId, baseE->idx);
       }
@@ -3218,10 +3217,10 @@ LLCStreamEngine::releaseSlice(SliceList::iterator sliceIter) {
       // StoreComputeStream is never ready.
       if ((element->isReady() || dynS->getStaticS()->isStoreComputeStream()) &&
           element->areSlicesReleased()) {
-        if (!element->areBaseElementsReady()) {
+        if (!element->areBaseElemsReady()) {
           LLC_ELEMENT_PANIC(
               element, "Released when Ready %d ValueBaseReady %d Slices %d.",
-              element->isReady(), element->areBaseElementsReady(),
+              element->isReady(), element->areBaseElemsReady(),
               element->getNumSlices());
         }
         /**
@@ -3355,7 +3354,7 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
       //     sliceId, "Process for element %llu, Ready %d, BaseReady
       //     %d.\n", element->idx, element->isReady(),
       //     element->areBaseElementsReady());
-      if (!element->areBaseElementsReady()) {
+      if (!element->areBaseElemsReady()) {
         // We are still waiting for base elements.
         return ++sliceIter;
       }
@@ -3537,7 +3536,7 @@ void LLCStreamEngine::processDirectAtomicSlice(
                       "Element %llu not ready while we are triggering update.",
                       idx);
     }
-    if (!element->areBaseElementsReady()) {
+    if (!element->areBaseElemsReady()) {
       // We are still waiting for base elements.
       LLC_SLICE_PANIC(sliceId,
                       "Element %llu has base element not ready when updating.",
@@ -3610,7 +3609,7 @@ void LLCStreamEngine::processIndirectAtomicSlice(
     // Not ready yet. Break.
     LLC_SLICE_PANIC(sliceId, "Element not ready while triggering atomic.");
   }
-  if (!element->areBaseElementsReady()) {
+  if (!element->areBaseElemsReady()) {
     // We are still waiting for base elements.
     LLC_SLICE_PANIC(sliceId, "Base element not ready when process atomic.");
   }
@@ -3710,7 +3709,7 @@ void LLCStreamEngine::processIndirectUpdateSlice(
                       "Element %llu not ready while we are triggering update.",
                       idx);
     }
-    if (!element->areBaseElementsReady()) {
+    if (!element->areBaseElemsReady()) {
       // We are still waiting for base elements.
       LLC_SLICE_PANIC(sliceId,
                       "Element %llu has base element not ready when updating.",
@@ -3752,7 +3751,7 @@ bool LLCStreamEngine::tryProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
     //     sliceId, "Process for element %llu, Ready %d, BaseReady
     //     %d.\n", element->idx, element->isReady(),
     //     element->areBaseElementsReady());
-    if (!element->areBaseElementsReady()) {
+    if (!element->areBaseElemsReady()) {
       // We are still waiting for base elements.
       return false;
     }
@@ -3966,7 +3965,7 @@ void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &element) {
                 "%llu: Push ready computation %llu. Ready %d Infly %d.\n",
                 this->curCycle(), element->idx, this->readyComputations.size(),
                 this->inflyComputations.size());
-  assert(element->areBaseElementsReady() && "Element is not ready yet.");
+  assert(element->areBaseElemsReady() && "Element is not ready yet.");
   if (!element->isNDCElement) {
     auto dynS = LLCDynStream::getLLCStream(element->strandId);
     if (!dynS) {

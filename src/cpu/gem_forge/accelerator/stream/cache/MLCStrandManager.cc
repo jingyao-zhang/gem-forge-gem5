@@ -139,16 +139,20 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
                    std::forward_as_tuple(config->dynamicId),
                    std::forward_as_tuple())
           .first->second;
+  const auto memChannelInterleave = 4096;
+  const auto llcBankInterleave = 1024;
   if (config->floatPlan.isFloatedToMem()) {
     // We assume MemCtrl interleavs at 4kB -> 64 cache lines.
-    perStreamContext.splitInterleave = 64;
+    perStreamContext.splitInterleave =
+        memChannelInterleave / RubySystem::getBlockSizeBytes();
   } else {
     // We assume LLC interleavs at 1kB -> 16 cache lines.
-    perStreamContext.splitInterleave = 16;
+    perStreamContext.splitInterleave =
+        llcBankInterleave / RubySystem::getBlockSizeBytes();
   }
 
   // 1.
-  auto noSplitOuterTripCount = context.noSplitOuterTripCount;
+  auto noSplitOuterTrip = context.noSplitOuterTripCount;
   auto splitCount = context.totalStrands;
   if (!config->hasTotalTripCount()) {
     DYN_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
@@ -181,29 +185,30 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
     return false;
   }
 
-  if (noSplitOuterTripCount == 0) {
-    /**
-     * If there is no Hint to split outer trip count, we can only split 1D
-     * continuous stream.
-     */
-    if (!linearAddrGen->isContinuous(config->addrGenFormalParams,
-                                     config->elementSize)) {
-      DYN_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
-                     "[NoSplit] Not Continuous and No SplitOuterTripCount.\n");
-      return false;
+  if (noSplitOuterTrip == 0) {
+    if (linearAddrGen->isContinuous(config->addrGenFormalParams,
+                                    config->elementSize)) {
+      // We can split continuous streams.
+      return true;
     }
-    return true;
+    /**
+     * If the stream is not continous, and we don't have noSplitOuterTripCount,
+     * we simply mark noSplitOuterTripCount to 1 so that we are free to split
+     * the outer-most dimension.
+     */
+    noSplitOuterTrip = 1;
+    DYN_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
+                   "[Split] Override NoSplitOuterTripCount to 1.\n");
   }
 
   // 4.a.
-  auto totalTripCount = config->getTotalTripCount();
-  assert(totalTripCount != 0);
-  if (totalTripCount < noSplitOuterTripCount ||
-      (totalTripCount % noSplitOuterTripCount) != 0) {
+  auto totalTrip = config->getTotalTripCount();
+  assert(totalTrip != 0);
+  if (totalTrip < noSplitOuterTrip || (totalTrip % noSplitOuterTrip) != 0) {
     DYN_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
                    "[NoSplit] TotalTripCount %ld Imcompatible with "
                    "NoSplitTripCount %ld.\n",
-                   totalTripCount, noSplitOuterTripCount);
+                   totalTrip, noSplitOuterTrip);
     return false;
   }
 
@@ -212,6 +217,7 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
                  "[Strand] Analyzing Pattern %s.\n",
                  printAffinePatternParams(config->addrGenFormalParams));
   std::vector<uint64_t> trips;
+  std::vector<int64_t> strides;
   assert((config->addrGenFormalParams.size() % 2) == 1);
   uint64_t prevTrip = 1;
   for (int i = 1; i + 1 < config->addrGenFormalParams.size(); i += 2) {
@@ -220,6 +226,10 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
     auto trip = p.invariant.uint64();
     trips.push_back(trip / prevTrip);
     prevTrip = trip;
+    const auto &s = config->addrGenFormalParams.at(i - 1);
+    assert(s.isInvariant);
+    auto stride = s.invariant.uint64();
+    strides.push_back(stride);
   }
   assert(!trips.empty());
   if (trips.size() > 1) {
@@ -227,7 +237,7 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
     int splitDim = trips.size() - 1;
     int64_t outerTripCount = 1;
     while (splitDim >= 0) {
-      if (outerTripCount == noSplitOuterTripCount) {
+      if (outerTripCount == noSplitOuterTrip) {
         break;
       }
       outerTripCount *= trips.at(splitDim);
@@ -237,27 +247,56 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
       DYN_S_DPRINTF_(
           MLCRubyStrandSplit, config->dynamicId,
           "[NoSplit] NegSplitDim %d Imcompatible with NoSplitTripCount %ld.\n",
-          splitDim, noSplitOuterTripCount);
+          splitDim, noSplitOuterTrip);
       return false;
     }
+    /**
+     * Notice that here we handle the case when SplitDimTrip % SplitCount != 0.
+     * For example, SplitDimTrip = 510, SplitCount = 64.
+     * Each strand will handle 8, except the last strand handling only 6.
+     */
     auto splitDimTrip = trips.at(splitDim);
-    if (splitDimTrip % splitCount != 0) {
-      // So far we don't know how to handle remainder iterations.
-      DYN_S_DPRINTF_(
-          MLCRubyStrandSplit, config->dynamicId,
-          "[NoSplit] SplitDim %d Trip %d Not Divisble By SplitCount %d.\n",
-          splitDim, splitDimTrip, splitCount);
-      return false;
+    auto splitDimTripPerStrand = (splitDimTrip + splitCount - 1) / splitCount;
+    auto innerTrip = totalTrip / noSplitOuterTrip / splitDimTrip;
+    assert(innerTrip > 0);
+
+    /**
+     * We want to avoid a pathological case when all streams starts at the
+     * same bank. This is the case when (splitDimStride * splitDimTripPerStrand)
+     * is a multiple of BankInterleave * NumBanks.
+     *
+     * When this is the case, we try to reduce splitDimTripPerStrand by number
+     * of Bank rows.
+     */
+    auto splitDimStride = strides.at(splitDim);
+    auto bankRows = StreamNUCAMap::getNumRows();
+    auto bankCols = StreamNUCAMap::getNumCols();
+    auto totalBankIntrlv = llcBankInterleave * bankRows * bankCols;
+    while ((splitDimStride * splitDimTripPerStrand) % totalBankIntrlv == 0) {
+      auto multiple =
+          (splitDimStride * splitDimTripPerStrand) / totalBankIntrlv;
+      if (multiple > 1) {
+        if (splitDimTripPerStrand >= 2) {
+          splitDimTripPerStrand /= 2;
+        } else {
+          break;
+        }
+      } else {
+        if (splitDimTripPerStrand % bankRows == 0) {
+          splitDimTripPerStrand /= bankRows;
+        } else {
+          break;
+        }
+      }
     }
 
     perStreamContext.splitDim = splitDim;
-    perStreamContext.splitInterleave =
-        totalTripCount / noSplitOuterTripCount / splitCount;
+    perStreamContext.splitInterleave = innerTrip * splitDimTripPerStrand;
   } else {
     // This is simple linear stream.
     perStreamContext.splitDim = 0;
     perStreamContext.splitInterleave =
-        totalTripCount / noSplitOuterTripCount / splitCount;
+        totalTrip / noSplitOuterTrip / splitCount;
   }
 
   // 4.c
@@ -271,13 +310,12 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
       }
       if (depS->isReduction()) {
         if (!config->hasInnerTripCount() ||
-            config->getInnerTripCount() >=
-                totalTripCount / noSplitOuterTripCount) {
+            config->getInnerTripCount() >= totalTrip / noSplitOuterTrip) {
           DYN_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
                          "[Strand] CanNot Split Reduce at InnerMostTrip %ld "
                          "TotalTrip %ld NoSplitTrip %ld.\n",
-                         config->getInnerTripCount(), totalTripCount,
-                         noSplitOuterTripCount);
+                         config->getInnerTripCount(), totalTrip,
+                         noSplitOuterTrip);
           return false;
         }
       }
@@ -491,8 +529,8 @@ DynStreamFormalParamV MLCStrandManager::splitAffinePattern(
     assert(iter != context.perStreamContext.end());
 
     const auto &psc = iter->second;
-    return config->splitAffinePatternAtDim(psc.splitDim, strandIdx,
-                                           strandSplit.totalStrands);
+    return config->splitAffinePatternAtDim(psc.splitDim, psc.splitInterleave,
+                                           strandIdx, strandSplit.totalStrands);
 
   } else {
     return config->splitLinearParam1D(strandSplit, strandIdx);

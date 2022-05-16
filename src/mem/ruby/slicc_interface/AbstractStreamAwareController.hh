@@ -15,11 +15,13 @@
 
 class MLCStreamEngine;
 class LLCStreamEngine;
+class PUMTransposeUnit;
 
 class AbstractStreamAwareController : public AbstractController {
 public:
   typedef RubyStreamAwareControllerParams Params;
   AbstractStreamAwareController(const Params *p);
+  ~AbstractStreamAwareController();
 
   void init() override;
   void regStats() override;
@@ -46,10 +48,10 @@ public:
    * @brief Adjust the response latency of the cache.
    * Currently, this is used to charge extra latency to access cache lines
    * in transposed layout in in-memory computing.
-   * 
+   *
    * @return Cycles.
    */
-  Cycles adjustResponseLat(Cycles responseLat, Addr paddr) const;
+  Cycles adjustResponseLat(Cycles responseLat, Addr paddr);
 
   int getNumCoresPerRow() const { return this->numCoresPerRow; }
   bool isStreamFloatEnabled() const { return this->enableStreamFloat; }
@@ -181,8 +183,7 @@ public:
   void recordDeallocateNoReuseReqStats(const RequestStatisticPtr &reqStat,
                                        CacheMemory &cache) const;
   void recordLLCReqQueueStats(const RequestStatisticPtr &reqStat,
-                              const DynStreamSliceIdVec &sliceIds,
-                              bool isLoad);
+                              const DynStreamSliceIdVec &sliceIds, bool isLoad);
   void incrementLLCIndReqQueueStats() { this->m_statLLCIndStreamReq++; }
 
   void addNoCControlMsgs(RequestStatisticPtr statistic, int msgs) const {
@@ -271,6 +272,8 @@ private:
   MLCStreamEngine *mlcSE = nullptr;
   LLCStreamEngine *llcSE = nullptr;
 
+  PUMTransposeUnit *pumTransposUnit = nullptr;
+
   /**
    * Get the global StreamAwareCacheController map.
    */
@@ -337,6 +340,10 @@ public:
   Stats::Scalar m_statPUMMixCycles;
   Stats::Scalar m_statPUMComputeCmds;
   Stats::Scalar m_statPUMComputeOps;
+  Stats::Scalar m_statPUMNormalAccesses;
+  Stats::Scalar m_statPUMNormalAccessConflicts;
+  Stats::Scalar m_statPUMNormalAccessDelayCycles;
+  Stats::Formula m_statPUMNormalAccessAvgDelayCycles;
 };
 
 #endif

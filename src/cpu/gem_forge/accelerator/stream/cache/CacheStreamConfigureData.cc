@@ -147,9 +147,8 @@ CacheStreamConfigureData::splitLinearParam1D(const StrandSplitInfo &strandSplit,
   return strandParams;
 }
 
-DynStreamFormalParamV
-CacheStreamConfigureData::splitAffinePatternAtDim(int splitDim, int strandIdx,
-                                                  int totalStrands) {
+DynStreamFormalParamV CacheStreamConfigureData::splitAffinePatternAtDim(
+    int splitDim, int64_t interleave, int strandIdx, int totalStrands) {
   const auto &params = this->addrGenFormalParams;
   auto callback = this->addrGenCallback;
 
@@ -161,11 +160,20 @@ CacheStreamConfigureData::splitAffinePatternAtDim(int splitDim, int strandIdx,
    * * Split an AffineStream at SplitDim. This is similar to OpenMP static
    * * scheduling.
    * *   start : S1 : T1 : ... : Ss : Ts : ... : Sn : Tn
+   *
+   * * We assume interleave % (T1 * ... * Ts-1) == 0, and define
+   * * Tt = interleave / (T1 * ... * Ts-1)
+   * * Tn = Tt * totalStrands
+   *
    * * ->
-   * *   start + strandIdx * Ss * Ts / totalStrands
-   * * : S1 : T1 : ...
-   * * : Ss : Ts / totalStrands : ...
-   * * : Sn : Tn
+   * *   start + strandIdx * Ss * Tt
+   * * : S1      : T1 : ...
+   * * : Ss      : Tt
+   * * : Ss * Tn : Ts / Tn + (strandIdx < (Ts % Tn) ? 1 : 0) : ...
+   * * : Sn      : Tn
+   *
+   * * Notice that we have to take care when Ts % Tn != 0 by adding one to
+   * * strands with strandIdx < (Ts % Tn).
    */
 
   std::vector<uint64_t> trips;
@@ -188,31 +196,96 @@ CacheStreamConfigureData::splitAffinePatternAtDim(int splitDim, int strandIdx,
 
   auto splitDimTrip = trips.at(splitDim);
   auto splitDimStride = strides.at(splitDim);
-  auto splitDimTripPerStrand = (splitDimTrip + totalStrands - 1) / totalStrands;
+
+  auto innerTrip = 1;
+  for (int i = 0; i < splitDim; ++i) {
+    innerTrip *= trips.at(i);
+  }
+  assert(interleave % innerTrip == 0);
+  auto interleaveTrip = interleave / innerTrip;
+  auto totalInterleaveTrip = interleaveTrip * totalStrands;
 
   auto start = params.back().invariant.uint64();
-
-  auto strandStart = start + strandIdx * splitDimStride * splitDimTripPerStrand;
+  auto strandStart = start + strandIdx * splitDimStride * interleaveTrip;
 
   // Copy the original params.
   DynStreamFormalParamV strandParams = this->addrGenFormalParams;
 
-  // Adjust the trip count at the SplitDim. Be careful with the last strand.
-  auto splitDimStrandTrip = splitDimTripPerStrand;
-  if (strandIdx == totalStrands - 1) {
-    // Adjust the last strand.
-    splitDimStrandTrip = splitDimTrip - (strandIdx * splitDimTripPerStrand);
+#define setTrip(dim, t)                                                        \
+  {                                                                            \
+    strandParams.at((dim)*2 + 1).isInvariant = true;                           \
+    strandParams.at((dim)*2 + 1).invariant.uint64() = t;                       \
   }
-  strandParams.at(splitDim * 2 + 1).invariant.uint64() = splitDimStrandTrip;
-  // We need to fix all upper dimension's trip count.
-  for (int dim = splitDim + 1; dim < trips.size(); ++dim) {
-    auto fixedOuterTrip =
-        strandParams.at(dim * 2 - 1).invariant.uint64() * trips.at(dim);
-    strandParams.at(dim * 2 + 1).invariant.uint64() = fixedOuterTrip;
+#define setStride(dim, t)                                                      \
+  {                                                                            \
+    strandParams.at((dim)*2).isInvariant = true;                               \
+    strandParams.at((dim)*2).invariant.uint64() = t;                           \
+  }
+#define setStart(t)                                                            \
+  {                                                                            \
+    strandParams.back().isInvariant = true;                                    \
+    strandParams.back().invariant.uint64() = t;                                \
   }
 
+  // Insert another dimension after SplitDim.
+  strandParams.insert(strandParams.begin() + 2 * splitDim + 1,
+                      DynStreamFormalParam());
+  strandParams.insert(strandParams.begin() + 2 * splitDim + 1,
+                      DynStreamFormalParam());
+
   // Adjust the strand start.
-  strandParams.back().invariant.uint64() = strandStart;
+  setStart(strandStart);
+
+  int64_t splitOutTrip = 1;
+
+  if (totalInterleaveTrip <= splitDimTrip) {
+    // Adjust the trip count at the SplitDim.
+    setTrip(splitDim, interleaveTrip * innerTrip);
+
+    // Compute the SplitOutTrip.
+    auto remainderTrip = splitDimTrip % totalInterleaveTrip;
+    assert(remainderTrip % interleaveTrip == 0);
+    auto splitOutTripRemainder =
+        (strandIdx < (remainderTrip / interleaveTrip)) ? 1 : 0;
+    splitOutTrip = splitDimTrip / totalInterleaveTrip + splitOutTripRemainder;
+
+  } else {
+    if (totalInterleaveTrip >= splitDimTrip + interleaveTrip) {
+      // Only the last strand can have partial interleavs.
+      panic(
+          "Interleave %d InterleaveTrip %d SplitDimTrip %d TotalStrands %d Pat "
+          "%s.\n",
+          interleave, interleaveTrip, splitDimTrip, totalStrands,
+          printAffinePatternParams(this->addrGenFormalParams));
+    }
+    // Be careful with the last Strand.
+    auto lastStrandInterleaveTrip =
+        splitDimTrip - interleaveTrip * (totalStrands - 1);
+    if (strandIdx + 1 == totalStrands) {
+      setTrip(splitDim, lastStrandInterleaveTrip * innerTrip);
+    } else {
+      setTrip(splitDim, interleaveTrip * innerTrip);
+    }
+
+    // In this case, SplitOutDimTrip is always 1.
+    splitOutTrip = 1;
+  }
+
+  // Adjust the SplitOutDim.
+  setStride(splitDim + 1, splitDimStride * totalInterleaveTrip);
+  assert(splitOutTrip > 0);
+  setTrip(splitDim + 1, splitOutTrip * interleaveTrip * innerTrip);
+
+  // We need to fix all upper dimension's trip count.
+  for (int dim = splitDim + 2; dim < trips.size() + 1; ++dim) {
+    auto fixedOuterTrip =
+        strandParams.at(dim * 2 - 1).invariant.uint64() * trips.at(dim - 1);
+    setTrip(dim, fixedOuterTrip);
+  }
+
+#undef setTrip
+#undef setStride
+#undef setStart
 
   return strandParams;
 }

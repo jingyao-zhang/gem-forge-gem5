@@ -159,33 +159,46 @@ int StreamNUCAMap::getNUCABank(Addr paddr, const RangeMap &range) {
   return bank;
 }
 
-int StreamNUCAMap::getPUMBank(Addr paddr, const RangeMap &range) {
+StreamNUCAMap::SRAMLocation
+StreamNUCAMap::getPUMLocation(Addr paddr, const RangeMap &range) {
   assert(range.isStreamPUM);
 
   auto elemIdx = (paddr - range.startPAddr) / (range.elementBits / 8);
   auto vBitlineIdx = range.pumTileRev(elemIdx);
 
+  const auto &cacheParams = getCacheParams();
+
   auto tileSize = range.pumTile.getCanonicalTotalTileSize();
-  auto bitlines = getCacheParams().bitlines;
+  auto bitlines = cacheParams.bitlines;
   auto pBitlineIdx =
       (vBitlineIdx / tileSize) * bitlines + vBitlineIdx % tileSize;
 
   auto arrayIdx = pBitlineIdx / bitlines;
-  auto wayIdx = arrayIdx / getCacheParams().arrayPerWay;
-  auto bankIdx = wayIdx / getCacheParams().assoc;
+  auto wayIdx = arrayIdx / cacheParams.arrayPerWay;
+  auto bankIdx = wayIdx / cacheParams.assoc;
 
   auto bank = bankIdx % (getNumRows() * getNumCols());
 
+  // So far wordline is not modelled, always 0.
+  SRAMLocation loc;
+  loc.bank = bank;
+  loc.way = wayIdx % cacheParams.assoc;
+  loc.array = arrayIdx % cacheParams.arrayPerWay;
+  loc.bitline = pBitlineIdx;
+  loc.wordline = 0;
+
   DPRINTF(StreamNUCAMap,
-          "[PUM] Map PAddr %#x in [%#x, %#x) Tile %s to Bank %d.\n", paddr,
-          range.startPAddr, range.endPAddr, range.pumTile, bank);
-  return bank;
+          "[PUM] Map PAddr %#x in [%#x, %#x) Tile %s to Bank %d Way %d Array "
+          "%d BL %d WL %d.\n",
+          paddr, range.startPAddr, range.endPAddr, range.pumTile, loc.bank,
+          loc.way, loc.array, loc.bitline, loc.wordline);
+  return loc;
 }
 
 int StreamNUCAMap::getBank(Addr paddr) {
   if (auto *range = getRangeMapContaining(paddr)) {
     if (range->isStreamPUM) {
-      return getPUMBank(paddr, *range);
+      return getPUMLocation(paddr, *range).bank;
     } else {
       return getNUCABank(paddr, *range);
     }

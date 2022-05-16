@@ -1,5 +1,6 @@
 #include "AbstractStreamAwareController.hh"
 
+#include "cpu/gem_forge/accelerator/stream/cache/pum/PUMTransposeUnit.hh"
 #include "mem/ruby/network/garnet2.0/GarnetNetwork.hh"
 #include "sim/stream_nuca/stream_nuca_map.hh"
 
@@ -36,6 +37,16 @@ AbstractStreamAwareController::AbstractStreamAwareController(const Params *p)
    * Register myself to the global map.
    */
   registerController(this);
+
+  /**
+   * @brief Initialize PUMTransposeUnit.
+   */
+  this->pumTransposUnit = new PUMTransposeUnit(this);
+}
+
+AbstractStreamAwareController::~AbstractStreamAwareController() {
+  delete this->pumTransposUnit;
+  this->pumTransposUnit = nullptr;
 }
 
 void AbstractStreamAwareController::init() {
@@ -172,6 +183,15 @@ void AbstractStreamAwareController::regStats() {
   pum_stats(MixCycles);
   pum_stats(ComputeCmds);
   pum_stats(ComputeOps);
+  pum_stats(NormalAccesses);
+  pum_stats(NormalAccessConflicts);
+  pum_stats(NormalAccessDelayCycles);
+  m_statPUMNormalAccessAvgDelayCycles
+      .name(name() + ".pumNormalAccessAvgDelayCycles")
+      .desc("Avg Delay Cycles for normal access to PUM array.")
+      .precision(6);
+  m_statPUMNormalAccessAvgDelayCycles =
+      m_statPUMNormalAccessDelayCycles / m_statPUMNormalAccessConflicts;
 #undef pum_cycles
 
   // Register stats callback.
@@ -357,11 +377,6 @@ bool AbstractStreamAwareController::isMyNeighbor(MachineID machineId) const {
 }
 
 Cycles AbstractStreamAwareController::adjustResponseLat(Cycles responseLat,
-                                                        Addr paddr) const {
-  auto range = StreamNUCAMap::getRangeMapContaining(paddr);
-  if (!range || !range->isStreamPUM) {
-    return responseLat;
-  }
-  // Charge the number of wordlines as the latency.
-  return Cycles(range->elementBits);
+                                                        Addr paddr) {
+  return this->pumTransposUnit->access(paddr, responseLat);
 }

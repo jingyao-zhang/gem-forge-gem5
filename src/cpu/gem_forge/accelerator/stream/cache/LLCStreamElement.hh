@@ -47,7 +47,7 @@ public:
   const char *curRemoteMachineType() const;
 
   std::vector<LLCStreamElementPtr> baseElements;
-  bool areBaseElementsReady() const {
+  bool areBaseElemsReady() const {
     bool allReady = true;
     for (const auto &baseElement : this->baseElements) {
       if (!baseElement->checkIsValueReady()) {

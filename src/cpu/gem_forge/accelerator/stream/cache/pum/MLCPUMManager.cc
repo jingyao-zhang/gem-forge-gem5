@@ -1559,6 +1559,11 @@ MLCPUMManager::generatePrefetchStreams(PUMComputeStreamGroup &group) {
       return std::shared_ptr<CacheStreamConfigureData>(nullptr);
     }
 
+    // If PUMPrefetch is disabled.
+    if (this->controller->myParams->stream_pum_prefetch_level == "none") {
+      return std::shared_ptr<CacheStreamConfigureData>(nullptr);
+    }
+
     MLCSE_DPRINTF("Prefetch stream %s.\n", config->dynamicId);
 
     /**

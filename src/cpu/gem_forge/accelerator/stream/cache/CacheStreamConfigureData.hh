@@ -263,7 +263,9 @@ public:
   bool isSplitIntoStrands() const { return this->totalStrands > 1; }
   DynStreamFormalParamV splitLinearParam1D(const StrandSplitInfo &strandSplit,
                                            int strandIdx);
-  DynStreamFormalParamV splitAffinePatternAtDim(int splitDim, int strandIdx,
+  DynStreamFormalParamV splitAffinePatternAtDim(int splitDim,
+                                                int64_t interleave,
+                                                int strandIdx,
                                                 int totalStrands);
 
   /**

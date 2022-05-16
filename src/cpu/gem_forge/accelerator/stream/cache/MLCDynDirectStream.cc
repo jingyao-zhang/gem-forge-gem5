@@ -370,16 +370,14 @@ void MLCDynDirectStream::trySendCreditToLLC() {
          * PUMPrefetchStream won't send back anything, we here we register a
          * release callback to continue issuing credits.
          */
-        if (this->config->isPUMPrefetch) {
-          auto elemReleaseCallback = [this](const DynStreamId &dynStreamId,
-                                            uint64_t elemIdx) -> void {
-            this->blockedSendingCredit = false;
-            this->trySendCreditToLLC();
-          };
-          this->blockedSendingCredit = true;
-          remoteDynS->registerElemPostReleaseCallback(
-              remoteDynS->idxToElementMap.begin()->first, elemReleaseCallback);
-        }
+        auto elemReleaseCallback = [this](const DynStreamId &dynStreamId,
+                                          uint64_t elemIdx) -> void {
+          this->blockedSendingCredit = false;
+          this->trySendCreditToLLC();
+        };
+        this->blockedSendingCredit = true;
+        remoteDynS->registerElemPostReleaseCallback(
+            remoteDynS->idxToElementMap.begin()->first, elemReleaseCallback);
 
         return;
       }

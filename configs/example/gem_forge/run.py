@@ -255,6 +255,9 @@ parser.add_option("--gem-forge-enable-stream-nuca", type="int",
 parser.add_option("--gem-forge-enable-stream-strand", type="int",
                   action="store", default="0",
                   help="Enable stream strand auto parallelization.")
+parser.add_option("--gem-forge-enable-stream-vectorize", type="int",
+                  action="store", default="0",
+                  help="Enable stream auto vectorization.")
 parser.add_option("--gem-forge-stream-nuca-direct-region-fit-policy", type="choice",
                   choices=['crop', 'drop'], default='crop',
                   help="What to do when direct regions overflow LLC.")
@@ -288,7 +291,7 @@ parser.add_option("--gem-forge-stream-pum-compile-lat-per-cmd", type="int",
                   action="store", default="10",
                   help="Compiling latency per cmd.")
 parser.add_option("--gem-forge-stream-pum-prefetch-level", type="choice", default="llc",
-                  choices=['llc', 'mem'], help="Where to execute the PUMPrefetch stream.")
+                  choices=['llc', 'mem', 'none'], help="Where to execute the PUMPrefetch stream.")
 
 # Stream in Mem Options.
 parser.add_option("--gem-forge-stream-engine-enable-float-mem", action="store_true", default=False,

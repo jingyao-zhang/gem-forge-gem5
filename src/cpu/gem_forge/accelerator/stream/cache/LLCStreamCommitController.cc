@@ -145,7 +145,7 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
                     "[Commit] Failed to find IndElement %llu to commit.",
                     nextCommitIndirectElementIdx);
       } else {
-        if (!nextCommitElement->areBaseElementsReady()) {
+        if (!nextCommitElement->areBaseElemsReady()) {
           // We can not issue this yet.
           return false;
         }

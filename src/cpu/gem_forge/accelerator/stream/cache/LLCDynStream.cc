@@ -935,7 +935,7 @@ void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
     LLC_ELEMENT_PANIC(recvElem, "Failed to find BaseElem %s %lu.",
                       sliceId.getDynStrandId(), recvStrandElemIdx);
   }
-  if (recvElem->areBaseElementsReady()) {
+  if (recvElem->areBaseElemsReady()) {
     /**
      * If I am indirect stream, push the computation.
      * Otherwise, the LLC SE should check me for ready elements.
@@ -1483,7 +1483,7 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
       this->lastComputedReductionElemIdx++;
       if (this->idxToElementMap.count(element->idx + 1)) {
         auto &nextElement = this->idxToElementMap.at(element->idx + 1);
-        if (nextElement->areBaseElementsReady()) {
+        if (nextElement->areBaseElemsReady()) {
           /**
            * We need to push the computation to the LLC SE at the correct
            * bank.

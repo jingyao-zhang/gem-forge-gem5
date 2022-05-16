@@ -5,10 +5,12 @@ DebugFlag('LLCStreamPUM')
 DebugFlag('MLCStreamPUM')
 CompoundFlag('StreamPUM',
              ['LLCStreamPUM', 'MLCStreamPUM'])
+DebugFlag('PUMTransposeUnit')
 
 Source('AffinePattern.cc')
 Source('PUMCommand.cc')
 Source('PUMHWConfiguration.cc')
+Source('PUMTransposeUnit.cc')
 Source('DataMoveCompiler.cc')
 Source('MLCPUMManager.cc')
 Source('PUMEngine.cc')

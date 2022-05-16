@@ -152,6 +152,19 @@ public:
   static int getBank(Addr paddr);
   static int getSet(Addr paddr);
 
+  /**
+   * Represent a Location in the SRAM LLC.
+   * Notice: all indexes are local to its parent level.
+   */
+  struct SRAMLocation {
+    int bank = 0;
+    int way = 0;
+    int array = 0;
+    int bitline = 0;
+    int wordline = 0;
+  };
+  static SRAMLocation getPUMLocation(Addr paddr, const RangeMap &range);
+
 private:
   static bool topologyInitialized;
   static int numRows;
@@ -168,7 +181,6 @@ private:
   static int getNUCABank(Addr paddr, const RangeMap &range);
   static int getNUCASet(Addr paddr, const RangeMap &range);
 
-  static int getPUMBank(Addr paddr, const RangeMap &range);
   static int getPUMSet(Addr paddr, const RangeMap &range);
 };
 
