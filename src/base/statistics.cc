@@ -267,8 +267,8 @@ Info::baseCheck() const
 #endif
         panic("Not all stats have been initialized.\n"
               "You may need to add <ParentClass>::regStats() to a"
-              " new SimObject's regStats() function. Name: %s",
-              name);
+              " new SimObject's regStats() function. Name: %s %d",
+              name, this->id);
         return false;
     }
 

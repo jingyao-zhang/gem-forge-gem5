@@ -169,7 +169,7 @@ Process::Process(ProcessParams *params, EmulationPageTable *pTable,
         }
     }
 
-    this->streamNUCAManager = std::make_shared<StreamNUCAManager>(
+    this->streamNUCAManager = StreamNUCAManager::initialize(
         this, params);
 }
 
@@ -213,7 +213,11 @@ Process::clone(ThreadContext *otc, ThreadContext *ntc,
         }
 
         *np->memState = *memState;
-        *np->streamNUCAManager = *streamNUCAManager;
+        /**
+         * StreamNUCAManager can not be copied.
+         * We always share it for now.
+         */
+        np->streamNUCAManager = streamNUCAManager;
     }
 
     if (CLONE_FILES & flags) {

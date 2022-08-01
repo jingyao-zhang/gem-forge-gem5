@@ -209,19 +209,27 @@ private:
   /**
    * Stats.
    */
-  static bool statsRegsiterd;
-  static Stats::ScalarNoReset indRegionPages;
-  static Stats::ScalarNoReset indRegionElements;
-  static Stats::ScalarNoReset indRegionAllocPages;
-  static Stats::ScalarNoReset indRegionRemapPages;
+  static std::shared_ptr<StreamNUCAManager> singleton;
 
-  static Stats::ScalarNoReset indRegionMemToLLCDefaultHops;
+public:
+  // There is only one StreamNUCAManager.
+  static std::shared_ptr<StreamNUCAManager> initialize(Process *_process,
+                                                       ProcessParams *_params);
 
-  static Stats::ScalarNoReset indRegionMemToLLCMinHops;
-  static Stats::DistributionNoReset indRegionMemMinBanks;
+private:
+  bool statsRegisterd = false;
+  Stats::ScalarNoReset indRegionPages;
+  Stats::ScalarNoReset indRegionElements;
+  Stats::ScalarNoReset indRegionAllocPages;
+  Stats::ScalarNoReset indRegionRemapPages;
 
-  static Stats::ScalarNoReset indRegionMemToLLCRemappedHops;
-  static Stats::DistributionNoReset indRegionMemRemappedBanks;
+  Stats::ScalarNoReset indRegionMemToLLCDefaultHops;
+
+  Stats::ScalarNoReset indRegionMemToLLCMinHops;
+  Stats::DistributionNoReset indRegionMemMinBanks;
+
+  Stats::ScalarNoReset indRegionMemToLLCRemappedHops;
+  Stats::DistributionNoReset indRegionMemRemappedBanks;
 };
 
 #endif

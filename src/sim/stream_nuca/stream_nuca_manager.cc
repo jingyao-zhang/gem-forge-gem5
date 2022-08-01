@@ -12,16 +12,16 @@
 
 #include "debug/StreamNUCAManager.hh"
 
-bool StreamNUCAManager::statsRegsiterd = false;
-Stats::ScalarNoReset StreamNUCAManager::indRegionPages;
-Stats::ScalarNoReset StreamNUCAManager::indRegionElements;
-Stats::ScalarNoReset StreamNUCAManager::indRegionAllocPages;
-Stats::ScalarNoReset StreamNUCAManager::indRegionRemapPages;
-Stats::ScalarNoReset StreamNUCAManager::indRegionMemToLLCDefaultHops;
-Stats::ScalarNoReset StreamNUCAManager::indRegionMemToLLCMinHops;
-Stats::DistributionNoReset StreamNUCAManager::indRegionMemMinBanks;
-Stats::ScalarNoReset StreamNUCAManager::indRegionMemToLLCRemappedHops;
-Stats::DistributionNoReset StreamNUCAManager::indRegionMemRemappedBanks;
+std::shared_ptr<StreamNUCAManager> StreamNUCAManager::singleton = nullptr;
+
+// There is only one StreamNUCAManager.
+std::shared_ptr<StreamNUCAManager>
+StreamNUCAManager::initialize(Process *_process, ProcessParams *_params) {
+  if (!singleton) {
+    singleton = std::make_shared<StreamNUCAManager>(_process, _params);
+  }
+  return singleton;
+}
 
 StreamNUCAManager::StreamNUCAManager(Process *_process, ProcessParams *_params)
     : process(_process), enabledMemStream(_params->enableMemStream),
@@ -55,10 +55,11 @@ StreamNUCAManager::operator=(const StreamNUCAManager &other) {
 
 void StreamNUCAManager::regStats() {
 
-  if (statsRegsiterd) {
+  if (this->statsRegisterd) {
     return;
   }
-  statsRegsiterd = true;
+  this->statsRegisterd = true;
+
   hack("Register %#x processor %#x name %s.\n", this, process, process->name());
 
   assert(this->process && "No process.");
