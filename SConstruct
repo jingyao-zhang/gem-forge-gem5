@@ -405,7 +405,8 @@ if main['GCC']:
 
     main['GCC_VERSION'] = gcc_version
 
-    if compareVersions(gcc_version, '4.9') >= 0:
+    if compareVersions(gcc_version, '4.9') >= 0 and\
+       compareVersions(gcc_version, '8.1') < 0:
         # Incremental linking with LTO is currently broken in gcc versions
         # 4.9 and above. A version where everything works completely hasn't
         # yet been identified.
