@@ -1,10 +1,23 @@
 #ifndef __CPU_GEM_FORGE_MLC_PUM_MANAGER_HH__
 #define __CPU_GEM_FORGE_MLC_PUM_MANAGER_HH__
 
+// Temporary: Non-destructively add equality graph optimization code.
+#include "cpu/static_inst_fwd.hh"
+#define EG_OPT
+
 #include "../MLCStreamEngine.hh"
 
 #include "DataMoveCompiler.hh"
+#include <type_traits>
 #include <unordered_set>
+#include <utility>
+
+#include "config/have_protobuf.hh"
+#ifndef HAVE_PROTOBUF
+#error "Require protobuf to parse stream info."
+#endif
+
+#include "TDFG.pb.h"
 
 class MLCPUMManager {
 public:
@@ -260,14 +273,23 @@ private:
     /**
      * Fields for Compute node.
      */
-    ExecFuncPtr func = nullptr;
     PUMComputeStreamGroup *group = nullptr;
+#ifdef EG_OPT
+    const StaticInstPtr inst;
+    static PUMDataGraphNode *
+    newCmpNode(const std::string &_regionName, const AffinePattern &_pumTile,
+               const AffinePattern &_pattern, const AffinePattern &_splitOutDim,
+               int _scalarElemSize, const StaticInstPtr _inst,
+               PUMComputeStreamGroup *_group);
+#else // EG_OPT
+    ExecFuncPtr func = nullptr;
     static PUMDataGraphNode *newCmpNode(const std::string &_regionName,
                                         const AffinePattern &_pumTile,
                                         const AffinePattern &_pattern,
                                         const AffinePattern &_splitOutDim,
                                         int _scalarElemSize, ExecFuncPtr _func,
                                         PUMComputeStreamGroup *_group);
+#endif // EG_OPT
 
     /**
      * Fields for Sync node.
@@ -283,11 +305,66 @@ private:
         : regionName(_regionName), type(_type), pumTile(_pumTile),
           pattern(_pattern), splitOutDim(_splitOutDim),
           scalarElemSize(_scalarElemSize) {}
+
+#ifdef EG_OPT
+    // TODO: Got lazy didn't write a delegate constructor.
+    PUMDataGraphNode(const std::string &_regionName, TypeE _type,
+                     const AffinePattern &_pumTile,
+                     const AffinePattern &_pattern,
+                     const AffinePattern &_splitOutDim, int _scalarElemSize,
+                     const StaticInstPtr _inst, PUMComputeStreamGroup *_group)
+        : regionName(_regionName), type(_type), pumTile(_pumTile),
+          pattern(_pattern), splitOutDim(_splitOutDim),
+          scalarElemSize(_scalarElemSize), group(_group), inst(_inst) {}
+#endif // EG_OPT
   };
 
   friend std::ostream &operator<<(std::ostream &os,
                                   const MLCPUMManager::PUMDataGraphNode &node);
   friend std::string to_string(const MLCPUMManager::PUMDataGraphNode &node);
+
+#ifdef EG_OPT
+  /**
+   * Bidirectional map (left & right types must be different).
+   * Implements: insert, empty, size, count, at.
+   * WARNING: Does not do memory management. Left & Right values will be copied!
+   */
+  template <typename L, typename R,
+            typename =
+                typename std::enable_if<!std::is_same<L, R>::value, bool>::type>
+  class BiMap {
+  private:
+    std::unordered_map<L, R> left;
+    std::unordered_map<R, L> right;
+
+  public:
+    void insert(const L &l, const R &r) {
+      this->left.insert({l, r});
+      this->right.insert({r, l});
+    }
+    void insert(const R &r, const L &l) {
+      this->left.insert({l, r});
+      this->right.insert({r, l});
+    }
+
+    bool empty() const { return this->left.empty(); }
+    decltype(left.size()) size() const { return this->left.size(); }
+
+    auto count(const L &l) const -> decltype(left.count(l)) {
+      return this->left.count(l);
+    }
+
+    auto count(const R &r) const -> decltype(right.count(r)) {
+      return this->right.count(r);
+    }
+
+    const R &at(const L &l) const { return this->left.at(l); }
+    const L &at(const R &r) const { return this->right.at(r); }
+  };
+  using TDFGConfigPtr = decltype(std::declval<::LLVM::TDG::TDFG::Node>()
+                                     .mutable_load()
+                                     ->send_config_ptr());
+#endif // EG_OPT
 
   /**
    * Track states of PUM.
@@ -300,6 +377,12 @@ private:
   private:
     static int64_t nextContextId;
     static int64_t allocateContextId() { return nextContextId++; }
+
+#ifdef EG_OPT
+    // Map from ConfigPtr <-> TDFGConfigPtrId
+    BiMap<ConfigPtr, TDFGConfigPtr> configMap;
+#endif // EG_OPT
+    friend class MLCPUMManager;
 
   public:
     ~PUMContext();
@@ -317,10 +400,15 @@ private:
     std::vector<PUMComputeStreamGroup> pumGroups;
     // Records the PUMDataGraph.
     std::vector<PUMDataGraphNode *> pumDataGraphNodes;
+
     // Remembers the PrefetchConfigs.
     CacheStreamConfigureVec prefetchConfigs;
     // Saved pkt when waiting for prefetching.
     PacketPtr savedPkt = nullptr;
+#ifdef EG_OPT
+    // TDFG for equality graph optimization.
+    ::LLVM::TDG::TDFG tdfg;
+#endif // EG_OPT
 
     /**
      * States during compiling and executing PUM.
@@ -414,6 +502,12 @@ private:
   AffinePattern expandReusePat(const AffinePattern &pumTile,
                                const AffinePattern &pat,
                                AffinePattern &splitOutDim);
+
+#ifdef EG_OPT
+  using TDFGNodeID = decltype(std::declval<::LLVM::TDG::TDFG::Node>().id());
+  using TDFGNodeVec = std::vector<TDFGNodeID>;
+  void buildTDFG(PUMContext &context);
+#endif //  EG_OPT
 
   /**
    * Try to merge some Move nodes if they are moving the same array but only

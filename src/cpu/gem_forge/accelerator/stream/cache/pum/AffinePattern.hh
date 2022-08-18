@@ -8,6 +8,14 @@
 #include <tuple>
 #include <vector>
 
+#include "config/have_protobuf.hh"
+#include "cpu/gem_forge/accelerator/stream/cache/pum/TDFG.pb.h"
+#ifndef HAVE_PROTOBUF
+#error "Require protobuf to parse stream info."
+#endif
+
+#include "TDFG.pb.h"
+
 class AffinePattern {
 public:
   /**
@@ -24,7 +32,7 @@ public:
   struct Param {
     int64_t stride;
     int64_t trip;
-    Param(int _stride, int _trip) : stride(_stride), trip(_trip) {}
+    Param(int64_t _stride, int64_t _trip) : stride(_stride), trip(_trip) {}
   };
   using ParamVecT = std::vector<Param>;
   using IntVecT = std::vector<int64_t>;
@@ -36,6 +44,9 @@ public:
   AffinePattern() : start(0), params(1, Param(1, 0)) {}
   AffinePattern(int64_t _start, ParamVecT _params)
       : start(_start), params(std::move(_params)) {}
+  AffinePattern(::LLVM::TDG::AffinePattern tdgAffinePattern);
+
+  ::LLVM::TDG::AffinePattern toTDGAffinePattern() const;
 
   int64_t operator()(int64_t i) const {
     int64_t result = start;

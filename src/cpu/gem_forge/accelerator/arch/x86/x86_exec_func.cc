@@ -362,6 +362,169 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
   return retValue;
 }
 
+std::vector<ExecFunc::RegisterValue>
+ExecFunc::invoke_imvals(const std::vector<RegisterValue> &params,
+                        GemForgeISAHandler *isaHandler,
+                        InstSeqNum startSeqNum) {
+  /**
+   * We are assuming C calling convention.
+   * Registers are passed in as $rdi, $rsi, $rdx, $rcx, $r8, $r9.
+   * The exec function should never use stack.
+   */
+  if (params.size() != this->func.args_size()) {
+    panic("Invoke %s: Mismatch in # args, given %d, expected %d.\n",
+          this->func.name(), params.size(), this->func.args_size());
+  }
+  execFuncXC.clear();
+
+  const RegId intRegParams[6] = {
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RDI),
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RSI),
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RDX),
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RCX),
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_R8),
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_R9),
+  };
+  const RegId floatRegParams[8] = {
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM0_0),
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM1_0),
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM2_0),
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM3_0),
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM4_0),
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM5_0),
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM6_0),
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM7_0),
+  };
+  EXEC_FUNC_DPRINTF("Set up calling convention.\n");
+  int intParamIdx = 0;
+  int floatParamIdx = 0;
+  for (auto idx = 0; idx < params.size(); ++idx) {
+    auto param = params.at(idx);
+    auto type = this->func.args(idx).type();
+    if (type == ::LLVM::TDG::DataType::INTEGER) {
+      if (intParamIdx == 6) {
+        panic("Too many IntArgs on ExecFunc %s.", this->func.name());
+      }
+      const auto &reg = intRegParams[intParamIdx];
+      intParamIdx++;
+      execFuncXC.setIntRegOperand(reg, param.front());
+      EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
+    } else {
+      if (floatParamIdx == 8) {
+        panic("Too many FloatArgs on ExecFunc %s.", this->func.name());
+      }
+      auto numRegs = this->translateToNumRegs(type);
+      const auto &baseReg = floatRegParams[floatParamIdx];
+      floatParamIdx++;
+      for (int i = 0; i < numRegs; ++i) {
+        RegId reg = RegId(RegClass::FloatRegClass, baseReg.index() + i);
+        execFuncXC.setFloatRegOperand(reg, param.at(i));
+        EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
+      }
+    }
+  }
+
+  // Set up the virt proxy.
+  execFuncXC.setVirtProxy(&this->tc->getVirtProxy());
+
+  std::vector<ExecFunc::RegisterValue> imvals;
+
+  // Support a simple stack. This is used for complex NestStreamConfigureFunc.
+  std::vector<RegVal> stack;
+
+  for (auto idx = 0; idx < this->instructions.size(); ++idx) {
+    auto &staticInst = this->instructions.at(idx);
+    auto &pc = this->pcs.at(idx);
+    EXEC_FUNC_DPRINTF("Set PCState %s: %s.\n", pc,
+                      staticInst->disassemble(pc.pc()));
+    execFuncXC.pcState(pc);
+
+    auto x86uop = dynamic_cast<X86ISA::X86MicroopBase *>(staticInst.get());
+    auto instMnem = x86uop->getInstMnem();
+    auto uopMnem = x86uop->getName();
+
+    if (instMnem == "PUSH_R") {
+      if (uopMnem == "stis") {
+        // Push into our small stack.
+        // The 3rd argument is the data register.
+        assert(staticInst->numSrcRegs() == 4);
+        auto data = execFuncXC.readIntRegOperand(staticInst->srcRegIdx(2));
+        stack.push_back(data);
+        EXEC_FUNC_DPRINTF("Push %lu.\n", data);
+      }
+      // Ignore other microops.
+      continue;
+    }
+
+    if (instMnem == "POP_R") {
+      if (uopMnem == "mov") {
+        // Pop from our small stack.
+        // The 3rd argument is the data register.
+        assert(staticInst->numDestRegs() == 1);
+        auto data = stack.back();
+        stack.pop_back();
+        execFuncXC.setIntRegOperand(staticInst->destRegIdx(0), data);
+        EXEC_FUNC_DPRINTF("Pop %lu.\n", data);
+      }
+      // Ignore other microops.
+      continue;
+    }
+
+    staticInst->execute(&execFuncXC, nullptr /* traceData. */);
+
+    assert(staticInst->numDestRegs() == 1);
+    imvals.emplace_back();
+    auto reg = staticInst->destRegIdx(0);
+    if (reg.isIntReg()) {
+      imvals.back().front() = execFuncXC.readIntRegOperand(reg);
+    } else if (reg.isFloatReg()) {
+      // TODO: this should be the entire vector register
+      imvals.back().at(0) = execFuncXC.readFloatRegOperand(reg);
+    } else {
+      EXEC_FUNC_PANIC("Unsupported register type %s\n", reg);
+    }
+
+    /**
+     * Handle GemForge instructions. For now this is used for
+     * NestStreamConfigureFunc.
+     */
+    if (staticInst->isGemForge()) {
+      GemForgeDynInstInfo dynInfo(startSeqNum + idx, pc, staticInst.get(),
+                                  this->tc);
+      assert(isaHandler->canDispatch(dynInfo) && "Cannot dispatch.");
+      GemForgeLSQCallbackList lsqCallbacks;
+      isaHandler->dispatch(dynInfo, lsqCallbacks);
+      assert(!lsqCallbacks.front() && "Cannot handle extra LSQ callbacks.");
+      assert(isaHandler->canExecute(dynInfo) && "Cannot execute.");
+      isaHandler->execute(dynInfo, execFuncXC);
+      assert(isaHandler->canCommit(dynInfo) && "Cannot commit.");
+      isaHandler->commit(dynInfo);
+    }
+  }
+
+  auto retType = this->func.type();
+  RegisterValue retValue;
+  if (retType == ::LLVM::TDG::DataType::INTEGER) {
+    // We expect the int result in rax.
+    const RegId rax(RegClass::IntRegClass, IntRegIndex::INTREG_RAX);
+    retValue.front() = execFuncXC.readIntRegOperand(rax);
+  } else {
+    // We expect the float result in xmm0.
+    auto numRegs = this->translateToNumRegs(retType);
+    for (int i = 0; i < numRegs; ++i) {
+      RegId reg =
+          RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM0_0 + i);
+      retValue.at(i) = execFuncXC.readFloatRegOperand(reg);
+    }
+  }
+  EXEC_FUNC_DPRINTF("Ret Type %s.\n", ::LLVM::TDG::DataType_Name(retType),
+                    retValue.print(retType));
+
+  imvals.push_back(retValue);
+
+  return imvals;
+}
+
 Addr ExecFunc::invoke(const std::vector<Addr> &params) {
   /**
    * We are assuming C calling convention.

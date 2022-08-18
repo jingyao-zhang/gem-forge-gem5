@@ -3,6 +3,7 @@
 #define __GEM_FORGE_X86_EXEC_FUNC_HH__
 
 #include "config/have_protobuf.hh"
+#include <vector>
 #ifndef HAVE_PROTOBUF
 #error "Require protobuf to parse stream info."
 #endif
@@ -61,6 +62,14 @@ public:
   RegisterValue invoke(const std::vector<RegisterValue> &params,
                        GemForgeISAHandler *isaHandler = nullptr,
                        InstSeqNum startSeqNum = 0);
+
+  /**
+   * Exposes the values of each instruction's output register.
+   */
+  std::vector<RegisterValue>
+  invoke_imvals(const std::vector<RegisterValue> &params,
+                GemForgeISAHandler *isaHandler = nullptr,
+                InstSeqNum startSeqNum = 0);
 
   /**
    * A special interface for address generation. Mostly used for indirect

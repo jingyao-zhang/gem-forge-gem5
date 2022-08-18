@@ -14,3 +14,5 @@ Source('PUMTransposeUnit.cc')
 Source('DataMoveCompiler.cc')
 Source('MLCPUMManager.cc')
 Source('PUMEngine.cc')
+
+ProtoBuf('TDFG.proto')

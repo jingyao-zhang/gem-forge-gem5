@@ -4,6 +4,24 @@
 
 #include "debug/MLCStreamPUM.hh"
 
+AffinePattern::AffinePattern(::LLVM::TDG::AffinePattern tdgAffinePattern) {
+  this->start = tdgAffinePattern.start();
+  for (const auto &p : tdgAffinePattern.params()) {
+    this->params.push_back({p.stride(), p.tc()});
+  }
+}
+
+::LLVM::TDG::AffinePattern AffinePattern::toTDGAffinePattern() const {
+  ::LLVM::TDG::AffinePattern tdgAffinePattern;
+  tdgAffinePattern.set_start(this->start);
+  for (const auto &param : this->params) {
+    auto tdgParam = tdgAffinePattern.add_params();
+    tdgParam->set_stride(param.stride);
+    tdgParam->set_tc(param.trip);
+  }
+  return tdgAffinePattern;
+}
+
 std::ostream &operator<<(std::ostream &os, const AffinePattern &pattern) {
   os << pattern.start;
   for (const auto &p : pattern.params) {

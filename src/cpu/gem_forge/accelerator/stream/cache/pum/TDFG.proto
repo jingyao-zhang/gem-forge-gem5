@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package LLVM.TDG;
+
+message AffinePattern {
+  message StrideTC {
+    int64 stride = 1;
+    int64 tc = 2;
+  }
+
+  int64 start = 1;
+  repeated StrideTC params = 2;
+}
+
+/**
+ * Since protobuf doesn't support references, we must explicitly annotate
+ * nodes with a unique id and set directed edges as a pair of node ids.
+ *
+ * Edges are defined as: user -> operand
+ *
+ * Note: This version of the tDFG is only meant gem5 to serialze & deserialize.
+ * TODO: Remove simulator state fields.
+ * Note (Pointers):
+ *   Since the implementation requires some back pointers, we need to save them.
+ *   We cannot reinitialize a smart pointers from a raw pointer value so the
+ *   serialzer must keep track of map[Ptr id -> Smart ptr].
+ */
+message TDFG {
+  message Node {
+    uint32 id = 1;
+
+    // Common fields.
+    string region_name = 2;
+    AffinePattern pum_tile = 3;
+    AffinePattern pattern = 4;
+    AffinePattern split_out_dim = 5; // Split outer dimension
+
+    int32 scalar_elem_size = 6;
+    int32 start_word_line = 7;
+
+    /**
+     * Use a union type to represent data unique to node.
+     * Each node is separated into a separate message for readability at the
+     * expense of verbosity.
+     */
+
+    // A value that is already in PUM transposed format.
+    message Value { uint64 region_vaddr = 1; }
+    // A move node, may have reuse.
+    message Move {
+      AffinePattern send_pattern = 1;
+      AffinePattern send_split_out_dim = 2;
+    }
+    // A load node, uses normal streams to populate PUM region.
+    message Load {
+      uint64 send_config_ptr = 1;
+      uint64 recv_config_ptr = 2;
+    }
+    // A compute node that executes its operands.
+    message Compute { uint64 pum_compute_stream_group_ptr = 1; }
+    // A sync node that represents a global barrier.
+    message Sync {}
+
+    oneof data {
+      Value value = 8;
+      Move move = 9;
+      Load load = 10;
+      Compute compute = 11;
+      Sync sync = 12;
+    }
+  }
+
+  message Edge {
+    uint32 src = 1;
+    uint32 dst = 2;
+  }
+
+  /**
+   * Map[Node id -> Node]
+   * Could be a list but want a guarantee that the correct node is retrieved.
+   * Don't have worry about preserving ordering semantics.
+   */
+  map<uint32, Node> nodes = 1;
+  /**
+   * List[Pair[Src nid, Dst nid]]
+   * Map fields cannot be repeated so use an edge list instead.
+   */
+  repeated Edge edges = 2;
+}
+
+/**
+ * List of TDFG nodes (used to describe schedule).
+ */
+message TDFGNodeList { repeated TDFG.Node nodes = 1; }
