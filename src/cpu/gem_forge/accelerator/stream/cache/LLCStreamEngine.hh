@@ -445,6 +445,8 @@ private:
   void processSlices();
   SliceList::iterator processSlice(SliceList::iterator sliceIter);
   void processLoadComputeSlice(LLCDynStreamPtr dynS, LLCStreamSlicePtr slice);
+  void tryStartComputeLoadComputeSlice(LLCDynStreamPtr dynS,
+                                       LLCStreamSlicePtr slice);
   void processDirectAtomicSlice(LLCDynStreamPtr dynS,
                                 const DynStreamSliceId &sliceId);
   void processIndirectAtomicSlice(LLCDynStreamPtr dynS,
@@ -506,16 +508,20 @@ private:
    */
   std::list<LLCStreamElementPtr> readyComputations;
   struct InflyComputation {
-    LLCStreamElementPtr element;
+    LLCStreamElementPtr elem;
     StreamValue result;
     Cycles readyCycle;
-    InflyComputation(const LLCStreamElementPtr &_element,
+    InflyComputation(const LLCStreamElementPtr &_elem,
                      const StreamValue &_result, Cycles _readyCycle)
-        : element(_element), result(_result), readyCycle(_readyCycle) {}
+        : elem(_elem), result(_result), readyCycle(_readyCycle) {}
   };
+  int64_t numInflyRealCmps = 0;
   std::list<InflyComputation> inflyComputations;
-  void pushReadyComputation(LLCStreamElementPtr &element);
-  void pushInflyComputation(LLCStreamElementPtr &element,
+  void tryVectorizeElem(LLCStreamElementPtr &elem, bool tryVectorize);
+  void pushReadyComputation(LLCStreamElementPtr &elem,
+                            bool tryVectorize = false);
+  void skipComputation(LLCStreamElementPtr &elem);
+  void pushInflyComputation(LLCStreamElementPtr &elem,
                             const StreamValue &result, Cycles &latency);
   void recordComputationMicroOps(Stream *S);
   void startComputation();

@@ -2155,18 +2155,18 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
   newDirectConfig->pumContextId = context.contextId;
   newDirectConfig->pumElemPerSync = tileAlignedAtomicPat.getTotalTrip();
   newDirectConfig->waitPUMRoundStart = false; // By default wait on Complete.
-  newDirectConfig->hintNoStrandSplitOuterTripCount = 1;
+  newDirectConfig->hintNoStrandSplitOuterTrip = 1;
   if (!patInfo.splitOuterDims.empty()) {
     const auto &splitDims = patInfo.splitOuterDims.front();
     tileAlignedAtomicPat.params.insert(tileAlignedAtomicPat.params.end(),
                                        splitDims.params.begin(),
                                        splitDims.params.end());
-    newDirectConfig->hintNoStrandSplitOuterTripCount = splitDims.getTotalTrip();
+    newDirectConfig->hintNoStrandSplitOuterTrip = splitDims.getTotalTrip();
     MLC_S_DPRINTF(directConfig->dynamicId,
                   "[PUMReduce] TileAlignedPat Added SplitOuterDim %s -> %s "
                   "NoStrandSplitOuterTripCount %ld.\n",
                   splitDims, tileAlignedAtomicPat,
-                  newDirectConfig->hintNoStrandSplitOuterTripCount);
+                  newDirectConfig->hintNoStrandSplitOuterTrip);
   }
 
   auto addrGenFormalParams = this->convertAffinePatternToStreamFormalParams(
@@ -2399,9 +2399,9 @@ void MLCPUMManager::addPUMLoadStream(PUMContext &context,
    * If we have SplitOutDim, notify MLCStrandManager that streams should not
    * be splitted at these outer-dimensions.
    */
-  newSendConfig->hintNoStrandSplitOuterTripCount = 1;
+  newSendConfig->hintNoStrandSplitOuterTrip = 1;
   if (recvSplitOutDim.getTotalTrip() != 0) {
-    newSendConfig->hintNoStrandSplitOuterTripCount =
+    newSendConfig->hintNoStrandSplitOuterTrip =
         recvSplitOutDim.getTotalTrip();
   }
 

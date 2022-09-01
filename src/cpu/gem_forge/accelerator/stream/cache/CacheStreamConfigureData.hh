@@ -240,7 +240,7 @@ public:
    * Default value is 0, so that MLCStrandManager can choose how to split the
    * stream freely.
    */
-  int64_t hintNoStrandSplitOuterTripCount = 0;
+  int64_t hintNoStrandSplitOuterTrip = 0;
 
   /**
    * @brief Override the default latency. This is only an AdHoc solution to

@@ -389,6 +389,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_pum_enable_parallel_intra_array_shift,
                 stream_pum_enable_parallel_inter_array_shift=\
                     options.gem_forge_stream_pum_enable_parallel_inter_array_shift,
+                enable_stream_vectorize=\
+                    options.gem_forge_enable_stream_vectorize,
                 )
 
             exec("ruby_system.l2_cntrl%d = l2_cntrl"

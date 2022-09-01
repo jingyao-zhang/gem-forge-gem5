@@ -204,6 +204,8 @@ protected:
   void popOneSlice();
   bool popBlocked = false;
 
+  bool checkRecvDynSForPop(const DynStreamSliceId &sliceId);
+
   /**
    * These function checks if we are waiting for something.
    */

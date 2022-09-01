@@ -69,7 +69,7 @@ MLCDynStream::MLCDynStream(CacheStreamConfigureDataPtr _configData,
   }
 
   MLC_S_DPRINTF_(StreamRangeSync, this->getDynStrandId(),
-                 "MLCDynStream Constructor Done");
+                 "MLCDynStream Constructor Done.\n");
 }
 
 MLCDynStream::~MLCDynStream() {
@@ -177,6 +177,66 @@ void MLCDynStream::receiveStreamRequestHit(const DynStreamSliceId &sliceId) {
   this->advanceStream();
 }
 
+bool MLCDynStream::checkRecvDynSForPop(const DynStreamSliceId &sliceId) {
+
+  auto strandElemIdx = sliceId.getEndIdx();
+  auto streamElemIdx =
+      this->config->getStreamElemIdxFromStrandElemIdx(strandElemIdx);
+
+  for (const auto &dep : this->config->depEdges) {
+    if (dep.type != CacheStreamConfigureData::DepEdge::Type::SendTo) {
+      continue;
+    }
+
+    auto recvStreamElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
+        streamElemIdx, dep.reuse, dep.skip);
+
+    auto recvStrandId =
+        dep.data->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+    auto recvStrandElemIdx =
+        dep.data->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
+
+    auto remoteRecvS = LLCDynStream::getLLCStream(recvStrandId);
+    if (!remoteRecvS) {
+      MLC_S_PANIC(this->getDynStrandId(), "LLCRecvDynS already released: %s.",
+                  recvStrandId);
+    }
+
+    auto recvInitStrandElemIdx = remoteRecvS->getNextInitElementIdx();
+
+    if (recvInitStrandElemIdx >= recvStrandElemIdx) {
+      continue;
+    }
+
+    /**
+     * The RecvDynS has not allocated this yet.
+     */
+    auto se = this->controller->getMLCStreamEngine();
+    auto dynId = this->getDynStrandId();
+    auto elemInitCallback = [se, dynId](const DynStreamId &dynStreamId,
+                                        uint64_t elementIdx) -> void {
+      if (auto dynS = se->getStreamFromStrandId(dynId)) {
+        dynS->popBlocked = false;
+        dynS->scheduleAdvanceStream();
+      } else {
+        // This MLC stream already released.
+      }
+    };
+    this->popBlocked = true;
+    MLC_SLICE_DPRINTF(sliceId,
+                      "[DelayPop] RecvElemIdx MLC %lu(%lu) -> LLC %s%lu-%lu > "
+                      "%lu. RegisterCB at %lu\n",
+                      strandElemIdx, streamElemIdx, recvStrandId,
+                      recvStrandElemIdx, recvStreamElemIdx,
+                      recvInitStrandElemIdx, recvStrandElemIdx);
+    remoteRecvS->registerElementInitCallback(recvStrandElemIdx,
+                                             elemInitCallback);
+    return false;
+  }
+
+  return true;
+}
+
 bool MLCDynStream::tryPopStream() {
   /**
    * So far we don't have a synchronization scheme between MLC and LLC if there
@@ -193,11 +253,6 @@ bool MLCDynStream::tryPopStream() {
 
   uint64_t remoteDynISProgressElemIdx = UINT64_MAX;
   // LLCDynStreamPtr llcDynISLeastProgress = nullptr;
-
-  uint64_t remoteRecvProgressAdjustedElemIdx = UINT64_MAX;
-  int remoteRecvReuse = 1;
-  int remoteRecvSkip = 0;
-  LLCDynStreamPtr remoteRecvLeastProgress = nullptr;
 
   if (this->isMLCDirect && !this->shouldRangeSync() &&
       this->controller->isStreamIdeaMLCPopCheckEnabled()) {
@@ -231,50 +286,6 @@ bool MLCDynStream::tryPopStream() {
 
         remoteDynISProgressElemIdx = unreleasedElementIdx + dynISElementOffset;
         // llcDynISLeastProgress = llcDynIS;
-      }
-    }
-
-    for (const auto &dep : this->config->depEdges) {
-      if (dep.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
-
-        /**
-         * TODO: [Strand] Here we assume SendTo relationship between strands has
-         * the same StrandIdx. This may not be the case and need to be fixed.
-         */
-        assert(this->getDynStrandId().totalStrands == dep.data->totalStrands &&
-               "SendTo between different TotalStrands.");
-        DynStrandId recvStrandId(dep.data->dynamicId,
-                                 this->getDynStrandId().strandIdx,
-                                 this->getDynStrandId().totalStrands);
-
-        auto remoteRecvS = LLCDynStream::getLLCStream(recvStrandId);
-        if (!remoteRecvS) {
-          MLC_S_PANIC(this->getDynStrandId(),
-                      "LLCReceiver already released: %s.", recvStrandId);
-        }
-
-        auto recvInitElemIdx = remoteRecvS->getNextInitElementIdx();
-        auto adjustedRecvInitElemIdx =
-            CacheStreamConfigureData::convertDepToBaseElemIdx(
-                recvInitElemIdx, dep.reuse, dep.skip);
-        if (dep.reuse != 1 || dep.skip != 0) {
-          MLC_S_DPRINTF(
-              this->getDynStrandId(),
-              "[Forward] Adjust RecvElemIdx %lu by Reuse %d Skip %d = %lu.\n",
-              recvInitElemIdx, dep.reuse, dep.skip, adjustedRecvInitElemIdx);
-        }
-
-        if (adjustedRecvInitElemIdx < remoteRecvProgressAdjustedElemIdx) {
-
-          MLC_S_DPRINTF(this->getDynStrandId(),
-                        "Smaller SendTo %s InitElemIdx %lu Adjusted %lu.\n",
-                        recvStrandId, recvInitElemIdx, adjustedRecvInitElemIdx);
-
-          remoteRecvProgressAdjustedElemIdx = adjustedRecvInitElemIdx;
-          remoteRecvLeastProgress = remoteRecvS;
-          remoteRecvReuse = dep.reuse;
-          remoteRecvSkip = dep.skip;
-        }
       }
     }
   }
@@ -327,29 +338,8 @@ bool MLCDynStream::tryPopStream() {
       break;
     }
 
-    if (mlcHeadSliceEndElemIdx > remoteRecvProgressAdjustedElemIdx) {
-      auto se = this->controller->getMLCStreamEngine();
-      auto dynId = this->getDynStrandId();
-      auto elemInitCallback = [se, dynId](const DynStreamId &dynStreamId,
-                                          uint64_t elementIdx) -> void {
-        if (auto dynS = se->getStreamFromStrandId(dynId)) {
-          dynS->popBlocked = false;
-          dynS->scheduleAdvanceStream();
-        } else {
-          // This MLC stream already released.
-        }
-      };
-      this->popBlocked = true;
-      auto mlcHeadSliceEndElemIdxAtRecv =
-          CacheStreamConfigureData::convertBaseToDepElemIdx(
-              mlcHeadSliceEndElemIdx, remoteRecvReuse, remoteRecvSkip);
-      MLC_SLICE_DPRINTF(
-          slice.sliceId,
-          "[DelayPop] RecvElemIdx MLC %lu > LLC %lu. RegisterCB at %lu\n",
-          mlcHeadSliceEndElemIdx, remoteRecvProgressAdjustedElemIdx,
-          mlcHeadSliceEndElemIdxAtRecv);
-      remoteRecvLeastProgress->registerElementInitCallback(
-          mlcHeadSliceEndElemIdxAtRecv, elemInitCallback);
+    if (!this->checkRecvDynSForPop(slice.sliceId)) {
+      assert(this->popBlocked && "Should be blocked by RecvS.");
       break;
     }
 

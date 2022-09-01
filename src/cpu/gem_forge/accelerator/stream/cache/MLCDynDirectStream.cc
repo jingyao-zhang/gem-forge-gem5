@@ -33,8 +33,6 @@ MLCDynDirectStream::MLCDynDirectStream(
                           _controller->getMLCStreamBufferToSegmentRatio())),
       indirectStreams(_indirectStreams) {
 
-  MLC_S_DPRINTF(this->getDynStreamId(), "MLCDynDirectStream complete 0\n");
-
   /**
    * Initialize the LLC bank.
    * Be careful that for MidwayFloat, we reset the InitPAddr.
@@ -59,8 +57,6 @@ MLCDynDirectStream::MLCDynDirectStream(
     }
     _configData->initPAddr = paddr;
   }
-
-  MLC_S_DPRINTF(this->getDynStreamId(), "MLCDynDirectStream complete 1\n");
 
   this->tailPAddr = _configData->initPAddr;
 
@@ -108,8 +104,6 @@ MLCDynDirectStream::MLCDynDirectStream(
         originalMaxNumSlicesPerSegment, maxRatio, this->maxNumSlicesPerSegment);
   }
 
-  MLC_S_DPRINTF(this->getDynStreamId(), "MLCDynDirectStream complete 2\n");
-
   /**
    * If this comes with IndirectAtomicComputeStream with RangeSync and
    * CoreIssue, we limit the run ahead length.
@@ -136,22 +130,29 @@ MLCDynDirectStream::MLCDynDirectStream(
     }
   }
 
-  MLC_S_DPRINTF(this->getDynStreamId(), "MLCDynDirectStream complete 3\n");
-
   while (this->tailSliceIdx < this->maxNumSlicesPerSegment &&
          !this->slicedStream.hasOverflowed()) {
     this->allocateSlice();
   }
 
+  /**
+   * We try not to send initial credits, but rely on trySendCredit().
+   * This is because after spliting streams into strands, it's possible
+   * that for initial strands, the RecvStrandElem is not initialized.
+   */
+
   // Intialize the first segment.
-  this->pushNewLLCSegment(_configData->initPAddr, this->headSliceIdx);
-  this->llcSegments.push_back(this->llcSegmentsAllocated.front());
-  this->llcSegmentsAllocated.pop_front();
-  this->llcSegments.back().state = LLCSegmentPosition::State::CREDIT_SENT;
+  if (this->tailSliceIdx > 0) {
+    this->pushNewLLCSegment(_configData->initPAddr, this->headSliceIdx);
+    // this->llcSegments.push_back(this->llcSegmentsAllocated.front());
+    // this->llcSegmentsAllocated.pop_front();
+    // this->llcSegments.back().state = LLCSegmentPosition::State::CREDIT_SENT;
+  }
 
   // Set the CacheStreamConfigureData to inform the LLC stream engine
   // initial credit.
-  _configData->initCreditedIdx = this->tailSliceIdx;
+  _configData->initCreditedIdx = 0;
+  // _configData->initCreditedIdx = this->tailSliceIdx;
 
   MLC_S_DPRINTF(this->strandId, "InitAllocatedSlice %d overflowed %d.\n",
                 this->tailSliceIdx, this->slicedStream.hasOverflowed());
@@ -811,7 +812,7 @@ void MLCDynDirectStream::allocateLLCSegment() {
    * and thus there is no previous segment for us to built on.
    * See the pushNewLLCSegment() in the constructor.
    */
-  if (this->llcSegments.empty()) {
+  if (this->llcSegments.empty() && this->llcSegmentsAllocated.empty()) {
     return;
   }
 
@@ -859,7 +860,9 @@ void MLCDynDirectStream::pushNewLLCSegment(Addr startPAddr,
   segment.state = LLCSegmentPosition::State::ALLOCATED;
 
   this->nextSegmentSliceIds.clear();
-  assert(!segment.sliceIds.sliceIds.empty() && "Empty segment.");
+  if (segment.sliceIds.sliceIds.empty()) {
+    MLC_S_PANIC(this->getDynStrandId(), "Push Empty MLC Segment.");
+  }
   MLC_S_DPRINTF_(StreamRangeSync, this->getDynStrandId(),
                  "[Commit] Push new LLC segment SliceIdx [%llu, %llu) "
                  "StrandElemIdx [%llu, %llu) TripCount %ld.\n",
@@ -1084,10 +1087,20 @@ MLCDynDirectStream::getRemoteTailPAddrAndMachineType() const {
     return std::make_pair(this->llcStreamLoopBoundBrokenPAddr,
                           this->llcStreamLoopBoundBrokenMachineType);
   } else {
-    const auto &lastSegment = this->getLastLLCSegment();
-    auto endElemIdx = lastSegment.endSliceId.getStartIdx();
-    auto endElemMachineType =
-        this->config->floatPlan.getMachineTypeAtElem(endElemIdx);
-    return std::make_pair(lastSegment.endPAddr, endElemMachineType);
+
+    Addr endPAddr = config->initPAddr;
+    MachineType endMachineType = MachineType_L2Cache;
+
+    if (this->getTailSliceIdx() > 0) {
+      const auto &lastSegment = this->getLastLLCSegment();
+      auto endElemIdx = lastSegment.endSliceId.getStartIdx();
+      endPAddr = lastSegment.endPAddr;
+      endMachineType = this->config->floatPlan.getMachineTypeAtElem(endElemIdx);
+    }
+    {
+      // We haven't allocate any slice.
+    }
+
+    return std::make_pair(endPAddr, endMachineType);
   }
 }

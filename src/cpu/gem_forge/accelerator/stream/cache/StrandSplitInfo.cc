@@ -6,26 +6,27 @@
 
 #include <cassert>
 
-StrandSplitInfo::StrandSplitInfo(uint64_t _initOffset, uint64_t _interleave,
-                                 uint64_t _totalStrands)
+StrandSplitInfo::StrandSplitInfo(int64_t _initOffset, int64_t _interleave,
+                                 int64_t _tailInterleave, int64_t _totalStrands)
     : initOffset(_initOffset), interleave(_interleave),
-      totalStrands(_totalStrands) {
+      tailInterleave(_tailInterleave), totalStrands(_totalStrands) {
+  assert(initOffset == 0 && "InitOffset must be zero for now.");
   assert(initOffset < interleave && "InitOffset >= Interleave.");
+  assert(tailInterleave < interleave * totalStrands &&
+         "TailInterleave >= Interleave * totalStrands.");
 }
 
 StrandElemSplitIdx
 StrandSplitInfo::mapStreamToStrand(StreamElemIdx streamElemIdx) const {
-  auto adjStreamElemIdx = streamElemIdx + this->initOffset;
-  auto strandIdx = (adjStreamElemIdx / this->interleave) % totalStrands;
-  auto strandElemIdx =
-      (adjStreamElemIdx / (this->totalStrands * this->interleave)) *
-          this->interleave +
-      adjStreamElemIdx % interleave;
-  if (strandIdx == 0) {
-    assert(strandElemIdx >= initOffset &&
-           "First strand should start with initOffset.");
-    strandElemIdx -= this->initOffset;
-  }
+
+  auto elemPerRound = this->getElemPerRound();
+  auto roundIdx = streamElemIdx / elemPerRound;
+  auto roundElemIdx = streamElemIdx % elemPerRound;
+
+  auto strandIdx = roundElemIdx / interleave;
+  auto strandRoundElem = this->getElemPerStrandRound(strandIdx);
+  auto strandElemIdx = roundIdx * strandRoundElem + roundElemIdx % interleave;
+
   return StrandElemSplitIdx(strandIdx, strandElemIdx);
 }
 
@@ -33,37 +34,38 @@ StrandSplitInfo::StreamElemIdx
 StrandSplitInfo::mapStrandToStream(StrandElemSplitIdx strandElemSplit) const {
   auto strandIdx = strandElemSplit.strandIdx;
   auto strandElemIdx = strandElemSplit.elemIdx;
-  if (strandIdx == 0) {
-    strandElemIdx += this->initOffset;
+  auto elemPerRound = this->getElemPerRound();
+  auto strandRoundElem = this->getElemPerStrandRound(strandIdx);
+  if (strandRoundElem == 0) {
+    // This strand is empty.
+    return 0;
   }
-  auto streamElemIdx = (strandElemIdx / this->interleave) *
-                           (this->totalStrands * this->interleave) +
-                       strandIdx * this->interleave +
-                       strandElemIdx % this->interleave;
-  assert(streamElemIdx >= this->initOffset && "StreamElemIdx < InitOffset.");
-  streamElemIdx -= this->initOffset;
+  auto roundIdx = strandElemIdx / strandRoundElem;
+  auto roundElemIdx = strandIdx * interleave + strandElemIdx % strandRoundElem;
+  auto streamElemIdx = roundIdx * elemPerRound + roundElemIdx;
   return streamElemIdx;
 }
 
 StrandSplitInfo::TripCount
 StrandSplitInfo::getStrandTripCount(TripCount streamTripCount,
                                     StrandIdx strandIdx) const {
+  auto elemPerRound = this->getElemPerRound();
+  auto strandRoundElem = this->getElemPerStrandRound(strandIdx);
   auto strandElemSplit = this->mapStreamToStrand(streamTripCount);
   auto finalStrandIdx = strandElemSplit.strandIdx;
   auto finalStrandElemIdx = strandElemSplit.elemIdx;
+  auto finalRoundIdx = streamTripCount / elemPerRound;
+
   auto tripCount = finalStrandElemIdx;
+  if (strandIdx < finalStrandIdx) {
+    tripCount = (finalRoundIdx + 1) * strandRoundElem;
+  } else if (strandIdx > finalStrandIdx) {
+    tripCount = finalRoundIdx * strandRoundElem;
+  }
   DPRINTF(MLCRubyStrandSplit,
           "StreamTrip %ld StrandIdx %d FinalStrandIdx %d "
-          "FinalStrandElemIdx %lu.\n",
-          streamTripCount, strandIdx, finalStrandIdx, finalStrandElemIdx);
-  if (strandIdx < finalStrandIdx) {
-    tripCount = (finalStrandElemIdx / this->interleave + 1) * this->interleave;
-    if (strandIdx == 0) {
-      assert(tripCount > this->initOffset && "TripCount <= InitOffset.");
-      tripCount -= this->initOffset;
-    }
-  } else if (strandIdx > finalStrandIdx) {
-    tripCount = (finalStrandElemIdx / this->interleave) * this->interleave;
-  }
+          "FinalStrandElemIdx %lu TripCount %lu.\n",
+          streamTripCount, strandIdx, finalStrandIdx, finalStrandElemIdx,
+          tripCount);
   return tripCount;
 }

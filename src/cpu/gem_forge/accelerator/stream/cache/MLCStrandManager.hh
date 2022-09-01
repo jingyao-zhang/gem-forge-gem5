@@ -66,12 +66,17 @@ private:
    * @brief States during splitting streams into strands.
    */
   struct StrandSplitContext {
-    int64_t noSplitOuterTripCount = 0;
+    int64_t noSplitOuterTrip = 0;
     int totalStrands = 1;
     // We allow each stream to have specific interleaving.
     struct ContextPerStream {
       int splitDim = 0;
+      int innerTrip = 0;
+      int outerTrip = 0;
       int splitInterleave = 0;
+      int splitTailInterleave = 0;
+      std::vector<int64_t> trips;
+      std::vector<int64_t> strides;
     };
     std::map<DynStreamId, ContextPerStream> perStreamContext;
   };
@@ -81,7 +86,12 @@ private:
    */
   bool canSplitIntoStrands(StrandSplitContext &context,
                            const ConfigVec &configs) const;
-  bool canSplitIntoStrands(StrandSplitContext &context, ConfigPtr config) const;
+  bool precheckSplitable(StrandSplitContext &context, ConfigPtr config) const;
+  bool chooseSplitDimIntrlv(StrandSplitContext &context,
+                            ConfigPtr config) const;
+  bool fixSplitDimIntrlv(StrandSplitContext &context,
+                         const ConfigVec &configs) const;
+  bool postcheckSplitable(StrandSplitContext &context, ConfigPtr config) const;
   void splitIntoStrands(StrandSplitContext &context, ConfigVec &configs);
   ConfigVec splitIntoStrands(StrandSplitContext &context, ConfigPtr config);
   ConfigVec splitIntoStrandsImpl(StrandSplitContext &context, ConfigPtr config,

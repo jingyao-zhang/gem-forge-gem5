@@ -121,6 +121,10 @@ CacheStreamConfigureData::splitLinearParam1D(const StrandSplitInfo &strandSplit,
   auto totalStrands = strandSplit.totalStrands;
   auto strandTripCount = strandSplit.getStrandTripCount(tripCount, strandIdx);
 
+  if (strandTripCount >= interleave) {
+    assert(strandTripCount % interleave == 0);
+  }
+
   auto strandStart = start + strandIdx * interleave * stride;
   auto strandStride = totalStrands * interleave * stride;
 
@@ -133,16 +137,24 @@ CacheStreamConfigureData::splitLinearParam1D(const StrandSplitInfo &strandSplit,
     strandParams.back().invariant.uint64() = x;                                \
   }
   addStrandParam(stride);
-  addStrandParam(interleave);
+  if (strandTripCount < interleave) {
+    addStrandParam(strandTripCount);
+  } else {
+    addStrandParam(interleave);
+  }
   addStrandParam(strandStride);
   addStrandParam(strandTripCount);
   addStrandParam(strandStart);
-  hack("Split 1D Continuous %s.\n", this->dynamicId);
-  hack("start %#x stride %d tripCount %llu.\n", start, stride, tripCount);
-  hack("interleave %d initOffset %d totalStrands %llu.\n", interleave,
-       strandSplit.initOffset, totalStrands);
-  hack("strandStart %#x strandStride %d strandTripCount %lu.\n", strandStart,
-       strandStride, strandTripCount);
+  DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId, "Split 1D Continuous.\n");
+  DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId,
+                 "start %#x stride %d tripCount %llu.\n", start, stride,
+                 tripCount);
+  DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId,
+                 "interleave %d initOffset %d totalStrands %llu.\n", interleave,
+                 strandSplit.initOffset, totalStrands);
+  DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId,
+                 "strandStart %#x strandStride %d strandTripCount %lu.\n",
+                 strandStart, strandStride, strandTripCount);
 
   return strandParams;
 }
@@ -202,11 +214,11 @@ DynStreamFormalParamV CacheStreamConfigureData::splitAffinePatternAtDim(
     innerTrip *= trips.at(i);
   }
   assert(interleave % innerTrip == 0);
-  auto interleaveTrip = interleave / innerTrip;
-  auto totalInterleaveTrip = interleaveTrip * totalStrands;
+  auto intrlvTrip = interleave / innerTrip;
+  auto totalIntrlvTrip = intrlvTrip * totalStrands;
 
   auto start = params.back().invariant.uint64();
-  auto strandStart = start + strandIdx * splitDimStride * interleaveTrip;
+  auto strandStart = start + strandIdx * splitDimStride * intrlvTrip;
 
   // Copy the original params.
   DynStreamFormalParamV strandParams = this->addrGenFormalParams;
@@ -237,34 +249,37 @@ DynStreamFormalParamV CacheStreamConfigureData::splitAffinePatternAtDim(
   setStart(strandStart);
 
   int64_t splitOutTrip = 1;
+  int64_t splitTrip = intrlvTrip;
 
-  if (totalInterleaveTrip <= splitDimTrip) {
-    // Adjust the trip count at the SplitDim.
-    setTrip(splitDim, interleaveTrip * innerTrip);
+  DYN_S_DPRINTF_(
+      MLCRubyStrandSplit, this->dynamicId,
+      "Intrlv %d IntrlvTrip %d SplitDimTrip %d TotalStrands %d Pat %s.\n",
+      interleave, intrlvTrip, splitDimTrip, totalStrands,
+      printAffinePatternParams(this->addrGenFormalParams));
 
+  if (totalIntrlvTrip <= splitDimTrip) {
     // Compute the SplitOutTrip.
-    auto remainderTrip = splitDimTrip % totalInterleaveTrip;
-    assert(remainderTrip % interleaveTrip == 0);
-    auto splitOutTripRemainder =
-        (strandIdx < (remainderTrip / interleaveTrip)) ? 1 : 0;
-    splitOutTrip = splitDimTrip / totalInterleaveTrip + splitOutTripRemainder;
+    auto remainderTrip = splitDimTrip % totalIntrlvTrip;
+    if (remainderTrip % intrlvTrip != 0) {
+      if (splitDim + 1 != trips.size()) {
+        DYN_S_PANIC(this->dynamicId,
+                    "Cannot handle remainderTrip %ld % intrlvTrip %ld != 0.",
+                    remainderTrip, intrlvTrip);
+      }
+    }
+    auto remainderStrandIdx = (remainderTrip + intrlvTrip - 1) / intrlvTrip;
+    auto splitOutTripRemainder = (strandIdx < remainderStrandIdx) ? 1 : 0;
+    splitOutTrip = splitDimTrip / totalIntrlvTrip + splitOutTripRemainder;
 
   } else {
-    if (totalInterleaveTrip >= splitDimTrip + interleaveTrip) {
-      // Only the last strand can have partial interleavs.
-      panic(
-          "Interleave %d InterleaveTrip %d SplitDimTrip %d TotalStrands %d Pat "
-          "%s.\n",
-          interleave, interleaveTrip, splitDimTrip, totalStrands,
-          printAffinePatternParams(this->addrGenFormalParams));
-    }
-    // Be careful with the last Strand.
-    auto lastStrandInterleaveTrip =
-        splitDimTrip - interleaveTrip * (totalStrands - 1);
-    if (strandIdx + 1 == totalStrands) {
-      setTrip(splitDim, lastStrandInterleaveTrip * innerTrip);
-    } else {
-      setTrip(splitDim, interleaveTrip * innerTrip);
+    /**
+     * Strands beyond FinalStrandIdx would have no trip count.
+     */
+    auto finalStrandIdx = splitDimTrip / intrlvTrip;
+    if (strandIdx == finalStrandIdx) {
+      splitTrip = splitDimTrip - finalStrandIdx * intrlvTrip;
+    } else if (strandIdx > finalStrandIdx) {
+      splitTrip = 0;
     }
 
     // In this case, SplitOutDimTrip is always 1.
@@ -272,9 +287,10 @@ DynStreamFormalParamV CacheStreamConfigureData::splitAffinePatternAtDim(
   }
 
   // Adjust the SplitOutDim.
-  setStride(splitDim + 1, splitDimStride * totalInterleaveTrip);
+  setTrip(splitDim, splitTrip * innerTrip);
+  setStride(splitDim + 1, splitDimStride * totalIntrlvTrip);
   assert(splitOutTrip > 0);
-  setTrip(splitDim + 1, splitOutTrip * interleaveTrip * innerTrip);
+  setTrip(splitDim + 1, splitOutTrip * splitTrip * innerTrip);
 
   // We need to fix all upper dimension's trip count.
   for (int dim = splitDim + 2; dim < trips.size() + 1; ++dim) {

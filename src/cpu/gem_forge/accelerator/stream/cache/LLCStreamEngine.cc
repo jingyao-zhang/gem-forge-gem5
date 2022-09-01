@@ -129,7 +129,9 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   S->remoteConfigured(this->controller);
 
   // Add the initial credits.
-  S->addCredit(streamConfigureData->initCreditedIdx);
+  if (streamConfigureData->initCreditedIdx > 0) {
+    S->addCredit(streamConfigureData->initCreditedIdx);
+  }
 
   // Remember the stream to the CommitController if we have that.
   if (S->shouldRangeSync()) {
@@ -342,9 +344,11 @@ void LLCStreamEngine::enqueueIncomingStreamDataMsg(
   }
   this->incomingStreamDataQueue.emplace(iter.base(), readyCycle, paddrLine,
                                         sliceId, dataBlock, storeValueBlock);
+  LLC_SLICE_DPRINTF(sliceId, "[IncomingElemQueue] Enqueued %lu.\n",
+                    this->incomingStreamDataQueue.size());
   // Some sanity check.
-  if (this->incomingStreamDataQueue.size() > 1000) {
-    LLC_SLICE_PANIC(sliceId, "IncomingElementDataQueue overflow.");
+  if (this->incomingStreamDataQueue.size() > 2048) {
+    LLC_SLICE_PANIC(sliceId, "[IncomingElemQueue] overflow.");
   }
 }
 
@@ -479,7 +483,7 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
   if (!dynS->getIndStreams().empty()) {
     for (auto &idxElement : dynS->idxToElementMap) {
       auto &element = idxElement.second;
-      LLC_SLICE_DPRINTF(sliceId, "Process for element %llu, Ready %d.\n",
+      LLC_SLICE_DPRINTF(sliceId, "Process for elem %llu, Ready %d.\n",
                         element->idx, element->isReady());
       if (element->hasIndirectTriggered()) {
         continue;
@@ -1323,7 +1327,7 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
    */
   if (dynS->inflyRequests == dynS->getMaxInflyRequests()) {
     LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynS->getDynStrandId(),
-                   "[Not Issue] MaxInflyRequests %d.\n",
+                   "[Not Issue] MaxInflyReqs %d.\n",
                    dynS->getMaxInflyRequests());
     statistic.sampleLLCStreamEngineIssueReason(
         StreamStatistic::LLCStreamEngineIssueReason::MaxInflyRequest);
@@ -1386,23 +1390,30 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
     const auto &nextSliceId = nextSlice->getSliceId();
     if (S->isStoreComputeStream()) {
       /**
-       * Schedule computation and check if StoreValue of this slice
-       * is ready.
+       * Try to schedule compuation for each slice.
+       * This is to break the limitation that only one StoreComputeSlice is
+       * scheduled at one time.
        */
       for (auto iter = dynS->idxToElementMap.find(nextSliceId.getStartIdx()),
                 end = dynS->idxToElementMap.end();
            iter != end; ++iter) {
-        auto &element = iter->second;
-        Addr paddr;
-        assert(dynS->translateToPAddr(element->vaddr, paddr) &&
-               "Failed to translate for DirectStoreComputeStream.");
-        auto elementMachineType = dynS->getFloatMachineTypeAtElem(element->idx);
-        if (!this->isPAddrHandledByMe(paddr, elementMachineType)) {
-          // This element is not handled here.
-          break;
+        auto &elem = iter->second;
+        /**
+         * If the element is from next slice, we need to check that it's handled
+         * here.
+         */
+        if (elem->idx >= nextSliceId.getEndIdx()) {
+          Addr paddr;
+          assert(dynS->translateToPAddr(elem->vaddr, paddr) &&
+                 "Failed to translate for DirectStoreComputeStream.");
+          auto elementMachineType = dynS->getFloatMachineTypeAtElem(elem->idx);
+          if (!this->isPAddrHandledByMe(paddr, elementMachineType)) {
+            // This element is not handled here.
+            break;
+          }
         }
-        if (!element->isReady()) {
-          if (!element->areBaseElemsReady() ||
+        if (!elem->isReady()) {
+          if (!elem->areBaseElemsReady() ||
               dynS->incompleteComputations >=
                   this->controller->myParams
                       ->llc_stream_engine_max_infly_computation) {
@@ -1410,25 +1421,20 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
             // computations equals to the LLC SE throughput.
             break;
           }
-          if (element->areBaseElemsReady() &&
-              !element->isComputationScheduled()) {
-            this->pushReadyComputation(element);
+          if (elem->areBaseElemsReady() && !elem->isComputationScheduled()) {
+            this->pushReadyComputation(elem, true /* TryVectorize */);
           }
         }
       }
       for (auto idx = nextSliceId.getStartIdx(); idx < nextSliceId.getEndIdx();
            ++idx) {
-        auto element = dynS->getElemPanic(idx, "Check StoreValue Ready.");
-        // Simply schedule the computation.
-        if (!element->isReady()) {
-          if (element->areBaseElemsReady() &&
-              !element->isComputationScheduled()) {
-            this->pushReadyComputation(element);
-          }
+        auto elem = dynS->getElemPanic(idx, "Check StoreValue Ready.");
+        // Check if the element is ready.
+        if (!elem->isReady()) {
           LLC_SLICE_DPRINTF_(
               LLCRubyStreamNotIssue, nextSliceId,
               "StoreValue from Elem %llu not ready, delay issuing.\n", idx);
-          if (!element->areBaseElemsReady()) {
+          if (!elem->areBaseElemsReady()) {
             statistic.sampleLLCStreamEngineIssueReason(
                 StreamStatistic::LLCStreamEngineIssueReason::BaseValueNotReady);
           } else {
@@ -1463,7 +1469,7 @@ LLCStreamEngine::findIndirectStreamReadyToIssue(LLCDynStreamPtr dynS) {
     // Enforce the per stream maxInflyRequests constraint.
     if (dynIS->inflyRequests == dynIS->getMaxInflyRequests()) {
       LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynIS->getDynStrandId(),
-                     "[NotIssue] MaxInflyRequests %d.\n",
+                     "[NotIssue] MaxInflyReqs %d.\n",
                      dynIS->getMaxInflyRequests());
       IS->statistic.sampleLLCStreamEngineIssueReason(
           StreamStatistic::LLCStreamEngineIssueReason::MaxInflyRequest);
@@ -2332,9 +2338,8 @@ void LLCStreamEngine::issueStreamDataToLLC(
         recvConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
     LLC_SLICE_DPRINTF(
         sliceId,
-        "[LLCForward] SendStrandElemIdx %lu SendStreamElemIdx %lu Reuse %ld "
-        "Skip %ld -> RecvStreamElemIdx %lu RecvStrand %s RecvStrandElemIdx "
-        "%lu.\n",
+        "[LLCFwd] SendStrandElemIdx %lu SendStreamElemIdx %lu R/S %ld/%ld -> "
+        "RecvStreamElemIdx %lu RecvStrand %s RecvStrandElemIdx %lu.\n",
         sendStrandElemIdx, sendStreamElemIdx, sendToEdge.reuse, sendToEdge.skip,
         recvStreamElemIdx, recvStrandId, recvStrandElemIdx);
   }
@@ -2832,8 +2837,8 @@ void LLCStreamEngine::processStreamForwardRequest(const RequestMsg &req) {
    */
   auto sendCycle = this->controller->ticksToCycles(req.getTime());
   auto latency = this->curCycle() - sendCycle;
-  LLC_SLICE_DPRINTF(sliceId, "[Forward] Received by %s. Latency %llu.\n",
-                    recvDynId, latency);
+  LLC_SLICE_DPRINTF(sliceId, "[Fwd] Received by %s. Latency %llu.\n", recvDynId,
+                    latency);
   if (auto sender = LLCDynStream::getLLCStream(sliceId.getDynStrandId())) {
     sender->getStaticS()->statistic.remoteForwardNoCDelay.sample(latency);
   }
@@ -2987,27 +2992,37 @@ void LLCStreamEngine::triggerIndirectElem(LLCDynStreamPtr stream,
      * iteration i + 1. Also we should be careful to not overflow the
      * boundary.
      */
-    auto indirectElemIdx = idx;
+    auto indElemIdx = idx;
     if (IS->isOneIterationBehind()) {
-      indirectElemIdx = idx + 1;
+      indElemIdx = idx + 1;
     }
-    if (IS->hasTotalTripCount() && indirectElemIdx > IS->getTotalTripCount()) {
+    if (IS->hasTotalTripCount() && indElemIdx > IS->getTotalTripCount()) {
       // Ignore overflow elements.
-      LLC_ELEMENT_DPRINTF(elem,
-                          "[TriggerInd] Skip IS %s TotalTripCount "
-                          "%lld < ElemIdx %llu.\n",
-                          IS->getDynStrandId(), IS->getTotalTripCount(),
-                          indirectElemIdx);
+      LLC_ELEMENT_DPRINTF(
+          elem, "[TriggerInd] Skip IS %s TotalTripCount %ld < ElemIdx %lu.\n",
+          IS->getDynStrandId(), IS->getTotalTripCount(), indElemIdx);
       continue;
     }
 
-    // We should have the element.
-    if (!IS->idxToElementMap.count(indirectElemIdx)) {
-      LLC_S_PANIC(IS->getDynStrandId(), "Missing IndirectElement %llu.",
-                  indirectElemIdx);
+    /**
+     * We should have the indirect element. The only exception is the vectorized
+     * reduction stream.
+     */
+    if (!IS->idxToElementMap.count(indElemIdx)) {
+
+      if (IS->getStaticS()->isReduction() &&
+          IS->lastComputedReductionElemIdx >= indElemIdx) {
+        LLC_ELEMENT_DPRINTF(
+            elem,
+            "[TriggerInd] Skip ReduceS %s LastComputedElemIdx %lu > %lu.\n",
+            IS->getDynStrandId(), IS->lastComputedReductionElemIdx, indElemIdx);
+        continue;
+      }
+
+      LLC_S_PANIC(IS->getDynStrandId(), "Missing IndElem %llu.", indElemIdx);
     }
 
-    auto &indirectElem = IS->idxToElementMap.at(indirectElemIdx);
+    auto &indElem = IS->idxToElementMap.at(indElemIdx);
 
     /**
      * Check if the stream has predication.
@@ -3024,21 +3039,23 @@ void LLCStreamEngine::triggerIndirectElem(LLCDynStreamPtr stream,
                     "Reduction/StoreCompute.");
       }
     }
-    LLC_S_DPRINTF(IS->getDynStrandId(),
-                  "Check if element %llu BaseElemReady %d.\n",
-                  indirectElem->idx, indirectElem->areBaseElemsReady());
-    if (indirectElem->areBaseElemsReady()) {
+    LLC_ELEMENT_DPRINTF(indElem, "Check if BaseElemReady %d.\n",
+                        indElem->areBaseElemsReady());
+    if (indElem->areBaseElemsReady()) {
       if (IS->getStaticS()->isReduction() ||
           IS->getStaticS()->isPointerChaseIndVar()) {
-        // Reduction now is handled as computation.
-        this->pushReadyComputation(indirectElem);
+        if (indElem->isComputationScheduled() || indElem->isComputationDone()) {
+        } else {
+          // Reduction now is handled as computation.
+          this->pushReadyComputation(indElem);
+        }
       } else {
-        IS->markElementReadyToIssue(indirectElemIdx);
+        IS->markElementReadyToIssue(indElemIdx);
       }
     } else {
-      for (const auto &baseE : indirectElem->baseElements) {
-        LLC_S_DPRINTF(IS->getDynStrandId(), "BaseElements Ready %d %s %llu.\n",
-                      baseE->isReady(), baseE->strandId, baseE->idx);
+      for (const auto &baseE : indElem->baseElements) {
+        LLC_ELEMENT_DPRINTF(indElem, "BaseElements Ready %d %s %llu.\n",
+                            baseE->isReady(), baseE->strandId, baseE->idx);
       }
     }
   }
@@ -3406,19 +3423,35 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
   return this->releaseSlice(sliceIter);
 }
 
+void LLCStreamEngine::tryStartComputeLoadComputeSlice(LLCDynStreamPtr dynS,
+                                                      LLCStreamSlicePtr slice) {
+  const auto &sliceId = slice->getSliceId();
+  for (auto elemIdx = sliceId.getStartIdx(); elemIdx < sliceId.getEndIdx();
+       ++elemIdx) {
+    auto elem = dynS->getElemPanic(elemIdx, "StartComputeLoadComputeSlice");
+    if (!elem->isReady()) {
+      continue;
+    }
+    if (elem->isComputationScheduled()) {
+      continue;
+    }
+    if (elem->isComputedValueReady()) {
+      continue;
+    }
+    this->pushReadyComputation(elem, true /* tryVectorize */);
+  }
+}
+
 void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
                                               LLCStreamSlicePtr slice) {
+  this->tryStartComputeLoadComputeSlice(dynS, slice);
+
   const auto &sliceId = slice->getSliceId();
-  // Schedule the computation.
   bool allLoadComputeValueReady = true;
-  for (auto elementIdx = sliceId.getStartIdx();
-       elementIdx < sliceId.getEndIdx(); ++elementIdx) {
-    auto element = dynS->getElemPanic(elementIdx, "ProcessLoadComputeSlice");
-    if (element->isReady() && !element->isComputationScheduled() &&
-        !element->isComputedValueReady()) {
-      this->pushReadyComputation(element);
-    }
-    if (!element->isComputedValueReady()) {
+  for (auto elemIdx = sliceId.getStartIdx(); elemIdx < sliceId.getEndIdx();
+       ++elemIdx) {
+    auto elem = dynS->getElemPanic(elemIdx, "ProcessLoadComputeSlice");
+    if (!elem->isComputedValueReady()) {
       allLoadComputeValueReady = false;
     }
   }
@@ -3439,14 +3472,14 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
   auto paddrLine = makeLineAddress(paddr);
   DataBlock loadValueBlock;
   int payloadSize = 0;
-  for (auto elementIdx = sliceId.getStartIdx();
-       elementIdx < sliceId.getEndIdx(); ++elementIdx) {
-    auto element = dynS->getElemPanic(elementIdx, "ProcessLoadComputeSlice");
-    const auto &loadComputeValue = element->getComputedValue();
+  for (auto elemIdx = sliceId.getStartIdx(); elemIdx < sliceId.getEndIdx();
+       ++elemIdx) {
+    auto elem = dynS->getElemPanic(elemIdx, "ProcessLoadComputeSlice");
+    const auto &loadComputeValue = elem->getComputedValue();
 
     int sliceOffset;
     int elemOffset;
-    int overlapSize = element->computeLoadComputeOverlap(
+    int overlapSize = elem->computeLoadComputeOverlap(
         sliceId.vaddr, RubySystem::getBlockSizeBytes(), sliceOffset,
         elemOffset);
     if (overlapSize == 0) {
@@ -3493,10 +3526,10 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
    * Send the data to receiver stream.
    */
   for (const auto &edge : dynS->sendToEdges) {
-    LLC_SLICE_DPRINTF(sliceId,
-                      "Send LoadComputeValue to ReceiverStream: %s "
-                      "Data %s PayloadSize %d.\n",
-                      edge.data->dynamicId, loadValueBlock, payloadSize);
+    LLC_SLICE_DPRINTF(
+        sliceId,
+        "Send LoadComputeValue to RecevStream: %s Data %s PayloadSize %d.\n",
+        edge.data->dynamicId, loadValueBlock, payloadSize);
     this->issueStreamDataToLLC(dynS, sliceId, loadValueBlock, edge,
                                payloadSize);
   }
@@ -3592,10 +3625,10 @@ void LLCStreamEngine::processIndirectAtomicSlice(
    * Speical case for the second request for IndirectAtomicStream
    * with core usage. We just need to send back an Ack.
    */
-  auto elementIdx = sliceId.getStartIdx();
-  auto element = dynS->getElemPanic(
-      elementIdx, "Check IndirectAtomicElement second request.");
-  if (element->hasFirstIndirectAtomicReqSeen()) {
+  auto elemIdx = sliceId.getStartIdx();
+  auto elem = dynS->getElemPanic(elemIdx,
+                                 "Check IndirectAtomicElement second request.");
+  if (elem->hasFirstIndirectAtomicReqSeen()) {
     // This is the second time, should already be handled in
     // receiveStreamIndirectRequest().
     LLC_SLICE_PANIC(sliceId, "[Commit] Atomic should be release when "
@@ -3604,12 +3637,12 @@ void LLCStreamEngine::processIndirectAtomicSlice(
 
   LLC_SLICE_DPRINTF(sliceId,
                     "[IndirectAtomic] Schedule computation for vaddr %#x.\n",
-                    element->vaddr);
-  if (!element->isReady()) {
+                    elem->vaddr);
+  if (!elem->isReady()) {
     // Not ready yet. Break.
     LLC_SLICE_PANIC(sliceId, "Element not ready while triggering atomic.");
   }
-  if (!element->areBaseElemsReady()) {
+  if (!elem->areBaseElemsReady()) {
     // We are still waiting for base elements.
     LLC_SLICE_PANIC(sliceId, "Base element not ready when process atomic.");
   }
@@ -3617,8 +3650,8 @@ void LLCStreamEngine::processIndirectAtomicSlice(
   /**
    * Push ready computation.
    */
-  element->indirectAtomicSliceId = sliceId;
-  this->pushReadyComputation(element);
+  elem->indirectAtomicSliceId = sliceId;
+  this->pushReadyComputation(elem);
 }
 
 void LLCStreamEngine::postProcessIndirectAtomicSlice(
@@ -3745,13 +3778,9 @@ bool LLCStreamEngine::tryProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
   const auto &sliceId = slice->getSliceId();
 
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-    auto element =
+    auto elem =
         dynS->getElemPanic(idx, "Check base elements ready for update.");
-    // LLC_SLICE_DPRINTF(
-    //     sliceId, "Process for element %llu, Ready %d, BaseReady
-    //     %d.\n", element->idx, element->isReady(),
-    //     element->areBaseElementsReady());
-    if (!element->areBaseElemsReady()) {
+    if (!elem->areBaseElemsReady()) {
       // We are still waiting for base elements.
       return false;
     }
@@ -3760,19 +3789,18 @@ bool LLCStreamEngine::tryProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
      * Although this has responded, a multi-slice element may still
      * not be ready.
      */
-    if (!element->isReady()) {
-      LLC_ELEMENT_DPRINTF(element, "[Update] Slice blocked by me.\n");
+    if (!elem->isReady()) {
+      LLC_ELEMENT_DPRINTF(elem, "[Update] Slice blocked by me.\n");
       return false;
     }
   }
 
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-    auto element = dynS->getElemPanic(idx, "Process UpdateStream");
+    auto elem = dynS->getElemPanic(idx, "Process UpdateStream");
     LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu vaddr %#x.\n",
-                      element->idx, element->vaddr);
-    if (!element->isComputedValueReady() &&
-        !element->isComputationScheduled()) {
-      this->pushReadyComputation(element);
+                      elem->idx, elem->vaddr);
+    if (!elem->isComputedValueReady() && !elem->isComputationScheduled()) {
+      this->pushReadyComputation(elem, true /* TryVectorize */);
     }
   }
 
@@ -3960,69 +3988,138 @@ std::pair<uint64_t, bool> LLCStreamEngine::performStreamAtomicOp(
   return std::make_pair(loadedValue, memoryModified);
 }
 
-void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &element) {
-  LLC_S_DPRINTF(element->strandId,
-                "%llu: Push ready computation %llu. Ready %d Infly %d.\n",
-                this->curCycle(), element->idx, this->readyComputations.size(),
-                this->inflyComputations.size());
-  assert(element->areBaseElemsReady() && "Element is not ready yet.");
-  if (!element->isNDCElement) {
-    auto dynS = LLCDynStream::getLLCStream(element->strandId);
+void LLCStreamEngine::tryVectorizeElem(LLCStreamElementPtr &elem,
+                                       bool tryVectorize) {
+
+  if (!this->controller->myParams->enable_stream_vectorize) {
+    return;
+  }
+  if (elem->size > 32) {
+    return;
+  }
+  if (!tryVectorize && !elem->S->isReduction()) {
+    // Apply reduction when required or on ReduceStream.
+    return;
+  }
+
+  /**
+   * If we enabled vectorization, and this is not the first Element in
+   * this slice, we mark the element's computation vectorized, so that it
+   * is treated as fake computation that does not consume any resources.
+   */
+  bool shouldVectorized = false;
+  if (elem->S->isReduction()) {
+    /**
+     * Hack: For ReductionStream, each slice has only one element, thus here
+     * we approximate by counting how many elements per cache line.
+     */
+    auto elemsPerLine = RubySystem::getBlockSizeBytes() / elem->size;
+    if (elem->idx % elemsPerLine != 0) {
+      shouldVectorized = true;
+    }
+  } else if (elem->idx != elem->getSliceAt(elem->getNumSlices() - 1)
+                              ->getSliceId()
+                              .getStartIdx()) {
+    shouldVectorized = true;
+  }
+
+  if (shouldVectorized) {
+    LLC_ELEMENT_DPRINTF(elem, "[PushReadyCmp] Vectorized.\n");
+    elem->vectorizedComputation();
+  }
+}
+
+void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &elem,
+                                           bool tryVectorize) {
+  LLC_ELEMENT_DPRINTF(elem, "[PushReadyCmp] Ready %d Infly %d TryVec %d.\n",
+                      this->readyComputations.size(),
+                      this->inflyComputations.size(), tryVectorize);
+  assert(elem->areBaseElemsReady() && "Element is not ready yet.");
+  if (!elem->isNDCElement) {
+    auto dynS = LLCDynStream::getLLCStream(elem->strandId);
     if (!dynS) {
-      LLC_ELEMENT_DPRINTF(element, "Skip computation as Stream is released.\n");
+      LLC_ELEMENT_DPRINTF(elem, "Skip computation as Stream is released.\n");
       return;
     }
     if (!dynS->hasComputation()) {
-      LLC_ELEMENT_PANIC(element, "Stream has no computation.");
+      LLC_ELEMENT_PANIC(elem, "Stream has no computation.");
     }
-    dynS->incompleteComputations++;
+
+    this->tryVectorizeElem(elem, tryVectorize);
+
+    if (!elem->isComputationVectorized()) {
+      dynS->incompleteComputations++;
+    }
 
     const auto seMachineID = this->controller->getMachineID();
-    auto floatMachineType = dynS->getFloatMachineTypeAtElem(element->idx);
+    auto floatMachineType = dynS->getFloatMachineTypeAtElem(elem->idx);
     if (seMachineID.getType() != floatMachineType) {
-      LLC_ELEMENT_PANIC(element,
-                        "[PushReadyCmp] Offload %s != SE MachineType %s.",
+      LLC_ELEMENT_PANIC(elem, "[PushReadyCmp] Offload %s != SE MachineType %s.",
                         floatMachineType, seMachineID);
     }
   }
-  this->readyComputations.emplace_back(element);
-  element->scheduledComputation(this->curCycle());
-  this->scheduleEvent(Cycles(1));
+  if (elem->isComputationVectorized()) {
+    this->skipComputation(elem);
+  } else {
+    elem->scheduledComputation(this->curCycle());
+    this->readyComputations.emplace_back(elem);
+    this->scheduleEvent(Cycles(1));
+  }
 }
 
-void LLCStreamEngine::pushInflyComputation(LLCStreamElementPtr &element,
+void LLCStreamEngine::skipComputation(LLCStreamElementPtr &elem) {
+  assert(elem->isComputationVectorized() && "Skip Compute Vectorized Elem.");
+  assert(!elem->isNDCElement && "Skip NDC Elem.");
+  elem->scheduledComputation(this->curCycle());
+
+  auto dynS = LLCDynStream::getLLCStream(elem->strandId);
+  assert(dynS && "No DynS for SkipComputation");
+  assert(!dynS->isIndirectReduction() &&
+         "IndReduction should never be skipped.");
+
+  LLC_ELEMENT_DPRINTF(elem, "Skip computation. Vectorized %d.\n",
+                      elem->isComputationVectorized());
+  StreamValue result = dynS->computeStreamElementValue(elem);
+  dynS->completeComputation(this, elem, result);
+}
+
+void LLCStreamEngine::pushInflyComputation(LLCStreamElementPtr &elem,
                                            const StreamValue &result,
                                            Cycles &latency) {
-  const int maxInflyComputation =
+  const int maxInflyCmp =
       this->controller->myParams->llc_stream_engine_max_infly_computation;
-  assert(this->inflyComputations.size() < maxInflyComputation &&
-         "Too many infly results.");
+  assert(this->numInflyRealCmps < maxInflyCmp && "Too many infly results.");
   assert(latency < 1024 && "Latency too long.");
 
-  auto S = element->S;
-  // For now we don't bother add the stats to the core in my bank.
-  S->recordComputationInCoreStats();
+  if (!elem->isComputationVectorized()) {
+    // This is a real computation.
+    auto S = elem->S;
+    // For now we don't bother add the stats to the core in my bank.
+    S->recordComputationInCoreStats();
 
-  int numMicroOps = S->getComputationNumMicroOps();
-  auto &statistic = S->statistic;
-  this->controller->m_statLLCScheduledComputation++;
-  this->controller->m_statLLCScheduledComputeMicroOps += numMicroOps;
-  this->recordComputationMicroOps(S);
-  statistic.numLLCComputation++;
-  statistic.numLLCComputationComputeLatency += latency;
-  statistic.numLLCComputationWaitLatency +=
-      this->curCycle() - element->getComputationScheduledCycle();
+    int numMicroOps = S->getComputationNumMicroOps();
+    auto &statistic = S->statistic;
+    this->controller->m_statLLCScheduledComputation++;
+    this->controller->m_statLLCScheduledComputeMicroOps += numMicroOps;
+    this->recordComputationMicroOps(S);
+    statistic.numLLCComputation++;
+    statistic.numLLCComputationComputeLatency += latency;
+    statistic.numLLCComputationWaitLatency +=
+        this->curCycle() - elem->getComputationScheduledCycle();
+
+    this->numInflyRealCmps++;
+  }
 
   Cycles readyCycle = this->curCycle() + latency;
   for (auto iter = this->inflyComputations.rbegin(),
             end = this->inflyComputations.rend();
        iter != end; ++iter) {
     if (iter->readyCycle <= readyCycle) {
-      this->inflyComputations.emplace(iter.base(), element, result, readyCycle);
+      this->inflyComputations.emplace(iter.base(), elem, result, readyCycle);
       return;
     }
   }
-  this->inflyComputations.emplace_front(element, result, readyCycle);
+  this->inflyComputations.emplace_front(elem, result, readyCycle);
 }
 
 void LLCStreamEngine::recordComputationMicroOps(Stream *S) {
@@ -4066,12 +4163,12 @@ void LLCStreamEngine::startComputation() {
       this->controller->myParams->llc_stream_engine_max_infly_computation;
   while (startedComputation < computationWidth &&
          !this->readyComputations.empty() &&
-         this->inflyComputations.size() < maxInflyComputation) {
-    auto &element = this->readyComputations.front();
-    auto S = element->S;
+         this->numInflyRealCmps < maxInflyComputation) {
+    auto &elem = this->readyComputations.front();
+    auto S = elem->S;
 
     Cycles latency = S->getEstimatedComputationLatency();
-    if (auto llcDynS = LLCDynStream::getLLCStream(element->strandId)) {
+    if (auto llcDynS = LLCDynStream::getLLCStream(elem->strandId)) {
       if (llcDynS->configData->overrideComputeLatency > 0) {
         latency = Cycles(llcDynS->configData->overrideComputeLatency);
       }
@@ -4098,12 +4195,13 @@ void LLCStreamEngine::startComputation() {
      */
     StreamValue result;
 
-    if (element->isNDCElement) {
+    if (elem->isNDCElement) {
       /**
        * StreamNDC elements are handled by LLCStreamNDCController.
        */
-      if (!this->ndcController->computeStreamElementValue(element, result)) {
-        LLC_ELEMENT_DPRINTF(element,
+      assert(!elem->isComputationVectorized() && "NDC cannot be vectorized.");
+      if (!this->ndcController->computeStreamElementValue(elem, result)) {
+        LLC_ELEMENT_DPRINTF(elem,
                             "Discard NDC computation as stream is released.\n");
         this->readyComputations.pop_front();
         continue;
@@ -4112,31 +4210,38 @@ void LLCStreamEngine::startComputation() {
       /**
        * Normal Stream Computing.
        */
-      auto dynS = LLCDynStream::getLLCStream(element->strandId);
+      auto dynS = LLCDynStream::getLLCStream(elem->strandId);
       if (!dynS) {
-        LLC_ELEMENT_DPRINTF(element,
+        LLC_ELEMENT_DPRINTF(elem,
                             "Discard computation as stream is released.\n");
         this->readyComputations.pop_front();
         continue;
       }
 
       if (!dynS->isIndirectReduction()) {
-        LLC_ELEMENT_DPRINTF(element,
-                            "Start computation. Latency %llu (ZeroLat %d).\n",
-                            latency, forceZeroLat);
-        result = dynS->computeStreamElementValue(element);
+        LLC_ELEMENT_DPRINTF(
+            elem,
+            "Start computation. Latency %llu (ZeroLat %d) Vectorized %d.\n",
+            latency, forceZeroLat, elem->isComputationVectorized());
+        result = dynS->computeStreamElementValue(elem);
       } else {
-        LLC_ELEMENT_DPRINTF(element,
+        LLC_ELEMENT_DPRINTF(elem,
                             "Start IndirectReduction fake computation. Latency "
                             "%llu (ZeroLat %d).\n",
                             latency, forceZeroLat);
         result.fill(0);
       }
     }
-    this->pushInflyComputation(element, result, latency);
+    this->pushInflyComputation(elem, result, latency);
 
     this->readyComputations.pop_front();
-    startedComputation++;
+
+    /**
+     * VectorizedElem does not count as StartedComputation.
+     */
+    if (!elem->isComputationVectorized()) {
+      startedComputation++;
+    }
   }
 }
 
@@ -4145,25 +4250,29 @@ void LLCStreamEngine::completeComputation() {
   auto curCycle = this->curCycle();
   while (!this->inflyComputations.empty()) {
     auto &computation = this->inflyComputations.front();
-    auto &element = computation.element;
+    auto &elem = computation.elem;
     if (computation.readyCycle > curCycle) {
-      LLC_ELEMENT_DPRINTF(element,
+      LLC_ELEMENT_DPRINTF(elem,
                           "Cannot complete computation, readyCycle "
                           "%llu, curCycle %llu.\n",
                           computation.readyCycle, curCycle);
       break;
     }
-    LLC_ELEMENT_DPRINTF(element, "Complete computation.\n");
-    if (element->isNDCElement) {
-      this->ndcController->completeComputation(element, computation.result);
+    LLC_ELEMENT_DPRINTF(elem, "Complete computation.\n");
+    if (elem->isNDCElement) {
+      this->ndcController->completeComputation(elem, computation.result);
     } else {
-      auto dynS = LLCDynStream::getLLCStream(element->strandId);
+      auto dynS = LLCDynStream::getLLCStream(elem->strandId);
       if (dynS) {
-        dynS->completeComputation(this, element, computation.result);
+        dynS->completeComputation(this, elem, computation.result);
       } else {
         LLC_ELEMENT_DPRINTF(
-            element, "Discard computation result as stream is released.\n");
+            elem, "Discard computation result as stream is released.\n");
       }
+    }
+    if (!elem->isComputationVectorized()) {
+      // This is not a fake Computation.
+      this->numInflyRealCmps--;
     }
     this->inflyComputations.pop_front();
   }
