@@ -31,6 +31,7 @@ std::string printAffinePatternParams(const DynStreamFormalParamV &params) {
   std::stringstream ss;
   uint64_t prevTrip = 1;
   // Start.
+  bool invalid = false;
   ss << std::hex << params.back().invariant.uint64() << std::dec;
   for (int i = 0; i + 1 < params.size(); i += 2) {
     // Stride.
@@ -38,9 +39,36 @@ std::string printAffinePatternParams(const DynStreamFormalParamV &params) {
     if (i + 2 < params.size()) {
       // Trip.
       auto trip = params.at(i + 1).invariant.uint64();
-      ss << ":" << trip / prevTrip;
+      if (prevTrip == 0 || trip == 0) {
+        ss << ":" << trip;
+      } else {
+        if (trip < prevTrip) {
+          invalid = true;
+        }
+        auto ratio = trip / prevTrip;
+        auto remainder = trip % prevTrip;
+        ss << ":" << ratio;
+        if (remainder != 0) {
+          ss << "%" << remainder;
+        }
+      }
       prevTrip = trip;
     }
+  }
+  if (invalid) {
+    std::stringstream ss;
+    ss << std::hex << params.back().invariant.uint64() << std::dec;
+    for (int i = 0; i + 1 < params.size(); i += 2) {
+      // Stride.
+      ss << ":" << params.at(i).invariant.int64();
+      if (i + 2 < params.size()) {
+        // Trip.
+        auto trip = params.at(i + 1).invariant.uint64();
+        ss << ":" << trip;
+        prevTrip = trip;
+      }
+    }
+    panic("[InvalidAffinePattern] InvalidTrip %s.", ss.str());
   }
   return ss.str();
 }
