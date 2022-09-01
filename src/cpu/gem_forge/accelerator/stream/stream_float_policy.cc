@@ -94,7 +94,11 @@ StreamFloatPolicy::~StreamFloatPolicy() {
 }
 
 std::ostream &StreamFloatPolicy::logS(const DynStream &dynS) {
-  return getLog() << dynS.dynStreamId << ": ";
+  return logS(dynS.dynStreamId);
+}
+
+std::ostream &StreamFloatPolicy::logS(const DynStreamId &dynId) {
+  return getLog() << dynId << ": ";
 }
 
 StreamFloatPolicy::FloatDecision

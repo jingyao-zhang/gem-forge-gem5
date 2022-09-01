@@ -22,6 +22,7 @@ public:
   bool shouldPseudoFloatStream(DynStream &dynS);
 
   static std::ostream &logS(const DynStream &dynS);
+  static std::ostream &logS(const DynStreamId &dynId);
 
   /**
    * Set the float level for all streams.
