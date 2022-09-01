@@ -9,7 +9,9 @@
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
 
-std::list<LLCStreamElementPtr> LLCStreamElement::deferredReleaseElements;
+std::list<LLCStreamElementPtr> LLCStreamElement::deferredReleaseElems;
+
+uint64_t LLCStreamElement::aliveElems = 0;
 
 LLCStreamElement::LLCStreamElement(
     Stream *_S, AbstractStreamAwareController *_mlcController,
@@ -18,14 +20,14 @@ LLCStreamElement::LLCStreamElement(
     : S(_S), mlcController(_mlcController), strandId(_strandId), idx(_idx),
       size(_size), isNDCElement(_isNDCElement), vaddr(_vaddr), readyBytes(0) {
   if (this->size > sizeof(this->value)) {
-    panic("LLCStreamElement size overflow %d, %s.\n", this->size,
-          this->strandId);
+    panic("LLCStreamElem size overflow %d, %s.\n", this->size, this->strandId);
   }
   if (!this->mlcController) {
-    panic("LLCStreamElement allocated without MLCController.\n");
+    panic("LLCStreamElem allocated without MLCController.\n");
   }
+  LLCStreamElement::aliveElems++;
   this->value.fill(0);
-  if (deferredReleaseElements.size() > 100) {
+  if (deferredReleaseElems.size() > 100) {
     releaseDeferredElements();
   }
 }
@@ -33,19 +35,20 @@ LLCStreamElement::LLCStreamElement(
 LLCStreamElement::~LLCStreamElement() {
   this->S->statistic.sampleLLCElement(this->firstCheckCycle,
                                       this->valueReadyCycle);
-  if (this->prevReductionElement) {
-    deferredReleaseElements.emplace_back(std::move(this->prevReductionElement));
+  LLCStreamElement::aliveElems--;
+  if (this->prevReduceElem) {
+    deferredReleaseElems.emplace_back(std::move(this->prevReduceElem));
   }
   while (!this->baseElements.empty()) {
-    deferredReleaseElements.emplace_back(std::move(this->baseElements.back()));
+    deferredReleaseElems.emplace_back(std::move(this->baseElements.back()));
     this->baseElements.pop_back();
   }
 }
 
 void LLCStreamElement::releaseDeferredElements() {
-  while (!deferredReleaseElements.empty()) {
+  while (!deferredReleaseElems.empty()) {
     std::list<LLCStreamElementPtr> tmp;
-    std::swap(tmp, deferredReleaseElements);
+    std::swap(tmp, deferredReleaseElems);
     tmp.clear();
   }
 }

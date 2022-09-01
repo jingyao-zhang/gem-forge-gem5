@@ -31,7 +31,7 @@ public:
    * To avoid stack overflow when destructing the recursive shared_ptr list,
    * we implement deferred release.
    */
-  static std::list<LLCStreamElementPtr> deferredReleaseElements;
+  static std::list<LLCStreamElementPtr> deferredReleaseElems;
   static void releaseDeferredElements();
 
   Stream *S;
@@ -96,6 +96,13 @@ public:
     this->computationScheduled = true;
     this->computationScheduledCycle = curCycle;
   }
+  /**
+   * This marks the computation to this element vectorized --
+   * LLC SE will not charge any latency or stats to it, as if its computation
+   * is already performed by the first element in the vector.
+   */
+  void vectorizedComputation() { this->computationVectorized = true; }
+  bool isComputationVectorized() const { return this->computationVectorized; }
   bool isComputationDone() const { return this->computationDone; }
   void doneComputation() {
     assert(this->isComputationScheduled() &&
@@ -197,16 +204,17 @@ public:
   const StreamValue &getComputedValue() const { return this->computedValue; }
   void setComputedValue(const StreamValue &value);
 
-  const LLCStreamElementPtr &getPrevReductionElement() const {
-    return this->prevReductionElement;
+  const LLCStreamElementPtr &getPrevReduceElem() const {
+    return this->prevReduceElem;
   }
-  void setPrevReductionElement(const LLCStreamElementPtr &element) {
-    this->prevReductionElement = element;
+  void setPrevReduceElem(const LLCStreamElementPtr &elem) {
+    this->prevReduceElem = elem;
   }
 
 private:
   int readyBytes;
   bool computationScheduled = false;
+  bool computationVectorized = false;
   Cycles computationScheduledCycle = Cycles(0);
   bool computationDone = false;
   static constexpr int MAX_SIZE = 128;
@@ -257,7 +265,7 @@ private:
   /**
    * Explicitly remember the previous element for ReductionStream.
    */
-  LLCStreamElementPtr prevReductionElement = nullptr;
+  LLCStreamElementPtr prevReduceElem = nullptr;
 
 public:
   /**
@@ -271,6 +279,15 @@ public:
    * Remember that I have sent to PUM.
    */
   bool sentToPUM = false;
+
+private:
+  /**
+   * Record how many elements is alive. For debug only.
+   */
+  static uint64_t aliveElems;
+
+public:
+  static uint64_t getAliveElems() { return aliveElems; }
 };
 
 #endif

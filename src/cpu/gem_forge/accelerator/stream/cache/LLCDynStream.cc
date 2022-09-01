@@ -552,10 +552,10 @@ void LLCDynStream::initNextElement(Addr vaddr) {
   }
 
   auto size = this->getMemElementSize();
-  auto element = std::make_shared<LLCStreamElement>(
+  auto elem = std::make_shared<LLCStreamElement>(
       this->getStaticS(), this->mlcController, this->getDynStrandId(),
       strandElemIdx, vaddr, size, false /* isNDCElement */);
-  this->idxToElementMap.emplace(strandElemIdx, element);
+  this->idxToElementMap.emplace(strandElemIdx, elem);
   this->nextInitStrandElemIdx++;
 
   for (auto i = 0; i < this->baseOnConfigs.size(); ++i) {
@@ -589,11 +589,12 @@ void LLCDynStream::initNextElement(Addr vaddr) {
     auto baseStrandElemIdx =
         baseConfig->getStrandElemIdxFromStreamElemIdx(baseStreamElemIdx);
 
-    LLC_S_DPRINTF(this->getDynStrandId(),
-                  "Add BaseStrandElem %s%llu Reuse %ld Skip %ld "
-                  "BaseStreamElemIdx %lu.\n",
-                  baseStrandId, baseStrandElemIdx, this->baseOnReuses.at(i),
-                  this->baseOnSkips.at(i), baseStreamElemIdx);
+    LLC_ELEMENT_DPRINTF(elem,
+                        "Add BaseStrandElem %s%llu R/S %ld/ %ld "
+                        "BaseStreamElemIdx %lu.\n",
+                        baseStrandId, baseStrandElemIdx,
+                        this->baseOnReuses.at(i), this->baseOnSkips.at(i),
+                        baseStreamElemIdx);
     const auto &baseDynStreamId = baseConfig->dynamicId;
     auto baseS = baseConfig->stream;
     if (this->baseStream &&
@@ -604,13 +605,13 @@ void LLCDynStream::initNextElement(Addr vaddr) {
        */
       if (this->configData->isSplitIntoStrands()) {
         if (baseStrandId.strandIdx != this->getDynStrandId().strandIdx) {
-          LLC_ELEMENT_PANIC(element,
+          LLC_ELEMENT_PANIC(elem,
                             "Mismatch IndirectStrandIdx with BaseStrandId %s.",
                             baseStrandId);
         }
         auto baseStrandElemIdxOffset = this->isOneIterationBehind() ? 1 : 0;
         if (baseStrandElemIdx + baseStrandElemIdxOffset != strandElemIdx) {
-          LLC_ELEMENT_PANIC(element,
+          LLC_ELEMENT_PANIC(elem,
                             "Mismatch IndirectStrandElemIdx with BaseStrandId "
                             "%s BaseStrandElemIdx %lu Offset %lu.",
                             baseStrandId, baseStrandElemIdx,
@@ -618,10 +619,10 @@ void LLCDynStream::initNextElement(Addr vaddr) {
         }
       }
       if (!this->baseStream->idxToElementMap.count(baseStrandElemIdx)) {
-        LLC_ELEMENT_PANIC(element, "Missing base element from %s.",
+        LLC_ELEMENT_PANIC(elem, "Missing base element from %s.",
                           this->baseStream->getDynStrandId());
       }
-      element->baseElements.emplace_back(
+      elem->baseElements.emplace_back(
           this->baseStream->idxToElementMap.at(baseStrandElemIdx));
     } else {
       /**
@@ -658,7 +659,7 @@ void LLCDynStream::initNextElement(Addr vaddr) {
             baseElemVAddr, baseS->getMemElementSize(),
             false /* isNDCElement */);
       }
-      element->baseElements.emplace_back(baseElem);
+      elem->baseElements.emplace_back(baseElem);
       // Update the ReusedStreamElem.
       reusedBaseElem.elem = baseElem;
       reusedBaseElem.streamElemIdx = baseStreamElemIdx;
@@ -712,10 +713,10 @@ void LLCDynStream::initNextElement(Addr vaddr) {
       }
     } else {
       // Direct reduction.
-      element->baseElements.emplace_back(this->lastReductionElement);
+      elem->baseElements.emplace_back(this->lastReductionElement);
     }
-    element->setPrevReductionElement(this->lastReductionElement);
-    this->lastReductionElement = element;
+    elem->setPrevReduceElem(this->lastReductionElement);
+    this->lastReductionElement = elem;
   }
 
   /**
@@ -804,21 +805,28 @@ uint64_t LLCDynStream::getNextUnreleasedElementIdx() const {
                                        : this->idxToElementMap.begin()->first;
 }
 
-void LLCDynStream::eraseElement(uint64_t elementIdx) {
-  auto iter = this->idxToElementMap.find(elementIdx);
+void LLCDynStream::eraseElement(uint64_t elemIdx) {
+  auto iter = this->idxToElementMap.find(elemIdx);
   if (iter == this->idxToElementMap.end()) {
-    LLC_S_PANIC(this->getDynStrandId(), "Failed to erase element %llu.",
-                elementIdx);
+    LLC_S_PANIC(this->getDynStrandId(), "Failed to erase elem %lu.", elemIdx);
   }
-  LLC_ELEMENT_DPRINTF(iter->second, "Erased element.\n");
-  this->getStaticS()->incrementOffloadedStepped();
-  this->idxToElementMap.erase(iter);
-  this->invokeElemPostReleaseCallback(elementIdx);
+  this->eraseElement(iter);
 }
 
 void LLCDynStream::eraseElement(IdxToElementMapT::iterator elemIter) {
-  LLC_ELEMENT_DPRINTF(elemIter->second, "Erased element.\n");
+  auto elem = elemIter->second;
+  LLC_ELEMENT_DPRINTF(elem, "Erased elem. Remaining %lu. TotalAlive %lu.\n",
+                      this->idxToElementMap.size() - 1,
+                      LLCStreamElement::getAliveElems());
   this->getStaticS()->incrementOffloadedStepped();
+  /**
+   * Right now each Element has a shared_ptr to the base element. However,
+   * this forms a long chain of ReduceElem, and consumes crazy amount of
+   * memory. To fix that, we clear the base elements when releasing an
+   * element.
+   */
+  elem->baseElements.clear();
+  elem->setPrevReduceElem(nullptr);
   auto elemIdx = elemIter->first;
   this->idxToElementMap.erase(elemIter);
   this->invokeElemPostReleaseCallback(elemIdx);
@@ -891,10 +899,9 @@ void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
 
       LLC_S_DPRINTF(
           this->getDynStrandId(),
-          "[Forward] Received SendStrand %s-%lu SendStreamElemIdx %lu by Reuse "
-          "%d Skip %d = RecvStreamElemIdx %lu RecvStrandElemIdx %lu.\n",
+          "[Fwd] Recv Send %s%lu(%lu) by R/S %d/%d = Recv %lu(%lu).\n",
           sliceId.getDynStrandId(), sendStrandElemIdx, sendStreamElemIdx,
-          baseEdge.reuse, baseEdge.skip, recvStreamElemIdx, recvStrandElemIdx);
+          baseEdge.reuse, baseEdge.skip, recvStrandElemIdx, recvStreamElemIdx);
 
       found = true;
       break;
@@ -906,7 +913,7 @@ void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
   auto S = this->getStaticS();
   if (!this->idxToElementMap.count(recvStrandElemIdx)) {
     LLC_SLICE_PANIC(
-        sliceId, "Cannot find the RecvStrandElem %s %lu allocate from %lu.\n",
+        sliceId, "Cannot find the RecvStrandElem %s%lu allocate from %lu.\n",
         this->getDynStrandId(), recvStrandElemIdx, this->nextInitStrandElemIdx);
   }
   LLCStreamElementPtr recvElem = this->idxToElementMap.at(recvStrandElemIdx);
@@ -921,6 +928,11 @@ void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
       if (baseElem->vaddr == 0) {
         baseElem->vaddr = sliceId.vaddr;
       }
+      LLC_S_DPRINTF(
+          this->getDynStrandId(),
+          "[Fwd] Extract BaseElem %s%lu VAddr %#x Size %d SliceVAddr %#x.\n",
+          baseElem->strandId, baseElem->idx, baseElem->vaddr, baseElem->size,
+          sliceId.vaddr);
       baseElem->extractElementDataFromSlice(S->getCPUDelegator(), sliceId,
                                             dataBlk);
       foundBaseElem = true;
@@ -932,8 +944,8 @@ void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
       LLC_ELEMENT_DPRINTF(recvElem, "BaseElem %s %lu.\n", baseElem->strandId,
                           baseElem->idx);
     }
-    LLC_ELEMENT_PANIC(recvElem, "Failed to find BaseElem %s %lu.",
-                      sliceId.getDynStrandId(), recvStrandElemIdx);
+    LLC_ELEMENT_PANIC(recvElem, "Failed to find BaseElem %s.",
+                      sliceId.getDynStrandId());
   }
   if (recvElem->areBaseElemsReady()) {
     /**
@@ -1064,13 +1076,32 @@ void LLCDynStream::allocateLLCStreams(
   }
   if (loadBalanceValueStreams.empty()) {
     assert(uncuttedLLCDynSWithSmallestStatidId && "Configured not LLCDynS.");
-    //   uncuttedLLCDynSWithSmallestStatidId->setLoadBalanceValve();
   } else {
     std::sort(loadBalanceValueStreams.begin(), loadBalanceValueStreams.end(),
               [](const LLCDynStreamPtr &A, const LLCDynStreamPtr &B) -> bool {
+                if (A->getStaticId() == B->getStaticId()) {
+                  return A->getDynStrandId().strandIdx <
+                         B->getDynStrandId().strandIdx;
+                }
                 return A->getStaticId() < B->getStaticId();
               });
-    loadBalanceValueStreams.front()->setLoadBalanceValve();
+    auto loadBalanceDynS = loadBalanceValueStreams.front();
+    /**
+     * We need to set all strands as the LoadBalance stream,
+     * but not for PUMPrefetch stream.
+     */
+    if (!loadBalanceDynS->configData->isPUMPrefetch) {
+      // loadBalanceDynS->setLoadBalanceValve();
+      for (auto dynS : loadBalanceValueStreams) {
+        if (dynS->getStaticId() != loadBalanceDynS->getStaticId()) {
+          // This is not the same static stream.
+          break;
+        }
+        DPRINTF(LLCRubyStreamBase, "%s: [LoadBalance] Selected.\n",
+                dynS->getDynStrandId());
+        dynS->setLoadBalanceValve();
+      }
+    }
   }
 
   // Remember the allocated group.
@@ -1206,7 +1237,11 @@ LLCDynStream::allocateLLCStream(AbstractStreamAwareController *mlcController,
   }
 
   // Initialize the first slices.
-  S->initDirectStreamSlicesUntil(config->initCreditedIdx);
+  // For some strands, it's possible that InitCreditedIdx is 0 as the TotalTrip
+  // is 0.
+  if (config->initCreditedIdx > 0) {
+    S->initDirectStreamSlicesUntil(config->initCreditedIdx);
+  }
 
   return S;
 }
@@ -1273,7 +1308,7 @@ LLCDynStream::computeStreamElementValue(const LLCStreamElementPtr &element) {
     auto getBaseOrPrevReductionStreamValue =
         [&element, this](uint64_t baseStreamId) -> StreamValue {
       if (element->S->isCoalescedHere(baseStreamId)) {
-        auto prevReductionElement = element->getPrevReductionElement();
+        auto prevReductionElement = element->getPrevReduceElem();
         assert(prevReductionElement && "Missing prev reduction element.");
         assert(prevReductionElement->isReady() &&
                "Prev reduction element is not ready.");
@@ -1364,30 +1399,32 @@ LLCDynStream::computeStreamElementValue(const LLCStreamElementPtr &element) {
 }
 
 void LLCDynStream::completeComputation(LLCStreamEngine *se,
-                                       const LLCStreamElementPtr &element,
+                                       const LLCStreamElementPtr &elem,
                                        const StreamValue &value) {
   auto S = this->getStaticS();
-  element->doneComputation();
+  elem->doneComputation();
   /**
    * LoadCompute/Update store computed value in ComputedValue.
    * AtomicComputeStream has no computed value.
    * IndirectReductionStream separates compuation from charging the latency.
    */
   if (S->isLoadComputeStream() || S->isUpdateStream()) {
-    element->setComputedValue(value);
+    elem->setComputedValue(value);
   } else if (S->isAtomicComputeStream()) {
 
   } else if (!this->isIndirectReduction()) {
-    element->setValue(value);
+    elem->setValue(value);
   }
-  this->incompleteComputations--;
-  assert(this->incompleteComputations >= 0 &&
-         "Negative incomplete computations.");
+  if (!elem->isComputationVectorized()) {
+    this->incompleteComputations--;
+    assert(this->incompleteComputations >= 0 &&
+           "Negative incomplete computations.");
+  }
 
   const auto seMachineID = se->controller->getMachineID();
-  auto floatMachineType = this->getFloatMachineTypeAtElem(element->idx);
+  auto floatMachineType = this->getFloatMachineTypeAtElem(elem->idx);
   if (seMachineID.getType() != floatMachineType) {
-    LLC_ELEMENT_PANIC(element, "[CompleteCmp] Offload %s != SE MachineType %s.",
+    LLC_ELEMENT_PANIC(elem, "[CompleteCmp] Offload %s != SE MachineType %s.",
                       floatMachineType, seMachineID);
   }
 
@@ -1401,7 +1438,7 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
     auto elementCoreSize = S->getCoreElementSize();
     assert(elementCoreSize <= elementMemSize &&
            "CoreElementSize should not exceed MemElementSize.");
-    auto elementVAddr = element->vaddr;
+    auto elementVAddr = elem->vaddr;
 
     Addr elementPAddr;
     assert(this->translateToPAddr(elementVAddr, elementPAddr) &&
@@ -1413,7 +1450,7 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
       Addr vaddr = elementVAddr + storedSize;
       Addr paddr;
       if (!this->translateToPAddr(vaddr, paddr)) {
-        LLC_ELEMENT_PANIC(element, "Fault on vaddr of UpdateStream.");
+        LLC_ELEMENT_PANIC(elem, "Fault on vaddr of UpdateStream.");
       }
       auto lineOffset = vaddr % lineSize;
       auto size = elementMemSize - storedSize;
@@ -1423,7 +1460,7 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
       se->performStore(paddr, size, value.uint8Ptr(storedSize));
       storedSize += size;
     }
-    LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, element,
+    LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, elem,
                          "StreamUpdate done with value %s.\n", value);
 
   } else if (S->isAtomicComputeStream()) {
@@ -1431,7 +1468,7 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
     // Ask the SE for post processing.
     assert(!S->isDirectMemStream() &&
            "Only IndirectAtomic will complete computation.");
-    se->postProcessIndirectAtomicSlice(this, element);
+    se->postProcessIndirectAtomicSlice(this, elem);
 
   } else if (S->isReduction() || S->isPointerChaseIndVar()) {
     if (this->isIndirectReduction()) {
@@ -1441,8 +1478,8 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
        * when schedule the computation.
        */
       LLC_S_DPRINTF_(LLCRubyStreamReduce, this->getDynStrandId(),
-                     "[IndirectReduction] Start real computation from "
-                     "LastComputedElement %llu.\n",
+                     "[IndirectReduce] Start real computation from "
+                     "LastComputedElem %llu.\n",
                      this->lastComputedReductionElemIdx);
       while (this->lastComputedReductionElemIdx < this->getTotalTripCount()) {
         auto nextComputingElementIdx = this->lastComputedReductionElemIdx + 1;
@@ -1450,23 +1487,22 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
         if (!nextComputingElement) {
           LLC_S_DPRINTF_(
               LLCRubyStreamReduce, this->getDynStrandId(),
-              "[IndirectReduction] Missing NextComputingElement %llu. "
-              "Break.\n",
+              "[IndirectReduce] Missing NextComputingElem %llu. Break.\n",
               nextComputingElementIdx);
           break;
         }
         if (!nextComputingElement->isComputationDone()) {
-          LLC_S_DPRINTF_(LLCRubyStreamReduce, this->getDynStrandId(),
-                         "[IndirectReduction] NextComputingElement %llu not "
-                         "done. Break.\n",
-                         nextComputingElementIdx);
+          LLC_S_DPRINTF_(
+              LLCRubyStreamReduce, this->getDynStrandId(),
+              "[IndirectReduce] NextComputingElem %llu not done. Break.\n",
+              nextComputingElementIdx);
           break;
         }
         // Really do the computation.
-        LLC_S_DPRINTF_(LLCRubyStreamReduce, this->getDynStrandId(),
-                       "[IndirectReduction] Really computed "
-                       "NextComputingElement %llu.\n",
-                       nextComputingElementIdx);
+        LLC_S_DPRINTF_(
+            LLCRubyStreamReduce, this->getDynStrandId(),
+            "[IndirectReduce] Really computed NextComputingElem %llu.\n",
+            nextComputingElementIdx);
         auto result = this->computeStreamElementValue(nextComputingElement);
         nextComputingElement->setValue(result);
         this->lastComputedReductionElemIdx++;
@@ -1476,39 +1512,11 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
        * If this is DirectReductionStream, check and schedule the next
        * element.
        */
-      if (this->lastComputedReductionElemIdx + 1 != element->idx) {
+      if (this->lastComputedReductionElemIdx + 1 != elem->idx) {
         LLC_S_PANIC(this->getDynStrandId(),
-                    "[DirectReduction] Reduction not in order.\n");
+                    "[DirectReduce] Reduction not in order.\n");
       }
       this->lastComputedReductionElemIdx++;
-      if (this->idxToElementMap.count(element->idx + 1)) {
-        auto &nextElement = this->idxToElementMap.at(element->idx + 1);
-        if (nextElement->areBaseElemsReady()) {
-          /**
-           * We need to push the computation to the LLC SE at the correct
-           * bank.
-           */
-          LLCStreamEngine *nextComputeSE = se;
-          for (const auto &baseElement : nextElement->baseElements) {
-            if (baseElement->strandId != this->baseStream->getDynStrandId()) {
-              continue;
-            }
-            auto vaddr = baseElement->vaddr;
-            if (vaddr != 0) {
-              Addr paddr;
-              assert(this->baseStream->translateToPAddr(vaddr, paddr) &&
-                     "Failed to translate for NextReductionBaseElement.");
-              auto llcMachineID = this->mlcController->mapAddressToLLCOrMem(
-                  paddr, seMachineID.getType());
-              nextComputeSE =
-                  AbstractStreamAwareController::getController(llcMachineID)
-                      ->getLLCStreamEngine();
-            }
-          }
-
-          nextComputeSE->pushReadyComputation(nextElement);
-        }
-      }
     }
 
     /**
@@ -1527,6 +1535,54 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
         break;
       }
       this->eraseElement(iter);
+    }
+
+    /**
+     * This has to be at the end of completeComputation,
+     * as LLC SE may skip the computation and call
+     * LLCDynStream::completeComputation() immediately.
+     */
+    if (!this->isIndirectReduction()) {
+      this->tryComputeNextDirectReduceElem(se, elem);
+    }
+  }
+}
+
+void LLCDynStream::tryComputeNextDirectReduceElem(
+    LLCStreamEngine *se, const LLCStreamElementPtr &elem) {
+
+  const auto seMachineID = se->controller->getMachineID();
+  if (this->idxToElementMap.count(elem->idx + 1)) {
+    auto &nextElement = this->idxToElementMap.at(elem->idx + 1);
+    if (nextElement->areBaseElemsReady()) {
+      /**
+       * We need to push the computation to the LLC SE at the correct
+       * bank.
+       */
+      LLCStreamEngine *nextComputeSE = se;
+      for (const auto &baseElement : nextElement->baseElements) {
+        if (baseElement->strandId != this->baseStream->getDynStrandId()) {
+          continue;
+        }
+        auto vaddr = baseElement->vaddr;
+        if (vaddr != 0) {
+          Addr paddr;
+          assert(this->baseStream->translateToPAddr(vaddr, paddr) &&
+                 "Failed to translate for NextReductionBaseElement.");
+          auto llcMachineID = this->mlcController->mapAddressToLLCOrMem(
+              paddr, seMachineID.getType());
+          nextComputeSE =
+              AbstractStreamAwareController::getController(llcMachineID)
+                  ->getLLCStreamEngine();
+        }
+      }
+
+      /**
+       * Due to vectorization, this compuation may be skipped
+       * and immediately complete. To avoid recursive hell, make sure
+       * tryComputeNextDirectReduceElem is at the tail of completeComputation().
+       */
+      nextComputeSE->pushReadyComputation(nextElement);
     }
   }
 }
