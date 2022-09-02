@@ -533,6 +533,11 @@ class Gem5(Executable):
         objs = env['MAIN_OBJS'] + env['STATIC_OBJS']
         return super(Gem5, self).declare(env, objs)
 
+class RealExecutable(Executable):
+    '''Create a real executable.'''
+
+    def __init__(self, target, *srcs_and_filts):
+        super(RealExecutable, self).__init__(target, *srcs_and_filts)
 
 # Children should have access
 Export('Blob')
@@ -542,6 +547,7 @@ Export('PySource')
 Export('SimObject')
 Export('ProtoBuf')
 Export('Executable')
+Export('RealExecutable')
 Export('UnitTest')
 Export('GTest')
 
