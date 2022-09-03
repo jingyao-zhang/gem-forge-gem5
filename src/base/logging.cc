@@ -65,7 +65,12 @@ class ExitLogger : public NormalLogger
     log(const Loc &loc, std::string s) override
     {
         std::stringstream ss;
-        ccprintf(ss, "Memory Usage: %ld KBytes\n", memUsage());
+        /**
+         * Zhengrong: Get rid of memUsage(). So that I can
+         * relatively use the logging functions in the standalone
+         * binary.
+         */
+        // ccprintf(ss, "Memory Usage: %ld KBytes\n", memUsage());
         NormalLogger::log(loc, s + ss.str());
     }
 };

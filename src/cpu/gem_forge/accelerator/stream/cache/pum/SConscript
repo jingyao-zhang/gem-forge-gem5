@@ -8,10 +8,10 @@ CompoundFlag('StreamPUM',
 DebugFlag('PUMTransposeUnit')
 
 affine_pattern = Source('AffinePattern.cc')
-Source('PUMCommand.cc')
+pum_command = Source('PUMCommand.cc')
 Source('PUMHWConfiguration.cc')
 Source('PUMTransposeUnit.cc')
-Source('DataMoveCompiler.cc')
+data_move_compiler = Source('DataMoveCompiler.cc')
 Source('MLCPUMManager.cc')
 Source('PUMEngine.cc')
 
@@ -20,5 +20,10 @@ tdfg = ProtoBuf('TDFG.proto')
 RealExecutable('pum-jitter',
                'CommandJitter.cc',
                affine_pattern,
+               pum_command,
+               data_move_compiler,
                tdfg.cc_file,
+               '../../../../../../base/logging.cc',
+               '../../../../../../base/cprintf.cc',
+        #        '../../../../../../enums/OpClass.cc',
 )
