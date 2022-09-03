@@ -1,4 +1,7 @@
-#include "../PUMHWConfiguration.hh"
+#define STANDALONE_PUM_JITTER
+
+#include "PUMHWConfiguration.hh"
+#include "AffinePattern.hh"
 
 #include <cstdio>
 

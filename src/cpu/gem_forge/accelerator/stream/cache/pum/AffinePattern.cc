@@ -1,7 +1,6 @@
 #include "AffinePattern.hh"
 
 #include "base/trace.hh"
-
 #include "debug/MLCStreamPUM.hh"
 
 AffinePattern::AffinePattern(::LLVM::TDG::AffinePattern tdgAffinePattern) {

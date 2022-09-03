@@ -1,6 +1,0 @@
-
-Import('*')
-
-RealExecutable('pum-jitter',
-               'main.cc',
-)

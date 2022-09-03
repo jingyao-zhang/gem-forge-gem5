@@ -1,8 +1,7 @@
 #ifndef __CPU_GEM_FORGE_AFFINE_PATTERN_HH__
 #define __CPU_GEM_FORGE_AFFINE_PATTERN_HH__
 
-#include "base/types.hh"
-
+#include <cstdint>
 #include <cstdlib>
 #include <sstream>
 #include <tuple>
@@ -11,7 +10,7 @@
 #include "config/have_protobuf.hh"
 #include "cpu/gem_forge/accelerator/stream/cache/pum/TDFG.pb.h"
 #ifndef HAVE_PROTOBUF
-#error "Require protobuf to parse stream info."
+#error "Require protobuf to parse tensor dataflow graph."
 #endif
 
 #include "TDFG.pb.h"
@@ -190,13 +189,11 @@ public:
 
   static AffinePattern construct_canonical_tile(IntVecT tile_sizes,
                                                 IntVecT array_sizes) {
-    assert(tile_sizes.size() == array_sizes.size());
     auto dimension = tile_sizes.size();
+    assert(tile_sizes.size() == array_sizes.size());
     for (auto i = 0; i < dimension; ++i) {
-      auto t = tile_sizes[i];
-      auto a = array_sizes[i];
-      assert(a % t == 0);
-      assert(a >= t);
+      assert(array_sizes[i] % tile_sizes[i] == 0);
+      assert(array_sizes[i] >= tile_sizes[i]);
     }
     int64_t start = 0;
     ParamVecT params;

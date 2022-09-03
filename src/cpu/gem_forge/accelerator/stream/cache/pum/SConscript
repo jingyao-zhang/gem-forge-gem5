@@ -7,7 +7,7 @@ CompoundFlag('StreamPUM',
              ['LLCStreamPUM', 'MLCStreamPUM'])
 DebugFlag('PUMTransposeUnit')
 
-Source('AffinePattern.cc')
+affine_pattern = Source('AffinePattern.cc')
 Source('PUMCommand.cc')
 Source('PUMHWConfiguration.cc')
 Source('PUMTransposeUnit.cc')
@@ -15,4 +15,10 @@ Source('DataMoveCompiler.cc')
 Source('MLCPUMManager.cc')
 Source('PUMEngine.cc')
 
-ProtoBuf('TDFG.proto')
+tdfg = ProtoBuf('TDFG.proto')
+
+RealExecutable('pum-jitter',
+               'CommandJitter.cc',
+               affine_pattern,
+               tdfg.cc_file,
+)
