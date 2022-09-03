@@ -45,7 +45,7 @@ void PUMTransposeUnit::initialize() {
     return;
   }
 
-  auto hwConfig = PUMHWConfiguration::getPUMHWConfig();
+  auto hwConfig = StreamNUCAMap::getPUMHWConfig();
   auto numWays = hwConfig.way_per_bank;
   this->readyCycles.resize(numWays, Cycles(0));
   this->initialized = true;

@@ -1,8 +1,7 @@
 #ifndef __CPU_GEM_FORGE_PUM_HW_CONFIGURATION_HH__
 #define __CPU_GEM_FORGE_PUM_HW_CONFIGURATION_HH__
 
-#include "base/types.hh"
-
+#include <cstdint>
 #include <cstdlib>
 #include <tuple>
 
@@ -42,8 +41,6 @@ public:
   const int64_t mesh_layers;
   const int64_t mesh_rows;
   const int64_t mesh_cols;
-
-  static PUMHWConfiguration getPUMHWConfig();
 
   PUMHWConfiguration(int64_t _array_rows, int64_t _array_cols,
                      int64_t _array_per_way, int64_t _tree_degree,

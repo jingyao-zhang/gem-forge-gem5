@@ -454,7 +454,7 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
 
     MLC_S_DPRINTF(sendDynId, "[PUM] --- Can Compile DataMove. MyTile %s.\n",
                   myTile);
-    DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(), myTile);
+    DataMoveCompiler compiler(StreamNUCAMap::getPUMHWConfig(), myTile);
 
     auto recvS = computeConfig->stream;
     const auto &recvPatternInfo = group.patternInfo.at(recvS);
@@ -1446,7 +1446,7 @@ void MLCPUMManager::compileDataMove(PUMContext &context,
   const auto &recvTile = node->pumTile;
   auto recvPat = node->adjustPatByOutIter(context.nextOutIter);
 
-  DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(), sendTile);
+  DataMoveCompiler compiler(StreamNUCAMap::getPUMHWConfig(), sendTile);
 
   MLCSE_DPRINTF("[PUM] --- Compile MoveNode. SendTile %s %s -> %s %s.\n",
                 sendTile, sendPat, recvTile, recvPat);
@@ -1498,8 +1498,7 @@ void MLCPUMManager::compileCompute(PUMContext &context,
   // auto &patInfo = group.patternInfo.at(config->stream);
   // auto scalarElemBits = patInfo.scalarElemSize * 8;
 
-  DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(),
-                            node->pumTile);
+  DataMoveCompiler compiler(StreamNUCAMap::getPUMHWConfig(), node->pumTile);
 
   PUMCommandVecT commands;
 
@@ -2401,8 +2400,7 @@ void MLCPUMManager::addPUMLoadStream(PUMContext &context,
    */
   newSendConfig->hintNoStrandSplitOuterTrip = 1;
   if (recvSplitOutDim.getTotalTrip() != 0) {
-    newSendConfig->hintNoStrandSplitOuterTrip =
-        recvSplitOutDim.getTotalTrip();
+    newSendConfig->hintNoStrandSplitOuterTrip = recvSplitOutDim.getTotalTrip();
   }
 
   /**

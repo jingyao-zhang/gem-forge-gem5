@@ -6,6 +6,7 @@
 #include "mem/ruby/common/MachineID.hh"
 
 #include "cpu/gem_forge/accelerator/stream/cache/pum/AffinePattern.hh"
+#include "cpu/gem_forge/accelerator/stream/cache/pum/PUMHWConfiguration.hh"
 
 #include <map>
 
@@ -164,6 +165,8 @@ public:
     int wordline = 0;
   };
   static SRAMLocation getPUMLocation(Addr paddr, const RangeMap &range);
+
+  static PUMHWConfiguration getPUMHWConfig();
 
 private:
   static bool topologyInitialized;

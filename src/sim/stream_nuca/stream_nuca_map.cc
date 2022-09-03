@@ -300,3 +300,15 @@ int StreamNUCAMap::getSet(Addr paddr) {
   }
   return -1;
 }
+
+PUMHWConfiguration StreamNUCAMap::getPUMHWConfig() {
+  const auto &p = StreamNUCAMap::getCacheParams();
+
+  auto meshLayers = 1;
+  auto meshRows = StreamNUCAMap::getNumRows();
+  auto meshCols = StreamNUCAMap::getNumCols();
+
+  return PUMHWConfiguration(p.wordlines, p.bitlines, p.arrayPerWay,
+                            p.arrayTreeDegree, p.arrayTreeLeafBandwidth,
+                            p.assoc, meshLayers, meshRows, meshCols);
+}

@@ -48,8 +48,8 @@ void PUMEngine::configure(MLCPUMManager *pumManager, int64_t pumContextId,
 
   // Initialize HWConfig.
   if (!this->hwConfig) {
-    this->hwConfig = m5::make_unique<PUMHWConfiguration>(
-        PUMHWConfiguration::getPUMHWConfig());
+    this->hwConfig =
+        m5::make_unique<PUMHWConfiguration>(StreamNUCAMap::getPUMHWConfig());
   }
 
   if (pumContextId != this->pumContextId) {

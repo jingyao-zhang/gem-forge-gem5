@@ -1103,7 +1103,7 @@ StreamNUCAManager::decodeIndirectAlign(int64_t indirectAlign) {
 }
 
 bool StreamNUCAManager::canRemapDirectRegionPUM(const StreamRegion &region) {
-  auto pumHWConfig = PUMHWConfiguration::getPUMHWConfig();
+  auto pumHWConfig = StreamNUCAMap::getPUMHWConfig();
 
   auto bitlines = pumHWConfig.array_cols;
   if (region.numElement < bitlines || region.numElement % bitlines != 0) {
@@ -1127,7 +1127,7 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
 
   auto endPAddr = startPAddr + region.elementSize * region.numElement;
 
-  auto pumHWConfig = PUMHWConfiguration::getPUMHWConfig();
+  auto pumHWConfig = StreamNUCAMap::getPUMHWConfig();
 
   auto dimensions = region.arraySizes.size();
 

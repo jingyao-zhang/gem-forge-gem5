@@ -2417,7 +2417,7 @@ void LLCStreamEngine::issueStreamDataToPUM(
 
   broadcastPat.start += adjustStart;
 
-  DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(),
+  DataMoveCompiler compiler(StreamNUCAMap::getPUMHWConfig(),
                             sendToEdge.recvTile);
 
   // Split the broadcast SubRegion into masks.
