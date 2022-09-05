@@ -51,6 +51,14 @@ public:
 
   const IntVecT &getTrips() const { return trips; }
 
+  T getTotalTrip() const {
+    T ret = 1;
+    for (const auto &p : params) {
+      ret *= p.trip;
+    }
+    return ret;
+  }
+
   static T reduce_mul(typename IntVecT::const_iterator s,
                       typename IntVecT::const_iterator t, T init) {
     auto ret = init;

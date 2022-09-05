@@ -164,24 +164,35 @@ public:
 
   /**
    * Generate TileMask for each LLC bank.
-   */
+   __attribute__((noinline))*/
   std::vector<AffinePatternVecT> getLLCBankSubRegions() const;
 
   /**
    * Map commands to LLC.
    */
-  PUMCommandVecT mapCmdsToLLC(const PUMCommandVecT &commands) const;
+  __attribute__((noinline)) void mapCmdsToLLC(PUMCommandVecT &commands) const;
 
-  void
+  __attribute__((noinline)) void
   mapCmdToLLC(PUMCommand &command,
               const std::vector<AffinePatternVecT> &llcBankSubRegions) const;
 
-  void splitInterArrayCmdToLLC(PUMCommand &command) const;
+  __attribute__((noinline)) void
+  splitInterArrayCmdToLLC(PUMCommand &command) const;
 
   /**
    * Filter out empty commands at the end..
    */
   PUMCommandVecT filterEmptyCmds(const PUMCommandVecT &commands) const;
+
+private:
+  /**
+   * Optimized implementation with template.
+   */
+  template <size_t D, typename T>
+  __attribute__((noinline)) void
+  mapCmdToLLCImpl(PUMCommand &command,
+                  const std::vector<std::vector<AffinePatternImpl<D, T>>>
+                      &llcBankSubRegions) const;
 };
 
 #endif

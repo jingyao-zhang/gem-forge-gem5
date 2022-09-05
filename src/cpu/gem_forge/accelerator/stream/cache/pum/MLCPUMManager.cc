@@ -1562,7 +1562,7 @@ void MLCPUMManager::compileCompute(PUMContext &context,
   MLCSE_DPRINTF("Before mapped to LLC.\n");
 
   // Generate mask for each LLC bank.
-  commands = compiler.mapCmdsToLLC(commands);
+  compiler.mapCmdsToLLC(commands);
 
   // Generate the meta information.
   for (auto &cmd : commands) {
