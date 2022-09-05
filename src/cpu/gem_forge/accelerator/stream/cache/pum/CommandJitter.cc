@@ -2,7 +2,12 @@
 
 #include "DataMoveCompiler.hh"
 
+#include <chrono>
 #include <cstdio>
+
+#ifdef USING_GPERFTOOLS
+#include "gperftools/profiler.h"
+#endif
 
 const int64_t array_rows = 512;
 const int64_t array_cols = 512;
@@ -48,13 +53,28 @@ int main(int argc, char *argv[]) {
   printf("SendPat %s.\n", sendPat.to_string().c_str());
   printf("RecvPat %s.\n", recvPat.to_string().c_str());
 
-  auto commands = compiler.compile(sendPat, recvPat);
+  // For now compile multiple times.
+  PUMCommandVecT commands;
+  const int runs = 400;
+#ifdef USING_GPERFTOOLS
+  ProfilerStart("pum-jitter.prof");
+#endif
+  auto startTime = std::chrono::high_resolution_clock::now();
+  for (int i = 0; i < runs; ++i) {
+    commands = compiler.compile(sendPat, recvPat);
+  }
+  auto endTime = std::chrono::high_resolution_clock::now();
+#ifdef USING_GPERFTOOLS
+  ProfilerStop();
+#endif
 
   for (const auto &cmd : commands) {
     printf(" CMD %s.\n", cmd.to_string().c_str());
   }
 
-  printf("Hello from gem5.\n");
+  std::chrono::duration<double, std::micro> compileTimeMs = endTime - startTime;
+  compileTimeMs /= runs;
+  printf("CompileTime %lfus.\n", compileTimeMs.count());
   return 0;
 }
 

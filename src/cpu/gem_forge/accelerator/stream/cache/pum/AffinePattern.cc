@@ -87,6 +87,7 @@ AffinePattern AffinePattern::intersectSubRegions(const IntVecT &array_sizes,
                                                  const AffinePattern &region1,
                                                  const AffinePattern &region2) {
 
+#ifndef NDEBUG
   if (!region1.isSubRegionToArraySize(array_sizes)) {
     panic("Region1 %s Not SubRegion in Array %s.", region1, array_sizes);
   }
@@ -94,6 +95,7 @@ AffinePattern AffinePattern::intersectSubRegions(const IntVecT &array_sizes,
   if (!region2.isSubRegionToArraySize(array_sizes)) {
     panic("Region2 %s Not SubRegion in Array %s.", region2, array_sizes);
   }
+#endif
 
   auto starts1 = region1.getSubRegionStartToArraySize(array_sizes);
   auto trips1 = region1.getTrips();
@@ -126,6 +128,7 @@ AffinePattern AffinePattern::unionSubRegions(const IntVecT &array_sizes,
                                              const AffinePattern &region1,
                                              const AffinePattern &region2) {
 
+#ifndef NDEBUG
   if (!region1.isSubRegionToArraySize(array_sizes)) {
     panic("Region1 %s Not SubRegion in Array %s.", region1, array_sizes);
   }
@@ -133,6 +136,7 @@ AffinePattern AffinePattern::unionSubRegions(const IntVecT &array_sizes,
   if (!region2.isSubRegionToArraySize(array_sizes)) {
     panic("Region2 %s Not SubRegion in Array %s.", region2, array_sizes);
   }
+#endif
 
   auto starts1 = region1.getSubRegionStartToArraySize(array_sizes);
   auto trips1 = region1.getTrips();

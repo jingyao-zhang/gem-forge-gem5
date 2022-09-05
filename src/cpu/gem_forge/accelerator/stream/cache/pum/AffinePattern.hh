@@ -290,21 +290,18 @@ public:
      */
     auto dimension = arraySizes.size();
     // This is S1x... xSi
-    IntVecT inner_array_sizes;
+    IntVecT inner_array_sizes(dimension);
     for (auto i = 0; i < dimension; ++i) {
       auto s = reduce_mul(arraySizes.cbegin(), arraySizes.cbegin() + i, 1);
-      inner_array_sizes.push_back(s);
+      inner_array_sizes[i] = s;
     }
-    IntVecT pos;
+    IntVecT pos(dimension);
     int64_t cur_pos = std::abs(linearPos);
     for (int i = dimension - 1; i >= 0; --i) {
       auto p = cur_pos / inner_array_sizes[i];
 
-      if (linearPos > 0) {
-        pos.insert(pos.begin(), p);
-      } else {
-        pos.insert(pos.begin(), -p);
-      }
+      pos[i] = (linearPos > 0) ? p : -p;
+
       cur_pos = cur_pos % inner_array_sizes[i];
     }
     return pos;

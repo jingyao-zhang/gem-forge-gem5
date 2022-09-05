@@ -1322,8 +1322,22 @@ ccflags = {'debug' : [], 'opt' : ['-g'], 'fast' : [], 'prof' : ['-g', '-pg'],
 # prof, and -lprofiler for perf. The -lprofile flag is surrounded by
 # no-as-needed and as-needed as the binutils linker is too clever and
 # simply doesn't link to the library otherwise.
-ldflags = {'debug' : [], 'opt' : [], 'fast' : [], 'prof' : ['-pg'],
-           'perf' : ['-Wl,--no-as-needed', '-lprofiler', '-Wl,--as-needed']}
+ldflags = {
+    'debug' : [
+    ],
+    'opt' : [
+    ],
+    'fast' : [
+    ],
+    'prof' : [
+        '-pg',
+    ],
+    'perf' : [
+        '-Wl,--no-as-needed',
+        '-lprofiler',
+        '-Wl,--as-needed'
+    ],
+}
 
 # For Link Time Optimization, the optimisation flags used to compile
 # individual files are decoupled from those used at link time
@@ -1422,8 +1436,17 @@ if 'prof' in needed_envs:
 
 # Profiled binary using google-pprof
 if 'perf' in needed_envs:
+    gem_forge_top = os.getenv('GEM_FORGE_TOP')
+    assert(gem_forge_top is not None)
+    gperftools_dir = os.path.join(gem_forge_top, 'lib', 'gperftools')
+    ldflags['perf'].insert(0,
+        f'-L{gperftools_dir}/build',
+    )
+    ccflags['perf'].append(
+        f'-I{gperftools_dir}/src',
+    )
     makeEnv(env, 'perf', '.gpo',
             CCFLAGS = Split(ccflags['perf']),
-            CPPDEFINES = ['NDEBUG', 'TRACING_ON=0'],
+            CPPDEFINES = ['NDEBUG', 'TRACING_ON=0', 'USING_GPERFTOOLS'],
             LINKFLAGS = Split(ldflags['perf']),
             disable_partial=disable_partial)
