@@ -917,7 +917,10 @@ void DataMoveCompiler::mapCmdToLLC(
       llcTiles.emplace_back();
       llcTiles.back().srcTilePattern = intersect;
 
-      if (command.type == "inter-array") {
+      /**
+       * Destination pattern is only set for "inter-array" commands with reuse.
+       */
+      if (command.type == "inter-array" && command.hasReuse()) {
 
         auto srcStartPos =
             intersect.getSubRegionStartToArraySize(this->tile_nums);
@@ -932,18 +935,16 @@ void DataMoveCompiler::mapCmdToLLC(
         /**
          * Expand the dest tile pattern with reuse.
          */
-        if (command.hasReuse()) {
-          auto reuseDim = command.reuse.dim;
-          auto reuseCount = command.reuse.count;
-          assert(trips[reuseDim] == 1 && "ReuseDim should have trip count 1.");
-          auto reuseDimTileSize = this->tile_sizes[reuseDim];
-          auto reuseTileCount =
-              (reuseCount + reuseDimTileSize - 1) / reuseDimTileSize;
-          trips[reuseDim] = reuseTileCount;
-          // Reuse should stay within the boundary.
-          assert(dstStartPos[reuseDim] + reuseTileCount <=
-                 this->tile_nums[reuseDim]);
-        }
+        auto reuseDim = command.reuse.dim;
+        auto reuseCount = command.reuse.count;
+        assert(trips[reuseDim] == 1 && "ReuseDim should have trip count 1.");
+        auto reuseDimTileSize = this->tile_sizes[reuseDim];
+        auto reuseTileCount =
+            (reuseCount + reuseDimTileSize - 1) / reuseDimTileSize;
+        trips[reuseDim] = reuseTileCount;
+        // Reuse should stay within the boundary.
+        assert(dstStartPos[reuseDim] + reuseTileCount <=
+               this->tile_nums[reuseDim]);
 
         llcTiles.back().dstTilePattern = AffinePattern::constructSubRegion(
             this->tile_nums, dstStartPos, trips);
@@ -1002,7 +1003,10 @@ void DataMoveCompiler::mapCmdToLLCImpl(
       llcTiles.emplace_back();
       llcTiles.back().srcTilePattern = intersect;
 
-      if (command.type == "inter-array") {
+      /**
+       * Destination pattern is only set for "inter-array" commands with reuse.
+       */
+      if (command.hasReuse() && command.type == "inter-array") {
 
         auto srcStartPos =
             intersect.getSubRegionStartToArraySize(this->tile_nums);
@@ -1017,18 +1021,16 @@ void DataMoveCompiler::mapCmdToLLCImpl(
         /**
          * Expand the dest tile pattern with reuse.
          */
-        if (command.hasReuse()) {
-          auto reuseDim = command.reuse.dim;
-          auto reuseCount = command.reuse.count;
-          assert(trips[reuseDim] == 1 && "ReuseDim should have trip count 1.");
-          auto reuseDimTileSize = this->tile_sizes[reuseDim];
-          auto reuseTileCount =
-              (reuseCount + reuseDimTileSize - 1) / reuseDimTileSize;
-          trips[reuseDim] = reuseTileCount;
-          // Reuse should stay within the boundary.
-          assert(dstStartPos[reuseDim] + reuseTileCount <=
-                 this->tile_nums[reuseDim]);
-        }
+        auto reuseDim = command.reuse.dim;
+        auto reuseCount = command.reuse.count;
+        assert(trips[reuseDim] == 1 && "ReuseDim should have trip count 1.");
+        auto reuseDimTileSize = this->tile_sizes[reuseDim];
+        auto reuseTileCount =
+            (reuseCount + reuseDimTileSize - 1) / reuseDimTileSize;
+        trips[reuseDim] = reuseTileCount;
+        // Reuse should stay within the boundary.
+        assert(dstStartPos[reuseDim] + reuseTileCount <=
+               this->tile_nums[reuseDim]);
 
         llcTiles.back().dstTilePattern = AffinePattern::constructSubRegion(
             this->tile_nums, dstStartPos, trips);
@@ -1058,7 +1060,6 @@ void DataMoveCompiler::mapCmdToLLCImpl(
                 getAffinePatternFromImpl<D, T>(fixedDstIntersect);
             dstPatterns.push_back(dstIntersect);
           }
-
         }
       }
     }

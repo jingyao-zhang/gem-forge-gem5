@@ -49,7 +49,7 @@ std::string PUMCommand::to_string(int llcBankIdx) const {
       os << "    LLCCmd " << std::setw(2) << i;
       for (auto j = 0; j < patterns.size(); ++j) {
         os << "  " << patterns[j].srcTilePattern;
-        if (type == "inter-array") {
+        if (type == "inter-array" && hasReuse()) {
           os << " -> " << patterns[j].dstTilePattern << "\n";
           const auto dstSplitPats = patterns[j].dstSplitTilePatterns;
           for (auto dstBankIdx = 0; dstBankIdx < dstSplitPats.size();

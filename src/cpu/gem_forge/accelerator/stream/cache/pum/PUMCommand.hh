@@ -33,6 +33,12 @@ public:
 
   struct LLCTileMask {
     AffinePattern srcTilePattern;
+    /**
+     * This records the distination tile pattern.
+     * NOTE: This is only set for inter-array commands with reuse.
+     * For commands without reuse, the PUMEngine infers the destination banks
+     * from tile_dist.
+     */
     AffinePattern dstTilePattern;
     std::vector<AffinePatternVecT> dstSplitTilePatterns;
   };
