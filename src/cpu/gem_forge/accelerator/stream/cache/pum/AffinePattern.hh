@@ -1,6 +1,8 @@
 #ifndef __CPU_GEM_FORGE_AFFINE_PATTERN_HH__
 #define __CPU_GEM_FORGE_AFFINE_PATTERN_HH__
 
+#include "AffinePatternImpl.hh"
+
 #include <cstdint>
 #include <cstdlib>
 #include <sstream>
@@ -282,30 +284,7 @@ public:
 
   static AffinePattern parse(const std::string &s);
 
-  static IntVecT getArrayPosition(const IntVecT &arraySizes,
-                                  int64_t linearPos) {
-    /**
-      Given a linear position, return the position according to the array
-      dimension.
-     */
-    auto dimension = arraySizes.size();
-    // This is S1x... xSi
-    IntVecT inner_array_sizes(dimension);
-    for (auto i = 0; i < dimension; ++i) {
-      auto s = reduce_mul(arraySizes.cbegin(), arraySizes.cbegin() + i, 1);
-      inner_array_sizes[i] = s;
-    }
-    IntVecT pos(dimension);
-    int64_t cur_pos = std::abs(linearPos);
-    for (int i = dimension - 1; i >= 0; --i) {
-      auto p = cur_pos / inner_array_sizes[i];
-
-      pos[i] = (linearPos > 0) ? p : -p;
-
-      cur_pos = cur_pos % inner_array_sizes[i];
-    }
-    return pos;
-  }
+  static IntVecT getArrayPosition(const IntVecT &arraySizes, int64_t linearPos);
 
   IntVecT getSubRegionStartToArraySize(const IntVecT &arraySizes) const {
     return getArrayPosition(arraySizes, start);
@@ -484,5 +463,30 @@ std::ostream &operator<<(std::ostream &os,
                          const AffinePattern::IntVecT &intVec);
 
 using AffinePatternVecT = std::vector<AffinePattern>;
+
+/**
+ * Conversion between AffinePattern and AffinePatternImpl.
+ */
+
+template <size_t dimension, typename T>
+AffinePatternImpl<dimension, T> getAffinePatternImpl(const AffinePattern &p) {
+  assert(p.numDimension() == dimension);
+  typename AffinePatternImpl<dimension, T>::ParamVecT params;
+  for (auto i = 0; i < dimension; ++i) {
+    params[i].trip = p.params[i].trip;
+    params[i].stride = p.params[i].stride;
+  }
+  return AffinePatternImpl<dimension, T>(p.start, params);
+}
+
+template <size_t dimension, typename T>
+AffinePattern
+getAffinePatternFromImpl(const AffinePatternImpl<dimension, T> &p) {
+  AffinePattern::ParamVecT params;
+  for (auto i = 0; i < dimension; ++i) {
+    params.emplace_back(p.params[i].stride, p.params[i].trip);
+  }
+  return AffinePattern(p.start, params);
+}
 
 #endif

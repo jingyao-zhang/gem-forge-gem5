@@ -60,6 +60,49 @@ AffinePattern AffinePattern::parse(const std::string &s) {
   return AffinePattern(start, params);
 }
 
+AffinePattern::IntVecT
+AffinePattern::getArrayPosition(const IntVecT &arraySizes, int64_t linearPos) {
+  /**
+    Given a linear position, return the position according to the array
+    dimension.
+   */
+  auto dimension = arraySizes.size();
+
+#define dispatch_impl(dim)                                                     \
+  auto fixedArraySizes =                                                       \
+      AffinePatternImpl<dim, int64_t>::getFixSizedIntVec(arraySizes);          \
+  auto fixedArrayPos = AffinePatternImpl<dim, int64_t>::getArrayPosition(      \
+      fixedArraySizes, linearPos);                                             \
+  return AffinePatternImpl<dim, int64_t>::getHeapIntVec(fixedArrayPos);
+
+  if (dimension == 1) {
+    dispatch_impl(1);
+  } else if (dimension == 2) {
+    dispatch_impl(2);
+  } else if (dimension == 3) {
+    dispatch_impl(3);
+  }
+
+#undef dispatch_impl
+
+  // This is S1x... xSi
+  IntVecT inner_array_sizes(dimension);
+  for (auto i = 0; i < dimension; ++i) {
+    auto s = reduce_mul(arraySizes.cbegin(), arraySizes.cbegin() + i, 1);
+    inner_array_sizes[i] = s;
+  }
+  IntVecT pos(dimension);
+  int64_t cur_pos = std::abs(linearPos);
+  for (int i = dimension - 1; i >= 0; --i) {
+    auto p = cur_pos / inner_array_sizes[i];
+
+    pos[i] = (linearPos > 0) ? p : -p;
+
+    cur_pos = cur_pos % inner_array_sizes[i];
+  }
+  return pos;
+}
+
 std::ostream &operator<<(std::ostream &os,
                          const AffinePattern::IntVecT &intVec) {
   for (const auto &v : intVec) {
@@ -97,13 +140,32 @@ AffinePattern AffinePattern::intersectSubRegions(const IntVecT &array_sizes,
   }
 #endif
 
+#define dispatch_impl(dim)                                                     \
+  auto fixedArraySizes =                                                       \
+      AffinePatternImpl<dim, int64_t>::getFixSizedIntVec(array_sizes);         \
+  auto fixedRegion1 = getAffinePatternImpl<dim, int64_t>(region1);             \
+  auto fixedRegion2 = getAffinePatternImpl<dim, int64_t>(region2);             \
+  auto fixedIntersect = AffinePatternImpl<dim, int64_t>::intersectSubRegions(  \
+      fixedArraySizes, fixedRegion1, fixedRegion2);                            \
+  return getAffinePatternFromImpl<dim, int64_t>(fixedIntersect);
+
+  auto dimension = array_sizes.size();
+  if (dimension == 1) {
+    dispatch_impl(1);
+  } else if (dimension == 2) {
+    dispatch_impl(2);
+  } else if (dimension == 3) {
+    dispatch_impl(3);
+  }
+
+#undef dispatch_impl
+
   auto starts1 = region1.getSubRegionStartToArraySize(array_sizes);
   auto trips1 = region1.getTrips();
   auto starts2 = region2.getSubRegionStartToArraySize(array_sizes);
   auto trips2 = region2.getTrips();
   IntVecT intersect_starts;
   IntVecT intersect_trips;
-  auto dimension = array_sizes.size();
   for (auto i = 0; i < dimension; ++i) {
     auto s1 = starts1[i];
     auto t1 = trips1[i];
