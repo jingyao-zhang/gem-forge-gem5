@@ -2,6 +2,7 @@
 #define __CPU_GEM_FORGE_PUM_COMMAND_HH__
 
 #include "AffinePattern.hh"
+#include "LLCTilePattern.hh"
 #include "cpu/op_class.hh"
 
 #include "../DynStreamId.hh"
@@ -33,6 +34,8 @@ public:
 
   struct LLCTileMask {
     AffinePattern srcTilePattern;
+  };
+  struct LLCDstTileMask {
     /**
      * This records the distination tile pattern.
      * NOTE: This is only set for inter-array commands with reuse.
@@ -43,7 +46,9 @@ public:
     std::vector<AffinePatternVecT> dstSplitTilePatterns;
   };
 
-  std::vector<std::vector<LLCTileMask>> llcSplitTileCmds;
+  // std::vector<std::vector<LLCTileMask>> llcSplitTileCmds;
+  LLCTilePattern llcSplitTileCmds;
+  std::vector<std::vector<LLCDstTileMask>> llcSplitDstTileCmds;
 
   int wordline_bits;
   // Only valid for compute command.

@@ -91,14 +91,14 @@ void PUMEngine::configure(MLCPUMManager *pumManager, int64_t pumContextId,
       this->commands.push_back(command);
       continue;
     }
-    const auto &llcCmd = command.llcSplitTileCmds.at(myBankIdx);
-    if (llcCmd.empty()) {
+    assert(command.llcSplitTileCmds.dimension > 0);
+    if (command.llcSplitTileCmds.getBankSubRegionCount(myBankIdx) == 0) {
       continue;
     }
     auto c = commands[i];
-    for (auto j = 0; j < c.llcSplitTileCmds.size(); ++j) {
+    for (auto j = 0; j < c.llcSplitTileCmds.NumBanks; ++j) {
       if (j != myBankIdx) {
-        c.llcSplitTileCmds[j].clear();
+        c.llcSplitTileCmds.clearBankSubRegion(j);
       }
     }
     this->commands.push_back(c);
@@ -141,12 +141,13 @@ void PUMEngine::kickNextCommand() {
       }
     }
 
-    const auto &llcCmds = command.llcSplitTileCmds.at(myBankIdx);
-    assert(!llcCmds.empty() && "Empty LLC command.\n");
+    auto numCmds = command.llcSplitTileCmds.getBankSubRegionCount(myBankIdx);
+    assert(numCmds > 0 && "Empty LLC command.\n");
 
     std::unordered_set<int64_t> usedArrays;
-    for (const auto &mask : llcCmds) {
-      for (auto arrayIdx : mask.srcTilePattern.generate_all_values()) {
+    for (int j = 0; j < numCmds; ++j) {
+      auto mask = command.llcSplitTileCmds.getAffinePattern(myBankIdx, j);
+      for (auto arrayIdx : mask.generate_all_values()) {
         usedArrays.insert(arrayIdx);
       }
     }
@@ -350,8 +351,9 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
          * Hack: when there is reuse, just send to all the DstBank.
          * TODO: Properly handle this.
          */
+        assert(!command.llcSplitDstTileCmds[myBankIdx].empty());
         const auto &dstSplitBanks =
-            command.llcSplitTileCmds[myBankIdx][0].dstSplitTilePatterns;
+            command.llcSplitDstTileCmds[myBankIdx][0].dstSplitTilePatterns;
         for (auto dstBankIdx = 0; dstBankIdx < dstSplitBanks.size();
              ++dstBankIdx) {
           if (dstSplitBanks[dstBankIdx].empty()) {

@@ -40,18 +40,22 @@ std::string PUMCommand::to_string(int llcBankIdx) const {
     os << "  Op " << Enums::OpClassStrings[opClass]
        << (isReduction ? " [Reduce] " : "") << '\n';
   }
-  for (auto i = 0; i < llcSplitTileCmds.size(); ++i) {
+  for (auto i = 0; i < llcSplitTileCmds.NumBanks; ++i) {
     if (llcBankIdx != -1 && i != llcBankIdx) {
       continue;
     }
-    const auto &patterns = llcSplitTileCmds[i];
-    if (!patterns.empty()) {
+    auto subRegionCount = llcSplitTileCmds.getBankSubRegionCount(i);
+    if (subRegionCount > 0) {
       os << "    LLCCmd " << std::setw(2) << i;
-      for (auto j = 0; j < patterns.size(); ++j) {
-        os << "  " << patterns[j].srcTilePattern;
+      for (auto j = 0; j < subRegionCount; ++j) {
+        os << "  " << llcSplitTileCmds.getAffinePattern(i, j);
         if (type == "inter-array" && hasReuse()) {
-          os << " -> " << patterns[j].dstTilePattern << "\n";
-          const auto dstSplitPats = patterns[j].dstSplitTilePatterns;
+
+          const auto &dstTilePat = llcSplitDstTileCmds[i][j];
+
+          os << " -> " << dstTilePat.dstTilePattern << "\n";
+
+          const auto &dstSplitPats = dstTilePat.dstSplitTilePatterns;
           for (auto dstBankIdx = 0; dstBankIdx < dstSplitPats.size();
                ++dstBankIdx) {
             if (dstSplitPats[dstBankIdx].empty()) {

@@ -49,6 +49,13 @@ public:
     }
   }
 
+  AffinePatternImpl() : start(0) {
+    for (int i = 0; i < dimension; ++i) {
+      params[i].trip = 0;
+      trips[i] = 0;
+    }
+  }
+
   const IntVecT &getTrips() const { return trips; }
 
   T getTotalTrip() const {

@@ -866,26 +866,31 @@ void DataMoveCompiler::mapCmdsToLLC(PUMCommandVecT &commands) const {
   std::vector<AffinePatternVecT> llcBankSubRegions =
       this->getLLCBankSubRegions();
 
+#define dispatch_impl(dim)                                                     \
+  {                                                                            \
+    std::vector<std::vector<AffinePatternImpl<dim, int64_t>>>                  \
+        fixedLLCBankSubRegions;                                                \
+    for (const auto &regions : llcBankSubRegions) {                            \
+      fixedLLCBankSubRegions.emplace_back();                                   \
+      for (const auto &r : regions) {                                          \
+        fixedLLCBankSubRegions.back().push_back(                               \
+            getAffinePatternImpl<dim, int64_t>(r));                            \
+      }                                                                        \
+    }                                                                          \
+    for (auto &command : commands) {                                           \
+      this->mapCmdToLLCImpl<dim, int64_t>(command, fixedLLCBankSubRegions);    \
+    }                                                                          \
+  }
+
+  // Specialize for some dimension.
   // Process all commands.
   if (this->dimension == 1) {
-    // Specialize for some dimension.
-
-    std::vector<std::vector<AffinePatternImpl<1, int64_t>>>
-        fixedLLCBankSubRegions;
-    for (const auto &regions : llcBankSubRegions) {
-      fixedLLCBankSubRegions.emplace_back();
-      for (const auto &r : regions) {
-        fixedLLCBankSubRegions.back().push_back(
-            getAffinePatternImpl<1, int64_t>(r));
-      }
-    }
-
-    for (auto &command : commands) {
-      this->mapCmdToLLCImpl<1, int64_t>(command, fixedLLCBankSubRegions);
-    }
-
+    dispatch_impl(1);
+  } else if (this->dimension == 2) {
+    dispatch_impl(2);
+  } else if (this->dimension == 3) {
+    dispatch_impl(3);
   } else {
-
     for (auto &command : commands) {
       mapCmdToLLC(command, llcBankSubRegions);
     }
@@ -905,8 +910,14 @@ void DataMoveCompiler::mapCmdToLLC(
 
   auto numLLCBanks = llc_config.get_total_banks();
 
+  auto needDstTilePattern = false;
+  if (command.type == "inter-array" && command.hasReuse()) {
+    needDstTilePattern = true;
+  }
+
+  command.llcSplitTileCmds.initialize(this->dimension);
+
   for (auto i = 0; i < numLLCBanks; ++i) {
-    std::vector<PUMCommand::LLCTileMask> llcTiles;
     for (const auto &llc_sub_region : llcBankSubRegions[i]) {
       auto intersect = AffinePattern::intersectSubRegions(
           tile_nums, command.tile_mask, llc_sub_region);
@@ -914,13 +925,23 @@ void DataMoveCompiler::mapCmdToLLC(
         // Empty intersection.
         continue;
       }
-      llcTiles.emplace_back();
-      llcTiles.back().srcTilePattern = intersect;
+      command.llcSplitTileCmds.addPattern(i, intersect);
+    }
+  }
 
-      /**
-       * Destination pattern is only set for "inter-array" commands with reuse.
-       */
-      if (command.type == "inter-array" && command.hasReuse()) {
+  /**
+   * Destination pattern is only set for "inter-array" commands with reuse.
+   */
+  if (needDstTilePattern) {
+    for (auto i = 0; i < numLLCBanks; ++i) {
+      command.llcSplitDstTileCmds.emplace_back();
+      auto &llcTiles = command.llcSplitDstTileCmds.back();
+      auto numSubRegions = command.llcSplitTileCmds.getBankSubRegionCount(i);
+      for (auto j = 0; j < numSubRegions; ++j) {
+
+        const auto &intersect = command.llcSplitTileCmds.getAffinePattern(i, j);
+
+        llcTiles.emplace_back();
 
         auto srcStartPos =
             intersect.getSubRegionStartToArraySize(this->tile_nums);
@@ -968,7 +989,6 @@ void DataMoveCompiler::mapCmdToLLC(
         }
       }
     }
-    command.llcSplitTileCmds.push_back(llcTiles);
   }
 }
 
@@ -979,14 +999,23 @@ void DataMoveCompiler::mapCmdToLLCImpl(
     const {
 
   auto numLLCBanks = llc_config.get_total_banks();
+  // As an optimization, we fixed number of banks for Jitter.
+  assert(numLLCBanks == LLCTilePattern::NumBanks);
 
   auto fixedTileNums = AffinePatternImpl<D, T>::getFixSizedIntVec(tile_nums);
   auto fixedCmdTileMask = getAffinePatternImpl<D, T>(command.tile_mask);
 
-  for (auto i = 0; i < numLLCBanks; ++i) {
+  /**
+   * Destination pattern is only set for "inter-array" commands with reuse.
+   */
+  auto needDstTilePattern = false;
+  if (command.type == "inter-array" && command.hasReuse()) {
+    needDstTilePattern = true;
+  }
 
-    command.llcSplitTileCmds.emplace_back();
-    auto &llcTiles = command.llcSplitTileCmds.back();
+  auto &llcTilePattern = command.llcSplitTileCmds.init<D>();
+
+  for (auto i = 0; i < numLLCBanks; ++i) {
 
     for (const auto &llc_sub_region : llcBankSubRegions[i]) {
 
@@ -998,15 +1027,20 @@ void DataMoveCompiler::mapCmdToLLCImpl(
         continue;
       }
 
-      auto intersect = getAffinePatternFromImpl<D, T>(fixedIntersect);
+      llcTilePattern.addPattern(i, fixedIntersect);
+    }
+  }
 
-      llcTiles.emplace_back();
-      llcTiles.back().srcTilePattern = intersect;
+  if (needDstTilePattern) {
 
-      /**
-       * Destination pattern is only set for "inter-array" commands with reuse.
-       */
-      if (command.hasReuse() && command.type == "inter-array") {
+    for (auto i = 0; i < numLLCBanks; ++i) {
+      command.llcSplitDstTileCmds.emplace_back();
+      auto &llcTiles = command.llcSplitDstTileCmds.back();
+
+      auto numSubRegions = command.llcSplitTileCmds.getBankSubRegionCount(i);
+      for (auto j = 0; j < numSubRegions; ++j) {
+
+        const auto &intersect = command.llcSplitTileCmds.getAffinePattern(i, j);
 
         auto srcStartPos =
             intersect.getSubRegionStartToArraySize(this->tile_nums);
