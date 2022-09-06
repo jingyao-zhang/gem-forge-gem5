@@ -164,8 +164,9 @@ public:
 
   /**
    * Generate TileMask for each LLC bank.
-   __attribute__((noinline))*/
-  std::vector<AffinePatternVecT> getLLCBankSubRegions() const;
+   */
+  __attribute__((noinline)) std::vector<AffinePatternVecT>
+  getLLCBankSubRegions() const;
 
   /**
    * Map commands to LLC.
@@ -190,7 +191,7 @@ private:
    */
 
   template <size_t D, typename T>
-  std::vector<std::vector<AffinePatternImpl<D, T>>>
+  __attribute__((noinline)) std::vector<std::vector<AffinePatternImpl<D, T>>>
   getLLCBankSubRegionsImpl() const;
 
   template <size_t D, typename T>

@@ -28,10 +28,8 @@ public:
   static_assert(D > 0);
   static_assert(D < 4);
 
-  static constexpr size_t MaxSubRegions = D == 1   ? 1
-                                          : D == 2 ? 3
-                                          : D == 3 ? 9
-                                                   : 1;
+  static constexpr size_t MaxSubRegions =
+      AffinePatternImpl<D, T>::MaxSubRegionsForContinuousRange;
 
   struct BankPattern {
     std::array<AffPatImpl, MaxSubRegions> patterns;

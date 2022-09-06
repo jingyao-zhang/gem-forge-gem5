@@ -9,10 +9,16 @@
 #include <tuple>
 #include <vector>
 
+#include "base/logging.hh"
+
 /**
  * To optimize for the performance, we use template to specialize some common
  * affine pattern for certain dimensions.
  */
+
+template <typename T> constexpr T constPow(T a, T b) {
+  return b == 0 ? 1 : a * constPow(a, b - 1);
+}
 
 template <size_t dimension, typename T = int64_t> class AffinePatternImpl {
 public:
@@ -41,6 +47,16 @@ public:
   T start;
   ParamVecT params;
   IntVecT trips;
+
+  /**
+   * For a given dimension array, we always know the maximal number of canonical
+   * sub-regions that a continuous range could be broken into. This is used as
+   * an upper bound on when we can break the LLC banks into sub-regions.
+   *
+   * The formula is 3 ^ (dimension - 1).
+   */
+  static constexpr size_t MaxSubRegionsForContinuousRange =
+      constPow(3ul, dimension);
 
   AffinePatternImpl(T _start, ParamVecT _params)
       : start(_start), params(std::move(_params)) {
@@ -176,109 +192,125 @@ public:
     trip = std::min(trip, totalSize - start);
     auto ps = getArrayPosition(array_sizes, start);
     auto qs = getArrayPosition(array_sizes, start + trip);
-    return recursive_break_continuous_range_into_canonical_sub_regions(
-        array_sizes, ps, qs, 0 /* dim */);
+    return RecursiveBreakContinuousRangeIntoCanonicalSubRegions<
+        dimension, false>::run(array_sizes, ps, qs);
   }
 
-  static std::vector<ThisT>
-  recursive_break_continuous_range_into_canonical_sub_regions(
-      const IntVecT &array_sizes, IntVecT &ps, IntVecT &qs, size_t dim) {
-    /**
-    This method breaks a continuous range [start, start + trip) into a list of
-    sub regions. Specifically, it aligns the start and and to each dimension
-    by creating new sub regions if the mod is not zero.
+  template <size_t remain_dim, bool dummy>
+  struct RecursiveBreakContinuousRangeIntoCanonicalSubRegions {
+    static std::vector<ThisT> run(const IntVecT &array_sizes, IntVecT &ps,
+                                  IntVecT &qs) {
 
-    |--------|-------|-------|-------|-------|-------|-------|--------|
-             A   P   B       C   Q   D
+      /**
+      This method breaks a continuous range [start, start + trip) into a list of
+      sub regions. Specifically, it aligns the start and and to each dimension
+      by creating new sub regions if the mod is not zero.
 
-    Create a sub region for [P, B), [C, Q) and keep [B, C) continuous.
-    */
-    std::vector<ThisT> sub_regions;
+      |--------|-------|-------|-------|-------|-------|-------|--------|
+               A   P   B       C   Q   D
 
-    auto p = ps[dim];
-    auto q = qs[dim];
-    auto t = array_sizes[dim];
+      Create a sub region for [P, B), [C, Q) and keep [B, C) continuous.
+      */
+      std::vector<ThisT> sub_regions;
 
-    // print(f'dim={dim} array={array_sizes} ps={ps} qs={qs}')
+      static constexpr size_t dim = dimension - remain_dim;
 
-    bool high_dim_match = true;
-    for (auto i = dim + 1; i < dimension; ++i) {
-      if (ps[i] != qs[i]) {
-        high_dim_match = false;
-        break;
+      auto p = ps[dim];
+      auto q = qs[dim];
+      auto t = array_sizes[dim];
+
+      // print(f'dim={dim} array={array_sizes} ps={ps} qs={qs}')
+
+      bool high_dim_match = true;
+      for (auto i = dim + 1; i < dimension; ++i) {
+        if (ps[i] != qs[i]) {
+          high_dim_match = false;
+          break;
+        }
       }
-    }
 
-    if (p != 0 && q != 0 && high_dim_match) {
-      // One sub region [P, Q)
-      IntVecT starts(ps);
-      IntVecT trips(array_sizes);
-      for (auto i = dim; i < dimension; ++i) {
-        trips[i] = 1;
-      }
-      trips[dim] = q - p;
-      sub_regions.push_back(constructSubRegion(array_sizes, starts, trips));
-    } else {
-      if (p != 0) {
-        // One sub region [P, B)
+      if (p != 0 && q != 0 && high_dim_match) {
+        // One sub region [P, Q)
         IntVecT starts(ps);
         IntVecT trips(array_sizes);
         for (auto i = dim; i < dimension; ++i) {
           trips[i] = 1;
         }
-        trips[dim] = t - p;
+        trips[dim] = q - p;
         sub_regions.push_back(constructSubRegion(array_sizes, starts, trips));
-      }
-
-      if (q != 0) {
-        IntVecT starts(qs);
-        starts[dim] = 0;
-        IntVecT trips(array_sizes);
-        for (auto i = dim; i < dimension; ++i) {
-          trips[i] = 1;
-        }
-        trips[dim] = q;
-        sub_regions.push_back(constructSubRegion(array_sizes, starts, trips));
-      }
-
-      if (!high_dim_match) {
-        // There is more to match.
-        assert(dim + 1 < dimension);
-        IntVecT bs(ps);
+      } else {
         if (p != 0) {
-          bs[dim] = 0;
-          bs[dim + 1] += 1;
-          // Adjust starting point if we need to carry.
-          for (auto i = dim + 1; i < dimension - 1; ++i) {
-            if (bs[i] == array_sizes[i]) {
-              bs[i] = 0;
-              bs[i + 1] += 1;
+          // One sub region [P, B)
+          IntVecT starts(ps);
+          IntVecT trips(array_sizes);
+          for (auto i = dim; i < dimension; ++i) {
+            trips[i] = 1;
+          }
+          trips[dim] = t - p;
+          sub_regions.push_back(constructSubRegion(array_sizes, starts, trips));
+        }
+
+        if (q != 0) {
+          IntVecT starts(qs);
+          starts[dim] = 0;
+          IntVecT trips(array_sizes);
+          for (auto i = dim; i < dimension; ++i) {
+            trips[i] = 1;
+          }
+          trips[dim] = q;
+          sub_regions.push_back(constructSubRegion(array_sizes, starts, trips));
+        }
+
+        if (!high_dim_match) {
+          // There is more to match.
+          assert(remain_dim > 1);
+          IntVecT bs(ps);
+          if (p != 0) {
+            bs[dim] = 0;
+            bs[dim + 1] += 1;
+            // Adjust starting point if we need to carry.
+            for (auto i = dim + 1; i < dimension - 1; ++i) {
+              if (bs[i] == array_sizes[i]) {
+                bs[i] = 0;
+                bs[i + 1] += 1;
+              }
             }
           }
-        }
-        IntVecT cs(qs);
-        if (q != 0) {
-          cs[dim] = 0;
-        }
-        bool bs_eq_cs = true;
-        for (auto i = 0; i < dimension; ++i) {
-          auto b = bs[i];
-          auto c = cs[i];
-          if (b != c) {
-            bs_eq_cs = false;
-            break;
+          IntVecT cs(qs);
+          if (q != 0) {
+            cs[dim] = 0;
+          }
+          bool bs_eq_cs = true;
+          for (auto i = 0; i < dimension; ++i) {
+            auto b = bs[i];
+            auto c = cs[i];
+            if (b != c) {
+              bs_eq_cs = false;
+              break;
+            }
+          }
+          if (!bs_eq_cs) {
+            auto ret = RecursiveBreakContinuousRangeIntoCanonicalSubRegions<
+                remain_dim - 1, false>::run(array_sizes, bs, cs);
+            sub_regions.insert(sub_regions.end(), ret.begin(), ret.end());
           }
         }
-        if (!bs_eq_cs) {
-          auto ret =
-              recursive_break_continuous_range_into_canonical_sub_regions(
-                  array_sizes, bs, cs, dim + 1);
-          sub_regions.insert(sub_regions.end(), ret.begin(), ret.end());
-        }
       }
+      return sub_regions;
     }
-    return sub_regions;
-  }
+  };
+
+  /**
+   * Partial specialization to break the chain.
+   */
+  template <bool dummy>
+  struct RecursiveBreakContinuousRangeIntoCanonicalSubRegions<0, dummy> {
+    static std::vector<ThisT> run(const IntVecT &array_sizes, IntVecT &ps,
+                                  IntVecT &qs) {
+      panic("Recursive break continuous range into canonical sub-regions "
+            "remain_dim = 0");
+    }
+  };
 };
 
 #endif
