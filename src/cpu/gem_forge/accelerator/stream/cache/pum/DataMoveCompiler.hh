@@ -188,6 +188,15 @@ private:
   /**
    * Optimized implementation with template.
    */
+
+  template <size_t D, typename T>
+  std::vector<std::vector<AffinePatternImpl<D, T>>>
+  getLLCBankSubRegionsImpl() const;
+
+  template <size_t D, typename T>
+  __attribute__((noinline)) void
+  mapCmdsToLLCImpl(PUMCommandVecT &commands) const;
+
   template <size_t D, typename T>
   __attribute__((noinline)) void
   mapCmdToLLCImpl(PUMCommand &command,

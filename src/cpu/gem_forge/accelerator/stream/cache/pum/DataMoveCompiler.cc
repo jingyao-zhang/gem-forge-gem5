@@ -862,38 +862,25 @@ void DataMoveCompiler::mapCmdsToLLC(PUMCommandVecT &commands) const {
     structure.
    */
 
+  // Specialize for some dimension.
+  if (this->dimension == 1) {
+    this->mapCmdsToLLCImpl<1, int64_t>(commands);
+    return;
+  } else if (this->dimension == 2) {
+    this->mapCmdsToLLCImpl<2, int64_t>(commands);
+    return;
+  } else if (this->dimension == 3) {
+    this->mapCmdsToLLCImpl<3, int64_t>(commands);
+    return;
+  }
+
   // Construct the sub-region for each LLC bank.
   std::vector<AffinePatternVecT> llcBankSubRegions =
       this->getLLCBankSubRegions();
 
-#define dispatch_impl(dim)                                                     \
-  {                                                                            \
-    std::vector<std::vector<AffinePatternImpl<dim, int64_t>>>                  \
-        fixedLLCBankSubRegions;                                                \
-    for (const auto &regions : llcBankSubRegions) {                            \
-      fixedLLCBankSubRegions.emplace_back();                                   \
-      for (const auto &r : regions) {                                          \
-        fixedLLCBankSubRegions.back().push_back(                               \
-            getAffinePatternImpl<dim, int64_t>(r));                            \
-      }                                                                        \
-    }                                                                          \
-    for (auto &command : commands) {                                           \
-      this->mapCmdToLLCImpl<dim, int64_t>(command, fixedLLCBankSubRegions);    \
-    }                                                                          \
-  }
-
-  // Specialize for some dimension.
   // Process all commands.
-  if (this->dimension == 1) {
-    dispatch_impl(1);
-  } else if (this->dimension == 2) {
-    dispatch_impl(2);
-  } else if (this->dimension == 3) {
-    dispatch_impl(3);
-  } else {
-    for (auto &command : commands) {
-      mapCmdToLLC(command, llcBankSubRegions);
-    }
+  for (auto &command : commands) {
+    mapCmdToLLC(command, llcBankSubRegions);
   }
 
   for (auto &command : commands) {
@@ -901,6 +888,7 @@ void DataMoveCompiler::mapCmdsToLLC(PUMCommandVecT &commands) const {
       splitInterArrayCmdToLLC(command);
     }
   }
+
   return;
 }
 
@@ -988,6 +976,41 @@ void DataMoveCompiler::mapCmdToLLC(
           llcTiles.back().dstSplitTilePatterns.push_back(dstPatterns);
         }
       }
+    }
+  }
+}
+
+template <size_t D, typename T>
+std::vector<std::vector<AffinePatternImpl<D, T>>>
+DataMoveCompiler::getLLCBankSubRegionsImpl() const {
+
+  auto tilePerLLCBank = this->llc_config.get_array_per_bank();
+  auto numLLCBanks = this->llc_config.get_total_banks();
+
+  auto fixedTileNums = AffinePatternImpl<D, T>::getFixSizedIntVec(tile_nums);
+
+  std::vector<std::vector<AffinePatternImpl<D, T>>> llcBankSubRegions;
+  for (auto i = 0; i < numLLCBanks; ++i) {
+    llcBankSubRegions.push_back(
+        AffinePatternImpl<D, T>::
+            break_continuous_range_into_canonical_sub_regions(
+                fixedTileNums, i * tilePerLLCBank, tilePerLLCBank));
+  }
+  return llcBankSubRegions;
+}
+
+template <size_t D, typename T>
+void DataMoveCompiler::mapCmdsToLLCImpl(PUMCommandVecT &commands) const {
+
+  auto fixedLLCBankSubRegions = this->getLLCBankSubRegionsImpl<D, T>();
+
+  for (auto &command : commands) {
+    this->mapCmdToLLCImpl<D, T>(command, fixedLLCBankSubRegions);
+  }
+
+  for (auto &command : commands) {
+    if (command.type == "inter-array") {
+      splitInterArrayCmdToLLC(command);
     }
   }
 }
