@@ -180,26 +180,42 @@ public:
     return ThisT(start, params);
   }
 
-  static std::vector<ThisT>
+  /**
+   * Represents the result sub-regions of breaking a continuous range.
+   */
+  struct ContinuousRangeSubRegions {
+    std::array<ThisT, MaxSubRegionsForContinuousRange> subRegions;
+    int count = 0;
+    void add(ThisT subRegion) {
+      assert(count < MaxSubRegionsForContinuousRange);
+      subRegions.at(count) = std::move(subRegion);
+      count++;
+    }
+  };
+
+  static ContinuousRangeSubRegions
   break_continuous_range_into_canonical_sub_regions(const IntVecT &array_sizes,
                                                     T start, T trip) {
     // Handle possible cases when start/trip overflow array_sizes.
+    ContinuousRangeSubRegions ret;
     auto totalSize = reduce_mul(array_sizes.begin(), array_sizes.end(), 1);
     if (start >= totalSize || start + trip <= 0) {
       // No overlap at all.
-      return std::vector<ThisT>();
+      return ret;
     }
     trip = std::min(trip, totalSize - start);
     auto ps = getArrayPosition(array_sizes, start);
     auto qs = getArrayPosition(array_sizes, start + trip);
-    return RecursiveBreakContinuousRangeIntoCanonicalSubRegions<
-        dimension, false>::run(array_sizes, ps, qs);
+    RecursiveBreakContinuousRangeIntoCanonicalSubRegions<dimension, false>::run(
+        array_sizes, ps, qs, ret);
+
+    return ret;
   }
 
   template <size_t remain_dim, bool dummy>
   struct RecursiveBreakContinuousRangeIntoCanonicalSubRegions {
-    static std::vector<ThisT> run(const IntVecT &array_sizes, IntVecT &ps,
-                                  IntVecT &qs) {
+    static void run(const IntVecT &array_sizes, IntVecT &ps, IntVecT &qs,
+                    ContinuousRangeSubRegions &ret) {
 
       /**
       This method breaks a continuous range [start, start + trip) into a list of
@@ -211,7 +227,6 @@ public:
 
       Create a sub region for [P, B), [C, Q) and keep [B, C) continuous.
       */
-      std::vector<ThisT> sub_regions;
 
       static constexpr size_t dim = dimension - remain_dim;
 
@@ -237,7 +252,7 @@ public:
           trips[i] = 1;
         }
         trips[dim] = q - p;
-        sub_regions.push_back(constructSubRegion(array_sizes, starts, trips));
+        ret.add(constructSubRegion(array_sizes, starts, trips));
       } else {
         if (p != 0) {
           // One sub region [P, B)
@@ -247,7 +262,7 @@ public:
             trips[i] = 1;
           }
           trips[dim] = t - p;
-          sub_regions.push_back(constructSubRegion(array_sizes, starts, trips));
+          ret.add(constructSubRegion(array_sizes, starts, trips));
         }
 
         if (q != 0) {
@@ -258,7 +273,7 @@ public:
             trips[i] = 1;
           }
           trips[dim] = q;
-          sub_regions.push_back(constructSubRegion(array_sizes, starts, trips));
+          ret.add(constructSubRegion(array_sizes, starts, trips));
         }
 
         if (!high_dim_match) {
@@ -290,13 +305,11 @@ public:
             }
           }
           if (!bs_eq_cs) {
-            auto ret = RecursiveBreakContinuousRangeIntoCanonicalSubRegions<
-                remain_dim - 1, false>::run(array_sizes, bs, cs);
-            sub_regions.insert(sub_regions.end(), ret.begin(), ret.end());
+            RecursiveBreakContinuousRangeIntoCanonicalSubRegions<
+                remain_dim - 1, false>::run(array_sizes, bs, cs, ret);
           }
         }
       }
-      return sub_regions;
     }
   };
 
@@ -305,8 +318,8 @@ public:
    */
   template <bool dummy>
   struct RecursiveBreakContinuousRangeIntoCanonicalSubRegions<0, dummy> {
-    static std::vector<ThisT> run(const IntVecT &array_sizes, IntVecT &ps,
-                                  IntVecT &qs) {
+    static void run(const IntVecT &array_sizes, IntVecT &ps, IntVecT &qs,
+                    ContinuousRangeSubRegions &ret) {
       panic("Recursive break continuous range into canonical sub-regions "
             "remain_dim = 0");
     }

@@ -981,15 +981,16 @@ void DataMoveCompiler::mapCmdToLLC(
 }
 
 template <size_t D, typename T>
-std::vector<std::vector<AffinePatternImpl<D, T>>>
-DataMoveCompiler::getLLCBankSubRegionsImpl() const {
+typename DataMoveCompiler::CmdToLLCMapper<D, T>::LLCBankSubRegionsT
+DataMoveCompiler::CmdToLLCMapper<D, T>::getLLCBankSubRegionsImpl(
+    const PUMHWConfiguration &llc_config, const IntVecT &tile_nums) {
 
-  auto tilePerLLCBank = this->llc_config.get_array_per_bank();
-  auto numLLCBanks = this->llc_config.get_total_banks();
+  auto tilePerLLCBank = llc_config.get_array_per_bank();
+  auto numLLCBanks = llc_config.get_total_banks();
 
   auto fixedTileNums = AffinePatternImpl<D, T>::getFixSizedIntVec(tile_nums);
 
-  std::vector<std::vector<AffinePatternImpl<D, T>>> llcBankSubRegions;
+  LLCBankSubRegionsT llcBankSubRegions;
   for (auto i = 0; i < numLLCBanks; ++i) {
     llcBankSubRegions.push_back(
         AffinePatternImpl<D, T>::
@@ -1002,10 +1003,13 @@ DataMoveCompiler::getLLCBankSubRegionsImpl() const {
 template <size_t D, typename T>
 void DataMoveCompiler::mapCmdsToLLCImpl(PUMCommandVecT &commands) const {
 
-  auto fixedLLCBankSubRegions = this->getLLCBankSubRegionsImpl<D, T>();
+  auto fixedLLCBankSubRegions = CmdToLLCMapper<D, T>::getLLCBankSubRegionsImpl(
+      this->llc_config, this->tile_nums);
 
   for (auto &command : commands) {
-    this->mapCmdToLLCImpl<D, T>(command, fixedLLCBankSubRegions);
+    CmdToLLCMapper<D, T>::mapCmdToLLCImpl(command, fixedLLCBankSubRegions,
+                                          this->llc_config, this->tile_nums,
+                                          this->tile_sizes);
   }
 
   for (auto &command : commands) {
@@ -1016,10 +1020,10 @@ void DataMoveCompiler::mapCmdsToLLCImpl(PUMCommandVecT &commands) const {
 }
 
 template <size_t D, typename T>
-void DataMoveCompiler::mapCmdToLLCImpl(
-    PUMCommand &command,
-    const std::vector<std::vector<AffinePatternImpl<D, T>>> &llcBankSubRegions)
-    const {
+void DataMoveCompiler::CmdToLLCMapper<D, T>::mapCmdToLLCImpl(
+    PUMCommand &command, const LLCBankSubRegionsT &llcBankSubRegions,
+    const PUMHWConfiguration &llc_config, const IntVecT &tile_nums,
+    const IntVecT &tile_sizes) {
 
   auto numLLCBanks = llc_config.get_total_banks();
   // As an optimization, we fixed number of banks for Jitter.
@@ -1040,7 +1044,8 @@ void DataMoveCompiler::mapCmdToLLCImpl(
 
   for (auto i = 0; i < numLLCBanks; ++i) {
 
-    for (const auto &llc_sub_region : llcBankSubRegions[i]) {
+    for (int j = 0, count = llcBankSubRegions[i].count; j < count; ++j) {
+      const auto &llc_sub_region = llcBankSubRegions[i].subRegions.at(j);
 
       auto fixedIntersect = AffinePatternImpl<D, T>::intersectSubRegions(
           fixedTileNums, fixedCmdTileMask, llc_sub_region);
@@ -1065,11 +1070,10 @@ void DataMoveCompiler::mapCmdToLLCImpl(
 
         const auto &intersect = command.llcSplitTileCmds.getAffinePattern(i, j);
 
-        auto srcStartPos =
-            intersect.getSubRegionStartToArraySize(this->tile_nums);
+        auto srcStartPos = intersect.getSubRegionStartToArraySize(tile_nums);
         auto trips = intersect.getTrips();
         auto tileDist =
-            AffinePattern::getArrayPosition(this->tile_nums, command.tile_dist);
+            AffinePattern::getArrayPosition(tile_nums, command.tile_dist);
         IntVecT dstStartPos;
         for (int i = 0; i < srcStartPos.size(); ++i) {
           dstStartPos.push_back(srcStartPos[i] + tileDist[i]);
@@ -1081,16 +1085,15 @@ void DataMoveCompiler::mapCmdToLLCImpl(
         auto reuseDim = command.reuse.dim;
         auto reuseCount = command.reuse.count;
         assert(trips[reuseDim] == 1 && "ReuseDim should have trip count 1.");
-        auto reuseDimTileSize = this->tile_sizes[reuseDim];
+        auto reuseDimTileSize = tile_sizes[reuseDim];
         auto reuseTileCount =
             (reuseCount + reuseDimTileSize - 1) / reuseDimTileSize;
         trips[reuseDim] = reuseTileCount;
         // Reuse should stay within the boundary.
-        assert(dstStartPos[reuseDim] + reuseTileCount <=
-               this->tile_nums[reuseDim]);
+        assert(dstStartPos[reuseDim] + reuseTileCount <= tile_nums[reuseDim]);
 
-        llcTiles.back().dstTilePattern = AffinePattern::constructSubRegion(
-            this->tile_nums, dstStartPos, trips);
+        llcTiles.back().dstTilePattern =
+            AffinePattern::constructSubRegion(tile_nums, dstStartPos, trips);
 
         auto fixedDstTilePattern =
             getAffinePatternImpl<D, T>(llcTiles.back().dstTilePattern);
@@ -1102,8 +1105,10 @@ void DataMoveCompiler::mapCmdToLLCImpl(
           llcTiles.back().dstSplitTilePatterns.emplace_back();
           auto &dstPatterns = llcTiles.back().dstSplitTilePatterns.back();
 
-          for (const auto &dstLLCBankSubRegion :
-               llcBankSubRegions[dstBankIdx]) {
+          for (int j = 0, count = llcBankSubRegions[dstBankIdx].count;
+               j < count; ++j) {
+            const auto &dstLLCBankSubRegion =
+                llcBankSubRegions[dstBankIdx].subRegions.at(j);
 
             auto fixedDstIntersect =
                 AffinePatternImpl<D, T>::intersectSubRegions(

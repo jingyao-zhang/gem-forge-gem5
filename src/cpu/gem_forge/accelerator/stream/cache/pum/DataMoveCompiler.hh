@@ -190,19 +190,24 @@ private:
    * Optimized implementation with template.
    */
 
-  template <size_t D, typename T>
-  __attribute__((noinline)) std::vector<std::vector<AffinePatternImpl<D, T>>>
-  getLLCBankSubRegionsImpl() const;
+  template <size_t D, typename T> struct CmdToLLCMapper {
+    using LLCBankSubRegionsT = std::vector<
+        typename AffinePatternImpl<D, T>::ContinuousRangeSubRegions>;
+
+    static __attribute__((noinline)) LLCBankSubRegionsT
+    getLLCBankSubRegionsImpl(const PUMHWConfiguration &llc_config,
+                             const IntVecT &tile_nums);
+
+    static __attribute__((noinline)) void
+    mapCmdToLLCImpl(PUMCommand &command,
+                    const LLCBankSubRegionsT &llcBankSubRegions,
+                    const PUMHWConfiguration &llc_config,
+                    const IntVecT &tile_nums, const IntVecT &tile_sizes);
+  };
 
   template <size_t D, typename T>
   __attribute__((noinline)) void
   mapCmdsToLLCImpl(PUMCommandVecT &commands) const;
-
-  template <size_t D, typename T>
-  __attribute__((noinline)) void
-  mapCmdToLLCImpl(PUMCommand &command,
-                  const std::vector<std::vector<AffinePatternImpl<D, T>>>
-                      &llcBankSubRegions) const;
 };
 
 #endif

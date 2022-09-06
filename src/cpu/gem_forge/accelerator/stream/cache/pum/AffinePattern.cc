@@ -306,8 +306,9 @@ AffinePattern::break_continuous_range_into_canonical_sub_regions(
         break_continuous_range_into_canonical_sub_regions(fixedArraySizes,     \
                                                           start, trip);        \
     std::vector<AffinePattern> ret;                                            \
-    for (const auto &s : fixedSubRegions) {                                    \
-      ret.push_back(getAffinePatternFromImpl(s));                              \
+    for (auto i = 0; i < fixedSubRegions.count; ++i) {                         \
+      ret.push_back(                                                           \
+          getAffinePatternFromImpl(fixedSubRegions.subRegions.at(i)));         \
     }                                                                          \
     return ret;                                                                \
   }
