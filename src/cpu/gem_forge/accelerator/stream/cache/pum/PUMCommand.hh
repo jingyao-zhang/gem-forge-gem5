@@ -30,11 +30,11 @@ public:
   ReuseInfoT reuse;
   bool hasReuse() const { return reuse.count > 1; }
 
-  std::vector<AffinePatternVecT> inter_array_splits;
+  using InterArraySplitPattern = AffinePatternImpl<2, int64_t>;
+  using InterArraySplitPatternVecT = std::vector<InterArraySplitPattern>;
 
-  struct LLCTileMask {
-    AffinePattern srcTilePattern;
-  };
+  std::vector<InterArraySplitPatternVecT> inter_array_splits;
+
   struct LLCDstTileMask {
     /**
      * This records the distination tile pattern.
@@ -46,7 +46,6 @@ public:
     std::vector<AffinePatternVecT> dstSplitTilePatterns;
   };
 
-  // std::vector<std::vector<LLCTileMask>> llcSplitTileCmds;
   LLCTilePattern llcSplitTileCmds;
   std::vector<std::vector<LLCDstTileMask>> llcSplitDstTileCmds;
 

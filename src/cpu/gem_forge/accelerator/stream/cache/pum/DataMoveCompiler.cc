@@ -1180,8 +1180,8 @@ void DataMoveCompiler::splitInterArrayCmdToLLC(PUMCommand &command) const {
   auto tile_dist = command.tile_dist;
 
   auto split = [](int64_t s, int64_t d,
-                  int64_t tile_dist) -> AffinePatternVecT {
-    AffinePatternVecT splits;
+                  int64_t tile_dist) -> PUMCommand::InterArraySplitPatternVecT {
+    PUMCommand::InterArraySplitPatternVecT splits;
     auto abs_tile_dist = std::abs(tile_dist);
     if (abs_tile_dist < s * d) {
       auto m = abs_tile_dist / s;
@@ -1189,32 +1189,32 @@ void DataMoveCompiler::splitInterArrayCmdToLLC(PUMCommand &command) const {
       if (tile_dist > 0) {
         // First part.
         if (abs_tile_dist >= s) {
-          ParamVecT params;
-          params.push_back(AffinePattern::Param(1, s - n));
-          params.push_back(AffinePattern::Param(s, d - m));
-          AffinePattern pattern(0, params);
-          splits.push_back(pattern);
+          PUMCommand::InterArraySplitPattern::ParamVecT params = {{
+              PUMCommand::InterArraySplitPattern::Param(1, s - n),
+              PUMCommand::InterArraySplitPattern::Param(s, d - m),
+          }};
+          splits.emplace_back(0, params);
         }
         // Second part.
-        ParamVecT params;
-        params.push_back(AffinePattern::Param(1, n));
-        params.push_back(AffinePattern::Param(s, d - m - 1));
-        AffinePattern pattern(s - n, params);
-        splits.push_back(pattern);
+        PUMCommand::InterArraySplitPattern::ParamVecT params = {{
+            PUMCommand::InterArraySplitPattern::Param(1, n),
+            PUMCommand::InterArraySplitPattern::Param(s, d - m - 1),
+        }};
+        splits.emplace_back(s - n, params);
       } else {
         // First part.
-        ParamVecT params;
-        params.push_back(AffinePattern::Param(1, n));
-        params.push_back(AffinePattern::Param(s, d - m - 1));
-        AffinePattern pattern((m + 1) * s, params);
-        splits.push_back(pattern);
+        PUMCommand::InterArraySplitPattern::ParamVecT params = {{
+            PUMCommand::InterArraySplitPattern::Param(1, n),
+            PUMCommand::InterArraySplitPattern::Param(s, d - m - 1),
+        }};
+        splits.emplace_back((m + 1) * s, params);
         // Second part.
         if (abs_tile_dist >= s) {
-          ParamVecT params;
-          params.push_back(AffinePattern::Param(1, s - n));
-          params.push_back(AffinePattern::Param(s, d - m));
-          AffinePattern pattern(m * s + n, params);
-          splits.push_back(pattern);
+          PUMCommand::InterArraySplitPattern::ParamVecT params = {{
+              PUMCommand::InterArraySplitPattern::Param(1, s - n),
+              PUMCommand::InterArraySplitPattern::Param(s, d - m),
+          }};
+          splits.emplace_back(m * s + n, params);
         }
       }
     }

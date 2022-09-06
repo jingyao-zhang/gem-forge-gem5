@@ -32,7 +32,7 @@ std::string PUMCommand::to_string(int llcBankIdx) const {
       os << "    InterArraySplit " << std::setw(2) << i << '\n';
       const auto &patterns = inter_array_splits[i];
       for (auto j = 0; j < patterns.size(); ++j) {
-        os << "      " << patterns[j] << '\n';
+        os << "      " << getAffinePatternFromImpl(patterns[j]) << '\n';
       }
     }
   } else {
