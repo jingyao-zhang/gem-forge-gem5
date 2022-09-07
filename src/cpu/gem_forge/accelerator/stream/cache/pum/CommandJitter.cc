@@ -5,10 +5,6 @@
 #include <chrono>
 #include <cstdio>
 
-#ifdef USING_GPERFTOOLS
-#include "gperftools/profiler.h"
-#endif
-
 const int64_t array_rows = 512;
 const int64_t array_cols = 512;
 const int64_t array_per_way = 8;
@@ -19,11 +15,11 @@ const int64_t mesh_layers = 1;
 const int64_t mesh_rows = 8;
 const int64_t mesh_cols = 8;
 
-int main(int argc, char *argv[]) {
+PUMHWConfiguration hwConfig(array_rows, array_cols, array_per_way, tree_degree,
+                            tree_leaf_bw_bytes, way_per_bank, mesh_layers,
+                            mesh_rows, mesh_cols);
 
-  PUMHWConfiguration hwConfig(array_rows, array_cols, array_per_way,
-                              tree_degree, tree_leaf_bw_bytes, way_per_bank,
-                              mesh_layers, mesh_rows, mesh_cols);
+void shiftRhs1D() {
 
   // Simple 1D tile across the entire LLC.
   auto totalSize = array_cols * array_per_way * way_per_bank * mesh_cols *
@@ -56,17 +52,11 @@ int main(int argc, char *argv[]) {
   // For now compile multiple times.
   PUMCommandVecT commands;
   const int runs = 400;
-#ifdef USING_GPERFTOOLS
-  ProfilerStart("pum-jitter.prof");
-#endif
   auto startTime = std::chrono::high_resolution_clock::now();
   for (int i = 0; i < runs; ++i) {
     commands = compiler.compile(sendPat, recvPat);
   }
   auto endTime = std::chrono::high_resolution_clock::now();
-#ifdef USING_GPERFTOOLS
-  ProfilerStop();
-#endif
 
   for (const auto &cmd : commands) {
     printf(" CMD %s.\n", cmd.to_string().c_str());
@@ -74,7 +64,62 @@ int main(int argc, char *argv[]) {
 
   std::chrono::duration<double, std::micro> compileTimeMs = endTime - startTime;
   compileTimeMs /= runs;
-  printf("CompileTime %lfus.\n", compileTimeMs.count());
+  printf("CompileTime %s %lfus.\n", __func__, compileTimeMs.count());
+}
+
+void shiftRhs2D() {
+
+  // Simple 2D tile across the entire LLC.
+  auto totalSize = array_cols * array_per_way * way_per_bank * mesh_cols *
+                   mesh_rows * mesh_layers;
+
+  AffinePattern::IntVecT tileSizes = {16, 32};
+  AffinePattern::IntVecT arraySizes = {2048, 2048};
+
+  auto sendTile =
+      AffinePattern::construct_canonical_tile(tileSizes, arraySizes);
+
+  printf("SendTile %s.\n", sendTile.to_string().c_str());
+
+  DataMoveCompiler compiler(hwConfig, sendTile);
+
+  // Shift right by 1.
+  AffinePattern::IntVecT sendStart = {0, 0};
+  AffinePattern::IntVecT sendTrip = {2048, 2048 - 1};
+
+  AffinePattern::IntVecT recvStart = {1};
+  AffinePattern::IntVecT recvTrip = {2048, 2048 - 1};
+
+  auto sendPat =
+      AffinePattern::constructSubRegion(arraySizes, sendStart, sendTrip);
+  auto recvPat =
+      AffinePattern::constructSubRegion(arraySizes, recvStart, recvTrip);
+
+  printf("SendPat %s.\n", sendPat.to_string().c_str());
+  printf("RecvPat %s.\n", recvPat.to_string().c_str());
+
+  // For now compile multiple times.
+  PUMCommandVecT commands;
+  const int runs = 400;
+  auto startTime = std::chrono::high_resolution_clock::now();
+  for (int i = 0; i < runs; ++i) {
+    commands = compiler.compile(sendPat, recvPat);
+  }
+  auto endTime = std::chrono::high_resolution_clock::now();
+
+  for (const auto &cmd : commands) {
+    printf(" CMD %s.\n", cmd.to_string().c_str());
+  }
+
+  std::chrono::duration<double, std::micro> compileTimeMs = endTime - startTime;
+  compileTimeMs /= runs;
+  printf("CompileTime %s %lfus.\n", __func__, compileTimeMs.count());
+}
+
+int main(int argc, char *argv[]) {
+
+  // shiftRhs1D();
+  shiftRhs2D();
   return 0;
 }
 
