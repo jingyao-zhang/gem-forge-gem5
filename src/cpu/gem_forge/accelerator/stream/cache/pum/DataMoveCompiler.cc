@@ -772,8 +772,9 @@ DataMoveCompiler::SubRegionMaskGenerator<D, T>::mergeTileMasks(
 }
 
 template <size_t D, typename T>
-void DataMoveCompiler::SubRegionMaskGenerator<D, T>::recursiveImpl(
-    int64_t dim) {
+template <int dim, bool dummy>
+void DataMoveCompiler::SubRegionMaskGenerator<D, T>::RecursiveImpl<
+    dim, dummy>::impl(Generator &gen) {
 
   /**
     This implements the mask algorithm, and accumulate mask pattern
@@ -787,24 +788,10 @@ void DataMoveCompiler::SubRegionMaskGenerator<D, T>::recursiveImpl(
     This is done by leveraging the fact that both bitline masks are canonical
     sub-region within that tile, and take their interection.
    */
-  if (dim == -1) {
-    /**
-     * ! Don't forget to reverse the masks first.
-     */
-    MaskVecT bitlineMasks = revBitlineMasks;
-    std::reverse(bitlineMasks.begin(), bitlineMasks.end());
-    MaskVecT tileMasks = revTileMasks;
-    std::reverse(tileMasks.begin(), tileMasks.end());
-    auto merged_bitline_masks = mergeBitlineMasks(bitlineMasks, tileSizes);
-    auto merged_tile_masks = mergeTileMasks(tileMasks, arraySizes, tileSizes);
-    retBitlineMasks.push_back(merged_bitline_masks);
-    retTileMasks.push_back(merged_tile_masks);
-    return;
-  }
 
-  auto p = ps[dim];
-  auto q = qs[dim];
-  auto t = tileSizes[dim];
+  auto p = gen.ps[dim];
+  auto q = gen.qs[dim];
+  auto t = gen.tileSizes[dim];
   auto a = p / t;
   auto b = (p + t - 1) / t;
   auto c = (p + q) / t;
@@ -815,44 +802,44 @@ void DataMoveCompiler::SubRegionMaskGenerator<D, T>::recursiveImpl(
   if (b <= c) {
     // [P, BxTi)
     if (a < b) {
-      revBitlineMasks.emplace_back(tile_p, 1, t - tile_p);
-      revTileMasks.emplace_back(a, 1, 1);
+      gen.revBitlineMasks.emplace_back(tile_p, 1, t - tile_p);
+      gen.revTileMasks.emplace_back(a, 1, 1);
       if (t - tile_p > t) {
         panic("BitlineMask Trip %ld Overflow Tile %ld.", t - tile_p, t);
       }
-      recursiveImpl(dim - 1);
-      revBitlineMasks.pop_back();
-      revTileMasks.pop_back();
+      RecursiveImpl<dim - 1, dummy>::impl(gen);
+      gen.revBitlineMasks.pop_back();
+      gen.revTileMasks.pop_back();
     }
     // [CxTi, P+Q)
     if (c < d) {
-      revBitlineMasks.emplace_back(0, 1, tile_pq);
-      revTileMasks.emplace_back(c, 1, 1);
+      gen.revBitlineMasks.emplace_back(0, 1, tile_pq);
+      gen.revTileMasks.emplace_back(c, 1, 1);
       if (tile_pq > t) {
         panic("BitlineMask Trip %ld Overflow Tile %ld.", tile_pq, t);
       }
-      recursiveImpl(dim - 1);
-      revBitlineMasks.pop_back();
-      revTileMasks.pop_back();
+      RecursiveImpl<dim - 1, dummy>::impl(gen);
+      gen.revBitlineMasks.pop_back();
+      gen.revTileMasks.pop_back();
     }
     if (b < c) {
       // [BxTi, CxTi)
-      revBitlineMasks.emplace_back(0, 1, t);
-      revTileMasks.emplace_back(b, 1, c - b);
-      recursiveImpl(dim - 1);
-      revBitlineMasks.pop_back();
-      revTileMasks.pop_back();
+      gen.revBitlineMasks.emplace_back(0, 1, t);
+      gen.revTileMasks.emplace_back(b, 1, c - b);
+      RecursiveImpl<dim - 1, dummy>::impl(gen);
+      gen.revBitlineMasks.pop_back();
+      gen.revTileMasks.pop_back();
     }
   } else {
     // [P, P+Q)
-    revBitlineMasks.emplace_back(tile_p, 1, tile_pq - tile_p);
-    revTileMasks.emplace_back(a, 1, 1);
+    gen.revBitlineMasks.emplace_back(tile_p, 1, tile_pq - tile_p);
+    gen.revTileMasks.emplace_back(a, 1, 1);
     if (tile_pq > t) {
       panic("BitlineMask %ld Overflow Tile %ld.", tile_pq, t);
     }
-    recursiveImpl(dim - 1);
-    revBitlineMasks.pop_back();
-    revTileMasks.pop_back();
+    RecursiveImpl<dim - 1, dummy>::impl(gen);
+    gen.revBitlineMasks.pop_back();
+    gen.revTileMasks.pop_back();
   }
 }
 

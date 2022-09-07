@@ -235,7 +235,7 @@ private:
           qs(_subRegion.getTrips()), retBitlineMasks(_retBitlineMasks),
           retTileMasks(_retTileMasks) {
 
-      recursiveImpl(D - 1);
+      RecursiveImpl<D - 1, false>::impl(*this);
     }
 
     AffPat mergeMasks(const MaskVecT &masks, const IntVecT &inner_sizes);
@@ -245,7 +245,32 @@ private:
     AffPat mergeTileMasks(const MaskVecT &tile_masks, const IntVecT &arraySizes,
                           const IntVecT &tileSizes);
 
-    PERF_NOINLINE void recursiveImpl(int64_t dim);
+    template <int dim, bool dummy> struct RecursiveImpl {
+      using Generator = SubRegionMaskGenerator<D, T>;
+      static void impl(Generator &gen);
+    };
+
+    template <bool dummy> struct RecursiveImpl<-1, dummy> {
+      using Generator = SubRegionMaskGenerator<D, T>;
+      static void impl(Generator &gen) {
+        /**
+         * ! Don't forget to reverse the masks first.
+         */
+        MaskVecT bitlineMasks = gen.revBitlineMasks;
+        std::reverse(bitlineMasks.begin(), bitlineMasks.end());
+        MaskVecT tileMasks = gen.revTileMasks;
+        std::reverse(tileMasks.begin(), tileMasks.end());
+        auto merged_bitline_masks =
+            gen.mergeBitlineMasks(bitlineMasks, gen.tileSizes);
+        auto merged_tile_masks =
+            gen.mergeTileMasks(tileMasks, gen.arraySizes, gen.tileSizes);
+        gen.retBitlineMasks.push_back(merged_bitline_masks);
+        gen.retTileMasks.push_back(merged_tile_masks);
+        return;
+      }
+    };
+
+    // PERF_NOINLINE void recursiveImpl(int64_t dim);
   };
 
   template <size_t D, typename T>
