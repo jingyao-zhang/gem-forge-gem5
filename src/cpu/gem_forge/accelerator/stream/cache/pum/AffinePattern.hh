@@ -2,6 +2,7 @@
 #define __CPU_GEM_FORGE_AFFINE_PATTERN_HH__
 
 #include "AffinePatternImpl.hh"
+#include "MaxVector.hh"
 
 #include <cstdint>
 #include <cstdlib>
@@ -35,14 +36,18 @@ public:
     int64_t trip;
     Param(int64_t _stride, int64_t _trip) : stride(_stride), trip(_trip) {}
   };
-  using ParamVecT = std::vector<Param>;
+
+  static constexpr size_t MaxDimension = 8;
+
+  // using ParamVecT = std::vector<Param>;
+  using ParamVecT = MaxVector<Param, MaxDimension>;
   using IntVecT = std::vector<int64_t>;
 
   int64_t start;
   ParamVecT params;
 
   // Default create an empty pattern.
-  AffinePattern() : start(0), params(1, Param(1, 0)) {}
+  AffinePattern() : start(0) { params.emplace_back(1, 0); }
   AffinePattern(int64_t _start, ParamVecT _params)
       : start(_start), params(std::move(_params)) {}
   AffinePattern(::LLVM::TDG::AffinePattern tdgAffinePattern);

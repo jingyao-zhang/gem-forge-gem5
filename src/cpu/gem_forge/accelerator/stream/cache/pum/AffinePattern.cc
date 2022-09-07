@@ -3,6 +3,8 @@
 #include "base/trace.hh"
 #include "debug/MLCStreamPUM.hh"
 
+const size_t AffinePattern::MaxDimension;
+
 AffinePattern::AffinePattern(::LLVM::TDG::AffinePattern tdgAffinePattern) {
   this->start = tdgAffinePattern.start();
   for (const auto &p : tdgAffinePattern.params()) {

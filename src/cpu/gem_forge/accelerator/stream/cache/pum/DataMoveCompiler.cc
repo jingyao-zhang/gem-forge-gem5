@@ -680,26 +680,28 @@ DataMoveCompiler::maskCmdsBySubRegion(const PUMCommandVecT &commands,
                                final_tile_masks);
 
   PUMCommandVecT masked_commands;
+  masked_commands.reserve(commands.size() * final_bitline_masks.size());
   for (const auto &command : commands) {
     DPRINTF(MLCStreamPUM, "[MaskSubRegion] Masking CMD %s", command);
+    const bool isIntraArray = command.type == "intra_array";
     for (int i = 0; i < final_bitline_masks.size(); ++i) {
       const auto &bitline_mask = final_bitline_masks.at(i);
       const auto &tile_mask = final_tile_masks.at(i);
-      auto c = command;
-      auto intersect = intersectBitlineMasks(c.bitline_mask, bitline_mask);
+      auto intersect =
+          intersectBitlineMasks(command.bitline_mask, bitline_mask);
       DPRINTF(MLCStreamPUM,
               "[MaskSubRegion] Intersect CMD Bitline %s Mask %s = %s.\n",
-              c.bitline_mask, bitline_mask, intersect);
+              command.bitline_mask, bitline_mask, intersect);
       if (intersect.getTotalTrip() == 0) {
         // Empty intersection.
         continue;
       }
-      if (c.type == "intra-array") {
+      if (isIntraArray) {
         // Check if we shift beyond bitlines.
         auto start = intersect.getSubRegionStartToArraySize(this->tile_sizes);
         auto trips = intersect.getTrips();
-        auto dist =
-            AffinePattern::getArrayPosition(this->tile_sizes, c.bitline_dist);
+        auto dist = AffinePattern::getArrayPosition(this->tile_sizes,
+                                                    command.bitline_dist);
         IntVecT movedStart;
         for (int dim = 0; dim < start.size(); ++dim) {
           movedStart.push_back(start[dim] + dist[dim]);
@@ -721,9 +723,9 @@ DataMoveCompiler::maskCmdsBySubRegion(const PUMCommandVecT &commands,
           continue;
         }
       }
-      c.bitline_mask = intersect;
-      c.tile_mask = tile_mask;
-      masked_commands.push_back(c);
+      masked_commands.emplace_back(command);
+      masked_commands.back().bitline_mask = intersect;
+      masked_commands.back().tile_mask = tile_mask;
     }
   }
 
