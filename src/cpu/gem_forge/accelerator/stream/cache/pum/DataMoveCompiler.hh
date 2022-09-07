@@ -143,11 +143,11 @@ public:
   PUMCommandVecT maskCmdsBySubRegion(const PUMCommandVecT &commands,
                                      const AffinePattern &sub_region) const;
 
-  __attribute__((noinline)) void
+  PERF_NOINLINE void
   generateSubRegionMasks(const AffinePattern &sub_region,
                          AffinePatternVecT &final_bitline_masks,
                          AffinePatternVecT &final_tile_masks) const;
-  __attribute__((noinline)) void
+  PERF_NOINLINE void
   recursiveMaskSubRegionAtDim(const AffinePattern &sub_region, int64_t dim,
                               MaskVecT &bitline_maskes, MaskVecT &tile_masks,
                               AffinePatternVecT &final_bitline_masks,
@@ -166,20 +166,18 @@ public:
   /**
    * Generate TileMask for each LLC bank.
    */
-  __attribute__((noinline)) std::vector<AffinePatternVecT>
-  getLLCBankSubRegions() const;
+  PERF_NOINLINE std::vector<AffinePatternVecT> getLLCBankSubRegions() const;
 
   /**
    * Map commands to LLC.
    */
-  __attribute__((noinline)) void mapCmdsToLLC(PUMCommandVecT &commands) const;
+  PERF_NOINLINE void mapCmdsToLLC(PUMCommandVecT &commands) const;
 
-  __attribute__((noinline)) void
+  PERF_NOINLINE void
   mapCmdToLLC(PUMCommand &command,
               const std::vector<AffinePatternVecT> &llcBankSubRegions) const;
 
-  __attribute__((noinline)) void
-  splitInterArrayCmdToLLC(PUMCommand &command) const;
+  PERF_NOINLINE void splitInterArrayCmdToLLC(PUMCommand &command) const;
 
   /**
    * Filter out empty commands at the end..
@@ -190,6 +188,19 @@ private:
   /**
    * Optimized implementation with template.
    */
+
+  AffinePattern constructBitlineSubRegion(int dim, int64_t start, int64_t end,
+                                          const IntVecT &tileSizes) const;
+
+  template <size_t D, typename T>
+  AffinePattern
+  constructBitlineSubRegionDispatch(int dim, int64_t start, int64_t end,
+                                    const IntVecT &tileSizes) const;
+
+  template <size_t D, typename T>
+  static AffinePatternImpl<D, T> constructBitlineSubRegionImpl(
+      int dim, T start, T end,
+      const typename AffinePatternImpl<D, T>::IntVecT &tileSizes);
 
   template <size_t D, typename T> struct SubRegionMaskGenerator {
 
@@ -234,7 +245,7 @@ private:
     AffPat mergeTileMasks(const MaskVecT &tile_masks, const IntVecT &arraySizes,
                           const IntVecT &tileSizes);
 
-    __attribute__((noinline)) void recursiveImpl(int64_t dim);
+    PERF_NOINLINE void recursiveImpl(int64_t dim);
   };
 
   template <size_t D, typename T>
@@ -247,11 +258,10 @@ private:
     using LLCBankSubRegionsT = std::vector<
         typename AffinePatternImpl<D, T>::ContinuousRangeSubRegions>;
 
-    static __attribute__((noinline)) LLCBankSubRegionsT
-    getLLCBankSubRegionsImpl(const PUMHWConfiguration &llc_config,
-                             const IntVecT &tile_nums);
+    static PERF_NOINLINE LLCBankSubRegionsT getLLCBankSubRegionsImpl(
+        const PUMHWConfiguration &llc_config, const IntVecT &tile_nums);
 
-    static __attribute__((noinline)) void
+    static PERF_NOINLINE void
     mapCmdToLLCImpl(PUMCommand &command,
                     const LLCBankSubRegionsT &llcBankSubRegions,
                     const PUMHWConfiguration &llc_config,
@@ -259,8 +269,7 @@ private:
   };
 
   template <size_t D, typename T>
-  __attribute__((noinline)) void
-  mapCmdsToLLCImpl(PUMCommandVecT &commands) const;
+  PERF_NOINLINE void mapCmdsToLLCImpl(PUMCommandVecT &commands) const;
 };
 
 #endif

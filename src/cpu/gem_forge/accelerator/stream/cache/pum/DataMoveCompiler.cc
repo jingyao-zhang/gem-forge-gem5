@@ -322,6 +322,58 @@ PUMCommandVecT DataMoveCompiler::compileAligns(
   return compileAlign(dim, distance);
 }
 
+template <size_t D, typename T>
+AffinePatternImpl<D, T> DataMoveCompiler::constructBitlineSubRegionImpl(
+    int dim, T start, T end,
+    const typename AffinePatternImpl<D, T>::IntVecT &tileSizes) {
+
+  typename AffinePatternImpl<D, T>::IntVecT starts{};
+  typename AffinePatternImpl<D, T>::IntVecT trips = tileSizes;
+  starts.at(dim) = start;
+  trips.at(dim) = end - start;
+  return AffinePatternImpl<D, T>::constructSubRegion(tileSizes, starts, trips);
+}
+
+template <size_t D, typename T>
+AffinePattern DataMoveCompiler::constructBitlineSubRegionDispatch(
+    int dim, int64_t start, int64_t end, const IntVecT &tileSizes) const {
+  auto fixTileSizes =
+      AffinePatternImpl<D, T>::getFixSizedIntVec(this->tile_sizes);
+  auto fixSubRegion =
+      constructBitlineSubRegionImpl<D, T>(dim, start, end, fixTileSizes);
+  return getAffinePatternFromImpl(fixSubRegion);
+}
+
+AffinePattern
+DataMoveCompiler::constructBitlineSubRegion(int dim, int64_t start, int64_t end,
+                                            const IntVecT &tileSizes) const {
+
+  if (this->dimension == 1) {
+    return constructBitlineSubRegionDispatch<1, int64_t>(dim, start, end,
+                                                         tileSizes);
+  } else if (this->dimension == 2) {
+    return constructBitlineSubRegionDispatch<2, int64_t>(dim, start, end,
+                                                         tileSizes);
+  } else if (this->dimension == 3) {
+    return constructBitlineSubRegionDispatch<3, int64_t>(dim, start, end,
+                                                         tileSizes);
+  }
+
+  IntVecT starts;
+  IntVecT trips;
+  for (auto i = 0; i < dim; ++i) {
+    starts.push_back(0);
+    trips.push_back(tile_sizes[i]);
+  }
+  starts.push_back(start);
+  trips.push_back(end - start);
+  for (auto i = dim + 1; i < dimension; ++i) {
+    starts.push_back(0);
+    trips.push_back(tile_sizes[i]);
+  }
+  return AffinePattern::constructSubRegion(tile_sizes, starts, trips);
+}
+
 PUMCommandVecT DataMoveCompiler::compileAlign(int64_t dim,
                                               int64_t distance) const {
   /**
@@ -337,6 +389,7 @@ PUMCommandVecT DataMoveCompiler::compileAlign(int64_t dim,
   DPRINTF(MLCStreamPUM, "Compile Align Dim %ld Distance %ld.\n", dim, distance);
   assert(dim < dimension);
   PUMCommandVecT commands;
+  commands.reserve(3);
 
   auto absDist = std::abs(distance);
 
@@ -384,30 +437,15 @@ PUMCommandVecT DataMoveCompiler::compileAlign(int64_t dim,
   auto moveTileDistFar = moveTileDistNear + 1;
   auto bitlineSep = absDist % tile_sizes[dim];
 
-  auto constructBitlineSubRegion = [&](int64_t start,
-                                       int64_t end) -> AffinePattern {
-    IntVecT starts;
-    IntVecT trips;
-    for (auto i = 0; i < dim; ++i) {
-      starts.push_back(0);
-      trips.push_back(tile_sizes[i]);
-    }
-    starts.push_back(start);
-    trips.push_back(end - start);
-    for (auto i = dim + 1; i < dimension; ++i) {
-      starts.push_back(0);
-      trips.push_back(tile_sizes[i]);
-    }
-    return AffinePattern::constructSubRegion(tile_sizes, starts, trips);
-  };
+  auto front_pattern =
+      constructBitlineSubRegion(dim, 0, bitlineSep, tile_sizes);
+  auto back_pattern =
+      constructBitlineSubRegion(dim, bitlineSep, tile_sizes[dim], tile_sizes);
 
-  auto front_pattern = constructBitlineSubRegion(0, bitlineSep);
-  auto back_pattern = constructBitlineSubRegion(bitlineSep, tile_sizes[dim]);
-
-  auto front2_pattern =
-      constructBitlineSubRegion(0, tile_sizes[dim] - bitlineSep);
-  auto back2_pattern =
-      constructBitlineSubRegion(tile_sizes[dim] - bitlineSep, tile_sizes[dim]);
+  auto front2_pattern = constructBitlineSubRegion(
+      dim, 0, tile_sizes[dim] - bitlineSep, tile_sizes);
+  auto back2_pattern = constructBitlineSubRegion(
+      dim, tile_sizes[dim] - bitlineSep, tile_sizes[dim], tile_sizes);
 
   auto flatTileDistNear = moveTileDistNear;
   auto flatTileDistFar = moveTileDistFar;
@@ -1217,7 +1255,7 @@ void DataMoveCompiler::CmdToLLCMapper<D, T>::mapCmdToLLCImpl(
    * Destination pattern is only set for "inter-array" commands with reuse.
    */
   auto needDstTilePattern = false;
-  if (command.type == "inter-array" && command.hasReuse()) {
+  if (command.hasReuse() && command.type == "inter-array") {
     needDstTilePattern = true;
   }
 
