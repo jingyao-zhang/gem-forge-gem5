@@ -191,6 +191,58 @@ private:
    * Optimized implementation with template.
    */
 
+  template <size_t D, typename T> struct SubRegionMaskGenerator {
+
+    using AffPat = AffinePatternImpl<D, T>;
+    using AffPatVecT = std::vector<AffPat>;
+    using MaskVecT = MaxVector<MaskT, D>;
+    using IntVecT = typename AffPat::IntVecT;
+
+    const AffPat &subRegion;
+    const IntVecT &arraySizes;
+    const IntVecT &tileSizes;
+
+    // Array position of SubRegion start.
+    IntVecT ps;
+    // SubRegion trips in each dimension.
+    const IntVecT &qs;
+
+    // State during the recursive work.
+    MaskVecT revBitlineMasks;
+    MaskVecT revTileMasks;
+
+    // Final results.
+    AffPatVecT &retBitlineMasks;
+    AffPatVecT &retTileMasks;
+
+    SubRegionMaskGenerator(const AffPat &_subRegion, const IntVecT &_arraySizes,
+                           const IntVecT &_tileSizes,
+                           AffPatVecT &_retBitlineMasks,
+                           AffPatVecT &_retTileMasks)
+        : subRegion(_subRegion), arraySizes(_arraySizes), tileSizes(_tileSizes),
+          ps(_subRegion.getArrayPosition(_arraySizes, _subRegion.start)),
+          qs(_subRegion.getTrips()), retBitlineMasks(_retBitlineMasks),
+          retTileMasks(_retTileMasks) {
+
+      recursiveImpl(D - 1);
+    }
+
+    AffPat mergeMasks(const MaskVecT &masks, const IntVecT &inner_sizes);
+
+    AffPat mergeBitlineMasks(const MaskVecT &bitlineMasks,
+                             const IntVecT &tileSizes);
+    AffPat mergeTileMasks(const MaskVecT &tile_masks, const IntVecT &arraySizes,
+                          const IntVecT &tileSizes);
+
+    __attribute__((noinline)) void recursiveImpl(int64_t dim);
+  };
+
+  template <size_t D, typename T>
+  void
+  generateSubRegionMasksDispatch(const AffinePattern &sub_region,
+                                 AffinePatternVecT &final_bitline_masks,
+                                 AffinePatternVecT &final_tile_masks) const;
+
   template <size_t D, typename T> struct CmdToLLCMapper {
     using LLCBankSubRegionsT = std::vector<
         typename AffinePatternImpl<D, T>::ContinuousRangeSubRegions>;

@@ -633,11 +633,189 @@ void DataMoveCompiler::recursiveMaskSubRegionAtDim(
 void DataMoveCompiler::generateSubRegionMasks(
     const AffinePattern &sub_region, AffinePatternVecT &final_bitline_masks,
     AffinePatternVecT &final_tile_masks) const {
+
+  if (this->dimension == 1) {
+    this->generateSubRegionMasksDispatch<1, int64_t>(
+        sub_region, final_bitline_masks, final_tile_masks);
+    return;
+  } else if (this->dimension == 2) {
+    this->generateSubRegionMasksDispatch<2, int64_t>(
+        sub_region, final_bitline_masks, final_tile_masks);
+    return;
+  } else if (this->dimension == 3) {
+    this->generateSubRegionMasksDispatch<3, int64_t>(
+        sub_region, final_bitline_masks, final_tile_masks);
+    return;
+  }
+
   MaskVecT bitline_masks;
   MaskVecT tile_masks;
   recursiveMaskSubRegionAtDim(sub_region, this->dimension - 1, bitline_masks,
                               tile_masks, final_bitline_masks,
                               final_tile_masks);
+}
+
+template <size_t D, typename T>
+void DataMoveCompiler::generateSubRegionMasksDispatch(
+    const AffinePattern &sub_region, AffinePatternVecT &final_bitline_masks,
+    AffinePatternVecT &final_tile_masks) const {
+
+  auto fixSubRegion = getAffinePatternImpl<D, T>(sub_region);
+  auto fixArraySizes = AffinePatternImpl<D, T>::getFixSizedIntVec(array_sizes);
+  auto fixTileSizes = AffinePatternImpl<D, T>::getFixSizedIntVec(tile_sizes);
+  std::vector<AffinePatternImpl<D, T>> fixBitlineMasks;
+  std::vector<AffinePatternImpl<D, T>> fixTileMasks;
+
+  SubRegionMaskGenerator<D, T> gen(fixSubRegion, fixArraySizes, fixTileSizes,
+                                   fixBitlineMasks, fixTileMasks);
+
+  for (const auto &m : fixBitlineMasks) {
+    final_bitline_masks.emplace_back(getAffinePatternFromImpl(m));
+  }
+  for (const auto &m : fixTileMasks) {
+    final_tile_masks.emplace_back(getAffinePatternFromImpl(m));
+  }
+}
+
+template <size_t D, typename T>
+typename DataMoveCompiler::SubRegionMaskGenerator<D, T>::AffPat
+DataMoveCompiler::SubRegionMaskGenerator<D, T>::mergeMasks(
+    const MaskVecT &masks, const IntVecT &inner_sizes) {
+  T start = 0;
+  typename AffPat::ParamVecT params;
+  for (auto i = 0; i < D; ++i) {
+    auto dim_start = std::get<0>(masks[i]);
+    auto dim_stride = std::get<1>(masks[i]);
+    auto dim_trip = std::get<2>(masks[i]);
+    start += dim_start * inner_sizes[i];
+    params[i].stride = dim_stride * inner_sizes[i];
+    params[i].trip = dim_trip;
+  }
+  return AffPat(start, params);
+}
+
+template <size_t D, typename T>
+typename DataMoveCompiler::SubRegionMaskGenerator<D, T>::AffPat
+DataMoveCompiler::SubRegionMaskGenerator<D, T>::mergeBitlineMasks(
+    const MaskVecT &bitlineMasks, const IntVecT &tileSizes) {
+
+  assert(bitlineMasks.size() == D);
+  IntVecT innerTileSizes;
+  for (auto i = 0; i < D; ++i) {
+    auto s = AffPat::reduce_mul(tileSizes.cbegin(), tileSizes.cbegin() + i, 1);
+    innerTileSizes[i] = s;
+    auto trip = std::get<2>(bitlineMasks[i]);
+    if (trip > tileSizes[i]) {
+      panic("BitlineMask Trip %ld Overflow Tile %ld.", trip, tileSizes[i]);
+    }
+  }
+  return mergeMasks(bitlineMasks, innerTileSizes);
+}
+
+template <size_t D, typename T>
+typename DataMoveCompiler::SubRegionMaskGenerator<D, T>::AffPat
+DataMoveCompiler::SubRegionMaskGenerator<D, T>::mergeTileMasks(
+    const MaskVecT &tile_masks, const IntVecT &arraySizes,
+    const IntVecT &tileSizes) {
+  assert(tile_masks.size() == D);
+  IntVecT tile_nums;
+  for (auto i = 0; i < D; ++i) {
+    auto a = arraySizes[i];
+    auto t = tileSizes[i];
+    auto s = (a + t - 1) / t;
+    tile_nums[i] = s;
+  }
+  IntVecT inner_tile_nums;
+  for (auto i = 0; i < D; ++i) {
+    auto s = AffPat::reduce_mul(tile_nums.cbegin(), tile_nums.cbegin() + i, 1);
+    inner_tile_nums[i] = s;
+  }
+  return mergeMasks(tile_masks, inner_tile_nums);
+}
+
+template <size_t D, typename T>
+void DataMoveCompiler::SubRegionMaskGenerator<D, T>::recursiveImpl(
+    int64_t dim) {
+
+  /**
+    This implements the mask algorithm, and accumulate mask pattern
+    along each dimension. At the end, we construct the overall mask pattern
+    by merging bitline_masks and tile_masks.
+
+    An key optimization is to check the merged bitline mask against
+    inter-array commands' source bitline mask. If they have no intersection,
+    we can ignore the command.
+
+    This is done by leveraging the fact that both bitline masks are canonical
+    sub-region within that tile, and take their interection.
+   */
+  if (dim == -1) {
+    /**
+     * ! Don't forget to reverse the masks first.
+     */
+    MaskVecT bitlineMasks = revBitlineMasks;
+    std::reverse(bitlineMasks.begin(), bitlineMasks.end());
+    MaskVecT tileMasks = revTileMasks;
+    std::reverse(tileMasks.begin(), tileMasks.end());
+    auto merged_bitline_masks = mergeBitlineMasks(bitlineMasks, tileSizes);
+    auto merged_tile_masks = mergeTileMasks(tileMasks, arraySizes, tileSizes);
+    retBitlineMasks.push_back(merged_bitline_masks);
+    retTileMasks.push_back(merged_tile_masks);
+    return;
+  }
+
+  auto p = ps[dim];
+  auto q = qs[dim];
+  auto t = tileSizes[dim];
+  auto a = p / t;
+  auto b = (p + t - 1) / t;
+  auto c = (p + q) / t;
+  auto d = (p + q + t - 1) / t;
+
+  auto tile_p = p - a * t;
+  auto tile_pq = p + q - c * t;
+  if (b <= c) {
+    // [P, BxTi)
+    if (a < b) {
+      revBitlineMasks.emplace_back(tile_p, 1, t - tile_p);
+      revTileMasks.emplace_back(a, 1, 1);
+      if (t - tile_p > t) {
+        panic("BitlineMask Trip %ld Overflow Tile %ld.", t - tile_p, t);
+      }
+      recursiveImpl(dim - 1);
+      revBitlineMasks.pop_back();
+      revTileMasks.pop_back();
+    }
+    // [CxTi, P+Q)
+    if (c < d) {
+      revBitlineMasks.emplace_back(0, 1, tile_pq);
+      revTileMasks.emplace_back(c, 1, 1);
+      if (tile_pq > t) {
+        panic("BitlineMask Trip %ld Overflow Tile %ld.", tile_pq, t);
+      }
+      recursiveImpl(dim - 1);
+      revBitlineMasks.pop_back();
+      revTileMasks.pop_back();
+    }
+    if (b < c) {
+      // [BxTi, CxTi)
+      revBitlineMasks.emplace_back(0, 1, t);
+      revTileMasks.emplace_back(b, 1, c - b);
+      recursiveImpl(dim - 1);
+      revBitlineMasks.pop_back();
+      revTileMasks.pop_back();
+    }
+  } else {
+    // [P, P+Q)
+    revBitlineMasks.emplace_back(tile_p, 1, tile_pq - tile_p);
+    revTileMasks.emplace_back(a, 1, 1);
+    if (tile_pq > t) {
+      panic("BitlineMask %ld Overflow Tile %ld.", tile_pq, t);
+    }
+    recursiveImpl(dim - 1);
+    revBitlineMasks.pop_back();
+    revTileMasks.pop_back();
+  }
 }
 
 PUMCommandVecT
