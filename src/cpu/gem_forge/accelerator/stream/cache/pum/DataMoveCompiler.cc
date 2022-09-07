@@ -1171,6 +1171,7 @@ DataMoveCompiler::CmdToLLCMapper<D, T>::getLLCBankSubRegionsImpl(
   auto fixedTileNums = AffinePatternImpl<D, T>::getFixSizedIntVec(tile_nums);
 
   LLCBankSubRegionsT llcBankSubRegions;
+  llcBankSubRegions.reserve(numLLCBanks);
   for (auto i = 0; i < numLLCBanks; ++i) {
     llcBankSubRegions.push_back(
         AffinePatternImpl<D, T>::
