@@ -1276,6 +1276,8 @@ void DataMoveCompiler::CmdToLLCMapper<D, T>::mapCmdToLLCImpl(
 
         const auto &intersect = command.llcSplitTileCmds.getAffinePattern(i, j);
 
+        llcTiles.emplace_back();
+
         auto srcStartPos = intersect.getSubRegionStartToArraySize(tile_nums);
         auto trips = intersect.getTrips();
         auto tileDist =

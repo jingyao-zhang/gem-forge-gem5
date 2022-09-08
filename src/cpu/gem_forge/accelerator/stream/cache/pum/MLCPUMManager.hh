@@ -3,7 +3,7 @@
 
 // Temporary: Non-destructively add equality graph optimization code.
 #include "cpu/static_inst_fwd.hh"
-#define EG_OPT
+// #define EG_OPT
 
 #include "../MLCStreamEngine.hh"
 
@@ -673,6 +673,7 @@ private:
 
   void sendOneReductionResult(PUMContext &context,
                               PUMComputeStreamGroup &group);
+
 };
 
 std::ostream &operator<<(std::ostream &os,
