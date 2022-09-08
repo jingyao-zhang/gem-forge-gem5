@@ -9,6 +9,8 @@
 #include "sim/stream_nuca/stream_nuca_manager.hh"
 #include "sim/stream_nuca/stream_nuca_map.hh"
 
+#include <google/protobuf/util/json_util.h>
+
 #include "arch/x86/regs/float.hh"
 #include "arch/x86/regs/int.hh"
 
@@ -1152,6 +1154,32 @@ void MLCPUMManager::buildPUMDataGraphCompute(
 }
 
 #ifdef EG_OPT
+
+void MLCPUMManager::dumpTDFGToJson(const ::LLVM::TDG::TDFG &tdfg) {
+  static int dumpCount = 0;
+  auto directory = simout.findOrCreateSubdirectory("stream_pum_tdfg");
+
+  std::string fn = "tdfg." + std::to_string(dumpCount) + ".json";
+  auto log = directory->create(fn);
+
+  std::string json;
+  google::protobuf::util::JsonPrintOptions jsonOptions;
+  jsonOptions.add_whitespace = true;
+  jsonOptions.always_print_primitive_fields = true;
+  jsonOptions.preserve_proto_field_names = true;
+
+  auto status =
+      google::protobuf::util::MessageToJsonString(tdfg, &json, jsonOptions);
+  if (!status.ok()) {
+    panic("Failed to convert TDFG to json.");
+  }
+
+  (*log->stream()) << json;
+
+  directory->close(log);
+  dumpCount++;
+}
+
 void MLCPUMManager::buildTDFG(PUMContext &context) {
   auto &tdfg = context.tdfg;
 
@@ -1165,7 +1193,9 @@ void MLCPUMManager::buildTDFG(PUMContext &context) {
     TDFGNodeID nid = tdfg.nodes().size();
     nodeToId[node] = nid;
 
-    ::LLVM::TDG::TDFG::Node tdfgNode;
+    (*tdfg.mutable_nodes())[nid] = ::LLVM::TDG::TDFG::Node();
+    auto &tdfgNode = (*tdfg.mutable_nodes())[nid];
+
     // Populate common fields.
     tdfgNode.set_id(nid);
     tdfgNode.set_region_name(node->regionName);
@@ -1237,6 +1267,9 @@ void MLCPUMManager::buildTDFG(PUMContext &context) {
       tdfgEdge->set_dst(nodeToId.at(operand));
     }
   }
+
+  // Dump to file.
+  this->dumpTDFGToJson(tdfg);
 }
 #endif // EG_OPT
 

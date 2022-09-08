@@ -6,6 +6,7 @@
 #define EG_OPT
 
 #include "../MLCStreamEngine.hh"
+#include "proto/protoio.hh"
 
 #include "DataMoveCompiler.hh"
 #include <type_traits>
@@ -519,6 +520,7 @@ private:
   using TDFGNodeID = decltype(std::declval<::LLVM::TDG::TDFG::Node>().id());
   using TDFGNodeVec = std::vector<TDFGNodeID>;
   void buildTDFG(PUMContext &context);
+  void dumpTDFGToJson(const ::LLVM::TDG::TDFG &tdfg);
 #endif //  EG_OPT
 
   /**
