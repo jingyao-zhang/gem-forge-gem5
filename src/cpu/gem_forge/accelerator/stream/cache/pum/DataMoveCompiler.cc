@@ -886,7 +886,7 @@ DataMoveCompiler::maskCmdsBySubRegion(const PUMCommandVecT &commands,
   masked_commands.reserve(commands.size() * final_bitline_masks.size());
   for (const auto &command : commands) {
     DPRINTF(MLCStreamPUM, "[MaskSubRegion] Masking CMD %s", command);
-    const bool isIntraArray = command.type == "intra_array";
+    const bool isIntraArray = command.type == "intra-array";
     for (int i = 0; i < final_bitline_masks.size(); ++i) {
       const auto &bitline_mask = final_bitline_masks.at(i);
       const auto &tile_mask = final_tile_masks.at(i);
