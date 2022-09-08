@@ -29,8 +29,8 @@ int64_t MLCPUMManager::PUMContext::nextContextId = 0;
 
 AffinePattern MLCPUMManager::PatternInfo::getPatternAdjustedByOuterIter(
     int64_t patternIdx, int64_t outerIter) const {
-  assert(patternIdx < this->atomicPatterns.size());
-  auto pattern = this->atomicPatterns.at(patternIdx);
+  assert(patternIdx < this->scalarPatterns.size());
+  auto pattern = this->scalarPatterns.at(patternIdx);
   if (patternIdx >= this->splitOuterDims.size()) {
     // This is pattern is not splitted.
     return pattern;
@@ -422,8 +422,7 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
     patternInfo.pattern = pattern;
     patternInfo.regionVAddr = regionVAddr;
     patternInfo.scalarElemSize = scalarElemSize;
-    patternInfo.atomicPatterns =
-        this->decoalesceAndDevectorizePattern(config, pattern, scalarElemSize);
+    this->decoalesceAndDevectorizePattern(config, patternInfo);
   }
 
   // All regions should have the same tile mapping.
@@ -442,8 +441,8 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
   this->preprocessPatternsInGroup(context, group);
 
   for (const auto &e : group.patternInfo) {
-    for (const auto &p : e.second.atomicPatterns) {
-      S_DPRINTF(e.first, "[PUM]   AtomicPat %s.\n", p);
+    for (const auto &p : e.second.scalarPatterns) {
+      S_DPRINTF(e.first, "[PUM]   ScalarPat %s.\n", p);
     }
   }
 
@@ -471,15 +470,15 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
       return false;
     }
 
-    if (recvPatternInfo.atomicPatterns.size() != 1) {
+    if (recvPatternInfo.scalarPatterns.size() != 1) {
       MLC_S_DPRINTF(groupDynId, "[NoPUM] Multi RecvPatterns.\n", recvTile,
                     myTile);
       return false;
     }
-    const auto &recvPattern = recvPatternInfo.atomicPatterns.front();
+    const auto &recvPattern = recvPatternInfo.scalarPatterns.front();
     MLC_S_DPRINTF(groupDynId, "[PUM] RecvPattern %s.\n", recvPattern);
 
-    for (const auto &myPattern : sendPatInfo.atomicPatterns) {
+    for (const auto &myPattern : sendPatInfo.scalarPatterns) {
       MLC_S_DPRINTF(sendDynId, "[PUM] SendPattern %s.\n", myPattern);
 
       if (!compiler.canCompileStreamPair(myPattern, recvPattern)) {
@@ -544,9 +543,15 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context,
                                       PUMComputeStreamGroup &group) {
   assert(group.canApplyPUM);
 
-  PUMDataGraphNodeVec dataMoveNodes;
+  /**
+   * Now we are going to break single compute node into compute nodes per
+   * instruction, we care about the mapping from LogicalStreamId to MoveNode.
+   */
+  LogicalStreamIdToPUMDataGraphNodeMap logicalStreamIdToPUMDataGraphNodeMap;
+
   for (const auto &sendConfig : group.usedPUMConfigs) {
-    this->buildPUMDataGraphMove(context, group, sendConfig, dataMoveNodes);
+    this->buildPUMDataGraphMove(context, group, sendConfig,
+                                logicalStreamIdToPUMDataGraphNodeMap);
   }
 
   /**
@@ -554,20 +559,31 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context,
    */
   if (group.computeConfig->stream->getEnabledLoadFunc()) {
     this->buildPUMDataGraphMove(context, group, group.computeConfig,
-                                dataMoveNodes);
+                                logicalStreamIdToPUMDataGraphNodeMap);
+  }
+
+  /**
+   * UpdateStream also need to send to itself. Although this should just be a
+   * ValueNode.
+   */
+  if (group.computeConfig->stream->isUpdateStream()) {
+    this->buildPUMDataGraphMove(context, group, group.computeConfig,
+                                logicalStreamIdToPUMDataGraphNodeMap);
   }
 
   /**
    * NonPUMUsedConfigs are represented as Load nodes.
    */
   for (const auto &sendConfig : group.usedNonPUMConfigs) {
-    this->buildPUMDataGraphLoad(context, group, sendConfig, dataMoveNodes);
+    this->buildPUMDataGraphLoad(context, group, sendConfig,
+                                logicalStreamIdToPUMDataGraphNodeMap);
   }
 
   /**
    * Construct the compute node.
    */
-  this->buildPUMDataGraphCompute(context, group, dataMoveNodes);
+  this->buildPUMDataGraphCompute(context, group,
+                                 logicalStreamIdToPUMDataGraphNodeMap);
 }
 
 bool MLCPUMManager::needExpandReuse(PUMContext &context,
@@ -607,10 +623,10 @@ AffinePattern MLCPUMManager::expandReusePat(const AffinePattern &pumTile,
   return ret;
 }
 
-void MLCPUMManager::buildPUMDataGraphMove(PUMContext &context,
-                                          PUMComputeStreamGroup &group,
-                                          const ConfigPtr &sendConfig,
-                                          PUMDataGraphNodeVec &resultNodes) {
+void MLCPUMManager::buildPUMDataGraphMove(
+    PUMContext &context, PUMComputeStreamGroup &group,
+    const ConfigPtr &sendConfig,
+    LogicalStreamIdToPUMDataGraphNodeMap &resultNodes) {
 
   const auto &sendDynId = sendConfig->dynamicId;
   auto sendS = sendConfig->stream;
@@ -636,7 +652,7 @@ void MLCPUMManager::buildPUMDataGraphMove(PUMContext &context,
     // This is a LoadCompute.
     recvPatIdx = recvPatInfo.getLoadComputeResultPatternIdx();
   } else {
-    if (recvPatInfo.atomicPatterns.size() != 1) {
+    if (recvPatInfo.scalarPatterns.size() != 1) {
       MLC_S_PANIC_NO_DUMP(recvConfig->dynamicId, "[PUM] Multi Recv.");
     }
   }
@@ -648,11 +664,18 @@ void MLCPUMManager::buildPUMDataGraphMove(PUMContext &context,
 
   /**
    * Find the real SendPatterns.
-   * 1. If LoadComputeStream sends to other Stream, we only need to send
-   * LoadComputeResultPattern.
-   * 2. If LoadComputeStream sends to itself, we need to:
-   *  a. Send patterns other than LoadComputeResultPattern.
-   *  b. Mark LoadComputeResultPattern as one Value.
+   * 1. For LoadComputeStream:
+   *  a. If send to other Stream, we only send the LoadComputeResultPattern,
+   * which is a ComputeNode.
+   *  b. If send to myself:
+   *    i. If this is LoadComputeResultPattern, we directly use the ValueNode
+   * (no move required).
+   *    ii. Otherwise, we create the MoveNode.
+   *
+   * 2. For UpdateStream:
+   *  a. It can only send to itself.
+   *  b. It can only have one ScalarPattern!
+   *  c. Directly use the ValueNode, no MoveRequired.
    *
    * If this Computation involves NonPUMConfig, then we need to expand the
    * reused dimension.
@@ -662,17 +685,26 @@ void MLCPUMManager::buildPUMDataGraphMove(PUMContext &context,
     recvPat = expandReusePat(recvTile, recvPat, recvSplitOutDim);
   }
 
-  for (auto patIdx = 0; patIdx < sendPatInfo.atomicPatterns.size(); ++patIdx) {
+  const bool sendLoadCompute = sendS->getEnabledLoadFunc();
+  const bool sendUpdate = sendS->isUpdateStream();
+  const bool sendToMyself = recvConfig == sendConfig;
 
-    if (sendS->getEnabledLoadFunc()) {
-      auto sendLoadComputeResultPatIdx =
-          sendPatInfo.getLoadComputeResultPatternIdx();
-      if (recvConfig != sendConfig) {
-        // Send to other stream.
-        if (patIdx != sendLoadComputeResultPatIdx) {
-          continue;
-        }
-      }
+  if (sendUpdate) {
+    // 2.a.
+    assert(sendToMyself && "UpdateS should only send to itself.");
+    // 2.b.
+    assert(sendPatInfo.scalarPatterns.size() == 1 &&
+           "UpdateS should have only one ScalarPattern.");
+  }
+
+  for (auto patIdx = 0; patIdx < sendPatInfo.scalarPatterns.size(); ++patIdx) {
+
+    auto logicalStreamId = sendPatInfo.scalarPatLogicalStreamIds.at(patIdx);
+
+    // 1.a.
+    if (sendLoadCompute && !sendToMyself &&
+        patIdx != sendPatInfo.getLoadComputeResultPatternIdx()) {
+      continue;
     }
 
     auto sendPat = sendPatInfo.getPattern(patIdx);
@@ -685,7 +717,8 @@ void MLCPUMManager::buildPUMDataGraphMove(PUMContext &context,
      * Each send pattern is a ValueNode, with RecvPat as MoveNode.
      */
     PUMDataGraphNode *valueNode = nullptr;
-    if (sendS->getEnabledLoadFunc() && recvConfig != sendConfig) {
+    // 1.a.
+    if (sendLoadCompute && !sendToMyself) {
       // Search for the compute node.
       for (auto node : context.pumDataGraphNodes) {
         if (node->type == PUMDataGraphNode::TypeE::Compute &&
@@ -722,15 +755,15 @@ void MLCPUMManager::buildPUMDataGraphMove(PUMContext &context,
       }
     }
 
-    if (sendS->getEnabledLoadFunc() && recvConfig == sendConfig) {
-      auto sendLoadComputeResultPatIdx =
-          sendPatInfo.getLoadComputeResultPatternIdx();
-      if (patIdx == sendLoadComputeResultPatIdx) {
-        // We add the ValueNode as the ResultNode, since this requires no
-        // send.
-        resultNodes.push_back(valueNode);
-        continue;
-      }
+    // 1.b.i.
+    // 2.c.
+    if ((sendLoadCompute && sendToMyself &&
+         patIdx == sendPatInfo.getLoadComputeResultPatternIdx()) ||
+        (sendUpdate && sendToMyself)) {
+      // We add the ValueNode as the ResultNode, since this requires no
+      // send.
+      resultNodes.emplace(logicalStreamId, valueNode);
+      continue;
     }
 
     auto moveNode = PUMDataGraphNode::newMoveNode(
@@ -738,16 +771,16 @@ void MLCPUMManager::buildPUMDataGraphMove(PUMContext &context,
         valueNode->pattern, valueNode->splitOutDim, valueNode,
         recvPatInfo.scalarElemSize);
     context.pumDataGraphNodes.push_back(moveNode);
-    resultNodes.push_back(moveNode);
+    resultNodes.emplace(logicalStreamId, moveNode);
 
     MLCSE_DPRINTF("New move node: %p\n", moveNode);
   }
 }
 
-void MLCPUMManager::buildPUMDataGraphLoad(PUMContext &context,
-                                          PUMComputeStreamGroup &group,
-                                          const ConfigPtr &sendConfig,
-                                          PUMDataGraphNodeVec &resultNodes) {
+void MLCPUMManager::buildPUMDataGraphLoad(
+    PUMContext &context, PUMComputeStreamGroup &group,
+    const ConfigPtr &sendConfig,
+    LogicalStreamIdToPUMDataGraphNodeMap &resultNodes) {
 
   const auto &sendDynId = sendConfig->dynamicId;
   auto sendS = sendConfig->stream;
@@ -767,7 +800,7 @@ void MLCPUMManager::buildPUMDataGraphLoad(PUMContext &context,
     // This is a LoadCompute.
     recvPatIdx = recvPatInfo.getLoadComputeResultPatternIdx();
   } else {
-    if (recvPatInfo.atomicPatterns.size() != 1) {
+    if (recvPatInfo.scalarPatterns.size() != 1) {
       MLC_S_PANIC_NO_DUMP(recvConfig->dynamicId, "[PUM] Multi Recv.");
     }
   }
@@ -793,7 +826,9 @@ void MLCPUMManager::buildPUMDataGraphLoad(PUMContext &context,
     recvPat = expandReusePat(recvTile, recvPat, recvSplitOutDim);
   }
 
-  for (auto patIdx = 0; patIdx < sendPatInfo.atomicPatterns.size(); ++patIdx) {
+  for (auto patIdx = 0; patIdx < sendPatInfo.scalarPatterns.size(); ++patIdx) {
+
+    auto logicalStreamId = sendPatInfo.scalarPatLogicalStreamIds.at(patIdx);
 
     if (sendS->getEnabledLoadFunc()) {
       auto sendLoadComputeResultPatIdx =
@@ -822,13 +857,13 @@ void MLCPUMManager::buildPUMDataGraphLoad(PUMContext &context,
         recvPatInfo.regionName, recvTile, recvPat, recvSplitOutDim, sendPat,
         sendConfig, recvConfig, recvPatInfo.scalarElemSize);
     context.pumDataGraphNodes.push_back(loadNode);
-    resultNodes.push_back(loadNode);
+    resultNodes.emplace(logicalStreamId, loadNode);
   }
 }
 
 void MLCPUMManager::buildPUMDataGraphCompute(
     PUMContext &context, PUMComputeStreamGroup &group,
-    const PUMDataGraphNodeVec &moveNodes) {
+    const LogicalStreamIdToPUMDataGraphNodeMap &inputNodes) {
 
   const auto &config = group.computeConfig;
   const auto &dynId = config->dynamicId;
@@ -839,7 +874,7 @@ void MLCPUMManager::buildPUMDataGraphCompute(
   if (config->stream->getEnabledLoadFunc()) {
     patternIdx = patInfo.getLoadComputeResultPatternIdx();
   } else {
-    assert(patInfo.atomicPatterns.size() == 1);
+    assert(patInfo.scalarPatterns.size() == 1);
   }
 
   auto pattern = patInfo.getPattern(patternIdx);
@@ -887,11 +922,7 @@ void MLCPUMManager::buildPUMDataGraphCompute(
    * `func` call. Each will be mapped a X86 function call integer register.
    */
 
-  assert(moveNodes.size() == formalParams.size());
-
   MLCSE_DPRINTF("Collecting operand registers values\n");
-
-  std::unordered_map<RegId, PUMDataGraphNode *> regToNode;
 
   // Step 1: Define initial state of call registers.
   const RegId intRegParams[6] = {
@@ -913,30 +944,55 @@ void MLCPUMManager::buildPUMDataGraphCompute(
       RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM7_0),
   };
 
+  MLC_S_DPRINTF(dynId,
+                "Construct TDFG ComputeNode(s) for %s. InputNodes %lu:\n",
+                func->getFuncInfo().name(), inputNodes.size());
+  if (Debug::MLCStreamPUM) {
+    for (const auto &entry : inputNodes) {
+      MLC_S_DPRINTF(dynId, "   LogicalStream %lu %s\n", entry.first,
+                    *entry.second);
+    }
+  }
+
+  // assert(inputNodes.size() == formalParams.size());
+
+  std::unordered_map<RegId, PUMDataGraphNode *> regToNode;
+
+  // Define initial state of call registers.
+  MLCSE_DPRINTF("Collecting operand registers\n");
   int intRegIdx = 0;
   int fpRegIdx = 0;
 
   for (auto i = 0; i < formalParams.size(); ++i) {
     // Ignore if parameter is not a stream.
+
+    PUMDataGraphNode *node = nullptr;
+
     if (formalParams[i].isInvariant) {
       MLCSE_DPRINTF("  Has non-stream @\n %d", i);
       continue;
 
       // TODO: For register parameters
-      auto regNode = new PUMDataGraphNode(PUMDataGraphNode::TypeE::Compute);
+      node = new PUMDataGraphNode(PUMDataGraphNode::TypeE::Compute);
 
       // TODO: Will need some symbol table for registers that don't have
       //       a predetermined value.
-      regNode->compValTy = PUMDataGraphNode::CompValueE::Reg;
-      regNode->symbol = new std::string("a");
+      node->compValTy = PUMDataGraphNode::CompValueE::Reg;
+      node->symbol = new std::string("a");
 
       // NOTE: Otherwise, this is also possible.
-      regNode->compValTy =
-          PUMDataGraphNode::CompValueE::ConstFloat /* or ConstInt */;
-      regNode->fVal /* or iVal */ = 0.0f /* value of register */;
+      if (func->getFuncInfo().args(i).type() ==
+          ::LLVM::TDG::DataType::INTEGER) {
+        node->compValTy = PUMDataGraphNode::CompValueE::ConstInt;
+      } else {
+        node->compValTy = PUMDataGraphNode::CompValueE::ConstFloat;
+      }
+      node->iVal = formalParams[i].invariant.uint64();
+    } else {
+      assert(inputNodes.count(formalParams[i].baseStreamId) &&
+             "Failed to find InputNode.");
+      node = inputNodes.at(formalParams[i].baseStreamId);
     }
-
-    auto node = moveNodes[i]; // Should be one-to-one mapping by index.
 
     // Get register (will miss registers for AVX instructions).
     RegId reg;
@@ -1086,9 +1142,10 @@ void MLCPUMManager::buildPUMDataGraphCompute(
   auto cmpNode = PUMDataGraphNode::newCmpNode(
       patInfo.regionName, patInfo.pumTile, pattern, splitOutDim,
       patInfo.scalarElemSize, func, &group);
-  cmpNode->operands = moveNodes;
-  for (auto moveNode : moveNodes) {
-    moveNode->users.push_back(cmpNode);
+  for (const auto &entry : inputNodes) {
+    auto node = entry.second;
+    cmpNode->operands.push_back(node);
+    node->users.push_back(cmpNode);
   }
   context.pumDataGraphNodes.push_back(cmpNode);
 #endif // EG_OPT
@@ -1696,8 +1753,8 @@ void MLCPUMManager::compileReduction(PUMContext &context,
   const auto &reduceDynId = group.reduceConfig->dynamicId;
 
   const auto &patInfo = group.patternInfo.at(group.computeConfig->stream);
-  assert(!patInfo.atomicPatterns.empty() && "No AtomicPattern.");
-  const auto &reducePat = patInfo.atomicPatterns.front();
+  assert(!patInfo.scalarPatterns.empty() && "No ScalarPat.");
+  const auto &reducePat = patInfo.scalarPatterns.front();
 
   int reduceStride = reducePat.params.front().stride;
   auto ret = patInfo.pumTile.getTileAndArraySize();
@@ -2182,7 +2239,7 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
   auto tileSizes = tileAndArraySize.first;
   auto arraySizes = tileAndArraySize.second;
 
-  const auto &atomicPat = patInfo.getSingleAtomicPat();
+  const auto &atomicPat = patInfo.getSingleScalarPat();
   assert(atomicPat.isSubRegionToArraySize(arraySizes));
 
   auto startPos = atomicPat.getSubRegionStartToArraySize(arraySizes);
@@ -2208,7 +2265,7 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
   }
 
   // Construct the pattern.
-  auto tileAlignedAtomicPat = AffinePattern::constructSubRegion(
+  auto tileAlignedScalarPat = AffinePattern::constructSubRegion(
       arraySizes, tileAlignedStartPos, tileAlignedTrips);
 
   // Split the pattern at the first dimension to accumuate P partial results
@@ -2216,17 +2273,17 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
   const int64_t partialResultsPerTile = 1;
   {
 
-    auto paramSplitDimIter = tileAlignedAtomicPat.params.begin() + reducedDim;
+    auto paramSplitDimIter = tileAlignedScalarPat.params.begin() + reducedDim;
     paramSplitDimIter->stride = tileSizes.at(reducedDim);
     paramSplitDimIter->trip /= tileSizes.at(reducedDim);
 
-    tileAlignedAtomicPat.params.insert(
+    tileAlignedScalarPat.params.insert(
         paramSplitDimIter, AffinePattern::Param(1, partialResultsPerTile));
   }
 
   MLC_S_DPRINTF(directConfig->dynamicId,
                 "[PUMReduce] TilePat %s ReducePat %s AlignedToTile %s.\n",
-                patInfo.pumTile, atomicPat, tileAlignedAtomicPat);
+                patInfo.pumTile, atomicPat, tileAlignedScalarPat);
 
   /**
    * @brief We needed to add back splitted outer dimension.
@@ -2235,24 +2292,24 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
    * at these outer dimensions.
    */
   newDirectConfig->pumContextId = context.contextId;
-  newDirectConfig->pumElemPerSync = tileAlignedAtomicPat.getTotalTrip();
+  newDirectConfig->pumElemPerSync = tileAlignedScalarPat.getTotalTrip();
   newDirectConfig->waitPUMRoundStart = false; // By default wait on Complete.
   newDirectConfig->hintNoStrandSplitOuterTrip = 1;
   if (!patInfo.splitOuterDims.empty()) {
     const auto &splitDims = patInfo.splitOuterDims.front();
-    tileAlignedAtomicPat.params.insert(tileAlignedAtomicPat.params.end(),
+    tileAlignedScalarPat.params.insert(tileAlignedScalarPat.params.end(),
                                        splitDims.params.begin(),
                                        splitDims.params.end());
     newDirectConfig->hintNoStrandSplitOuterTrip = splitDims.getTotalTrip();
     MLC_S_DPRINTF(directConfig->dynamicId,
                   "[PUMReduce] TileAlignedPat Added SplitOuterDim %s -> %s "
                   "NoStrandSplitOuterTripCount %ld.\n",
-                  splitDims, tileAlignedAtomicPat,
+                  splitDims, tileAlignedScalarPat,
                   newDirectConfig->hintNoStrandSplitOuterTrip);
   }
 
   auto addrGenFormalParams = this->convertAffinePatternToStreamFormalParams(
-      tileAlignedAtomicPat, patInfo.regionVAddr, patInfo.scalarElemSize);
+      tileAlignedScalarPat, patInfo.regionVAddr, patInfo.scalarElemSize);
 
   MLC_S_DPRINTF(directConfig->dynamicId,
                 "[PUMReduce] Convert to AddrPattern RegionVAddr %#x "
@@ -2267,9 +2324,9 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
    */
   auto newInnerTripCount = tileAlignedTrips.at(reducedDim) /
                            tileSizes.at(reducedDim) * partialResultsPerTile;
-  newDirectConfig->totalTripCount = tileAlignedAtomicPat.getTotalTrip();
+  newDirectConfig->totalTripCount = tileAlignedScalarPat.getTotalTrip();
   newDirectConfig->innerTripCount = newInnerTripCount;
-  newReduceConfig->totalTripCount = tileAlignedAtomicPat.getTotalTrip();
+  newReduceConfig->totalTripCount = tileAlignedScalarPat.getTotalTrip();
   newReduceConfig->innerTripCount = newInnerTripCount;
 
   MLC_S_DPRINTF(directConfig->dynamicId,
@@ -2762,11 +2819,15 @@ void MLCPUMManager::kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
       this->controller->cyclesToTicks(latency));
 }
 
-AffinePatternVecT MLCPUMManager::decoalesceAndDevectorizePattern(
-    const ConfigPtr &config, const AffinePattern &pattern, int scalarElemSize) {
-  AffinePatternVecT ret;
+void MLCPUMManager::decoalesceAndDevectorizePattern(const ConfigPtr &config,
+                                                    PatternInfo &patInfo) {
+  const auto &scalarElemSize = patInfo.scalarElemSize;
+  const auto &pattern = patInfo.pattern;
 
-  for (const auto &id : config->stream->getLogicalStreamIds()) {
+  patInfo.scalarPatLogicalStreamIds = config->stream->getLogicalStreamIds();
+  auto &scalarPats = patInfo.scalarPatterns;
+
+  for (const auto &id : patInfo.scalarPatLogicalStreamIds) {
     int32_t offset = 0;
     int32_t size = 0;
     config->stream->getCoalescedOffsetAndSize(id, offset, size);
@@ -2794,10 +2855,8 @@ AffinePatternVecT MLCPUMManager::decoalesceAndDevectorizePattern(
       }
     }
 
-    ret.push_back(newPat);
+    scalarPats.push_back(newPat);
   }
-
-  return ret;
 }
 
 DynStreamFormalParamV MLCPUMManager::convertAffinePatternToStreamFormalParams(
@@ -2846,7 +2905,7 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
     auto S = sendConfig->stream;
     auto &sendPatInfo = group.patternInfo.at(S);
 
-    for (auto &sendPat : sendPatInfo.atomicPatterns) {
+    for (auto &sendPat : sendPatInfo.scalarPatterns) {
 
       auto reusedSendPat =
           this->addReuseToOuterPattern(sendConfig, recvConfig, sendPat);
@@ -2864,7 +2923,7 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
    * So far we only support split one more dimension, and require all patterns
    * has the same dimension.
    */
-  auto &recvPat = recvPatInfo.atomicPatterns.front();
+  auto &recvPat = recvPatInfo.scalarPatterns.front();
   auto arrayDims = recvTile.params.size() / 2;
   if (recvPat.params.size() != arrayDims + 1) {
     return;
@@ -2878,7 +2937,7 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
     auto S = sendConfig->stream;
     auto &sendPatInfo = group.patternInfo.at(S);
 
-    for (auto &sendPat : sendPatInfo.atomicPatterns) {
+    for (auto &sendPat : sendPatInfo.scalarPatterns) {
 
       if (sendPat.params.size() != recvPat.params.size()) {
         MLC_S_DPRINTF(sendDynId, "[PUM]     SendPat %s Mismatch in Dim.\n",
@@ -2910,7 +2969,7 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
     const auto &sendDynId = sendConfig->dynamicId;
     auto S = sendConfig->stream;
     auto &sendPatInfo = group.patternInfo.at(S);
-    for (auto &sendPat : sendPatInfo.atomicPatterns) {
+    for (auto &sendPat : sendPatInfo.scalarPatterns) {
 
       auto splitPat = sendPat.splitFromDim(arrayDims);
       MLC_S_DPRINTF(sendDynId, "[PUM]     SendPat Split into %s %s.\n", sendPat,
@@ -2920,7 +2979,7 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
     }
   }
 
-  for (auto &recvPat : recvPatInfo.atomicPatterns) {
+  for (auto &recvPat : recvPatInfo.scalarPatterns) {
     auto recvSplitPat = recvPat.splitFromDim(arrayDims);
     MLC_S_DPRINTF(groupDynId, "[PUM]     RecvPat Split into %s %s.\n", recvPat,
                   recvSplitPat);
@@ -3319,8 +3378,8 @@ void MLCPUMManager::completeFinalReduction(PUMContext &context,
   }
 
   const auto &patInfo = group.patternInfo.at(group.computeConfig->stream);
-  assert(patInfo.atomicPatterns.size() == 1);
-  auto reducedTripCount = patInfo.atomicPatterns.front().getTotalTrip();
+  assert(patInfo.scalarPatterns.size() == 1);
+  auto reducedTripCount = patInfo.scalarPatterns.front().getTotalTrip();
 
   assert(reduceConfig->hasInnerTripCount());
   auto innerTripCount = reduceConfig->getInnerTripCount();

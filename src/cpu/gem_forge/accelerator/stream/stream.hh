@@ -38,6 +38,8 @@ class StreamEndInst;
  */
 class LogicalStream {
 public:
+  using StaticId = DynStreamId::StaticId;
+
   LogicalStream(const std::string &_traceExtraFolder,
                 const LLVM::TDG::StreamInfo &_info);
 
@@ -55,7 +57,7 @@ public:
   using StreamInfoType = ::LLVM::TDG::StreamInfo_Type;
   using ExecFuncInfo = ::LLVM::TDG::ExecFuncInfo;
 
-  uint64_t getStreamId() const { return this->info.id(); }
+  StaticId getStreamId() const { return this->info.id(); }
   StreamInfoType getStreamType() const { return this->info.type(); }
   uint32_t getLoopLevel() const {
     return this->info.static_info().loop_level();
@@ -659,8 +661,8 @@ public:
     return this->isMergedPredicated() || this->isMergedLoadStoreDepStream();
   }
 
-  std::vector<uint64_t> getLogicalStreamIds() const {
-    std::vector<uint64_t> ret;
+  std::vector<StaticId> getLogicalStreamIds() const {
+    std::vector<StaticId> ret;
     for (const auto &logicS : this->logicals) {
       ret.push_back(logicS->getStreamId());
     }

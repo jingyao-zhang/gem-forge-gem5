@@ -3,7 +3,7 @@
 
 // Temporary: Non-destructively add equality graph optimization code.
 #include "cpu/static_inst_fwd.hh"
-// #define EG_OPT
+#define EG_OPT
 
 #include "../MLCStreamEngine.hh"
 
@@ -95,18 +95,23 @@ private:
     AffinePattern pumTile;
     Addr regionVAddr = 0;
     int scalarElemSize = 0;
-    AffinePatternVecT atomicPatterns;
+    /**
+     * ScalarPattern: represents the pattern that from decoalescing and
+     * devectorizing the streams. Should be one per logical stream.
+     */
+    AffinePatternVecT scalarPatterns;
+    std::vector<DynStreamId::StaticId> scalarPatLogicalStreamIds;
     AffinePatternVecT splitOuterDims;
     std::string regionName;
 
     AffinePattern getPatternAdjustedByOuterIter(int64_t patternIdx,
                                                 int64_t outerIter) const;
     AffinePattern getPattern(int64_t patIdx) const {
-      assert(patIdx < this->atomicPatterns.size());
-      return this->atomicPatterns.at(patIdx);
+      assert(patIdx < this->scalarPatterns.size());
+      return this->scalarPatterns.at(patIdx);
     }
     AffinePattern getSplitOutDim(int64_t patIdx) const {
-      assert(patIdx < this->atomicPatterns.size());
+      assert(patIdx < this->scalarPatterns.size());
       if (patIdx < this->splitOuterDims.size()) {
         return this->splitOuterDims.at(patIdx);
       } else {
@@ -114,16 +119,16 @@ private:
         return AffinePattern();
       }
     }
-    const AffinePattern &getSingleAtomicPat() const {
-      assert(this->atomicPatterns.size() == 1);
-      return this->atomicPatterns.front();
+    const AffinePattern &getSingleScalarPat() const {
+      assert(this->scalarPatterns.size() == 1);
+      return this->scalarPatterns.front();
     }
     int64_t getLoadComputeResultPatternIdx() const {
       /**
        * As a heuristic, LoadComputeResult uses the middle Pattern as the result
        * pattern.
        */
-      return this->atomicPatterns.size() / 2;
+      return this->scalarPatterns.size() / 2;
     }
   };
 
@@ -492,17 +497,19 @@ private:
    * Build the PUMDataGraph.
    */
   using PUMDataGraphNodeVec = std::vector<PUMDataGraphNode *>;
+  using LogicalStreamIdToPUMDataGraphNodeMap =
+      std::map<DynStreamId::StaticId, PUMDataGraphNode *>;
   void buildPUMDataGraph(PUMContext &context);
   void buildPUMDataGraph(PUMContext &context, PUMComputeStreamGroup &group);
   void buildPUMDataGraphMove(PUMContext &context, PUMComputeStreamGroup &group,
                              const ConfigPtr &sendConfig,
-                             PUMDataGraphNodeVec &resultNodes);
+                             LogicalStreamIdToPUMDataGraphNodeMap &resultNodes);
   void buildPUMDataGraphLoad(PUMContext &context, PUMComputeStreamGroup &group,
                              const ConfigPtr &sendConfig,
-                             PUMDataGraphNodeVec &resultNodes);
-  void buildPUMDataGraphCompute(PUMContext &context,
-                                PUMComputeStreamGroup &group,
-                                const PUMDataGraphNodeVec &moveNodes);
+                             LogicalStreamIdToPUMDataGraphNodeMap &resultNodes);
+  void buildPUMDataGraphCompute(
+      PUMContext &context, PUMComputeStreamGroup &group,
+      const LogicalStreamIdToPUMDataGraphNodeMap &inputNodes);
   bool needExpandReuse(PUMContext &context, const PUMComputeStreamGroup &group);
   AffinePattern expandReusePat(const AffinePattern &pumTile,
                                const AffinePattern &pat,
@@ -600,11 +607,10 @@ private:
 
   /**
    * Decoalesce and devectorize stream pattern.
+   * Also set the LogicalStreamIds for the ScalarPattern.
    */
-  AffinePatternVecT
-  decoalesceAndDevectorizePattern(const ConfigPtr &config,
-                                  const AffinePattern &pattern,
-                                  int scalarElemSize);
+  void decoalesceAndDevectorizePattern(const ConfigPtr &config,
+                                       PatternInfo &patInfo);
 
   /**
    * @brief Convert an AffinePattern back to LinearAddrGen params.
@@ -678,7 +684,6 @@ private:
 
   void sendOneReductionResult(PUMContext &context,
                               PUMComputeStreamGroup &group);
-
 };
 
 std::ostream &operator<<(std::ostream &os,
