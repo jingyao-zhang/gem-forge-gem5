@@ -275,13 +275,25 @@ private:
      */
     PUMComputeStreamGroup *group = nullptr;
 #ifdef EG_OPT
-    const StaticInstPtr inst;
-    static PUMDataGraphNode *
-    newCmpNode(const std::string &_regionName, const AffinePattern &_pumTile,
-               const AffinePattern &_pattern, const AffinePattern &_splitOutDim,
-               int _scalarElemSize, const StaticInstPtr _inst,
-               PUMComputeStreamGroup *_group);
-#else // EG_OPT
+    enum CompValueE { None, ConstFloat, ConstInt, Reg };
+    CompValueE compValTy;
+    union {
+      float fVal;
+      uint32_t iVal;
+      std::string
+          *symbol; // For dynamic values, assign them to a symbolic value. If
+                   // two values come from the same register, they should have
+                   // the same symbol to maximize optimization opportunity.
+    };
+
+    std::vector<StaticInstPtr> insts;
+    static PUMDataGraphNode *newEmptyCmpNode(const std::string &_regionName,
+                                             const AffinePattern &_pumTile,
+                                             const AffinePattern &_pattern,
+                                             const AffinePattern &_splitOutDim,
+                                             int _scalarElemSize,
+                                             PUMComputeStreamGroup *_group);
+#else  // EG_OPT
     ExecFuncPtr func = nullptr;
     static PUMDataGraphNode *newCmpNode(const std::string &_regionName,
                                         const AffinePattern &_pumTile,
@@ -296,6 +308,11 @@ private:
      */
     static PUMDataGraphNode *newSyncNode();
 
+#ifdef EG_OPT
+    // FIX: Temporary dummy declaration for register nodes
+    PUMDataGraphNode(TypeE _type) : type(_type) {}
+#endif // EG_OPT
+
   private:
     // A basic constructor for basic fields.
     PUMDataGraphNode(const std::string &_regionName, TypeE _type,
@@ -305,18 +322,6 @@ private:
         : regionName(_regionName), type(_type), pumTile(_pumTile),
           pattern(_pattern), splitOutDim(_splitOutDim),
           scalarElemSize(_scalarElemSize) {}
-
-#ifdef EG_OPT
-    // TODO: Got lazy didn't write a delegate constructor.
-    PUMDataGraphNode(const std::string &_regionName, TypeE _type,
-                     const AffinePattern &_pumTile,
-                     const AffinePattern &_pattern,
-                     const AffinePattern &_splitOutDim, int _scalarElemSize,
-                     const StaticInstPtr _inst, PUMComputeStreamGroup *_group)
-        : regionName(_regionName), type(_type), pumTile(_pumTile),
-          pattern(_pattern), splitOutDim(_splitOutDim),
-          scalarElemSize(_scalarElemSize), group(_group), inst(_inst) {}
-#endif // EG_OPT
   };
 
   friend std::ostream &operator<<(std::ostream &os,
