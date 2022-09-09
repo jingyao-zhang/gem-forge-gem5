@@ -574,6 +574,15 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context,
   }
 
   /**
+   * ReduceStream also need to send the associated LoadStream to itself.
+   * This should just be a ValueNode.
+   */
+  if (group.reduceConfig) {
+    this->buildPUMDataGraphMove(context, group, group.computeConfig,
+                                logicalStreamIdToPUMDataGraphNodeMap);
+  }
+
+  /**
    * NonPUMUsedConfigs are represented as Load nodes.
    */
   for (const auto &sendConfig : group.usedNonPUMConfigs) {
@@ -679,6 +688,10 @@ void MLCPUMManager::buildPUMDataGraphMove(
    *  b. It can only have one ScalarPattern!
    *  c. Directly use the ValueNode, no MoveRequired.
    *
+   * 3. For the receiving ReduceStream:
+   *  a. If the sender is myself, directly use the value node.
+   *
+   *
    * If this Computation involves NonPUMConfig, then we need to expand the
    * reused dimension.
    */
@@ -689,6 +702,7 @@ void MLCPUMManager::buildPUMDataGraphMove(
 
   const bool sendLoadCompute = sendS->getEnabledLoadFunc();
   const bool sendUpdate = sendS->isUpdateStream();
+  const bool recvReduce = group.reduceConfig != nullptr;
   const bool sendToMyself = recvConfig == sendConfig;
 
   if (sendUpdate) {
@@ -761,7 +775,7 @@ void MLCPUMManager::buildPUMDataGraphMove(
     // 2.c.
     if ((sendLoadCompute && sendToMyself &&
          patIdx == sendPatInfo.getLoadComputeResultPatternIdx()) ||
-        (sendUpdate && sendToMyself)) {
+        (sendUpdate && sendToMyself) || (recvReduce && sendToMyself)) {
       // We add the ValueNode as the ResultNode, since this requires no
       // send.
       resultNodes.emplace(logicalStreamId, valueNode);
@@ -976,6 +990,7 @@ void MLCPUMManager::buildPUMDataGraphCompute(
 
       // TODO: For register parameters
       node = new PUMDataGraphNode(PUMDataGraphNode::TypeE::Compute);
+      context.pumDataGraphNodes.push_back(node);
 
       // TODO: Will need some symbol table for registers that don't have
       //       a predetermined value.
@@ -990,10 +1005,31 @@ void MLCPUMManager::buildPUMDataGraphCompute(
         node->compValTy = PUMDataGraphNode::CompValueE::ConstFloat;
       }
       node->iVal = formalParams[i].invariant.uint64();
-    } else {
-      assert(inputNodes.count(formalParams[i].baseStreamId) &&
-             "Failed to find InputNode.");
+    } else if (inputNodes.count(formalParams[i].baseStreamId)) {
       node = inputNodes.at(formalParams[i].baseStreamId);
+    } else {
+      // The only exception is the InitialValue of the ReduceStream.
+      if (group.reduceConfig && formalParams[i].baseStreamId ==
+                                    group.reduceConfig->dynamicId.staticId) {
+
+        node = new PUMDataGraphNode(PUMDataGraphNode::TypeE::Compute);
+        context.pumDataGraphNodes.push_back(node);
+
+        node->compValTy = PUMDataGraphNode::CompValueE::Reg;
+        node->symbol = new std::string("a");
+
+        // NOTE: Otherwise, this is also possible.
+        if (func->getFuncInfo().args(i).type() ==
+            ::LLVM::TDG::DataType::INTEGER) {
+          node->compValTy = PUMDataGraphNode::CompValueE::ConstInt;
+        } else {
+          node->compValTy = PUMDataGraphNode::CompValueE::ConstFloat;
+        }
+        node->iVal = group.reduceConfig->reductionInitValue.uint64();
+
+      } else {
+        assert(false && "Failed to find InputNode.");
+      }
     }
 
     // Get register (will miss registers for AVX instructions).
@@ -1585,8 +1621,10 @@ void MLCPUMManager::compilePUMDataGraphToCommands(PUMContext &context) {
       break;
     }
     case PUMDataGraphNode::TypeE::Compute: {
-      // This is compute node.
-      this->compileCompute(context, node);
+      // This is compute node. Skip the special node representing the RegValue.
+      if (node->compValTy == PUMDataGraphNode::CompValueE::None) {
+        this->compileCompute(context, node);
+      }
       break;
     }
     default: {
@@ -1616,10 +1654,10 @@ void MLCPUMManager::compileDataMove(PUMContext &context,
   const auto &recvTile = node->pumTile;
   auto recvPat = node->adjustPatByOutIter(context.nextOutIter);
 
-  DataMoveCompiler compiler(StreamNUCAMap::getPUMHWConfig(), sendTile);
+  MLCSE_DPRINTF("[PUM] --- Compile MoveNode %s. SendTile %s %s -> %s %s.\n",
+                *node, sendTile, sendPat, recvTile, recvPat);
 
-  MLCSE_DPRINTF("[PUM] --- Compile MoveNode. SendTile %s %s -> %s %s.\n",
-                sendTile, sendPat, recvTile, recvPat);
+  DataMoveCompiler compiler(StreamNUCAMap::getPUMHWConfig(), sendTile);
 
   if (recvTile != sendTile) {
     // TODO: Handle different mapping of source and dest stream.
@@ -1668,13 +1706,13 @@ void MLCPUMManager::compileCompute(PUMContext &context,
   // auto &patInfo = group.patternInfo.at(config->stream);
   // auto scalarElemBits = patInfo.scalarElemSize * 8;
 
+  auto pattern = node->adjustPatByOutIter(context.nextOutIter);
+  MLCSE_DPRINTF("Compile Compute Node %s Tile %s Pattern %s.\n", *node,
+                node->pumTile, pattern);
+
   DataMoveCompiler compiler(StreamNUCAMap::getPUMHWConfig(), node->pumTile);
 
   PUMCommandVecT commands;
-
-  auto pattern = node->adjustPatByOutIter(context.nextOutIter);
-  MLCSE_DPRINTF("Compile Compute Tile %s Pattern %s.\n", node->pumTile,
-                pattern);
 
 #ifdef EG_OPT
   for (const auto &inst : node->insts) {
