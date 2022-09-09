@@ -10,13 +10,11 @@
 #include <tuple>
 #include <vector>
 
+#include "TDFG.pb.h"
 #include "config/have_protobuf.hh"
-#include "cpu/gem_forge/accelerator/stream/cache/pum/TDFG.pb.h"
 #ifndef HAVE_PROTOBUF
 #error "Require protobuf to parse tensor dataflow graph."
 #endif
-
-#include "TDFG.pb.h"
 
 class AffinePattern {
 public:

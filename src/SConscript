@@ -1315,8 +1315,14 @@ def makeEnv(env, label, objsfx, strip=False, disable_partial=False, **kwargs):
 
 # Start out with the compiler flags common to all compilers,
 # i.e. they all use -g for opt and -g -pg for prof
-ccflags = {'debug' : [], 'opt' : ['-g'], 'fast' : [], 'prof' : ['-g', '-pg'],
-           'perf' : ['-g']}
+# ! Zhengrong: I need -pthread for protobuf for PUMJitter.
+ccflags = {
+    'debug' : [],
+    'opt' : ['-g'],
+    'fast' : ['-pthread'],
+    'prof' : ['-g', '-pg'],
+    'perf' : ['-g']
+}
 
 # Start out with the linker flags common to all linkers, i.e. -pg for
 # prof, and -lprofiler for perf. The -lprofile flag is surrounded by
@@ -1328,6 +1334,7 @@ ldflags = {
     'opt' : [
     ],
     'fast' : [
+        '-pthread',
     ],
     'prof' : [
         '-pg',

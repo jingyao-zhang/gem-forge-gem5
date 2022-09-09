@@ -1193,7 +1193,17 @@ void MLCPUMManager::buildPUMDataGraphCompute(
 
 void MLCPUMManager::dumpTDFGToJson(const ::LLVM::TDG::TDFG &tdfg) {
   static int dumpCount = 0;
-  auto directory = simout.findOrCreateSubdirectory("stream_pum_tdfg");
+
+  const std::string &tdfg_folder = "stream_pum_tdfg";
+
+  if (dumpCount == 0) {
+    /**
+     * First time: Delete the possible old folder.
+     */
+    simout.remove(tdfg_folder, true /* recursive */);
+  }
+
+  auto directory = simout.findOrCreateSubdirectory(tdfg_folder);
 
   std::string fn = "tdfg." + std::to_string(dumpCount) + ".json";
   auto log = directory->create(fn);

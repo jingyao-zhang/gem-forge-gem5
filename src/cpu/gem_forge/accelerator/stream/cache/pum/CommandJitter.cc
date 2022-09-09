@@ -2,8 +2,18 @@
 
 #include "DataMoveCompiler.hh"
 
+#include "TDFG.pb.h"
+#include "config/have_protobuf.hh"
+#ifndef HAVE_PROTOBUF
+#error "Require protobuf to parse tensor dataflow graph."
+#endif
+
+#include <google/protobuf/util/json_util.h>
+
 #include <chrono>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 
 const int64_t array_rows = 512;
 const int64_t array_cols = 512;
@@ -113,13 +123,101 @@ void shiftRhs2D() {
 
   std::chrono::duration<double, std::micro> compileTimeMs = endTime - startTime;
   compileTimeMs /= runs;
-  printf("CompileTime %s %lfus.\n", __func__, compileTimeMs.count());
+  printf(">> CompileTime %s %lf us\n", __func__, compileTimeMs.count());
+}
+
+void compileTDFG(const ::LLVM::TDG::TDFG &tdfg) {
+
+  for (auto nodeIdx = 0, numNodes = tdfg.nodes_size(); nodeIdx < numNodes;
+       ++nodeIdx) {
+    const auto &node = tdfg.nodes().at(nodeIdx);
+    // So far we only care about MoveNode.
+    if (node.has_move()) {
+
+      // Search for the send node.
+      auto sendNodeIdx = -1;
+      for (const auto &edge : tdfg.edges()) {
+        if (edge.src() == nodeIdx) {
+          if (sendNodeIdx != -1) {
+            fprintf(stderr, "Multiple operands for MoveNode?\n");
+            exit(1);
+          }
+          sendNodeIdx = edge.dst();
+        }
+      }
+      if (sendNodeIdx == -1) {
+        fprintf(stderr, "Failed to find operand for MoveNode.\n");
+        exit(1);
+      }
+
+      const auto &sendNode = tdfg.nodes().at(sendNodeIdx);
+
+      AffinePattern sendTile(sendNode.pum_tile());
+      AffinePattern sendPat(sendNode.pattern());
+      AffinePattern recvTile(node.pum_tile());
+      AffinePattern recvPat(node.pattern());
+
+      DataMoveCompiler compiler(hwConfig, sendTile);
+
+      printf("SendPat %s.\n", sendPat.to_string().c_str());
+      printf("RecvPat %s.\n", recvPat.to_string().c_str());
+
+      // For now compile multiple times.
+      PUMCommandVecT commands;
+      const int runs = 400;
+      auto startTime = std::chrono::high_resolution_clock::now();
+      for (int i = 0; i < runs; ++i) {
+        commands = compiler.compile(sendPat, recvPat);
+      }
+      auto endTime = std::chrono::high_resolution_clock::now();
+
+      // for (const auto &cmd : commands) {
+      //   printf(" CMD %s.\n", cmd.to_string().c_str());
+      // }
+
+      std::chrono::duration<double, std::micro> compileTimeMs =
+          endTime - startTime;
+      compileTimeMs /= runs;
+      printf(">> CompileTime %s %lf us\n", __func__, compileTimeMs.count());
+    }
+  }
 }
 
 int main(int argc, char *argv[]) {
 
-  // shiftRhs1D();
-  shiftRhs2D();
+  if (argc == 1) {
+    // shiftRhs1D();
+    shiftRhs2D();
+    return 0;
+  }
+
+  if (argc != 2) {
+    fprintf(stderr, "Usage: <exe> tdfg_json\n");
+    exit(1);
+  }
+
+  auto jsonFn = argv[1];
+  std::string json;
+  {
+    std::ifstream t(jsonFn);
+    if (!t.is_open()) {
+      fprintf(stderr, "Failed to open json tdfg %s.\n", jsonFn);
+      exit(1);
+    }
+    std::stringstream buffer;
+    buffer << t.rdbuf();
+    json = buffer.str();
+  }
+
+  ::LLVM::TDG::TDFG tdfg;
+  auto status = ::google::protobuf::util::JsonStringToMessage(json, &tdfg);
+  if (!status.ok()) {
+    fprintf(stderr, "Failed to parse json to tdfg %s.\n", jsonFn);
+    exit(1);
+  }
+
+  compileTDFG(tdfg);
+
   return 0;
 }
 
