@@ -167,7 +167,13 @@ public:
   template <size_t dimension>
   LLCTilePatternImpl<dimension, int64_t, NumBanks> &init() {
     // This should never be initialized.
-    panic("Should neve intialized.");
+    panic("Should never instantiate.");
+  }
+
+  template <size_t dimension>
+  LLCTilePatternImpl<dimension, int64_t, NumBanks> &get() {
+    // This should never be initialized.
+    panic("Should never instantiate.");
   }
 
 #define LLCTilePatternDispRet(func, args...)                                   \
@@ -242,6 +248,19 @@ public:
 LLCTilePatternInit(1);
 LLCTilePatternInit(2);
 LLCTilePatternInit(3);
+
+#undef LLCTilePatternInit
+
+#define LLCTilePatternGet(dim)                                                 \
+  template <>                                                                  \
+  inline LLCTilePatternImpl<dim, int64_t, LLCTilePattern::NumBanks>            \
+      &LLCTilePattern::get<dim>() {                                            \
+    return *this->pat##dim;                                                    \
+  }
+
+LLCTilePatternGet(1);
+LLCTilePatternGet(2);
+LLCTilePatternGet(3);
 
 #undef LLCTilePatternInit
 
