@@ -62,6 +62,11 @@ public:
     return result;
   }
 
+  int64_t getStart() const { return this->start; }
+  int64_t getEnd() const {
+    return start + params.back().stride * params.back().trip;
+  }
+
   bool operator==(const AffinePattern &other) const {
     if (start != other.start) {
       return false;

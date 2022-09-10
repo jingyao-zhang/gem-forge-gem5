@@ -283,18 +283,36 @@ private:
     using LLCBankSubRegionsT = std::vector<
         typename AffinePatternImpl<D, T>::ContinuousRangeSubRegions>;
 
-    static PERF_NOINLINE LLCBankSubRegionsT getLLCBankSubRegionsImpl(
-        const PUMHWConfiguration &llc_config, const IntVecT &tile_nums);
+    using AffPat = AffinePatternImpl<D, T>;
+    using AffPatIntVecT = typename AffPat::IntVecT;
 
-    static PERF_NOINLINE void
+    /**
+     * We can cache this.
+     */
+    LLCBankSubRegionsT llcBankSubRegions;
+
+    PERF_NOINLINE const LLCBankSubRegionsT &
+    getLLCBankSubRegionsImpl(const PUMHWConfiguration &llc_config,
+                             const IntVecT &tile_nums);
+
+    PERF_NOINLINE void
     mapCmdToLLCImpl(PUMCommand &command,
                     const LLCBankSubRegionsT &llcBankSubRegions,
                     const PUMHWConfiguration &llc_config,
+                    const AffPatIntVecT &fixedTileNums,
                     const IntVecT &tile_nums, const IntVecT &tile_sizes);
   };
 
+  /**
+   * These are mutable to cache the LLCTiles.
+   */
+  mutable CmdToLLCMapper<1, int64_t> cmdLLCMapper1;
+  mutable CmdToLLCMapper<2, int64_t> cmdLLCMapper2;
+  mutable CmdToLLCMapper<3, int64_t> cmdLLCMapper3;
+
   template <size_t D, typename T>
-  PERF_NOINLINE void mapCmdsToLLCImpl(PUMCommandVecT &commands) const;
+  PERF_NOINLINE void mapCmdsToLLCImpl(PUMCommandVecT &commands,
+                                      CmdToLLCMapper<D, T> &mapper) const;
 };
 
 #endif

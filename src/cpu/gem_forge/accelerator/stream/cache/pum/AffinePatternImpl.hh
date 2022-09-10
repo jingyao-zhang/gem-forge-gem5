@@ -9,8 +9,8 @@
 #include <tuple>
 #include <vector>
 
-// #define PERF_NOINLINE __attribute__((noinline))
-#define PERF_NOINLINE 
+#define PERF_NOINLINE __attribute__((noinline))
+// #define PERF_NOINLINE
 
 #include "base/logging.hh"
 
@@ -85,6 +85,19 @@ public:
     return ret;
   }
 
+  T operator()(T i) const {
+    T result = start;
+    T accTrip = 1;
+    for (const auto &p : params) {
+      result += p.stride * ((i / accTrip) % p.trip);
+      accTrip *= p.trip;
+    }
+    return result;
+  }
+
+  T getStart() const { return this->start; }
+  T getEnd() const { return start + params.back().stride * params.back().trip; }
+
   static T reduce_mul(typename IntVecT::const_iterator s,
                       typename IntVecT::const_iterator t, T init) {
     auto ret = init;
@@ -118,59 +131,84 @@ public:
      * dimension.
      */
     // This is S1x... xSi
-    IntVecT inner_array_sizes;
-    inner_array_sizes[0] = 1;
-    for (auto i = 1; i < dimension; ++i) {
-      inner_array_sizes[i] = inner_array_sizes[i - 1] * arraySizes[i - 1];
-    }
+    IntVecT innerArraySizes = constructInnerArraySizes(arraySizes);
+    return getArrayPositionWithInnerArraySizes(innerArraySizes, linearPos);
+  }
+
+  static IntVecT
+  getArrayPositionWithInnerArraySizes(const IntVecT &innerArraySizes,
+                                      T linearPos) {
     IntVecT pos;
     auto cur_pos = std::abs(linearPos);
     for (int i = dimension - 1; i >= 0; --i) {
-      auto p = cur_pos / inner_array_sizes[i];
+      auto p = cur_pos / innerArraySizes[i];
 
       pos[i] = (linearPos > 0) ? p : -p;
 
-      cur_pos = cur_pos % inner_array_sizes[i];
+      cur_pos = cur_pos % innerArraySizes[i];
     }
     return pos;
   }
 
-  static ThisT intersectSubRegions(const IntVecT &array_sizes,
+  static ThisT intersectSubRegions(const IntVecT &arraySizes,
                                    const ThisT &region1, const ThisT &region2) {
 
-    auto starts1 = getArrayPosition(array_sizes, region1.start);
-    auto starts2 = getArrayPosition(array_sizes, region2.start);
+    auto starts1 = getArrayPosition(arraySizes, region1.start);
+    auto starts2 = getArrayPosition(arraySizes, region2.start);
     const auto &trips1 = region1.getTrips();
     const auto &trips2 = region2.getTrips();
-    IntVecT intersect_starts;
-    IntVecT intersect_trips;
+    auto innerArraySizes = constructInnerArraySizes(arraySizes);
+    return intersectStartAndTrips(innerArraySizes, starts1, trips1, starts2,
+                                  trips2);
+  }
+
+  static ThisT intersectStartAndTrips(const IntVecT &innerArraySizes,
+                                      const IntVecT &starts1,
+                                      const IntVecT &trips1,
+                                      const IntVecT &starts2,
+                                      const IntVecT &trips2) {
+
+    IntVecT intersectStarts;
+    IntVecT intersectTrips;
     for (auto i = 0; i < dimension; ++i) {
       auto s1 = starts1[i];
       auto t1 = trips1[i];
       auto s2 = starts2[i];
       auto t2 = trips2[i];
       auto ss = std::max(s1, s2);
-      auto tt = std::min(s1 + t1, s2 + t2) - ss;
-      if (s1 >= s2 + t2 || s2 >= s1 + t1) {
-        // None means empty intersection.
-        // This will make the TotalTrip zero.
-        tt = 0;
-      }
-      intersect_starts[i] = ss;
-      intersect_trips[i] = tt;
+      auto ee = std::min(s1 + t1, s2 + t2);
+      // None means empty intersection.
+      // This will make the TotalTrip zero.
+      auto tt = std::max(0l, ee - ss);
+      intersectStarts[i] = ss;
+      intersectTrips[i] = tt;
     }
-    return constructSubRegion(array_sizes, intersect_starts, intersect_trips);
+    return constructSubRegionWithInnerArraySizes(
+        innerArraySizes, intersectStarts, intersectTrips);
   }
 
   static ThisT constructSubRegion(const IntVecT &arraySizes,
                                   const IntVecT &starts, const IntVecT &trips) {
+    // This is S1x... xSi
+    IntVecT innerArraySizes = constructInnerArraySizes(arraySizes);
+    return constructSubRegionWithInnerArraySizes(innerArraySizes, starts,
+                                                 trips);
+  }
+
+  static IntVecT constructInnerArraySizes(const IntVecT &arraySizes) {
     // This is S1x... xSi
     IntVecT innerArraySizes;
     innerArraySizes[0] = 1;
     for (auto i = 1; i < dimension; ++i) {
       innerArraySizes[i] = innerArraySizes[i - 1] * arraySizes[i - 1];
     }
+    return innerArraySizes;
+  }
 
+  static ThisT
+  constructSubRegionWithInnerArraySizes(const IntVecT &innerArraySizes,
+                                        const IntVecT &starts,
+                                        const IntVecT &trips) {
     T start = 0;
     ParamVecT params;
     for (auto i = 0; i < dimension; ++i) {

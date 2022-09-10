@@ -1069,13 +1069,13 @@ void DataMoveCompiler::mapCmdsToLLC(PUMCommandVecT &commands) const {
 
   // Specialize for some dimension.
   if (this->dimension == 1) {
-    this->mapCmdsToLLCImpl<1, int64_t>(commands);
+    this->mapCmdsToLLCImpl<1, int64_t>(commands, cmdLLCMapper1);
     return;
   } else if (this->dimension == 2) {
-    this->mapCmdsToLLCImpl<2, int64_t>(commands);
+    this->mapCmdsToLLCImpl<2, int64_t>(commands, cmdLLCMapper2);
     return;
   } else if (this->dimension == 3) {
-    this->mapCmdsToLLCImpl<3, int64_t>(commands);
+    this->mapCmdsToLLCImpl<3, int64_t>(commands, cmdLLCMapper3);
     return;
   }
 
@@ -1110,7 +1110,25 @@ void DataMoveCompiler::mapCmdToLLC(
 
   command.llcSplitTileCmds.initialize(this->dimension);
 
+  const auto commandTileStart = command.tile_mask.getStart();
+  const auto commandTileEnd = command.tile_mask.getEnd();
+
+  const auto tilePerLLCBank = llc_config.get_array_per_bank();
+
   for (auto i = 0; i < numLLCBanks; ++i) {
+
+    /**
+     * An optimization to skip the entire LLC bank if we know they have no
+     * intersect.
+     * ! This only works because after MaskCmdBySubRegion, the CmdTileMask
+     * ! is a canonical subregion.
+     */
+    const auto llcTileStart = i * tilePerLLCBank;
+    const auto llcTileEnd = (i + 1) * tilePerLLCBank;
+    if (llcTileStart >= commandTileEnd || commandTileStart >= llcTileEnd) {
+      continue;
+    }
+
     for (const auto &llc_sub_region : llcBankSubRegions[i]) {
       auto intersect = AffinePattern::intersectSubRegions(
           tile_nums, command.tile_mask, llc_sub_region);
@@ -1186,36 +1204,45 @@ void DataMoveCompiler::mapCmdToLLC(
 }
 
 template <size_t D, typename T>
-typename DataMoveCompiler::CmdToLLCMapper<D, T>::LLCBankSubRegionsT
+const typename DataMoveCompiler::CmdToLLCMapper<D, T>::LLCBankSubRegionsT &
 DataMoveCompiler::CmdToLLCMapper<D, T>::getLLCBankSubRegionsImpl(
     const PUMHWConfiguration &llc_config, const IntVecT &tile_nums) {
 
-  auto tilePerLLCBank = llc_config.get_array_per_bank();
+  /**
+   * We simply check that we have the same LLC banks here.
+   * TODO: Really check that llc_config and tile_nums match.
+   */
   auto numLLCBanks = llc_config.get_total_banks();
+  if (this->llcBankSubRegions.size() == numLLCBanks) {
+    return this->llcBankSubRegions;
+  }
+
+  auto tilePerLLCBank = llc_config.get_array_per_bank();
 
   auto fixedTileNums = AffinePatternImpl<D, T>::getFixSizedIntVec(tile_nums);
 
-  LLCBankSubRegionsT llcBankSubRegions;
-  llcBankSubRegions.reserve(numLLCBanks);
+  this->llcBankSubRegions.reserve(numLLCBanks);
   for (auto i = 0; i < numLLCBanks; ++i) {
-    llcBankSubRegions.push_back(
+    this->llcBankSubRegions.push_back(
         AffinePatternImpl<D, T>::
             break_continuous_range_into_canonical_sub_regions(
                 fixedTileNums, i * tilePerLLCBank, tilePerLLCBank));
   }
-  return llcBankSubRegions;
+  return this->llcBankSubRegions;
 }
 
 template <size_t D, typename T>
-void DataMoveCompiler::mapCmdsToLLCImpl(PUMCommandVecT &commands) const {
+void DataMoveCompiler::mapCmdsToLLCImpl(PUMCommandVecT &commands,
+                                        CmdToLLCMapper<D, T> &mapper) const {
 
-  auto fixedLLCBankSubRegions = CmdToLLCMapper<D, T>::getLLCBankSubRegionsImpl(
-      this->llc_config, this->tile_nums);
+  auto fixedTileNums = AffinePatternImpl<D, T>::getFixSizedIntVec(tile_nums);
+
+  auto fixedLLCBankSubRegions =
+      mapper.getLLCBankSubRegionsImpl(this->llc_config, this->tile_nums);
 
   for (auto &command : commands) {
-    CmdToLLCMapper<D, T>::mapCmdToLLCImpl(command, fixedLLCBankSubRegions,
-                                          this->llc_config, this->tile_nums,
-                                          this->tile_sizes);
+    mapper.mapCmdToLLCImpl(command, fixedLLCBankSubRegions, this->llc_config,
+                           fixedTileNums, this->tile_nums, this->tile_sizes);
   }
 
   for (auto &command : commands) {
@@ -1228,14 +1255,13 @@ void DataMoveCompiler::mapCmdsToLLCImpl(PUMCommandVecT &commands) const {
 template <size_t D, typename T>
 void DataMoveCompiler::CmdToLLCMapper<D, T>::mapCmdToLLCImpl(
     PUMCommand &command, const LLCBankSubRegionsT &llcBankSubRegions,
-    const PUMHWConfiguration &llc_config, const IntVecT &tile_nums,
-    const IntVecT &tile_sizes) {
+    const PUMHWConfiguration &llc_config, const AffPatIntVecT &fixedTileNums,
+    const IntVecT &tile_nums, const IntVecT &tile_sizes) {
 
   auto numLLCBanks = llc_config.get_total_banks();
   // As an optimization, we fixed number of banks for Jitter.
   assert(numLLCBanks == LLCTilePattern::NumBanks);
 
-  auto fixedTileNums = AffinePatternImpl<D, T>::getFixSizedIntVec(tile_nums);
   auto fixedCmdTileMask = getAffinePatternImpl<D, T>(command.tile_mask);
 
   /**
@@ -1248,13 +1274,44 @@ void DataMoveCompiler::CmdToLLCMapper<D, T>::mapCmdToLLCImpl(
 
   auto &llcTilePattern = command.llcSplitTileCmds.init<D>();
 
-  for (auto i = 0; i < numLLCBanks; ++i) {
+  /**
+   * An optimization to skip the entire LLC bank if we know they have no
+   * intersect.
+   * ! This only works because after MaskCmdBySubRegion, the CmdTileMask
+   * ! is a canonical subregion.
+   * ! It is possible that CmdTileMask.getEnd() goes beyond the LLC tiles.
+   * ! Use a std::min to guard that.
+   */
+  const auto commandTileStart = fixedCmdTileMask.getStart();
+  const auto commandTileEnd = fixedCmdTileMask.getEnd();
+
+  const auto tilePerLLCBank = llc_config.get_array_per_bank();
+
+  const auto llcBankStart = commandTileStart / tilePerLLCBank;
+  const auto llcBankEnd = std::min(
+      numLLCBanks, (commandTileEnd + tilePerLLCBank - 1) / tilePerLLCBank);
+
+  auto fixedInnerTileNums =
+      AffinePatternImpl<D, T>::constructInnerArraySizes(fixedTileNums);
+
+  auto cmdTileStarts =
+      AffinePatternImpl<D, T>::getArrayPositionWithInnerArraySizes(
+          fixedInnerTileNums, fixedCmdTileMask.start);
+  const auto &cmdTileTrips = fixedCmdTileMask.getTrips();
+
+  for (auto i = llcBankStart; i < llcBankEnd; ++i) {
 
     for (int j = 0, count = llcBankSubRegions[i].count; j < count; ++j) {
       const auto &llc_sub_region = llcBankSubRegions[i].subRegions.at(j);
 
-      auto fixedIntersect = AffinePatternImpl<D, T>::intersectSubRegions(
-          fixedTileNums, fixedCmdTileMask, llc_sub_region);
+      auto llcTileStarts =
+          AffinePatternImpl<D, T>::getArrayPositionWithInnerArraySizes(
+              fixedInnerTileNums, llc_sub_region.start);
+      const auto &llcTileTrips = llc_sub_region.getTrips();
+
+      auto fixedIntersect = AffinePatternImpl<D, T>::intersectStartAndTrips(
+          fixedInnerTileNums, cmdTileStarts, cmdTileTrips, llcTileStarts,
+          llcTileTrips);
 
       if (fixedIntersect.getTotalTrip() == 0) {
         // Empty intersection.

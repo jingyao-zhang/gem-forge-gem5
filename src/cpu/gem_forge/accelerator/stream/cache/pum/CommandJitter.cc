@@ -128,6 +128,8 @@ void shiftRhs2D() {
 
 void compileTDFG(const ::LLVM::TDG::TDFG &tdfg) {
 
+  std::unique_ptr<DataMoveCompiler> compiler = nullptr;
+
   for (auto nodeIdx = 0, numNodes = tdfg.nodes_size(); nodeIdx < numNodes;
        ++nodeIdx) {
     const auto &node = tdfg.nodes().at(nodeIdx);
@@ -157,7 +159,11 @@ void compileTDFG(const ::LLVM::TDG::TDFG &tdfg) {
       AffinePattern recvTile(node.pum_tile());
       AffinePattern recvPat(node.pattern());
 
-      DataMoveCompiler compiler(hwConfig, sendTile);
+      if (!compiler || sendTile != compiler->tile_pattern) {
+        // We need a new compiler.
+        // Otherwise we can reuse it.
+        compiler = m5::make_unique<DataMoveCompiler>(hwConfig, sendTile);
+      }
 
       printf("SendPat %s.\n", sendPat.to_string().c_str());
       printf("RecvPat %s.\n", recvPat.to_string().c_str());
@@ -167,12 +173,12 @@ void compileTDFG(const ::LLVM::TDG::TDFG &tdfg) {
       const int runs = 400;
       auto startTime = std::chrono::high_resolution_clock::now();
       for (int i = 0; i < runs; ++i) {
-        commands = compiler.compile(sendPat, recvPat);
+        commands = compiler->compile(sendPat, recvPat);
       }
       auto endTime = std::chrono::high_resolution_clock::now();
 
       // for (const auto &cmd : commands) {
-      //   printf(" CMD %s.\n", cmd.to_string().c_str());
+        // printf(" CMD %s.\n", cmd.to_string().c_str());
       // }
 
       std::chrono::duration<double, std::micro> compileTimeMs =
@@ -216,6 +222,7 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
+  printf("Parsed TDFG.\n");
   compileTDFG(tdfg);
 
   return 0;
