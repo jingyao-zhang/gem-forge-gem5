@@ -33,20 +33,19 @@ public:
 
   struct BankPattern {
     std::array<AffPatImpl, MaxSubRegions> patterns;
-    int count = 0;
-    BankPattern() : count(0) {}
   };
 
   std::array<BankPattern, banks> bankPatterns;
+  std::array<int, banks> bankPatCounts;
 
   LLCTilePatternImpl() {
-    for (auto &b : bankPatterns) {
-      b.count = 0;
+    for (auto &b : bankPatCounts) {
+      b = 0;
     }
   }
 
   size_t getBankSubRegionCount(int bankIdx) const {
-    return bankPatterns.at(bankIdx).count;
+    return bankPatCounts.at(bankIdx);
   }
 
   const AffPatImpl &getAffinePatternImpl(int bankIdx, int patternIdx) const {
@@ -58,13 +57,14 @@ public:
     return getAffinePatternFromImpl(pat);
   }
 
-  void clearBankSubRegion(int bankIdx) { bankPatterns.at(bankIdx).count = 0; }
+  void clearBankSubRegion(int bankIdx) { bankPatCounts.at(bankIdx) = 0; }
 
   void addPattern(int bankIdx, const AffPatImpl &pat) {
     auto &b = bankPatterns.at(bankIdx);
-    assert(b.count < MaxSubRegions);
-    b.patterns[b.count] = pat;
-    b.count++;
+    auto &count = bankPatCounts.at(bankIdx);
+    assert(count < MaxSubRegions);
+    b.patterns[count] = pat;
+    count++;
   }
 };
 

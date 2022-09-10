@@ -1224,9 +1224,8 @@ DataMoveCompiler::CmdToLLCMapper<D, T>::getLLCBankSubRegionsImpl(
   this->llcBankSubRegions.reserve(numLLCBanks);
   for (auto i = 0; i < numLLCBanks; ++i) {
     this->llcBankSubRegions.push_back(
-        AffinePatternImpl<D, T>::
-            break_continuous_range_into_canonical_sub_regions(
-                fixedTileNums, i * tilePerLLCBank, tilePerLLCBank));
+        AffinePatternImpl<D, T>::breakContnuousRangeIntoSubRegionStartAndTrips(
+            fixedTileNums, i * tilePerLLCBank, tilePerLLCBank));
   }
   return this->llcBankSubRegions;
 }
@@ -1302,12 +1301,9 @@ void DataMoveCompiler::CmdToLLCMapper<D, T>::mapCmdToLLCImpl(
   for (auto i = llcBankStart; i < llcBankEnd; ++i) {
 
     for (int j = 0, count = llcBankSubRegions[i].count; j < count; ++j) {
-      const auto &llc_sub_region = llcBankSubRegions[i].subRegions.at(j);
-
-      auto llcTileStarts =
-          AffinePatternImpl<D, T>::getArrayPositionWithInnerArraySizes(
-              fixedInnerTileNums, llc_sub_region.start);
-      const auto &llcTileTrips = llc_sub_region.getTrips();
+      const auto &llcSubRegion = llcBankSubRegions[i].subRegions.at(j);
+      const auto &llcTileStarts = llcSubRegion.starts;
+      const auto &llcTileTrips = llcSubRegion.trips;
 
       auto fixedIntersect = AffinePatternImpl<D, T>::intersectStartAndTrips(
           fixedInnerTileNums, cmdTileStarts, cmdTileTrips, llcTileStarts,
@@ -1372,8 +1368,13 @@ void DataMoveCompiler::CmdToLLCMapper<D, T>::mapCmdToLLCImpl(
 
           for (int j = 0, count = llcBankSubRegions[dstBankIdx].count;
                j < count; ++j) {
-            const auto &dstLLCBankSubRegion =
+            const auto &dstLLCBankSubRegionStartAndTrip =
                 llcBankSubRegions[dstBankIdx].subRegions.at(j);
+
+            auto dstLLCBankSubRegion =
+                AffinePatternImpl<D, T>::constructSubRegion(
+                    fixedTileNums, dstLLCBankSubRegionStartAndTrip.starts,
+                    dstLLCBankSubRegionStartAndTrip.trips);
 
             auto fixedDstIntersect =
                 AffinePatternImpl<D, T>::intersectSubRegions(

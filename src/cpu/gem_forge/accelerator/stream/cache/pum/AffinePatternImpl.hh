@@ -39,7 +39,7 @@ public:
     T stride;
     T trip;
     Param(T _stride, T _trip) : stride(_stride), trip(_trip) {}
-    Param() : stride(0), trip(0) {}
+    Param() = default;
   };
 
   using ParamVecT = std::array<Param, dimension>;
@@ -68,12 +68,7 @@ public:
     }
   }
 
-  AffinePatternImpl() : start(0) {
-    for (int i = 0; i < dimension; ++i) {
-      params[i].trip = 0;
-      trips[i] = 0;
-    }
-  }
+  AffinePatternImpl() = default;
 
   const IntVecT &getTrips() const { return trips; }
 
@@ -223,20 +218,28 @@ public:
 
   /**
    * Represents the result sub-regions of breaking a continuous range.
+   * NOTE: This is just the starts and trips.
    */
   struct ContinuousRangeSubRegions {
-    std::array<ThisT, MaxSubRegionsForContinuousRange> subRegions;
+
+    struct StartAndTrip {
+      IntVecT starts;
+      IntVecT trips;
+    };
+
+    std::array<StartAndTrip, MaxSubRegionsForContinuousRange> subRegions;
     int count = 0;
-    void add(ThisT subRegion) {
+    void add(IntVecT starts, IntVecT trips) {
       assert(count < MaxSubRegionsForContinuousRange);
-      subRegions.at(count) = std::move(subRegion);
+      subRegions.at(count).starts = std::move(starts);
+      subRegions.at(count).trips = std::move(trips);
       count++;
     }
   };
 
   static ContinuousRangeSubRegions
-  break_continuous_range_into_canonical_sub_regions(const IntVecT &array_sizes,
-                                                    T start, T trip) {
+  breakContnuousRangeIntoSubRegionStartAndTrips(const IntVecT &array_sizes,
+                                                T start, T trip) {
     // Handle possible cases when start/trip overflow array_sizes.
     ContinuousRangeSubRegions ret;
     auto totalSize = reduce_mul(array_sizes.begin(), array_sizes.end(), 1);
@@ -293,7 +296,7 @@ public:
           trips[i] = 1;
         }
         trips[dim] = q - p;
-        ret.add(constructSubRegion(array_sizes, starts, trips));
+        ret.add(starts, trips);
       } else {
         if (p != 0) {
           // One sub region [P, B)
@@ -303,7 +306,7 @@ public:
             trips[i] = 1;
           }
           trips[dim] = t - p;
-          ret.add(constructSubRegion(array_sizes, starts, trips));
+          ret.add(starts, trips);
         }
 
         if (q != 0) {
@@ -314,7 +317,7 @@ public:
             trips[i] = 1;
           }
           trips[dim] = q;
-          ret.add(constructSubRegion(array_sizes, starts, trips));
+          ret.add(starts, trips);
         }
 
         if (!high_dim_match) {

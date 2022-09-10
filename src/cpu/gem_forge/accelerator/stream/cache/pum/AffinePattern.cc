@@ -305,12 +305,14 @@ AffinePattern::break_continuous_range_into_canonical_sub_regions(
     auto fixedArraySizes =                                                     \
         AffinePatternImpl<dim, int64_t>::getFixSizedIntVec(array_sizes);       \
     auto fixedSubRegions = AffinePatternImpl<dim, int64_t>::                   \
-        break_continuous_range_into_canonical_sub_regions(fixedArraySizes,     \
-                                                          start, trip);        \
+        breakContnuousRangeIntoSubRegionStartAndTrips(fixedArraySizes, start,  \
+                                                      trip);                   \
     std::vector<AffinePattern> ret;                                            \
     for (auto i = 0; i < fixedSubRegions.count; ++i) {                         \
-      ret.push_back(                                                           \
-          getAffinePatternFromImpl(fixedSubRegions.subRegions.at(i)));         \
+      const auto &subRegion = fixedSubRegions.subRegions.at(i);                \
+      auto fixedAffPat = AffinePatternImpl<dim, int64_t>::constructSubRegion(  \
+          fixedArraySizes, subRegion.starts, subRegion.trips);                 \
+      ret.push_back(getAffinePatternFromImpl(fixedAffPat));                    \
     }                                                                          \
     return ret;                                                                \
   }
