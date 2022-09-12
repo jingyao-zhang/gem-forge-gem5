@@ -352,11 +352,12 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
          * TODO: Properly handle this.
          */
         assert(!command.llcSplitDstTileCmds[myBankIdx].empty());
-        const auto &dstSplitBanks =
-            command.llcSplitDstTileCmds[myBankIdx][0].dstSplitTilePatterns;
+
+        const auto &dstSplitBanks = command.llcSplitDstTileCmds[myBankIdx][0];
+
         for (auto dstBankIdx = 0; dstBankIdx < dstSplitBanks.size();
              ++dstBankIdx) {
-          if (dstSplitBanks[dstBankIdx].empty()) {
+          if (!dstSplitBanks.at(dstBankIdx)) {
             continue;
           }
           MachineID dstMachineId(MachineType_L2Cache, dstBankIdx);

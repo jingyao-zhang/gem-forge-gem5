@@ -42,12 +42,12 @@ public:
      * For commands without reuse, the PUMEngine infers the destination banks
      * from tile_dist.
      */
-    AffinePattern dstTilePattern;
     std::vector<AffinePatternVecT> dstSplitTilePatterns;
   };
 
   LLCTilePattern llcSplitTileCmds;
-  std::vector<std::vector<LLCDstTileMask>> llcSplitDstTileCmds;
+  std::vector<std::vector<std::array<bool, LLCTilePattern::NumBanks>>>
+      llcSplitDstTileCmds;
 
   int wordline_bits;
   // Only valid for compute command.

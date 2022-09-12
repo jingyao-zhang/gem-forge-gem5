@@ -1144,15 +1144,21 @@ void DataMoveCompiler::mapCmdToLLC(
    * Destination pattern is only set for "inter-array" commands with reuse.
    */
   if (needDstTilePattern) {
+
+    command.llcSplitDstTileCmds.resize(numLLCBanks);
+
     for (auto i = 0; i < numLLCBanks; ++i) {
-      command.llcSplitDstTileCmds.emplace_back();
-      auto &llcTiles = command.llcSplitDstTileCmds.back();
+
       auto numSubRegions = command.llcSplitTileCmds.getBankSubRegionCount(i);
+
+      command.llcSplitDstTileCmds.resize(numSubRegions);
+
       for (auto j = 0; j < numSubRegions; ++j) {
 
         const auto &intersect = command.llcSplitTileCmds.getAffinePattern(i, j);
 
-        llcTiles.emplace_back();
+        auto &llcTiles = command.llcSplitDstTileCmds.at(i).at(j);
+        llcTiles.fill(false);
 
         auto srcStartPos =
             intersect.getSubRegionStartToArraySize(this->tile_nums);
@@ -1178,25 +1184,22 @@ void DataMoveCompiler::mapCmdToLLC(
         assert(dstStartPos[reuseDim] + reuseTileCount <=
                this->tile_nums[reuseDim]);
 
-        llcTiles.back().dstTilePattern = AffinePattern::constructSubRegion(
+        auto dstTilePattern = AffinePattern::constructSubRegion(
             this->tile_nums, dstStartPos, trips);
 
         /**
          * Split the dest sub region to LLC banks.
          */
         for (int dstBankIdx = 0; dstBankIdx < numLLCBanks; ++dstBankIdx) {
-          AffinePatternVecT dstPatterns;
           for (const auto &dstLLCBankSubRegion :
                llcBankSubRegions[dstBankIdx]) {
             auto dstIntersect = AffinePattern::intersectSubRegions(
-                this->tile_nums, llcTiles.back().dstTilePattern,
-                dstLLCBankSubRegion);
+                this->tile_nums, dstTilePattern, dstLLCBankSubRegion);
             if (dstIntersect.getTotalTrip() == 0) {
               continue;
             }
-            dstPatterns.push_back(dstIntersect);
+            llcTiles.at(dstBankIdx) = true;
           }
-          llcTiles.back().dstSplitTilePatterns.push_back(dstPatterns);
         }
       }
     }
@@ -1326,14 +1329,17 @@ void DataMoveCompiler::CmdToLLCMapper<D, T>::mapCmdToLLCImpl(
 
   for (auto i = llcBankStart; i < llcBankEnd; ++i) {
 
-    auto &llcTiles = command.llcSplitDstTileCmds.at(i);
-
     auto numSubRegions = command.llcSplitTileCmds.getBankSubRegionCount(i);
+
+    command.llcSplitDstTileCmds.at(i).resize(numSubRegions);
+
     for (auto j = 0; j < numSubRegions; ++j) {
 
       const auto &intersect = llcTilePattern.getAffinePatternImpl(i, j);
 
-      llcTiles.emplace_back();
+      // We have to explicitly write the type as LLCTilePattern.
+      auto &llcDstTiles = command.llcSplitDstTileCmds[i][j];
+      llcDstTiles.fill(false);
 
       auto dstStartPos =
           AffinePatternImpl<D, T>::getArrayPositionWithInnerArraySizes(
@@ -1353,18 +1359,10 @@ void DataMoveCompiler::CmdToLLCMapper<D, T>::mapCmdToLLCImpl(
       // Reuse should stay within the boundary.
       assert(dstStartPos[reuseDim] + reuseTileCount <= tile_nums[reuseDim]);
 
-      auto fixedDstTilePattern =
-          AffinePatternImpl<D, T>::constructSubRegionWithInnerArraySizes(
-              fixedInnerTileNums, dstStartPos, trips);
-      llcTiles.back().dstTilePattern =
-          getAffinePatternFromImpl(fixedDstTilePattern);
-
       /**
        * Split the dest sub region to LLC banks.
        */
       for (int dstBankIdx = 0; dstBankIdx < numLLCBanks; ++dstBankIdx) {
-        llcTiles.back().dstSplitTilePatterns.emplace_back();
-        auto &dstPatterns = llcTiles.back().dstSplitTilePatterns.back();
 
         for (int j = 0, count = llcBankSubRegions[dstBankIdx].count; j < count;
              ++j) {
@@ -1381,8 +1379,7 @@ void DataMoveCompiler::CmdToLLCMapper<D, T>::mapCmdToLLCImpl(
             continue;
           }
 
-          auto dstIntersect = getAffinePatternFromImpl<D, T>(fixedDstIntersect);
-          dstPatterns.push_back(dstIntersect);
+          llcDstTiles.at(dstBankIdx) = true;
         }
       }
     }

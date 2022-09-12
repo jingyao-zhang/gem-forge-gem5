@@ -53,20 +53,16 @@ std::string PUMCommand::to_string(int llcBankIdx) const {
 
           const auto &dstTilePat = llcSplitDstTileCmds[i][j];
 
-          os << " -> " << dstTilePat.dstTilePattern << "\n";
+          os << " ->\n";
+          os << "        DstBank ";
 
-          const auto &dstSplitPats = dstTilePat.dstSplitTilePatterns;
-          for (auto dstBankIdx = 0; dstBankIdx < dstSplitPats.size();
+          for (auto dstBankIdx = 0; dstBankIdx < dstTilePat.size();
                ++dstBankIdx) {
-            if (dstSplitPats[dstBankIdx].empty()) {
-              continue;
+            if (dstTilePat.at(dstBankIdx)) {
+              os << dstBankIdx << " ";
             }
-            os << "        DstBank " << dstBankIdx << " ";
-            for (const auto &dstPat : dstSplitPats[dstBankIdx]) {
-              os << dstPat << " ";
-            }
-            os << "\n";
           }
+          os << "\n";
         } else {
           os << "\n";
         }
