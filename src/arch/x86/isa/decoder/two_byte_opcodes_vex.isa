@@ -209,6 +209,9 @@
                 0x4: decode EVEX_L {
                     0x0: VSUBSS(Vo, Wo);
                 }
+                0x5: decode EVEX_L {
+                    0x0: VMINSS(Vo, Wo);
+                }
                 0x6: decode EVEX_L {
                     0x0: VDIVSS(Vo, Wo);
                 }
