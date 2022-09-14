@@ -177,9 +177,9 @@ void compileTDFG(const ::LLVM::TDG::TDFG &tdfg) {
       }
       auto endTime = std::chrono::high_resolution_clock::now();
 
-      // for (const auto &cmd : commands) {
-        // printf(" CMD %s.\n", cmd.to_string().c_str());
-      // }
+      for (const auto &cmd : commands) {
+        printf(" CMD %s.\n", cmd.to_string().c_str());
+      }
 
       std::chrono::duration<double, std::micro> compileTimeMs =
           endTime - startTime;

@@ -515,9 +515,8 @@ bool ISAStreamEngine::canDispatchStreamEnd(const GemForgeDynInstInfo &dynInfo) {
                      infoRelativePath);
     return true;
   } else {
-    DYN_INST_DPRINTF(
-        "[CanNotDispatch] StreamEnd %llu, %s: No UnsteppedElement.\n",
-        configIdx, infoRelativePath);
+    DYN_INST_DPRINTF("[CanNotDispatch] StreamEnd %llu, %s.\n", configIdx,
+                     infoRelativePath);
     return false;
   }
 }

@@ -70,6 +70,9 @@ std::ostream &operator<<(std::ostream &os,
     for (const auto &operand : node.operands) {
       os << " " << operand;
     }
+    for (const auto &inst : node.insts) {
+      os << " " << inst->getName();
+    }
     break;
   }
   default: {
@@ -377,7 +380,7 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
       const int64_t tripCountThreshold = 2048;
       if (config->getTotalTripCount() <= tripCountThreshold) {
         MLC_S_DPRINTF(dynId, "[NoPUM] TripCount %ld < Threshold %ld.\n",
-                      tripCountThreshold);
+                      config->getTotalTripCount(), tripCountThreshold);
         return false;
       }
 
@@ -1825,7 +1828,7 @@ void MLCPUMManager::compileReduction(PUMContext &context,
    * 3. We will generate these command sequence:
    *   Shift -> Reduce -> Shift -> Reduce -> ... -> Shift -> Reduce
    *
-   * 4. Finally, the LLC PUMEngine will ready out FinalElems out and reduce
+   * 4. Finally, the LLC PUMEngine will read FinalElems out and reduce
    * across its SRAM arrays. It then send back the results to the
    * MLCPUMManager for final reduction.
    */
@@ -2297,7 +2300,7 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
    * and let PUM handle all Non-Reduce part while partial Reduce. Then here we
    * should change the computation of NewReduceConfig to only do Reduce part.
    *
-   * However, right now we don;t have support to split the computation in the
+   * However, right now we don't have support to split the computation in the
    * compiler, thus here we replace it with an empty function.
    */
 

@@ -1224,6 +1224,8 @@ bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
     }
     if (!dynS->hasUnsteppedElem()) {
       // We don't have element for this used stream.
+      DYN_S_DPRINTF(dynS->dynStreamId,
+                    "[NotDispatchStreamEnd] No UnsteppedElem.\n");
       return false;
     }
     /**
@@ -1236,10 +1238,15 @@ bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
       auto elem = dynS->getFirstUnsteppedElem();
       if (staticStreamRegion.step.skipStepSecondLastElemStreams.count(S)) {
         if (!elem->isInnerSecondLastElem()) {
+          S_ELEMENT_DPRINTF(elem,
+                        "[NotDispatchStreamEnd] Not LoopEliminated "
+                        "InnerSecondLastElem.\n");
           return false;
         }
       } else {
         if (!elem->isLastElement()) {
+          S_ELEMENT_DPRINTF(elem,
+              "[NotDispatchStreamEnd] Not LoopEliminated LastElem.\n");
           return false;
         }
       }

@@ -280,6 +280,7 @@ bool StreamRegionController::canSkipToStreamEnd(
    */
   auto staticRegion = dynRegion.staticRegion;
   if (!staticRegion->region.loop_eliminated()) {
+    SE_DPRINTF("[Region] NoSkipToEnd: LoopNotEliminated.\n");
     return false;
   }
   if (se->myParams->enableRangeSync) {
@@ -289,23 +290,27 @@ bool StreamRegionController::canSkipToStreamEnd(
     return false;
   }
   if (!dynRegion.nestConfigs.empty()) {
+    SE_DPRINTF("[Region] NoSkipToEnd: NestConfigs.\n");
     return false;
   }
   for (auto S : staticRegion->streams) {
-    if (S->isMemStream()) {
-      // Mem stream.
-      if (!S->isDirectMemStream()) {
-        return false;
-      }
-    } else {
-      // IV stream.
+    auto &dynS = S->getDynStream(dynRegion.seqNum);
+    if (S->isMemStream() && !S->isDirectMemStream()) {
+      // Indirect Mem stream.
+      DYN_S_DPRINTF(dynS.dynStreamId, "[Region] NoSkipToEnd: IndirectMemS.\n");
+      return false;
     }
     if (S->isInnerFinalValueUsedByCore() ||
         S->isInnerSecondFinalValueUsedByCore() || S->hasCoreUser()) {
+      DYN_S_DPRINTF(dynS.dynStreamId,
+                    "[Region] NoSkipToEnd: NeededByCore InnerFinalValue %d "
+                    "InnerSecondFinalValue %d CoreUser %d.\n",
+                    S->isInnerFinalValueUsedByCore(),
+                    S->isInnerSecondFinalValueUsedByCore(), S->hasCoreUser());
       return false;
     }
-    auto &dynS = S->getDynStream(dynRegion.seqNum);
     if (!dynS.hasTotalTripCount()) {
+      DYN_S_DPRINTF(dynS.dynStreamId, "[Region] NoSkipToEnd: No TripCount.\n");
       return false;
     }
   }

@@ -400,7 +400,7 @@ StreamFloatPolicy::shouldFloatStreamSmart(DynStream &dynS) {
       floatCompute = true;
     }
     if (floatCompute) {
-      S_DPRINTF(S, "[Float] always float computation.");
+      S_DPRINTF(S, "[Float] always float computation.\n");
       logS(dynS) << "[Float] always float computation.\n" << std::flush;
       return FloatDecision(true);
     }

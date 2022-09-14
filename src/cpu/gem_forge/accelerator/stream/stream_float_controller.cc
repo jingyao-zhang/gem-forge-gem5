@@ -44,18 +44,33 @@ void StreamFloatController::floatStreams(
    */
   Args floatArgs(region, args.seqNum, dynStreams, offloadedStreamConfigMap,
                  *cacheStreamConfigVec);
+  SE_DPRINTF(">>> Consider Float DirectLoadStreams.\n");
   this->floatDirectLoadStreams(floatArgs);
+  SE_DPRINTF(">>> Consider Float DirectAtomicComputeStreams.\n");
   this->floatDirectAtomicComputeStreams(floatArgs);
+  SE_DPRINTF(">>> Consider Float PointerChaseStreams.\n");
   this->floatPointerChaseStreams(floatArgs);
+  SE_DPRINTF(">>> Consider Float IndirectStreams.\n");
   this->floatIndirectStreams(floatArgs);
+  SE_DPRINTF(">>> Consider Float DirectUpdateStreams.\n");
   this->floatDirectUpdateStreams(floatArgs);
 
   // EliminatedLoop requires additional handling.
   this->floatEliminatedLoop(floatArgs);
 
+  SE_DPRINTF(">>> Consider Float DirectOrPointerChaseReductionStreams.\n");
   this->floatDirectOrPointerChaseReductionStreams(floatArgs);
+  SE_DPRINTF(">>> Consider Float DirectStoreComputeStreams.\n");
   this->floatDirectStoreComputeStreams(floatArgs);
+  /**
+   * Reconsider FloatDirectUpdateStreams as some may depend on
+   * InnerLoopReductionStream. For example: gfm.kmeans_pum.
+   */
+  SE_DPRINTF(">>> Consider Float DirectUpdateStreams ... 2.\n");
+  this->floatDirectUpdateStreams(floatArgs);
+  SE_DPRINTF(">>> Consider Float IndirectReductionStreams.\n");
   this->floatIndirectReductionStreams(floatArgs);
+  SE_DPRINTF(">>> Consider Float TwoLevelIndirectStoreComputeStreams.\n");
   this->floatTwoLevelIndirectStoreComputeStreams(floatArgs);
 
   if (cacheStreamConfigVec->empty()) {
@@ -573,6 +588,9 @@ void StreamFloatController::floatDirectStoreComputeOrUpdateStream(
   for (auto valueBaseS : S->valueBaseStreams) {
     if (!floatedMap.count(valueBaseS)) {
       allValueBaseSFloated = false;
+      StreamFloatPolicy::logS(*dynS) << "[Not Float] as UnFloated ValueBaseS "
+                                     << valueBaseS->getStreamName() << "\n"
+                                     << std::flush;
       break;
     }
   }
@@ -588,7 +606,7 @@ void StreamFloatController::floatDirectStoreComputeOrUpdateStream(
     valueBaseConfig->addSendTo(config, reuse, skip);
     config->addBaseOn(valueBaseConfig, reuse, skip);
   }
-  S_DPRINTF(S, "Offload DirectStoreStream.\n");
+  S_DPRINTF(S, "Offload DirectStore/UpdateS.\n");
   floatedMap.emplace(S, config);
   args.rootConfigVec.push_back(config);
 }
@@ -688,32 +706,46 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
 
     // Select the one with the most senders.
     int maxSenders = 0;
-    int baseConfigIdxWithMostSenders = 0;
+    int selectedBackBaseConfigIdx = 0;
     for (int i = 0; i < senderCount.size(); i++) {
       if (senderCount[i] > maxSenders) {
         maxSenders = senderCount[i];
-        baseConfigIdxWithMostSenders = i;
+        selectedBackBaseConfigIdx = i;
+      }
+    }
+
+    /**
+     * Special case for kmeans: the reduction should be associated with
+     * "feature.ld".
+     */
+    for (int i = 0; i < backBaseStreamConfigs.size(); ++i) {
+      const auto &config = backBaseStreamConfigs.at(i);
+      std::string strStreamName = config->dynamicId.streamName;
+      if (strStreamName.find("gfm.kmeans.feature.ld") != std::string::npos) {
+        S_DPRINTF(S, "ReduceS floated with kmeans %s.\n", config->dynamicId);
+        selectedBackBaseConfigIdx = i;
+        break;
       }
     }
 
     // Make all others send to that one.
-    auto &baseConfigWithMostSenders =
-        backBaseStreamConfigs.at(baseConfigIdxWithMostSenders);
-    baseConfigWithMostSenders->addUsedBy(reductionConfig);
-    S_DPRINTF(S, "ReductionStream associated with %s, existing sender %d.\n",
-              baseConfigWithMostSenders->dynamicId, maxSenders);
+    auto &selectedBackBaseConfig =
+        backBaseStreamConfigs.at(selectedBackBaseConfigIdx);
+    selectedBackBaseConfig->addUsedBy(reductionConfig);
+    S_DPRINTF(S, "ReduceS associated with %s, existing sender %d.\n",
+              selectedBackBaseConfig->dynamicId, maxSenders);
     StreamFloatPolicy::logS(*dynS)
-        << "[Float] as Reduction with " << baseConfigWithMostSenders->dynamicId
+        << "[Float] as Reduction with " << selectedBackBaseConfig->dynamicId
         << ", existing # sender " << maxSenders << ".\n"
         << std::flush;
     for (int i = 0; i < backBaseStreamConfigs.size(); ++i) {
-      if (i == baseConfigIdxWithMostSenders) {
+      if (i == selectedBackBaseConfigIdx) {
         continue;
       }
       auto &backBaseConfig = backBaseStreamConfigs.at(i);
       auto reuse = dynS->getBaseElemReuseCount(backBaseConfig->stream);
       auto skip = dynS->getBaseElemSkipCount(backBaseConfig->stream);
-      backBaseConfig->addSendTo(baseConfigWithMostSenders, reuse, skip);
+      backBaseConfig->addSendTo(selectedBackBaseConfig, reuse, skip);
       reductionConfig->addBaseOn(backBaseConfig, reuse, skip);
     }
   }
