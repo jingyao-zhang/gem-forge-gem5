@@ -1145,8 +1145,25 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
   assert(numAlignDims > 0 && "No AlignDims.");
 
   if (numAlignDims == 1) {
-    // Just align to one dimension.
-    tileSizes.at(alignDims.front()) = bitlines;
+    /**
+     * Just align to one dimension.
+     * 1. If bitlines <= arraySize: tileSize = bitlines.
+     * 2. If bitlines > arraySize:
+     *    Try to map more from the next dimension here.
+     *
+     */
+    auto alignDim = alignDims.front();
+    auto arraySize = arraySizes.at(alignDim);
+    if (bitlines <= arraySize) {
+      tileSizes.at(alignDim) = bitlines;
+    } else {
+      // Check if we have next dimension to map.
+      assert(alignDim + 1 < dimensions);
+      assert(bitlines % arraySize == 0);
+      auto ratio = bitlines / arraySize;
+      tileSizes.at(alignDim) = arraySize;
+      tileSizes.at(alignDim + 1) = ratio;
+    }
   } else if (numAlignDims == 2) {
     // Just try to get square root of bitlines?
     if (this->enablePUMTiling) {
