@@ -202,10 +202,11 @@ public:
     CacheStreamConfigureDataWeakPtr data;
     int reuse;
     int skip;
+    bool isUsedBy;
     BaseEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse,
-             int _skip)
+             int _skip, bool _isUsedBy = false)
         : type(_type), dynStreamId(_data->dynamicId), data(_data),
-          reuse(_reuse), skip(_skip) {}
+          reuse(_reuse), skip(_skip), isUsedBy(_isUsedBy) {}
   };
   std::vector<DepEdge> depEdges;
   std::vector<BaseEdge> baseEdges;
@@ -213,6 +214,7 @@ public:
     this->baseEdges.clear();
     this->depEdges.clear();
   }
+  CacheStreamConfigureDataPtr getUsedByBaseConfig();
   void addUsedBy(CacheStreamConfigureDataPtr &data);
   void addSendTo(CacheStreamConfigureDataPtr &data, int reuse, int skip);
   void addPUMSendTo(const CacheStreamConfigureDataPtr &data,

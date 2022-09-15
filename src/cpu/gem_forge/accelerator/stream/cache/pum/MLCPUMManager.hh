@@ -202,6 +202,14 @@ private:
     int startWordline = 0;
     std::vector<PUMDataGraphNode *> operands;
     std::vector<PUMDataGraphNode *> users;
+    void eraseUser(PUMDataGraphNode *user) {
+      for (auto iter = users.begin(), end = users.end(); iter != end; ++iter) {
+        if (*iter == user) {
+          users.erase(iter);
+          return;
+        }
+      }
+    }
 
     void replaceUsedBy(PUMDataGraphNode *newNode) {
       for (auto user : this->users) {
@@ -293,6 +301,7 @@ private:
     };
 
     std::vector<StaticInstPtr> insts;
+    bool isFinalReduceNode = false;
     static PUMDataGraphNode *newEmptyCmpNode(const std::string &_regionName,
                                              const AffinePattern &_pumTile,
                                              const AffinePattern &_pattern,
@@ -501,16 +510,17 @@ private:
   using LogicalStreamIdToPUMDataGraphNodeMap =
       std::map<DynStreamId::StaticId, PUMDataGraphNode *>;
   void buildPUMDataGraph(PUMContext &context);
-  void buildPUMDataGraph(PUMContext &context, PUMComputeStreamGroup &group);
+  void buildPUMDataGraph(PUMContext &context, PUMComputeStreamGroup &group,
+                         LogicalStreamIdToPUMDataGraphNodeMap &resultNodes);
   void buildPUMDataGraphMove(PUMContext &context, PUMComputeStreamGroup &group,
                              const ConfigPtr &sendConfig,
                              LogicalStreamIdToPUMDataGraphNodeMap &resultNodes);
   void buildPUMDataGraphLoad(PUMContext &context, PUMComputeStreamGroup &group,
                              const ConfigPtr &sendConfig,
                              LogicalStreamIdToPUMDataGraphNodeMap &resultNodes);
-  void buildPUMDataGraphCompute(
-      PUMContext &context, PUMComputeStreamGroup &group,
-      const LogicalStreamIdToPUMDataGraphNodeMap &inputNodes);
+  void
+  buildPUMDataGraphCompute(PUMContext &context, PUMComputeStreamGroup &group,
+                           LogicalStreamIdToPUMDataGraphNodeMap &resultNodes);
   bool needExpandReuse(PUMContext &context, const PUMComputeStreamGroup &group);
   AffinePattern expandReusePat(const AffinePattern &pumTile,
                                const AffinePattern &pat,
@@ -626,6 +636,16 @@ private:
    */
   void preprocessPatternsInGroup(PUMContext &context,
                                  PUMComputeStreamGroup &group);
+
+  /**
+   * Try to split the outer dimension if we have one more dimension than array.
+   */
+  void trySplitOuterDim(PUMContext &context, PUMComputeStreamGroup &group);
+
+  /**
+   * Try to add inner dimension if we have one less dimension than array.
+   */
+  void tryAddInnerDim(PUMContext &context, PUMComputeStreamGroup &group);
 
   /**
    * Translate outer-loop stream into inner-loop stream pattern, with the reuse

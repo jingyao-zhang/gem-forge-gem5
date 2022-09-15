@@ -186,6 +186,11 @@ public:
     return this->ccRegs[this->flattenCCRegIdx(reg.index())];
   }
 
+  RegVal readCCRegOperand(const RegId &reg) {
+    assert(reg.isCCReg());
+    return this->ccRegs[this->flattenCCRegIdx(reg.index())];
+  }
+
   void setCCRegOperand(const StaticInst *si, int idx, RegVal val) override {
     const RegId &reg = si->destRegIdx(idx);
     assert(reg.isCCReg());

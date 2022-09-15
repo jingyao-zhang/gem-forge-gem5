@@ -21,8 +21,8 @@ std::string PUMCommand::to_string(int llcBankIdx) const {
     os << "  Dst " << dstRegion << " Acc " << dstAccessPattern << " Map "
        << dstMapPattern << '\n';
   }
-  os << "  BitlineMask    " << bitline_mask << '\n';
-  os << "  TileMask       " << tile_mask << '\n';
+  os << "  BitlineMask    " << bitline_mask << " ";
+  os << "TileMask       " << tile_mask << '\n';
   if (type == "intra-array") {
     os << "  BitlineDist    " << bitline_dist << '\n';
   } else if (type == "inter-array") {
@@ -40,10 +40,28 @@ std::string PUMCommand::to_string(int llcBankIdx) const {
     os << "  Op " << Enums::OpClassStrings[opClass]
        << (isReduction ? " [Reduce] " : "") << '\n';
   }
+  std::vector<int> mappedLLCBanks;
   for (auto i = 0; i < llcSplitTileCmds.NumBanks; ++i) {
     if (llcBankIdx != -1 && i != llcBankIdx) {
       continue;
     }
+    auto subRegionCount = llcSplitTileCmds.getBankSubRegionCount(i);
+    if (subRegionCount > 0) {
+      mappedLLCBanks.push_back(i);
+    }
+  }
+  int dumpLLCFirst = 2;
+  int dumpLLCLast = 2;
+  bool dumpedSkip = false;
+  for (auto idx = 0; idx < mappedLLCBanks.size(); ++idx) {
+    if (idx >= dumpLLCFirst && idx + dumpLLCLast <= mappedLLCBanks.size()) {
+      if (!dumpedSkip) {
+        os << "    Skip " << mappedLLCBanks.size() - dumpLLCFirst - dumpLLCLast;
+        dumpedSkip = true;
+      }
+      continue;
+    }
+    auto i = mappedLLCBanks.at(idx);
     auto subRegionCount = llcSplitTileCmds.getBankSubRegionCount(i);
     if (subRegionCount > 0) {
       os << "    LLCCmd " << std::setw(2) << i;

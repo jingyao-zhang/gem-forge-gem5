@@ -20,12 +20,27 @@ CacheStreamConfigureData::CacheStreamConfigureData(
 
 CacheStreamConfigureData::~CacheStreamConfigureData() {}
 
+CacheStreamConfigureDataPtr CacheStreamConfigureData::getUsedByBaseConfig() {
+  for (auto &edge : this->baseEdges) {
+    if (!edge.isUsedBy) {
+      continue;
+    }
+    auto baseConfig = edge.data.lock();
+    if (!baseConfig) {
+      DYN_S_PANIC(this->dynamicId, "UsedByBaseConfig %s already released.",
+                  edge.dynStreamId);
+    }
+    return baseConfig;
+  }
+  DYN_S_PANIC(this->dynamicId, "Failed to get UsedByBaseConfig.");
+}
+
 void CacheStreamConfigureData::addUsedBy(CacheStreamConfigureDataPtr &data) {
   int reuse = 1;
   int skip = 0;
   this->depEdges.emplace_back(DepEdge::Type::UsedBy, data, reuse, skip);
   data->baseEdges.emplace_back(BaseEdge::Type::BaseOn, this->shared_from_this(),
-                               reuse, skip);
+                               reuse, skip, true /* isUsedBy */);
 }
 
 void CacheStreamConfigureData::addSendTo(CacheStreamConfigureDataPtr &data,

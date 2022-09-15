@@ -50,7 +50,7 @@ SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
     DYN_S_DPRINTF(this->strandId, "[Sliced] Disabled slicing.\n");
     this->coalesceContinuousElements = false;
     this->elemPerSlice = 1.0f;
-    assert(this->elemSize < 64 && "Huge Non-Sliced StreamElem.");
+    assert(this->elemSize <= 64 && "Huge Non-Sliced StreamElem.");
   }
 
   if (_configData->floatPlan.getFirstFloatElementIdx() > 0) {

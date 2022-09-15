@@ -393,9 +393,10 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
     int computeLatency = wordlineBits;
     switch (command.opClass) {
     default:
-      panic("Unkown PUM OpClass %s.", Enums::OpClassStrings[command.opClass]);
+      panic("Unknown PUM OpClass %s.", Enums::OpClassStrings[command.opClass]);
       break;
     case No_OpClass:
+    case SimdMiscOp:
       computeLatency = 1;
       break;
     case FloatMemReadOp:
@@ -411,6 +412,7 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
     case SimdFloatAddOp:
     case SimdFloatMultOp:
     case SimdFloatDivOp:
+    case SimdFloatCmpOp:
       computeLatency = wordlineBits * wordlineBits;
       break;
     }

@@ -357,7 +357,7 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
       retValue.at(i) = execFuncXC.readFloatRegOperand(reg);
     }
   }
-  EXEC_FUNC_DPRINTF("Ret Type %s.\n", ::LLVM::TDG::DataType_Name(retType),
+  EXEC_FUNC_DPRINTF("Ret Type %s %s.\n", ::LLVM::TDG::DataType_Name(retType),
                     retValue.print(retType));
   return retValue;
 }
@@ -472,7 +472,11 @@ ExecFunc::invoke_imvals(const std::vector<RegisterValue> &params,
 
     staticInst->execute(&execFuncXC, nullptr /* traceData. */);
 
-    assert(staticInst->numDestRegs() == 1);
+    /**
+     * Zhengrong: Some instructions have CC flags.
+     * And some have more than one dest regs.
+     */
+    assert(staticInst->numDestRegs() >= 1);
     imvals.emplace_back();
     auto reg = staticInst->destRegIdx(0);
     if (reg.isIntReg()) {
@@ -480,6 +484,8 @@ ExecFunc::invoke_imvals(const std::vector<RegisterValue> &params,
     } else if (reg.isFloatReg()) {
       // TODO: this should be the entire vector register
       imvals.back().at(0) = execFuncXC.readFloatRegOperand(reg);
+    } else if (reg.isCCReg()) {
+      imvals.back().at(0) = execFuncXC.readCCRegOperand(reg);
     } else {
       EXEC_FUNC_PANIC("Unsupported register type %s\n", reg);
     }

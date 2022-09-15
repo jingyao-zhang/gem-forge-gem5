@@ -66,12 +66,33 @@ std::ostream &operator<<(std::ostream &os,
     break;
   }
   case MLCPUMManager::PUMDataGraphNode::TypeE::Compute: {
-    os << "Cmp";
-    for (const auto &operand : node.operands) {
-      os << " " << operand;
+    /**
+     * Special case for ConstInt.
+     */
+    switch (node.compValTy) {
+
+    case MLCPUMManager::PUMDataGraphNode::CompValueE::ConstFloat: {
+      os << "ConstFp";
+      break;
     }
-    for (const auto &inst : node.insts) {
-      os << " " << inst->getName();
+    case MLCPUMManager::PUMDataGraphNode::CompValueE::ConstInt: {
+      os << "ConstInt";
+      break;
+    }
+    case MLCPUMManager::PUMDataGraphNode::CompValueE::Reg: {
+      os << "Reg " << node.symbol;
+      break;
+    }
+    case MLCPUMManager::PUMDataGraphNode::CompValueE::None: {
+      os << "Cmp";
+      for (const auto &operand : node.operands) {
+        os << " " << operand;
+      }
+      for (const auto &inst : node.insts) {
+        os << " " << inst->getName();
+      }
+      break;
+    }
     }
     break;
   }
@@ -228,7 +249,8 @@ void MLCPUMManager::findPUMComputeStreamGroups(PUMContext &context) {
         // This is actually the RecvConfig.
         continue;
       }
-      MLC_S_DPRINTF(baseConfig->dynamicId, "[PUM]   Added as UsedConfig.\n");
+      MLC_S_DPRINTF(config->dynamicId, "[PUM]   Added BaseConfig: %s.\n",
+                    baseConfig->dynamicId);
       group.usedConfigs.push_back(baseConfig);
     }
   }
@@ -244,6 +266,10 @@ void MLCPUMManager::findPUMComputeStreamGroups(PUMContext &context) {
     stack.push_back(&group);
     state.emplace(&group, 0);
     streamGroupMap.emplace(group.computeConfig->stream, &group);
+    // ReduceS is also mapped to the group.
+    if (group.reduceConfig) {
+      streamGroupMap.emplace(group.reduceConfig->stream, &group);
+    }
   }
   auto getGroup =
       [&streamGroupMap](
@@ -321,23 +347,41 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
     const auto &dynId = config->dynamicId;
 
     if (config->floatPlan.isFloatedToMem()) {
-      MLC_S_DPRINTF(dynId, "[NoPUM] Float to Mem.\n");
+      MLC_S_DPRINTF(groupDynId, "[NoPUM] Float to Mem.\n", dynId);
       return false;
     }
     if (config->floatPlan.getFirstFloatElementIdx() != 0) {
-      MLC_S_DPRINTF(dynId, "[NoPUM] Delayed Float.\n");
+      MLC_S_DPRINTF(groupDynId, "[NoPUM] Delayed Float.\n", dynId);
       return false;
     }
 
     if (!config->hasTotalTripCount()) {
-      MLC_S_DPRINTF(dynId, "[NoPUM] No TripCount.\n");
+      MLC_S_DPRINTF(groupDynId, "[NoPUM] No TripCount %s.\n", dynId);
       return false;
     }
 
     auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
         config->addrGenCallback);
+    auto addrParams = config->addrGenFormalParams;
     if (!linearAddrGen) {
-      MLC_S_DPRINTF(dynId, "[NoPUM] Not LinearAddrGen.\n");
+      /**
+       * We have one special case: For ReduceS, we use the BaseS pattern.
+       * Later we will check that it only involves intra-array reduction, i.e.
+       * TileNum of the reduced dimension is 1.
+       */
+      if (config->stream->isReduction()) {
+        auto baseConfig = config->getUsedByBaseConfig();
+        linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
+            baseConfig->addrGenCallback);
+        addrParams = baseConfig->addrGenFormalParams;
+        MLC_S_DPRINTF(
+            groupDynId,
+            "[CheckCanPUM] Use LinearAddrGen for ReduceS %s from %s.\n", dynId,
+            baseConfig->dynamicId);
+      }
+    }
+    if (!linearAddrGen) {
+      MLC_S_DPRINTF(groupDynId, "[NoPUM] Not LinearAddrGen %s.\n", dynId);
       return false;
     }
 
@@ -350,7 +394,6 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
     auto threadContext = cpuDelegator->getSingleThreadContext();
     auto streamNUCAManager = threadContext->getStreamNUCAManager();
 
-    const auto &addrParams = config->addrGenFormalParams;
     auto startVAddr = linearAddrGen->getStartAddr(addrParams);
     const auto &streamNUCARegion =
         streamNUCAManager->getContainingStreamRegion(startVAddr);
@@ -359,39 +402,40 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
 
     Addr startPAddr;
     if (!cpuDelegator->translateVAddrOracle(startVAddr, startPAddr)) {
-      MLC_S_DPRINTF(dynId, "[NoPUM] Fault StartVAddr.\n");
+      MLC_S_DPRINTF(groupDynId, "[NoPUM] Fault StartVAddr %s.\n", dynId);
       return false;
     }
     auto rangeMap = StreamNUCAMap::getRangeMapContaining(startPAddr);
     if (!rangeMap) {
-      MLC_S_DPRINTF(dynId, "[NoPUM] No RangeMap.\n");
+      MLC_S_DPRINTF(groupDynId, "[NoPUM] No RangeMap %s.\n", dynId);
       return false;
     }
 
-    /**
-     * For UsedConfigs, split them into PUM and NonPUM
-     * categories. NOTE: NonPUMConfigs have no PatternInfo.
-     */
     if (computeConfig == config) {
       if (!rangeMap->isStreamPUM) {
-        MLC_S_DPRINTF(dynId, "[NoPUM] RangeMap not PUM.\n");
+        MLC_S_DPRINTF(groupDynId, "[NoPUM] RangeMap not PUM.\n", dynId);
         return false;
       }
       const int64_t tripCountThreshold = 2048;
       if (config->getTotalTripCount() <= tripCountThreshold) {
-        MLC_S_DPRINTF(dynId, "[NoPUM] TripCount %ld < Threshold %ld.\n",
+        MLC_S_DPRINTF(groupDynId, "[NoPUM] TripCount %ld < Threshold %ld.\n",
                       config->getTotalTripCount(), tripCountThreshold);
         return false;
       }
-
     } else {
+      /**
+       * For UsedConfigs, split them into PUM and NonPUM
+       * categories. NOTE: NonPUMConfigs have no PatternInfo.
+       */
       if (rangeMap->isStreamPUM &&
           rangeMap->pumTile ==
               group.patternInfo.at(computeConfig->stream).pumTile) {
-        MLC_S_DPRINTF(dynId, "[CheckCanPUM]   As UsedPUMConfig.\n");
+        MLC_S_DPRINTF(groupDynId, "[CheckCanPUM]   Add UsedPUMConfig %s.\n",
+                      dynId);
         group.usedPUMConfigs.push_back(config);
       } else {
-        MLC_S_DPRINTF(dynId, "[CheckCanPUM]   As UsedNonPUMConfig.\n");
+        MLC_S_DPRINTF(groupDynId, "[CheckCanPUM]   Add UsedNonPUMConfig %s.\n",
+                      dynId);
         group.usedNonPUMConfigs.push_back(config);
       }
     }
@@ -417,17 +461,44 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
     }
 
     AffinePattern pattern(scalarStart, params);
-    auto &patternInfo =
+
+    if (config->stream->isReduction()) {
+      /**
+       * If this is a ReduceS, we check that the reduction is purely
+       * intra-array. Then we compress the inner trip count.
+       * Here we assume the reduction is over the inner most dimension.
+       */
+      auto reduceCount = pattern.getTrips().front();
+      auto tileCount = rangeMap->pumTile.getTrips().front();
+      if (reduceCount > tileCount) {
+        MLC_S_DPRINTF(groupDynId, "[NoPUM] Inter-Array ReduceS %s.\n",
+                      config->dynamicId);
+        return false;
+      }
+
+      // Compress the dimension.
+      params.front().trip = 1;
+      auto oldPattern = pattern;
+      pattern = AffinePattern(scalarStart, params);
+      MLC_S_DPRINTF(groupDynId,
+                    "[CheckCanPUM] Compress ReduceDim Trip %s %s -> %s.\n",
+                    config->dynamicId, oldPattern, pattern);
+    }
+
+    auto &patInfo =
         group.patternInfo
             .emplace(std::piecewise_construct, std::forward_as_tuple(S),
                      std::forward_as_tuple())
             .first->second;
-    patternInfo.regionName = streamNUCARegion.name;
-    patternInfo.pumTile = rangeMap->pumTile;
-    patternInfo.pattern = pattern;
-    patternInfo.regionVAddr = regionVAddr;
-    patternInfo.scalarElemSize = scalarElemSize;
-    this->decoalesceAndDevectorizePattern(config, patternInfo);
+    patInfo.regionName = streamNUCARegion.name;
+    patInfo.pumTile = rangeMap->pumTile;
+    patInfo.pattern = pattern;
+    patInfo.regionVAddr = regionVAddr;
+    patInfo.scalarElemSize = scalarElemSize;
+    MLC_S_DPRINTF(groupDynId,
+                  "[CheckCanPUM] Add PatInfo for %s: %s Tile %s Pat %s.\n",
+                  dynId, patInfo.regionName, patInfo.pumTile, patInfo.pattern);
+    this->decoalesceAndDevectorizePattern(config, patInfo);
   }
 
   // All regions should have the same tile mapping.
@@ -459,8 +530,9 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
     const auto &sendPatInfo = group.patternInfo.at(S);
     auto myTile = sendPatInfo.pumTile;
 
-    MLC_S_DPRINTF(sendDynId, "[PUM] --- Can Compile DataMove. MyTile %s.\n",
-                  myTile);
+    MLC_S_DPRINTF(groupDynId,
+                  "[PUM] --- Can Compile DataMove. Sender %s SenderTile %s.\n",
+                  sendConfig->dynamicId, myTile);
     DataMoveCompiler compiler(StreamNUCAMap::getPUMHWConfig(), myTile);
 
     auto recvS = computeConfig->stream;
@@ -488,15 +560,7 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
 
       if (!compiler.canCompileStreamPair(myPattern, recvPattern)) {
         MLC_S_DPRINTF(groupDynId, "[NoPUM] Rejected by DataMoveCompiler.\n");
-        const auto &sendDynId = sendConfig->dynamicId;
-        auto sendS = sendConfig->stream;
-        const auto &sendPatInfo = group.patternInfo.at(sendS);
-        auto sendTile = sendPatInfo.pumTile;
 
-        auto recvConfig = group.computeConfig;
-        auto recvS = recvConfig->stream;
-        const auto &recvPatInfo = group.patternInfo.at(recvS);
-        auto recvTile = recvPatInfo.pumTile;
         return false;
       }
     }
@@ -506,9 +570,15 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
 }
 
 void MLCPUMManager::buildPUMDataGraph(PUMContext &context) {
+  /**
+   * Now we are going to break single compute node into compute nodes per
+   * instruction, we care about the mapping from LogicalStreamId to MoveNode.
+   */
+  LogicalStreamIdToPUMDataGraphNodeMap resultNodes;
+
   for (auto &group : context.pumGroups) {
     if (group.appliedPUM) {
-      this->buildPUMDataGraph(context, group);
+      this->buildPUMDataGraph(context, group, resultNodes);
     }
   }
 
@@ -544,19 +614,13 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context) {
   }
 }
 
-void MLCPUMManager::buildPUMDataGraph(PUMContext &context,
-                                      PUMComputeStreamGroup &group) {
+void MLCPUMManager::buildPUMDataGraph(
+    PUMContext &context, PUMComputeStreamGroup &group,
+    LogicalStreamIdToPUMDataGraphNodeMap &resultNodes) {
   assert(group.canApplyPUM);
 
-  /**
-   * Now we are going to break single compute node into compute nodes per
-   * instruction, we care about the mapping from LogicalStreamId to MoveNode.
-   */
-  LogicalStreamIdToPUMDataGraphNodeMap logicalStreamIdToPUMDataGraphNodeMap;
-
   for (const auto &sendConfig : group.usedPUMConfigs) {
-    this->buildPUMDataGraphMove(context, group, sendConfig,
-                                logicalStreamIdToPUMDataGraphNodeMap);
+    this->buildPUMDataGraphMove(context, group, sendConfig, resultNodes);
   }
 
   /**
@@ -564,7 +628,7 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context,
    */
   if (group.computeConfig->stream->getEnabledLoadFunc()) {
     this->buildPUMDataGraphMove(context, group, group.computeConfig,
-                                logicalStreamIdToPUMDataGraphNodeMap);
+                                resultNodes);
   }
 
   /**
@@ -573,7 +637,7 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context,
    */
   if (group.computeConfig->stream->isUpdateStream()) {
     this->buildPUMDataGraphMove(context, group, group.computeConfig,
-                                logicalStreamIdToPUMDataGraphNodeMap);
+                                resultNodes);
   }
 
   /**
@@ -582,22 +646,20 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context,
    */
   if (group.reduceConfig) {
     this->buildPUMDataGraphMove(context, group, group.computeConfig,
-                                logicalStreamIdToPUMDataGraphNodeMap);
+                                resultNodes);
   }
 
   /**
    * NonPUMUsedConfigs are represented as Load nodes.
    */
   for (const auto &sendConfig : group.usedNonPUMConfigs) {
-    this->buildPUMDataGraphLoad(context, group, sendConfig,
-                                logicalStreamIdToPUMDataGraphNodeMap);
+    this->buildPUMDataGraphLoad(context, group, sendConfig, resultNodes);
   }
 
   /**
    * Construct the compute node.
    */
-  this->buildPUMDataGraphCompute(context, group,
-                                 logicalStreamIdToPUMDataGraphNodeMap);
+  this->buildPUMDataGraphCompute(context, group, resultNodes);
 }
 
 bool MLCPUMManager::needExpandReuse(PUMContext &context,
@@ -694,6 +756,12 @@ void MLCPUMManager::buildPUMDataGraphMove(
    * 3. For the receiving ReduceStream:
    *  a. If the sender is myself, directly use the value node.
    *
+   * 4. For sending ReduceStream:
+   *  a. This means we only have intra-array reduction.
+   *  b. We have only one Send ScalarPattern.
+   *  c. There should be a ComputeNode in resultNodes representing the final
+   * ReducedValue.
+   *
    *
    * If this Computation involves NonPUMConfig, then we need to expand the
    * reused dimension.
@@ -705,6 +773,7 @@ void MLCPUMManager::buildPUMDataGraphMove(
 
   const bool sendLoadCompute = sendS->getEnabledLoadFunc();
   const bool sendUpdate = sendS->isUpdateStream();
+  const bool sendReduce = sendS->isReduction();
   const bool recvReduce = group.reduceConfig != nullptr;
   const bool sendToMyself = recvConfig == sendConfig;
 
@@ -716,6 +785,13 @@ void MLCPUMManager::buildPUMDataGraphMove(
            "UpdateS should have only one ScalarPattern.");
   }
 
+  if (sendReduce) {
+    // 4.b.
+    assert(sendPatInfo.scalarPatterns.size() == 1 &&
+           "ReduceS should have only one ScalarPattern.");
+    assert(!sendToMyself && "ReduceS should neve send to myself.");
+  }
+
   for (auto patIdx = 0; patIdx < sendPatInfo.scalarPatterns.size(); ++patIdx) {
 
     auto logicalStreamId = sendPatInfo.scalarPatLogicalStreamIds.at(patIdx);
@@ -725,12 +801,6 @@ void MLCPUMManager::buildPUMDataGraphMove(
         patIdx != sendPatInfo.getLoadComputeResultPatternIdx()) {
       continue;
     }
-
-    auto sendPat = sendPatInfo.getPattern(patIdx);
-    auto sendSplitOutDim = sendPatInfo.getSplitOutDim(patIdx);
-
-    MLC_S_DPRINTF(sendDynId, "[PUM] SendPat %s SendSplitOutDim %s.\n", sendPat,
-                  sendSplitOutDim);
 
     /**
      * Each send pattern is a ValueNode, with RecvPat as MoveNode.
@@ -750,7 +820,24 @@ void MLCPUMManager::buildPUMDataGraphMove(
       if (valueNode == nullptr) {
         panic("Failed to find PUMDataGraphNode for LoadComputeS.");
       }
+    } else if (sendReduce && !sendToMyself) {
+      // 4.c.
+      // There should be a PUMDataGraphNode for ReduceS.
+      auto iter = resultNodes.find(sendS->staticId);
+      if (iter == resultNodes.end()) {
+        MLC_S_PANIC_NO_DUMP(sendDynId,
+                            "Failed to find PUMDataGraphNode for ReduceS.");
+      }
+      valueNode = iter->second;
     } else {
+
+      auto sendPat = sendPatInfo.getPattern(patIdx);
+      auto sendSplitOutDim = sendPatInfo.getSplitOutDim(patIdx);
+
+      MLC_S_DPRINTF(sendDynId,
+                    "[PUM] NewSendValueNode SendPat %s SendSplitOutDim %s.\n",
+                    sendPat, sendSplitOutDim);
+
       valueNode = PUMDataGraphNode::newValueNode(
           sendPatInfo.regionName, sendTile, sendPat, sendSplitOutDim,
           sendPatInfo.scalarElemSize, sendPatInfo.regionVAddr);
@@ -785,10 +872,27 @@ void MLCPUMManager::buildPUMDataGraphMove(
       continue;
     }
 
+    auto sendPat = valueNode->pattern;
+    auto sendSplitOutDim = valueNode->splitOutDim;
+    if (sendReduce && !sendToMyself) {
+      // We need to compact the reduced dimension of SendPat.
+      // So far just set the InnerMostTrip to 1.
+      sendPat.params.front().trip = 1;
+      MLC_S_DPRINTF(sendDynId, "Compact SendReduce InnerMostDim -> %s.\n",
+                    sendPat);
+      /**
+       * If the SendPat is the same as the RecvPat, no need to move?
+       * So far only apply this for SendReduce.
+       */
+      if (sendPat == recvPat && sendSplitOutDim == recvSplitOutDim) {
+        MLC_S_DPRINTF(sendDynId, "Skip SendReduce.\n");
+        continue;
+      }
+    }
+
     auto moveNode = PUMDataGraphNode::newMoveNode(
-        recvPatInfo.regionName, recvTile, recvPat, recvSplitOutDim,
-        valueNode->pattern, valueNode->splitOutDim, valueNode,
-        recvPatInfo.scalarElemSize);
+        recvPatInfo.regionName, recvTile, recvPat, recvSplitOutDim, sendPat,
+        sendSplitOutDim, valueNode, recvPatInfo.scalarElemSize);
     context.pumDataGraphNodes.push_back(moveNode);
     resultNodes.emplace(logicalStreamId, moveNode);
 
@@ -882,7 +986,7 @@ void MLCPUMManager::buildPUMDataGraphLoad(
 
 void MLCPUMManager::buildPUMDataGraphCompute(
     PUMContext &context, PUMComputeStreamGroup &group,
-    const LogicalStreamIdToPUMDataGraphNodeMap &inputNodes) {
+    LogicalStreamIdToPUMDataGraphNodeMap &resultNodes) {
 
   const auto &config = group.computeConfig;
   const auto &dynId = config->dynamicId;
@@ -910,6 +1014,7 @@ void MLCPUMManager::buildPUMDataGraphCompute(
   // TODO: DynStreamFormalParam always copy-constructible?
   ExecFuncPtr func = nullptr;
   DynStreamFormalParamV formalParams;
+  DynStreamId computeDynId;
   if (group.reduceConfig) {
     auto funcAddrGenCb = std::dynamic_pointer_cast<FuncAddrGenCallback>(
         group.reduceConfig->addrGenCallback);
@@ -919,13 +1024,16 @@ void MLCPUMManager::buildPUMDataGraphCompute(
     }
     func = funcAddrGenCb->getExecFunc();
     formalParams = group.reduceConfig->addrGenFormalParams;
+    computeDynId = group.reduceConfig->dynamicId;
   } else if (config->stream->getEnabledLoadFunc()) {
     // This is a LoadCompute.
     func = config->loadCallback;
     formalParams = config->loadFormalParams;
+    computeDynId = config->dynamicId;
   } else {
     func = config->storeCallback;
     formalParams = config->storeFormalParams;
+    computeDynId = config->dynamicId;
   }
   if (!func) {
     MLC_S_PANIC_NO_DUMP(dynId, "[PUM] Failed to find ComputeFunc.");
@@ -965,9 +1073,9 @@ void MLCPUMManager::buildPUMDataGraphCompute(
 
   MLC_S_DPRINTF(dynId,
                 "Construct TDFG ComputeNode(s) for %s. InputNodes %lu:\n",
-                func->getFuncInfo().name(), inputNodes.size());
+                func->getFuncInfo().name(), resultNodes.size());
   if (Debug::MLCStreamPUM) {
-    for (const auto &entry : inputNodes) {
+    for (const auto &entry : resultNodes) {
       MLC_S_DPRINTF(dynId, "   LogicalStream %lu %s\n", entry.first,
                     *entry.second);
     }
@@ -997,8 +1105,6 @@ void MLCPUMManager::buildPUMDataGraphCompute(
 
       // TODO: Will need some symbol table for registers that don't have
       //       a predetermined value.
-      node->compValTy = PUMDataGraphNode::CompValueE::Reg;
-      node->symbol = new std::string("a");
 
       // NOTE: Otherwise, this is also possible.
       if (func->getFuncInfo().args(i).type() ==
@@ -1008,8 +1114,11 @@ void MLCPUMManager::buildPUMDataGraphCompute(
         node->compValTy = PUMDataGraphNode::CompValueE::ConstFloat;
       }
       node->iVal = formalParams[i].invariant.uint64();
-    } else if (inputNodes.count(formalParams[i].baseStreamId)) {
-      node = inputNodes.at(formalParams[i].baseStreamId);
+
+    } else if (resultNodes.count(formalParams[i].baseStreamId)) {
+
+      node = resultNodes.at(formalParams[i].baseStreamId);
+
     } else {
       // The only exception is the InitialValue of the ReduceStream.
       if (group.reduceConfig && formalParams[i].baseStreamId ==
@@ -1017,9 +1126,6 @@ void MLCPUMManager::buildPUMDataGraphCompute(
 
         node = new PUMDataGraphNode(PUMDataGraphNode::TypeE::Compute);
         context.pumDataGraphNodes.push_back(node);
-
-        node->compValTy = PUMDataGraphNode::CompValueE::Reg;
-        node->symbol = new std::string("a");
 
         // NOTE: Otherwise, this is also possible.
         if (func->getFuncInfo().args(i).type() ==
@@ -1070,8 +1176,14 @@ void MLCPUMManager::buildPUMDataGraphCompute(
   //   2. N number of misc instructions and a final load instruction.
   //      This node will be annotated with some constant value.
   PUMDataGraphNode *curNode = nullptr;
+  PUMDataGraphNode *lastAddedNode = nullptr;
   for (auto i = 0; i < func->getStaticInsts().size(); ++i) {
     const auto &inst = func->getStaticInsts()[i];
+
+    // Add current instruction.
+    MLCSE_DPRINTF("  %s (f: %d l: %d) %s\n", inst->disassemble(0x0),
+                  inst->isFirstMicroop(), inst->isLastMicroop(),
+                  Enums::OpClassStrings[inst->opClass()]);
 
     // Get op type.
     OpTypeE curOpTy;
@@ -1096,19 +1208,30 @@ void MLCPUMManager::buildPUMDataGraphCompute(
       break;
     }
 
+    /**
+     * Special case for some instructions treated as nop in PUM.
+     * - movfp: we don't have to move around registers.
+     */
+    {
+      auto name = inst->getName();
+      if (name == "movfp" || name == "mov2fp" || name == "mov2int") {
+        curOpTy = OpTypeE::Misc;
+      }
+    }
+
     if (curNode == nullptr) {
       curNode = PUMDataGraphNode::newEmptyCmpNode(
           patInfo.regionName, patInfo.pumTile, pattern, splitOutDim,
           patInfo.scalarElemSize, &group);
       MLCSE_DPRINTF("  Building instruction node %p\n", curNode);
     } else {
-      assert(curOpTy != OpTypeE::Compute &&
-             "Cannot have multiple compute ops in a single node");
+      /**
+       * Zhengrong: Get rid of the assertion.
+       */
+      //   assert(curOpTy != OpTypeE::Compute &&
+      //          "Cannot have multiple compute ops in a single node");
     }
 
-    // Add current instruction.
-    MLCSE_DPRINTF("  %s (f: %d l: %d)\n", inst->disassemble(0x0),
-                  inst->isFirstMicroop(), inst->isLastMicroop());
     curNode->insts.push_back(inst);
 
     MLCSE_DPRINTF("      Updating operands\n");
@@ -1169,11 +1292,21 @@ void MLCPUMManager::buildPUMDataGraphCompute(
       [[fallthrough]];
     case OpTypeE::Compute:
       context.pumDataGraphNodes.push_back(curNode);
+      lastAddedNode = curNode;
       curNode = nullptr;
       break;
     default:
       break;
     }
+  }
+
+  if (curNode) {
+    // Release the unused CurNode.
+    for (auto opNode : curNode->operands) {
+      opNode->eraseUser(curNode);
+    }
+    delete curNode;
+    curNode = nullptr;
   }
 
   MLCSE_DPRINTF("Compute node(s) built!\n");
@@ -1190,6 +1323,17 @@ void MLCPUMManager::buildPUMDataGraphCompute(
   }
   context.pumDataGraphNodes.push_back(cmpNode);
 #endif // EG_OPT
+
+  /**
+   * Update the LogicalStreamIdToNodeMap.
+   * Assume we have only one LogicalStreamId.
+   * Also mark the node as the final reduce node.
+   */
+  assert(lastAddedNode && "No ComputeNode generated.");
+  if (group.reduceConfig) {
+    lastAddedNode->isFinalReduceNode = true;
+  }
+  resultNodes.emplace(computeDynId.staticId, lastAddedNode);
 }
 
 #ifdef EG_OPT
@@ -1590,15 +1734,57 @@ MLCPUMManager::schedulePUMDataGraphBFS(PUMContext &context) {
         }
       }
     }
+    /**
+     * No need to sync if both frontiers contain only ComputeNodes.
+     */
+    bool needSync = true;
+    {
+      auto areAllCmpNodes =
+          [](const std::set<PUMDataGraphNode *> &nodes) -> bool {
+        for (auto node : nodes) {
+          if (node->type != PUMDataGraphNode::TypeE::Compute) {
+            return false;
+          }
+        }
+        return true;
+      };
+      auto areAllValueOrConstNodes =
+          [](const std::set<PUMDataGraphNode *> &nodes) -> bool {
+        for (auto node : nodes) {
+          if (node->type == PUMDataGraphNode::TypeE::Value) {
+            // Value node.
+            continue;
+          }
+          if (node->type == PUMDataGraphNode::TypeE::Compute &&
+              node->compValTy != PUMDataGraphNode::CompValueE::None) {
+            // Const value node.
+            continue;
+          }
+          return false;
+        }
+        return true;
+      };
+      if (areAllCmpNodes(frontier) && areAllCmpNodes(nextFrontier)) {
+        needSync = false;
+      }
+      if (areAllValueOrConstNodes(frontier)) {
+        needSync = false;
+      }
+    }
+    // Insert a sync node.
+    if (needSync) {
+      scheduledNodes.push_back(PUMDataGraphNode::newSyncNode());
+    }
     for (auto node : nextFrontier) {
       scheduledNodes.push_back(node);
       scheduled.insert(node);
     }
-    // Insert a sync node.
     frontier = nextFrontier;
-    if (!frontier.empty()) {
-      scheduledNodes.push_back(PUMDataGraphNode::newSyncNode());
-    }
+  }
+
+  if (scheduledNodes.back()->type != PUMDataGraphNode::TypeE::Sync) {
+    // Make sure we always sync at the end.
+    scheduledNodes.push_back(PUMDataGraphNode::newSyncNode());
   }
 
   return scheduledNodes;
@@ -1728,7 +1914,9 @@ void MLCPUMManager::compileCompute(PUMContext &context,
   PUMCommandVecT commands;
 
 #ifdef EG_OPT
-  for (const auto &inst : node->insts) {
+  {
+    assert(!node->insts.empty());
+    const auto &inst = node->insts.back();
     commands.emplace_back();
     auto &command = commands.back();
 
@@ -1766,7 +1954,9 @@ void MLCPUMManager::compileCompute(PUMContext &context,
 #endif // EG_OPT
 
   // Compile the final reduction instruction.
-  this->compileReduction(context, *node->group, commands);
+  if (node->isFinalReduceNode) {
+    this->compileReduction(context, *node->group, commands);
+  }
 
   if (Debug::MLCStreamPUM) {
     for (const auto &command : commands) {
@@ -1809,9 +1999,7 @@ void MLCPUMManager::compileReduction(PUMContext &context,
                                      PUMComputeStreamGroup &group,
                                      PUMCommandVecT &commands) {
 
-  if (!group.reduceConfig) {
-    return;
-  }
+  assert(group.reduceConfig && "No reduction to compile.");
 
   /**
    * We compile reduction into these steps:
@@ -2155,8 +2343,15 @@ MLCPUMManager::generatePrefetchStreams(PUMComputeStreamGroup &group) {
    * Generate PUMPrefetchStream for used config first will help us create
    * PUMPrefetchStream on LoadStream first.
    */
-  for (const auto &baseConfig : group.usedConfigs)
-    ADD_PREFETCH_STREAM(baseConfig);
+  for (const auto &baseConfig : group.usedConfigs) {
+    if (baseConfig->stream->isReduction()) {
+      // We prefetch for the BaseS of the ReduceS.
+      auto reduceBaseConfig = baseConfig->getUsedByBaseConfig();
+      ADD_PREFETCH_STREAM(reduceBaseConfig);
+    } else {
+      ADD_PREFETCH_STREAM(baseConfig);
+    }
+  }
 
   // Generate for compute stream.
   // TODO: Potential optimization since this is not necessary if the entire
@@ -2306,6 +2501,10 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
 
   const auto &directConfig = group.computeConfig;
   const auto &reduceConfig = group.reduceConfig;
+  if (reduceConfig->depEdges.empty() && !reduceConfig->finalValueNeededByCore) {
+    // The user of this ReduceS is also handled as PUM.
+    return;
+  }
 
   /**
    * @brief Make a copy of both configurations, and clear the edges.
@@ -2971,8 +3170,15 @@ DynStreamFormalParamV MLCPUMManager::convertAffinePatternToStreamFormalParams(
   return params;
 }
 
-void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
-                                              PUMComputeStreamGroup &group) {
+void MLCPUMManager::trySplitOuterDim(PUMContext &context,
+                                     PUMComputeStreamGroup &group) {
+  /**
+   * If we have more dimension than the array, we try to split out the
+   * OuterLoop and handle that sequentially.
+   *
+   * So far we only support split one more dimension, and require all patterns
+   * has the same dimension.
+   */
 
   const auto &groupDynId = group.computeConfig->dynamicId;
 
@@ -2981,32 +3187,6 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
   auto &recvPatInfo = group.patternInfo.at(recvS);
   auto recvTile = recvPatInfo.pumTile;
 
-  MLC_S_DPRINTF(groupDynId, "[PUM] Preprocess Patterns in Group.\n");
-
-  for (const auto &sendConfig : group.usedPUMConfigs) {
-
-    const auto &sendDynId = sendConfig->dynamicId;
-    auto S = sendConfig->stream;
-    auto &sendPatInfo = group.patternInfo.at(S);
-
-    for (auto &sendPat : sendPatInfo.scalarPatterns) {
-
-      auto reusedSendPat =
-          this->addReuseToOuterPattern(sendConfig, recvConfig, sendPat);
-      MLC_S_DPRINTF(sendDynId, "[PUM]   AddReuse SendPattern %s -> %s.\n",
-                    sendPat, reusedSendPat);
-
-      sendPat = reusedSendPat;
-    }
-  }
-
-  /**
-   * If we have more dimension than the array, we try to split out the
-   * OuterLoop and handle that sequentially.
-   *
-   * So far we only support split one more dimension, and require all patterns
-   * has the same dimension.
-   */
   auto &recvPat = recvPatInfo.scalarPatterns.front();
   auto arrayDims = recvTile.params.size() / 2;
   if (recvPat.params.size() != arrayDims + 1) {
@@ -3072,6 +3252,78 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
   }
 }
 
+void MLCPUMManager::tryAddInnerDim(PUMContext &context,
+                                   PUMComputeStreamGroup &group) {
+
+  const auto &groupDynId = group.computeConfig->dynamicId;
+
+  auto recvConfig = group.computeConfig;
+  auto recvS = recvConfig->stream;
+  auto &recvPatInfo = group.patternInfo.at(recvS);
+  auto recvTile = recvPatInfo.pumTile;
+
+  if (recvPatInfo.scalarPatterns.size() != 1) {
+    return;
+  }
+
+  auto &recvPat = recvPatInfo.scalarPatterns.front();
+  auto arrayDims = recvTile.params.size() / 2;
+  if (recvPat.params.size() + 1 != arrayDims) {
+    return;
+  }
+
+  auto arraySizes = recvTile.getArraySize();
+  for (int dim = 0; dim < recvPat.params.size(); ++dim) {
+    auto stride = recvPat.params.at(dim).stride;
+    auto arraySize = arraySizes.at(dim);
+    if (stride != arraySize) {
+      MLC_S_DPRINTF(groupDynId, "[PUM] Mismatch at Dim %d %ld %ld.\n", dim,
+                    stride, arraySize);
+      return;
+    }
+  }
+
+  // Add one inner dimension.
+  auto params = recvPat.params;
+  auto start = recvPat.start;
+  params.insert(params.begin(), AffinePattern::Param(1, 1));
+  auto oldRecvPat = recvPat;
+  recvPat = AffinePattern(start, params);
+  MLC_S_DPRINTF(groupDynId, "[PUM] AddInnerDim %s -> %s.\n", oldRecvPat,
+                recvPat);
+}
+
+void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
+                                              PUMComputeStreamGroup &group) {
+
+  const auto &groupDynId = group.computeConfig->dynamicId;
+
+  auto recvConfig = group.computeConfig;
+
+  MLC_S_DPRINTF(groupDynId, "[PUM] Preprocess Patterns in Group.\n");
+
+  for (const auto &sendConfig : group.usedPUMConfigs) {
+
+    auto S = sendConfig->stream;
+    auto &sendPatInfo = group.patternInfo.at(S);
+
+    for (auto &sendPat : sendPatInfo.scalarPatterns) {
+
+      if (sendConfig->stream->getLoopLevel() <
+          recvConfig->stream->getLoopLevel()) {
+
+        auto reusedSendPat =
+            this->addReuseToOuterPattern(sendConfig, recvConfig, sendPat);
+
+        sendPat = reusedSendPat;
+      }
+    }
+  }
+
+  this->trySplitOuterDim(context, group);
+  this->tryAddInnerDim(context, group);
+}
+
 AffinePattern
 MLCPUMManager::addReuseToOuterPattern(const ConfigPtr &outerConfig,
                                       const ConfigPtr &innerConfig,
@@ -3079,12 +3331,8 @@ MLCPUMManager::addReuseToOuterPattern(const ConfigPtr &outerConfig,
 
   auto outerS = outerConfig->stream;
   auto innerS = innerConfig->stream;
-  assert(outerS->getLoopLevel() <= innerS->getLoopLevel() &&
+  assert(outerS->getLoopLevel() < innerS->getLoopLevel() &&
          "Outer should be outside.");
-  if (outerS->getLoopLevel() == innerS->getLoopLevel()) {
-    // Nothing to do.
-    return pattern;
-  }
 
   assert(outerConfig->hasTotalTripCount());
   assert(innerConfig->hasTotalTripCount());
@@ -3100,8 +3348,9 @@ MLCPUMManager::addReuseToOuterPattern(const ConfigPtr &outerConfig,
   auto params = pattern.params;
   params.insert(params.begin(), AffinePattern::Param(0, reuseCount));
   auto reusedPattern = AffinePattern(start, params);
-  MLC_S_DPRINTF(outerConfig->dynamicId, "[PUM] AddReuse %ld -> %s.\n",
-                reuseCount, reusedPattern);
+  MLC_S_DPRINTF(innerConfig->dynamicId,
+                "[PUM] AddReuse of Outer %s %ld -> %s.\n",
+                outerConfig->dynamicId, reuseCount, reusedPattern);
   return reusedPattern;
 }
 
