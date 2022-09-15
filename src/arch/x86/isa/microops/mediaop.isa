@@ -1663,7 +1663,7 @@ let {{
         '''
 
     class Mcmpf2r(MediaOp):
-        op_class = 'SimdFloatCvtOp'
+        op_class = 'SimdFloatCmpOp'
         code = '''
             union floatInt
             {
@@ -1750,7 +1750,7 @@ let {{
                 size = None, destSize = None, srcSize = None, ext = None):
             super(Mcmpf2rf, self).__init__("InstRegIndex(0)", src1,\
                     src2, size, destSize, srcSize, ext)
-        op_class = 'SimdFloatCvtOp'
+        op_class = 'SimdFloatCmpOp'
         code = '''
             union floatInt
             {
