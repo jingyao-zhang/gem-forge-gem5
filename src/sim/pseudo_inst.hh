@@ -127,6 +127,8 @@ void stream_nuca_region(ThreadContext *tc, Addr regionNameAddr, Addr start,
     uint64_t elementSize, int64_t dim1, int64_t dim2, int64_t dim3);
 void stream_nuca_align(ThreadContext *tc,
     Addr A, Addr B, uint64_t elementOffset);
+void stream_nuca_set_property(ThreadContext *tc,
+    Addr A, uint64_t property, uint64_t value);
 void stream_nuca_remap(ThreadContext *tc);
 uint64_t stream_nuca_get_cached_bytes(ThreadContext *tc, Addr start);
 
@@ -275,6 +277,10 @@ pseudoInst(ThreadContext *tc, uint8_t func, uint64_t &result)
 
       case M5OP_STREAM_NUCA_ALIGN:
         invokeSimcall<ABI>(tc, stream_nuca_align);
+        return true;
+
+      case M5OP_STREAM_NUCA_SET_PROPERTY:
+        invokeSimcall<ABI>(tc, stream_nuca_set_property);
         return true;
 
       case M5OP_STREAM_NUCA_REMAP:

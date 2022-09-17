@@ -116,6 +116,23 @@ void StreamNUCAManager::defineRegion(const std::string &regionName, Addr start,
                             arraySizes));
 }
 
+void StreamNUCAManager::setProperty(Addr start, uint64_t property,
+                                    uint64_t value) {
+  DPRINTF(StreamNUCAManager, "[StreamNUCA] Set Property %#x %lu Value %lu.\n",
+          start, property, value);
+  auto &region = this->getRegionFromStartVAddr(start);
+  switch (property) {
+  default: {
+    panic("[StreamNUCA] Invalid property %lu.", property);
+  }
+  case StreamNUCARegionProperty::INTERLEAVE: {
+    region.userDefinedProperties.emplace(StreamNUCARegionProperty::INTERLEAVE,
+                                         value);
+    break;
+  }
+  }
+}
+
 void StreamNUCAManager::defineAlign(Addr A, Addr B, int64_t elementOffset) {
   DPRINTF(StreamNUCAManager, "[StreamNUCA] Define Align %#x %#x Offset %ld.\n",
           A, B, elementOffset);
@@ -954,6 +971,21 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
   const uint64_t defaultInterleave = 1024;
   uint64_t interleave = defaultInterleave;
 
+  /**
+   * If the region has user-defined interleave, use it.
+   * Check that there are no alignment defined.
+   */
+  if (region.userDefinedProperties.count(
+          StreamNUCARegionProperty::INTERLEAVE)) {
+    if (!region.aligns.empty()) {
+      panic("Range %s has both aligns and user-defined interleave.",
+            region.name);
+    }
+    return region.userDefinedProperties.at(
+               StreamNUCARegionProperty::INTERLEAVE) *
+           region.elementSize;
+  }
+
   auto numRows = StreamNUCAMap::getNumRows();
   auto numCols = StreamNUCAMap::getNumCols();
   auto numBanks = numRows * numCols;
@@ -1111,6 +1143,17 @@ bool StreamNUCAManager::canRemapDirectRegionPUM(const StreamRegion &region) {
         StreamNUCAManager,
         "[StreamPUM] Region %s NumElem %llu not compatible with Bitlines %ld.",
         region.name, region.numElement, bitlines);
+    return false;
+  }
+  /**
+   * A heuristic to avoid mapping some arrays since they should never be mapped
+   * to PUM.
+   * TODO: Add pseudo-instructions to pass in this information.
+   */
+  if (region.name == "gfm.kmeans.new_centers" ||
+      region.name == "gfm.kmeans.cluster_size") {
+    DPRINTF(StreamNUCAManager, "[StreamPUM] Region %s Manually Disabled PUM.\n",
+            region.name);
     return false;
   }
   return true;

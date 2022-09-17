@@ -90,6 +90,19 @@ void m5_stream_nuca_region(const char *regionName, void *buffer,
 #define m5_stream_nuca_encode_ind_align(offset, size)                          \
   (-(int64_t)((offset) << 8 | (size)))
 void m5_stream_nuca_align(void *A, void *B, int64_t elementOffset);
+
+/**
+ * A generic implementation to set some property of the region.
+ * Such a long name to avoid polluting C global scope.
+ */
+enum StreamNUCARegionProperty {
+  // Manually overrite the interleaving (in elements).
+  STREAM_NUCA_REGION_PROPERTY_INTERLEAVE = 0,
+};
+void m5_stream_nuca_set_property(void *buffer,
+                                 enum StreamNUCARegionProperty property,
+                                 uint64_t value);
+
 void m5_stream_nuca_remap();
 uint64_t m5_stream_nuca_get_cached_bytes(void *buffer);
 

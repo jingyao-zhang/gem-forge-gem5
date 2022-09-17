@@ -250,6 +250,9 @@
                     0x69: m5stream_nuca_get_cached_bytes({{
                         Rax = PseudoInst::stream_nuca_get_cached_bytes(xc->tcBase(), Rdi);
                     }}, IsNonSpeculative);
+                    0x70: m5stream_nuca_set_property({{
+                        PseudoInst::stream_nuca_set_property(xc->tcBase(), Rdi, Rsi, Rdx);
+                    }}, IsNonSpeculative);
                     default: Inst::UD2();
                 }
             }

@@ -690,6 +690,14 @@ void stream_nuca_align(ThreadContext *tc,
         A, B, static_cast<int64_t>(elementOffset));
 }
 
+void stream_nuca_set_property(ThreadContext *tc,
+    Addr A, uint64_t property, uint64_t value) {
+    DPRINTF(PseudoInst, "PseudoInst::stream_nuca_set_value(%p, %lu, %lu).\n",
+        A, property, value);
+    tc->getProcessPtr()->streamNUCAManager->setProperty(
+        A, property, value);
+}
+
 void stream_nuca_remap(ThreadContext *tc) {
     DPRINTF(PseudoInst, "PseudoInst::stream_nuca_remap().\n");
     tc->getProcessPtr()->streamNUCAManager->remap(tc);

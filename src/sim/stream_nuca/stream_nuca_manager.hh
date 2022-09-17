@@ -26,6 +26,15 @@ public:
                     const std::vector<int64_t> &arraySizes);
 
   /**
+   * Allow the user to manually set some property of the region.
+   */
+  enum StreamNUCARegionProperty {
+    // Manually overrite the interleaving (in elements).
+    INTERLEAVE = 0,
+  };
+  void setProperty(Addr start, uint64_t property, uint64_t value);
+
+  /**
    * Negative element offset will specify some indirect alignment.
    *
    * To support arbitrary indirect field alignment, e.g. in weighted graph
@@ -68,6 +77,11 @@ public:
     uint64_t numElement;
     std::vector<int64_t> arraySizes;
     bool isIndirect;
+    /**
+     * Some user-defined properties.
+     */
+    using UserDefinedPropertyMap = std::map<StreamNUCARegionProperty, uint64_t>;
+    UserDefinedPropertyMap userDefinedProperties;
     StreamRegion(const std::string &_name, Addr _vaddr, uint64_t _elementSize,
                  int64_t _numElement, const std::vector<int64_t> &_arraySizes)
         : name(_name), vaddr(_vaddr), elementSize(_elementSize),
