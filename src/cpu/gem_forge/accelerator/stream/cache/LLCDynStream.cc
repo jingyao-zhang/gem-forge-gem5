@@ -1628,6 +1628,18 @@ void LLCDynStream::completeFinalReduction(LLCStreamEngine *se) {
   }
 }
 
+bool LLCDynStream::isNextIdeaAck() const {
+  if (!this->isIndirect() && !this->shouldRangeSync()) {
+    int slicesPerSegment = std::max(
+        1, this->configData->mlcBufferNumSlices /
+               this->mlcController->getMLCStreamBufferToSegmentRatio());
+    if ((this->streamAckedSlices % slicesPerSegment) != 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void LLCDynStream::addCommitMessage(const DynStreamSliceId &sliceId) {
   auto iter = this->commitMessages.begin();
   auto end = this->commitMessages.end();

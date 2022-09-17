@@ -130,9 +130,13 @@ protected:
         !this->config->shouldBeSlicedToCacheLines) {
       return mlc.getStartIdx() == llc.getStartIdx() && mlc.vaddr == llc.vaddr;
     } else {
-      // By default match the vaddr.
-      // TODO: This is really wrong.
-      return mlc.vaddr == llc.vaddr;
+      /**
+       * I used to only match the VAddr maybe because I am afraid that LLC and
+       * MLC are sliced differently? But now I think they should always be
+       * sliced in the same way. Try to enforce the check.
+       */
+      // return mlc.vaddr == llc.vaddr;
+      return mlc.getStartIdx() == llc.getStartIdx() && mlc.vaddr == llc.vaddr;
     }
   }
 

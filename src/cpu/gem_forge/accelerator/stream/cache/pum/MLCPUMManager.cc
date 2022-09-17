@@ -413,7 +413,7 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
 
     if (computeConfig == config) {
       if (!rangeMap->isStreamPUM) {
-        MLC_S_DPRINTF(groupDynId, "[NoPUM] RangeMap not PUM.\n", dynId);
+        MLC_S_DPRINTF(groupDynId, "[NoPUM] RangeMap not PUM %s.\n", dynId);
         return false;
       }
       const int64_t tripCountThreshold = 2048;
@@ -461,6 +461,20 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
     }
 
     AffinePattern pattern(scalarStart, params);
+
+    if (computeConfig == config) {
+      /**
+       * Another heuristic to only apply PUM on streams with deduplicated
+       * TotalTrip beyond a threshold.
+       */
+      const int64_t dedupTotalTripThreshold = 2048;
+      if (pattern.getDeduplicatedTotalTrip() < dedupTotalTripThreshold) {
+        MLC_S_DPRINTF(groupDynId, "[NoPUM] %s DedupTotalTrip %ld < %ld.\n",
+                      pattern, pattern.getDeduplicatedTotalTrip(),
+                      dedupTotalTripThreshold);
+        return false;
+      }
+    }
 
     if (config->stream->isReduction()) {
       /**

@@ -224,10 +224,15 @@ public:
 
   /**
    * Counter to approxiate coarse-grained StreamAck.
+   * Normally without RangeSync, we would send out one Ack per
+   * slice. However, we could just sent this out coarse grained.
+   * For simplicity, here I just hack by force some idea ack.
    */
+  bool isNextIdeaAck() const;
+  void ackedOneSlice() { streamAckedSlices++; }
+private:
   uint64_t streamAckedSlices = 0;
 
-private:
   State state = INITIALIZED;
   AbstractStreamAwareController *mlcController;
   AbstractStreamAwareController *llcController;

@@ -275,6 +275,17 @@ public:
     return ret;
   }
 
+  int64_t getDeduplicatedTotalTrip() const {
+    int64_t ret = 1;
+    for (const auto &p : params) {
+      if (p.stride == 0) {
+        continue;
+      }
+      ret *= p.trip;
+    }
+    return ret;
+  }
+
   bool is_empty() const { return getTotalTrip() == 0; }
 
   bool check_is_reverse(const AffinePattern &reverse) const {

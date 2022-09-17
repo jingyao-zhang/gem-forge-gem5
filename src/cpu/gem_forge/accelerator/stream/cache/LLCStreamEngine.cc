@@ -347,9 +347,9 @@ void LLCStreamEngine::enqueueIncomingStreamDataMsg(
   LLC_SLICE_DPRINTF(sliceId, "[IncomingElemQueue] Enqueued %lu.\n",
                     this->incomingStreamDataQueue.size());
   // Some sanity check.
-  if (this->incomingStreamDataQueue.size() > 2048) {
-    LLC_SLICE_PANIC(sliceId, "[IncomingElemQueue] overflow.");
-  }
+  // if (this->incomingStreamDataQueue.size() > 2048) {
+  //   LLC_SLICE_PANIC(sliceId, "[IncomingElemQueue] overflow.");
+  // }
 }
 
 void LLCStreamEngine::drainIncomingStreamDataMsg() {
@@ -640,16 +640,8 @@ void LLCStreamEngine::receiveStoreStreamData(LLCDynStreamPtr dynS,
      * slice. However, we could just sent this out coarse grained.
      * For simplicity, here I just hack by force some idea ack.
      */
-    bool forceIdea = false;
-    if (!dynS->isIndirect() && !dynS->shouldRangeSync()) {
-      int slicesPerSegment =
-          std::max(1, dynS->configData->mlcBufferNumSlices /
-                          controller->getMLCStreamBufferToSegmentRatio());
-      if ((dynS->streamAckedSlices % slicesPerSegment) != 0) {
-        forceIdea = true;
-      }
-      dynS->streamAckedSlices++;
-    }
+    bool forceIdea = dynS->isNextIdeaAck();
+    dynS->ackedOneSlice();
     this->issueStreamAckToMLC(sliceId, forceIdea);
   }
 }
@@ -3887,7 +3879,9 @@ void LLCStreamEngine::postProcessDirectUpdateSlice(
                       "Send StreamData to MLC: PAddrLine %#x Data %s.\n",
                       paddrLine, loadValueBlock);
   } else {
-    this->issueStreamAckToMLC(sliceId);
+    bool forceIdea = dynS->isNextIdeaAck();
+    dynS->ackedOneSlice();
+    this->issueStreamAckToMLC(sliceId, forceIdea);
   }
 }
 
