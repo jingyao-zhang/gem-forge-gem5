@@ -130,6 +130,19 @@ MLCDynDirectStream::MLCDynDirectStream(
     }
   }
 
+  /**
+   * If we are sending to InnerLoop streams, we limit the MaxNumSlicesPerSegment
+   * to avoid deadlock as the initial credits are not sent because RecvS can not
+   * allocate that many slices.
+   */
+  if (config->sendToInnerLoopStreamWithReuse()) {
+    this->maxNumSlicesPerSegment = 1;
+    MLC_S_DPRINTF(this->getDynStreamId(),
+                  "Adjust MaxNumSlicesPerSegment to %llu as send to InnerLoopS "
+                  "with reuse.\n",
+                  this->maxNumSlicesPerSegment);
+  }
+
   while (this->tailSliceIdx < this->maxNumSlicesPerSegment &&
          !this->slicedStream.hasOverflowed()) {
     this->allocateSlice();

@@ -106,6 +106,19 @@ uint64_t CacheStreamConfigureData::convertDepToBaseElemIdx(uint64_t depElemIdx,
   return baseElemIdx;
 }
 
+bool CacheStreamConfigureData::sendToInnerLoopStreamWithReuse() const {
+  for (const auto &e : this->depEdges) {
+    if (e.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
+      const auto &recvConfig = e.data;
+      if (recvConfig->stream->getLoopLevel() > this->stream->getLoopLevel() &&
+          e.reuse > 1) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 DynStreamFormalParamV
 CacheStreamConfigureData::splitLinearParam1D(const StrandSplitInfo &strandSplit,
                                              int strandIdx) {

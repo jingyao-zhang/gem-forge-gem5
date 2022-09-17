@@ -226,6 +226,7 @@ public:
                                           int skip);
   static uint64_t convertDepToBaseElemIdx(uint64_t depElemIdx, int reuse,
                                           int skip);
+  bool sendToInnerLoopStreamWithReuse() const;
 
   /**
    * @brief Hint to MLCStrandManager to avoid split outer dimension.
