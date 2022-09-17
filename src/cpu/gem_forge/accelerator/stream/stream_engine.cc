@@ -2403,6 +2403,13 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
             break;
           }
         }
+
+        /**
+         * Should not issue.
+         */
+        if (element->isElemFloatedToCache() && !dynS.shouldCoreSEIssue()) {
+          continue;
+        }
         auto baseElementsValReady =
             element->checkAddrBaseElementsReady(false /* CheckByCore */);
         auto canNDCIssue = this->ndcController->canIssueNDCPacket(element);

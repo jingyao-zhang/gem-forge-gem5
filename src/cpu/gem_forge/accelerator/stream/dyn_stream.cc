@@ -768,21 +768,27 @@ bool DynStream::shouldCoreSEIssue() const {
       // If the AddrDepStream issues, then we have to issue to compute the
       // address.
       if (depDynS.shouldCoreSEIssue()) {
-        DYN_S_DPRINTF(this->dynStreamId, "Should CoreSe Issue Due to AddrDepS %s.\n", depDynS.dynStreamId);
+        DYN_S_DPRINTF(this->dynStreamId,
+                      "Should CoreSe Issue Due to AddrDepS %s.\n",
+                      depDynS.dynStreamId);
         return true;
       }
     }
     for (auto backDepS : S->backDepStreams) {
       const auto &backDepDynS = backDepS->getDynStream(this->configSeqNum);
       if (!backDepDynS.isFloatedToCache()) {
-        DYN_S_DPRINTF(this->dynStreamId, "Should CoreSe Issue Due to BackDepS %s.\n", backDepDynS.dynStreamId);
+        DYN_S_DPRINTF(this->dynStreamId,
+                      "Should CoreSe Issue Due to BackDepS %s.\n",
+                      backDepDynS.dynStreamId);
         return true;
       }
     }
     for (auto valDepS : S->valueDepStreams) {
       const auto &valDepDynS = valDepS->getDynStream(this->configSeqNum);
       if (valDepDynS.shouldCoreSEIssue()) {
-        DYN_S_DPRINTF(this->dynStreamId, "Should CoreSe Issue Due to ValDepS %s.\n", valDepDynS.dynStreamId);
+        DYN_S_DPRINTF(this->dynStreamId,
+                      "Should CoreSe Issue Due to ValDepS %s.\n",
+                      valDepDynS.dynStreamId);
         return true;
       }
     }
@@ -803,7 +809,8 @@ bool DynStream::shouldCoreSEIssue() const {
       S->getIsConditional() && S->aliasBaseStream->aliasedStreams.size() > 1) {
     return false;
   }
-  DYN_S_DPRINTF(this->dynStreamId, "Should CoreSE Issue isFloated %d.\n", this->isFloatedToCache());
+  DYN_S_DPRINTF(this->dynStreamId, "Should CoreSE Issue isFloated %d.\n",
+                this->isFloatedToCache());
   return true;
 }
 
@@ -987,7 +994,15 @@ void DynStream::allocateElement(StreamElement *newElement) {
    * later.
    */
   if (newElement->addrBaseElements.empty()) {
-    newElement->markAddrReady();
+    if (!this->stream->isMemStream()) {
+      // IV stream.
+      newElement->markAddrReady();
+    } else {
+      // Mem stream. Make sure we are not issuing.
+      if (this->shouldCoreSEIssue()) {
+        newElement->markAddrReady();
+      }
+    }
   }
 }
 
