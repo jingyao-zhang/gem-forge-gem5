@@ -56,6 +56,7 @@ void StreamFloatController::floatStreams(
   this->floatDirectUpdateStreams(floatArgs);
 
   // EliminatedLoop requires additional handling.
+  SE_DPRINTF(">>> Handle Float EliminatedLoop.\n");
   this->floatEliminatedLoop(floatArgs);
 
   SE_DPRINTF(">>> Consider Float DirectOrPointerChaseReductionStreams.\n");
@@ -598,6 +599,7 @@ void StreamFloatController::floatDirectStoreComputeOrUpdateStream(
     return;
   }
   // Add SendTo edge from value base streams to myself.
+  S_DPRINTF(S, "Offload DirectStore/UpdateS.\n");
   auto config = S->allocateCacheConfigureData(dynS->configSeqNum);
   for (auto valueBaseS : S->valueBaseStreams) {
     auto &valueBaseConfig = floatedMap.at(valueBaseS);
@@ -606,7 +608,6 @@ void StreamFloatController::floatDirectStoreComputeOrUpdateStream(
     valueBaseConfig->addSendTo(config, reuse, skip);
     config->addBaseOn(valueBaseConfig, reuse, skip);
   }
-  S_DPRINTF(S, "Offload DirectStore/UpdateS.\n");
   floatedMap.emplace(S, config);
   args.rootConfigVec.push_back(config);
 }

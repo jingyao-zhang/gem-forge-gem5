@@ -295,11 +295,11 @@ bool StreamRegionController::canSkipToStreamEnd(
   }
   for (auto S : staticRegion->streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
-    if (S->isMemStream() && !S->isDirectMemStream()) {
-      // Indirect Mem stream.
-      DYN_S_DPRINTF(dynS.dynStreamId, "[Region] NoSkipToEnd: IndirectMemS.\n");
-      return false;
-    }
+    // if (S->isMemStream() && !S->isDirectMemStream()) {
+    //   // Indirect Mem stream.
+    //   DYN_S_DPRINTF(dynS.dynStreamId, "[Region] NoSkipToEnd:
+    //   IndirectMemS.\n"); return false;
+    // }
     if (S->isInnerFinalValueUsedByCore() ||
         S->isInnerSecondFinalValueUsedByCore() || S->hasCoreUser()) {
       DYN_S_DPRINTF(dynS.dynStreamId,
