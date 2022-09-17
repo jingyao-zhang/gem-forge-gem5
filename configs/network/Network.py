@@ -74,7 +74,7 @@ def define_options(parser):
                       help="""enable network fault model:
                             see src/mem/ruby/network/fault_model/""")
     parser.add_option("--garnet-deadlock-threshold", action="store",
-                      type="int", default=50000,
+                      type="int", default=500000,
                       help="network-level deadlock threshold.")
     parser.add_option("--garnet-enable-multicast", action="store_true",
                       default=False,
