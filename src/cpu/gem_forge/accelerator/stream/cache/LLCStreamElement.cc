@@ -114,7 +114,9 @@ const uint8_t *LLCStreamElement::getUInt8Ptr(int offset) const {
 }
 
 StreamValue LLCStreamElement::getValueByStreamId(uint64_t streamId) const {
-  assert(this->isReady());
+  if (!this->isReady()) {
+    LLC_ELEMENT_PANIC(this, "GetValueByStreamId but NotReady.");
+  }
   int32_t offset = 0;
   int size = this->size;
   this->S->getCoalescedOffsetAndSize(streamId, offset, size);

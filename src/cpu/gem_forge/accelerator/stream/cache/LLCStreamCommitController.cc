@@ -67,7 +67,7 @@ void LLCStreamCommitController::commit() {
 bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
                                              bool &migrated) {
   auto &commitMessages = dynS->commitMessages;
-  auto &nextCommitElementIdx = dynS->nextCommitElementIdx;
+  auto &nextCommitElementIdx = dynS->nextCommitElemIdx;
   if (commitMessages.empty()) {
     // if (nextCommitElementIdx > 6267) {
     //   LLC_S_DPRINTF(dynS->getDynStrandId(),
@@ -99,7 +99,7 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
    */
   if (dynS->hasTotalTripCount() &&
       nextCommitElementIdx + 1 < dynS->getTotalTripCount()) {
-    if (!dynS->isElementReleased(nextCommitElementIdx)) {
+    if (!dynS->isElemReleased(nextCommitElementIdx)) {
       // if (nextCommitElementIdx > 6267) {
       //   LLC_S_DPRINTF(dynS->getDynStrandId(),
       //                 "S not released %llu, numElements %d.\n",
@@ -119,9 +119,9 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
       if (dynIS->isOneIterationBehind()) {
         nextCommitIndirectElementIdx++;
       }
-      auto nextCommitElement = dynIS->getElement(nextCommitIndirectElementIdx);
+      auto nextCommitElement = dynIS->getElem(nextCommitIndirectElementIdx);
       if (!nextCommitElement) {
-        if (dynIS->isElementReleased(nextCommitIndirectElementIdx)) {
+        if (dynIS->isElemReleased(nextCommitIndirectElementIdx)) {
           LLC_S_PANIC(
               dynIS->getDynStrandId(),
               "[Commit] IndElement %llu already released before commit.",
@@ -151,7 +151,7 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
         }
       }
     } else {
-      if (!dynIS->isElementReleased(nextCommitElementIdx)) {
+      if (!dynIS->isElemReleased(nextCommitElementIdx)) {
         if (nextCommitElementIdx > 6267) {
           LLC_S_DPRINTF(dynS->getDynStrandId(), "IS not released %llu.\n",
                         nextCommitElementIdx);
@@ -176,7 +176,7 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
       if (dynIS->isOneIterationBehind()) {
         nextCommitIndirectElementIdx++;
       }
-      auto nextCommitElement = dynIS->getElement(nextCommitIndirectElementIdx);
+      auto nextCommitElement = dynIS->getElem(nextCommitIndirectElementIdx);
 
       if (dynIS->shouldIssueBeforeCommit() &&
           dynIS->getStaticS()->isAtomicComputeStream()) {

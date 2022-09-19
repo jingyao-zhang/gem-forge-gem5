@@ -827,6 +827,26 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
   return configData;
 }
 
+CacheStreamConfigureDataPtr
+Stream::allocateCacheConfigureDataForAffineIV(uint64_t configSeqNum) {
+
+  assert(!this->isMemStream() && "This is not an AffineIV.");
+
+  auto &dynS = this->getDynStream(configSeqNum);
+
+  auto linearAddrGen =
+      std::dynamic_pointer_cast<LinearAddrGenCallback>(dynS.addrGenCallback);
+  if (!linearAddrGen) {
+    DYN_S_PANIC(dynS.dynStreamId, "This is not an AffineIV.");
+  }
+
+  auto configData = std::make_shared<CacheStreamConfigureData>(
+      this, dynS.dynStreamId, this->getMemElementSize(),
+      dynS.addrGenFormalParams, dynS.addrGenCallback);
+
+  return configData;
+}
+
 bool Stream::shouldComputeValue() const {
   if (!this->isMemStream()) {
     // IV/Reduction stream always compute value.
@@ -847,10 +867,6 @@ bool Stream::isDirectMemStream() const {
   }
   // So far only only one base stream of phi type of the same loop level.
   for (auto baseS : this->addrBaseStreams) {
-    if (baseS->getLoopLevel() != this->getLoopLevel()) {
-      // Ignore streams from different loop level.
-      continue;
-    }
     if (baseS->isMemStream()) {
       // I depend on a MemStream and am indirect MemStream.
       return false;

@@ -179,6 +179,25 @@ public:
     };
     Type type;
     CacheStreamConfigureDataPtr data;
+    /**
+     * Be careful here that for SendTo edges, reuse/skip is actually refers to
+     * the DirectRecvS, not the RealRecvS.
+     *
+     * An example would be:
+     * for i = 0:N
+     *   idx = index[i]
+     *   for j = 0:M
+     *     b[idx * M + j] = a[i * M + j];
+     *
+     * "b" is associated with "index", and "a" is sending to "index". Here:
+     * "a"     -- Sender
+     * "b"     -- RealRecvS
+     * "index" -- DirectRecvS
+     *
+     * In this case:
+     * "a" would record SendTo "index" with SKIP M,
+     * "b" would record BaseOn "a" with REUSE 1.
+     */
     int reuse;
     int skip;
     DepEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse,
@@ -194,6 +213,16 @@ public:
     AffinePattern recvTile;
   };
   struct BaseEdge {
+    /**
+     * Record the BaseStreamConfig. To break circular dependence, we use WeakPtr
+     * here. However, there is one exception: since we never offload IV stream,
+     * any address generation or computation dependent on an IV stream will
+     * record it as a BaseEdge, with the configuration recorded as a normal
+     * SharedPtr, as the IV stream is not really handled as an offloaded stream.
+     *
+     * An example would be: here the i would be UsedAffineIVS
+     * a[b[i] + i] = x;
+     */
     enum Type {
       BaseOn,
     };
@@ -202,11 +231,30 @@ public:
     CacheStreamConfigureDataWeakPtr data;
     int reuse;
     int skip;
+    /**
+     * Whether this is the BaseS we offloaded with.
+     * Used to quickly find the associated BaseS when offloaded.
+     */
     bool isUsedBy;
+    /**
+     * Whether this BaseS is an IV stream.
+     * The usedAffineIV is the same as data.
+     * NOTE: UsedAffineIV does not store the DepEdge to avoid circular pointer.
+     */
+    bool isUsedAffineIV = false;
+    CacheStreamConfigureDataPtr usedAffineIV = nullptr;
     BaseEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse,
              int _skip, bool _isUsedBy = false)
         : type(_type), dynStreamId(_data->dynamicId), data(_data),
           reuse(_reuse), skip(_skip), isUsedBy(_isUsedBy) {}
+
+    /**
+     * Used to construct an UsedAffineIV edge.
+     */
+    BaseEdge(const CacheStreamConfigureDataPtr &_data, int _reuse, int _skip)
+        : type(Type::BaseOn), dynStreamId(_data->dynamicId), data(_data),
+          reuse(_reuse), skip(_skip), isUsedBy(false), isUsedAffineIV(true),
+          usedAffineIV(_data) {}
   };
   std::vector<DepEdge> depEdges;
   std::vector<BaseEdge> baseEdges;
@@ -215,13 +263,14 @@ public:
     this->depEdges.clear();
   }
   CacheStreamConfigureDataPtr getUsedByBaseConfig();
-  void addUsedBy(CacheStreamConfigureDataPtr &data);
+  void addUsedBy(CacheStreamConfigureDataPtr &data, int reuse = 1);
   void addSendTo(CacheStreamConfigureDataPtr &data, int reuse, int skip);
   void addPUMSendTo(const CacheStreamConfigureDataPtr &data,
                     const AffinePattern &broadcastPat,
                     const AffinePattern &recvPat,
                     const AffinePattern &recvTile);
   void addBaseOn(CacheStreamConfigureDataPtr &data, int reuse, int skip);
+  void addBaseAffineIV(CacheStreamConfigureDataPtr &data, int reuse, int skip);
   static uint64_t convertBaseToDepElemIdx(uint64_t baseElemIdx, int reuse,
                                           int skip);
   static uint64_t convertDepToBaseElemIdx(uint64_t depElemIdx, int reuse,

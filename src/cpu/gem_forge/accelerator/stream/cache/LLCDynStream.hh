@@ -230,6 +230,7 @@ public:
    */
   bool isNextIdeaAck() const;
   void ackedOneSlice() { streamAckedSlices++; }
+
 private:
   uint64_t streamAckedSlices = 0;
 
@@ -244,6 +245,7 @@ private:
   /**
    * Here we remember the dependent streams.
    * IndirectStreams is just the "UsedBy" dependence.
+   * Also record the reuse of BaseElem.
    */
   std::vector<LLCDynStreamPtr> indirectStreams;
   std::vector<LLCDynStreamPtr> allIndirectStreams;
@@ -293,7 +295,7 @@ public:
   /**
    * Remember the base stream.
    */
-  void setBaseStream(LLCDynStreamPtr baseS);
+  void setBaseStream(LLCDynStreamPtr baseS, int reuse);
 
   const std::vector<LLCDynStreamPtr> &getIndStreams() const {
     return this->indirectStreams;
@@ -308,10 +310,9 @@ public:
    * store the shared_ptr without creating circular dependence.
    * Note: We may use streams from remote LLC bank, so here we just remember the
    * config.
+   * NOTE: This is one-to-one mapping between baseOnConfigs <-> baseEdges.
    */
   std::vector<CacheStreamConfigureDataPtr> baseOnConfigs;
-  std::vector<int64_t> baseOnReuses;
-  std::vector<int64_t> baseOnSkips;
 
   /**
    * Remember the currently reused BaseElement.
@@ -322,10 +323,11 @@ public:
     LLCStreamElementPtr elem = nullptr;
     ReusedBaseElement(int _reuse) : reuse(_reuse) {}
   };
-  std::vector<ReusedBaseElement> reusedBaseElements;
+  std::vector<ReusedBaseElement> reusedBaseElems;
 
-  // Base stream.
+  // Base stream with reuse.
   LLCDynStream *baseStream = nullptr;
+  int baseStreamReuse = 1;
 
   // Root stream.
   LLCDynStream *rootStream = nullptr;
@@ -407,23 +409,23 @@ public:
 
   using ElementCallback = std::function<void(const DynStreamId &, uint64_t)>;
 
-  bool isElementInitialized(uint64_t elementIdx) const;
+  bool isElemInitialized(uint64_t elementIdx) const;
   void registerElementInitCallback(uint64_t elementIdx,
                                    ElementCallback callback);
 
-  bool isElementReleased(uint64_t elementIdx) const;
+  bool isElemReleased(uint64_t elementIdx) const;
   void registerElemPostReleaseCallback(uint64_t elementIdx,
                                        ElementCallback callback);
   uint64_t getNextUnreleasedElementIdx() const;
-  LLCStreamElementPtr getElement(uint64_t elementIdx) const;
+  LLCStreamElementPtr getElem(uint64_t elementIdx) const;
   LLCStreamElementPtr getElemPanic(uint64_t elementIdx,
                                    const char *errMsg = nullptr) const;
 
   /**
    * Erase the element for myself only.
    */
-  void eraseElement(uint64_t elemIdx);
-  void eraseElement(IdxToElementMapT::iterator elemIter);
+  void eraseElem(uint64_t elemIdx);
+  void eraseElem(IdxToElementMapT::iterator elemIter);
   void invokeElemPostReleaseCallback(uint64_t elemIdx);
 
   /**
@@ -447,20 +449,25 @@ private:
    * Callbacks when an element is initialized.
    */
   uint64_t nextInitStrandElemIdx = 0;
-  std::map<uint64_t, ElementCallbackList> elementInitCallbacks;
+  std::map<uint64_t, ElementCallbackList> elemInitCallbacks;
 
   /**
    * Callbacks when an element is released.
    */
   std::map<uint64_t, ElementCallbackList> elemPostReleaseCallbacks;
 
-  uint64_t nextCommitElementIdx = 0;
+  uint64_t nextCommitElemIdx = 0;
   LLCStreamCommitController *commitController = nullptr;
+
+  /**
+   * IndirectElems are triggered in order.
+   */
+  uint64_t nextTriggerIndElemIdx = 0;
 
   /**
    * Initialize the element for myself and all UsedByStream.
    */
-  void initNextElement(Addr vaddr);
+  void initNextElem(Addr vaddr);
 
   /**
    * Commit one element for myself and all the indirect streams.
@@ -474,19 +481,24 @@ private:
 public:
   void addCommitMessage(const DynStreamSliceId &sliceId);
   uint64_t getNextInitElementIdx() const { return this->nextInitStrandElemIdx; }
-  uint64_t getNextCommitElementIdx() const {
-    return this->nextCommitElementIdx;
+  uint64_t getNextCommitElementIdx() const { return this->nextCommitElemIdx; }
+  uint64_t getNextTriggerIndElemIdx() const {
+    return this->nextTriggerIndElemIdx;
+  }
+  void markElemTriggeredIndirect(uint64_t elemIdx) {
+    assert(this->nextTriggerIndElemIdx == elemIdx);
+    this->nextTriggerIndElemIdx++;
   }
 
   /**
    * Only indirect stream is managed in element-grainularity.
    */
-  void markElementReadyToIssue(uint64_t elementIdx);
-  void markElementIssued(uint64_t elementIdx);
-  bool hasIndirectElementReadyToIssue() const {
+  void markElemReadyToIssue(uint64_t elemIdx);
+  void markElemIssued(uint64_t elemIdx);
+  bool hasIndirectElemReadyToIssue() const {
     return this->numIndirectElementsReadyToIssue > 0;
   }
-  size_t getNumIndirectElementReadyToIssue() const {
+  size_t getNumIndirectElemReadyToIssue() const {
     return this->numIndirectElementsReadyToIssue;
   }
 

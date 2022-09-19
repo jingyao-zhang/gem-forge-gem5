@@ -51,7 +51,7 @@ public:
    * Receive data from the base direct stream.
    * Try to generate more slices.
    */
-  void receiveBaseStreamData(uint64_t elementIdx, uint64_t baseData);
+  void receiveBaseStreamData(uint64_t baseStrandElemIdx, uint64_t baseData);
 
   void setBaseStream(MLCDynStream *baseStream) {
     assert(!this->baseStream && "Already has base stream.");
@@ -99,7 +99,12 @@ private:
 
   void advanceStream() override;
   void allocateSlice();
-  Addr genElementVAddr(uint64_t elementIdx, uint64_t baseData);
+  Addr genElemVAddr(uint64_t strandElemIdx, uint64_t baseData);
+
+  /**
+   * Generate or fill in the VAddr of one slice.
+   */
+  void fillElemVAddr(uint64_t strandElemIdx, uint64_t baseData);
 
   /**
    * Find the begin and end of the substream that belongs to an elementIdx.

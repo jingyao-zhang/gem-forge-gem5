@@ -245,7 +245,7 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynStreamPtr stream,
       assert(stream->inflyRequests == 0 &&
              "Stream migrated with inflyRequests.");
     }
-    assert(!stream->hasIndirectElementReadyToIssue() &&
+    assert(!stream->hasIndirectElemReadyToIssue() &&
            "Stream migrated with readyIndirectElements.");
   }
 
@@ -485,15 +485,15 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
       auto &element = idxElement.second;
       LLC_SLICE_DPRINTF(sliceId, "Process for elem %llu, Ready %d.\n",
                         element->idx, element->isReady());
-      if (element->hasIndirectTriggered()) {
+      if (element->idx < dynS->getNextTriggerIndElemIdx()) {
         continue;
       }
       if (!element->isReady()) {
         // Not ready yet. Break.
         break;
       }
-      this->triggerIndirectElem(dynS, element);
-      element->setIndirectTriggered();
+      this->triggerIndElems(dynS, element);
+      dynS->markElemTriggeredIndirect(element->idx);
     }
   }
 
@@ -575,7 +575,7 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
           break;
         }
       }
-      dynS->eraseElement(elementIter);
+      dynS->eraseElem(elementIter);
     }
   }
 
@@ -713,11 +713,11 @@ bool LLCStreamEngine::canMigrateStream(LLCDynStream *dynS) const {
         return false;
       }
     }
-    if (dynS->hasIndirectElementReadyToIssue()) {
+    if (dynS->hasIndirectElemReadyToIssue()) {
       // We are still waiting for some indirect streams to be issued.
       LLC_S_DPRINTF(dynS->getDynStrandId(),
                     "[Delay Migrate] ReadyIndirectElements %llu.\n",
-                    dynS->getNumIndirectElementReadyToIssue());
+                    dynS->getNumIndirectElemReadyToIssue());
       return false;
     }
     /**
@@ -1448,7 +1448,7 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
 LLCDynStreamPtr
 LLCStreamEngine::findIndirectStreamReadyToIssue(LLCDynStreamPtr dynS) {
 
-  if (!dynS->hasIndirectElementReadyToIssue()) {
+  if (!dynS->hasIndirectElemReadyToIssue()) {
     return nullptr;
   }
 
@@ -1677,7 +1677,7 @@ void LLCStreamEngine::issueStreamIndirect(LLCDynStream *dynIS) {
                   "Delay Issuing for AfterCommit element %llu\n.", elementIdx);
   }
   // Don't forget to the element issued.
-  dynIS->markElementIssued(elementIdx);
+  dynIS->markElemIssued(elementIdx);
 }
 
 void LLCStreamEngine::generateIndirectStreamRequest(
@@ -2318,9 +2318,6 @@ void LLCStreamEngine::issueStreamDataToLLC(
   auto recvStrandId =
       recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
 
-  auto recvElemVAddr = getRecvElemVAddr(recvStreamElemIdx);
-  auto recvElemVAddrEnd = recvElemVAddr + recvConfig->elementSize;
-
   if (Debug::LLCRubyStreamBase) {
     auto sendStreamElemIdx =
         dynS->configData->getStreamElemIdxFromStrandElemIdx(sendStrandElemIdx);
@@ -2335,6 +2332,9 @@ void LLCStreamEngine::issueStreamDataToLLC(
         sendStrandElemIdx, sendStreamElemIdx, sendToEdge.reuse, sendToEdge.skip,
         recvStreamElemIdx, recvStrandId, recvStrandElemIdx);
   }
+
+  auto recvElemVAddr = getRecvElemVAddr(recvStreamElemIdx);
+  auto recvElemVAddrEnd = recvElemVAddr + recvConfig->elementSize;
 
   // Check that receiver does not across lines.
   for (auto sendStrandElemIdx = sliceId.getStartIdx() + 1;
@@ -2495,7 +2495,7 @@ void LLCStreamEngine::issueStreamDataToPUM(
   bool allElemInCurrentRoundSent = true;
   for (auto elemIdx = strandElemIdx + 1; elemIdx < nextRoundStrandElemIdx;
        ++elemIdx) {
-    auto elem = dynS->getElement(elemIdx);
+    auto elem = dynS->getElem(elemIdx);
     if (!elem || !elem->sentToPUM) {
       // This is not allocated yet.
       allElemInCurrentRoundSent = false;
@@ -2960,13 +2960,77 @@ bool LLCStreamEngine::tryToProcessIndirectAtomicUnlockReq(
         !element->hasSecondIndirectAtomicReqSeen()) {
       break;
     }
-    dynS->eraseElement(elementIter);
+    dynS->eraseElem(elementIter);
   }
   return true;
 }
 
-void LLCStreamEngine::triggerIndirectElem(LLCDynStreamPtr stream,
-                                          LLCStreamElementPtr elem) {
+void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
+
+  if (IS->hasTotalTripCount() && indElemIdx > IS->getTotalTripCount()) {
+    // Ignore overflow elements.
+    LLC_S_DPRINTF(IS, "[TriggerInd] Skip TotalTripCount %ld < ElemIdx %lu.\n",
+                  IS->getTotalTripCount(), indElemIdx);
+    return;
+  }
+
+  /**
+   * We should have the indirect element. The only exception is the vectorized
+   * reduction stream.
+   */
+  if (!IS->idxToElementMap.count(indElemIdx)) {
+
+    if (IS->getStaticS()->isReduction() &&
+        IS->lastComputedReductionElemIdx >= indElemIdx) {
+      LLC_S_DPRINTF(
+          IS, "[TriggerInd] Skip ReduceS LastComputedElemIdx %lu > %lu.\n",
+          IS->lastComputedReductionElemIdx, indElemIdx);
+      return;
+    }
+
+    LLC_S_PANIC(IS->getDynStrandId(), "Missing IndElem %llu.", indElemIdx);
+  }
+
+  auto &indElem = IS->idxToElementMap.at(indElemIdx);
+
+  /**
+   * Check if the stream has predication.
+   */
+  assert(!IS->isPredicated() && "Disable predication for now.");
+  // Not predicated, add to readyElements.
+  if (IS->baseStream->baseStream) {
+    // The only type of two-level indirection is
+    // Reduction/StoreCompute.
+    auto ISS = IS->getStaticS();
+    if (!ISS->isReduction() && !ISS->isStoreComputeStream()) {
+      LLC_S_PANIC(IS->getDynStrandId(),
+                  "Does not support Two-Level Indirection other than "
+                  "Reduction/StoreCompute.");
+    }
+  }
+  LLC_ELEMENT_DPRINTF(indElem, "Check if BaseElemReady %d.\n",
+                      indElem->areBaseElemsReady());
+  if (indElem->areBaseElemsReady()) {
+    if (IS->getStaticS()->isReduction() ||
+        IS->getStaticS()->isPointerChaseIndVar()) {
+      if (indElem->isComputationScheduled() || indElem->isComputationDone()) {
+      } else {
+        // Reduction now is handled as computation.
+        this->pushReadyComputation(indElem);
+      }
+    } else {
+      IS->markElemReadyToIssue(indElemIdx);
+    }
+  } else {
+    for (const auto &baseE : indElem->baseElements) {
+      LLC_ELEMENT_DPRINTF(indElem, "BaseElements Ready %d %s %llu.\n",
+                          baseE->isReady(), baseE->strandId, baseE->idx);
+    }
+  }
+}
+
+void LLCStreamEngine::triggerIndElems(LLCDynStreamPtr stream,
+                                      LLCStreamElementPtr elem) {
   if (stream->getIndStreams().empty() && stream->predicatedStreams.empty()) {
     // There is no stream dependent on my data.
     return;
@@ -2977,78 +3041,33 @@ void LLCStreamEngine::triggerIndirectElem(LLCDynStreamPtr stream,
 
   // First we handle any indirect element.
   for (auto IS : stream->getIndStreams()) {
+    auto reuse = IS->baseStreamReuse;
 
     /**
+     * Two possible cases (can only be one of them).
+     *
      * If the indirect stream is behind one iteration, base element
      * of iteration i should trigger the indirect element of
-     * iteration i + 1. Also we should be careful to not overflow the
-     * boundary.
+     * iteration i + 1.
+     *
+     * If the IndS has reuse > 1, then we need to trigger multiple IndElems.
      */
-    auto indElemIdx = idx;
-    if (IS->isOneIterationBehind()) {
-      indElemIdx = idx + 1;
-    }
-    if (IS->hasTotalTripCount() && indElemIdx > IS->getTotalTripCount()) {
-      // Ignore overflow elements.
-      LLC_ELEMENT_DPRINTF(
-          elem, "[TriggerInd] Skip IS %s TotalTripCount %ld < ElemIdx %lu.\n",
-          IS->getDynStrandId(), IS->getTotalTripCount(), indElemIdx);
-      continue;
+    if (reuse > 1 && IS->isOneIterationBehind()) {
+      LLC_S_PANIC(IS, "IndReuse %d > 1 && OneIterBehind.", reuse);
     }
 
-    /**
-     * We should have the indirect element. The only exception is the vectorized
-     * reduction stream.
-     */
-    if (!IS->idxToElementMap.count(indElemIdx)) {
+    auto skip = 0;
+    auto indElemIdxLhs =
+        IS->configData->convertBaseToDepElemIdx(idx, reuse, skip);
+    auto indElemIdxRhs =
+        IS->configData->convertBaseToDepElemIdx(idx + 1, reuse, skip);
 
-      if (IS->getStaticS()->isReduction() &&
-          IS->lastComputedReductionElemIdx >= indElemIdx) {
-        LLC_ELEMENT_DPRINTF(
-            elem,
-            "[TriggerInd] Skip ReduceS %s LastComputedElemIdx %lu > %lu.\n",
-            IS->getDynStrandId(), IS->lastComputedReductionElemIdx, indElemIdx);
-        continue;
+    for (auto indElemIdx = indElemIdxLhs; indElemIdx < indElemIdxRhs;
+         ++indElemIdx) {
+      if (IS->isOneIterationBehind()) {
+        indElemIdx = idx + 1;
       }
-
-      LLC_S_PANIC(IS->getDynStrandId(), "Missing IndElem %llu.", indElemIdx);
-    }
-
-    auto &indElem = IS->idxToElementMap.at(indElemIdx);
-
-    /**
-     * Check if the stream has predication.
-     */
-    assert(!IS->isPredicated() && "Disable predication for now.");
-    // Not predicated, add to readyElements.
-    if (stream->baseStream) {
-      // The only type of two-level indirection is
-      // Reduction/StoreCompute.
-      auto ISS = IS->getStaticS();
-      if (!ISS->isReduction() && !ISS->isStoreComputeStream()) {
-        LLC_S_PANIC(IS->getDynStrandId(),
-                    "Does not support Two-Level Indirection other than "
-                    "Reduction/StoreCompute.");
-      }
-    }
-    LLC_ELEMENT_DPRINTF(indElem, "Check if BaseElemReady %d.\n",
-                        indElem->areBaseElemsReady());
-    if (indElem->areBaseElemsReady()) {
-      if (IS->getStaticS()->isReduction() ||
-          IS->getStaticS()->isPointerChaseIndVar()) {
-        if (indElem->isComputationScheduled() || indElem->isComputationDone()) {
-        } else {
-          // Reduction now is handled as computation.
-          this->pushReadyComputation(indElem);
-        }
-      } else {
-        IS->markElementReadyToIssue(indElemIdx);
-      }
-    } else {
-      for (const auto &baseE : indElem->baseElements) {
-        LLC_ELEMENT_DPRINTF(indElem, "BaseElements Ready %d %s %llu.\n",
-                            baseE->isReady(), baseE->strandId, baseE->idx);
-      }
+      this->triggerIndElem(IS, indElemIdx);
     }
   }
 
@@ -3244,7 +3263,7 @@ LLCStreamEngine::releaseSlice(SliceList::iterator sliceIter) {
         if (dynS->idxToElementMap.size() > 2 ||
             (dynS->hasTotalTripCount() &&
              element->idx + 2 >= dynS->getTotalTripCount())) {
-          dynS->eraseElement(elementIter);
+          dynS->eraseElem(elementIter);
           continue;
         }
       }
@@ -3551,9 +3570,8 @@ void LLCStreamEngine::processDirectAtomicSlice(
   DataBlock loadValueBlock;
   uint32_t totalPayloadSize = 0;
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-    auto element =
-        dynS->getElemPanic(idx, "Process slice of Atomic/UpdateStream");
-    LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu vaddr %#x.\n",
+    auto element = dynS->getElemPanic(idx, "Process slice of AtomicS");
+    LLC_SLICE_DPRINTF(sliceId, "TriggerAtomic for elem %llu vaddr %#x.\n",
                       element->idx, element->vaddr);
     if (!element->isReady()) {
       // Not ready yet. Break.
@@ -3697,7 +3715,7 @@ void LLCStreamEngine::postProcessIndirectAtomicSlice(
             element->isComputationDone());
         break;
       }
-      dynS->eraseElement(elementIter);
+      dynS->eraseElem(elementIter);
     }
   }
 }
@@ -3724,9 +3742,8 @@ void LLCStreamEngine::processIndirectUpdateSlice(
   DataBlock loadValueBlock;
   uint32_t totalPayloadSize = 0;
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-    auto element =
-        dynS->getElemPanic(idx, "Process slice of Atomic/UpdateStream");
-    LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu vaddr %#x.\n",
+    auto element = dynS->getElemPanic(idx, "Process slice of IndUpdateS");
+    LLC_SLICE_DPRINTF(sliceId, "TriggerIndUpdate for elem %llu vaddr %#x.\n",
                       element->idx, element->vaddr);
     if (!element->isReady()) {
       // Not ready yet. Break.
@@ -3761,7 +3778,9 @@ void LLCStreamEngine::processIndirectUpdateSlice(
                       "Send StreamData to MLC: PAddrLine %#x Data %s.\n",
                       paddrLine, loadValueBlock);
   } else {
-    this->issueStreamAckToMLC(sliceId);
+    bool forceIdea = dynS->isNextIdeaAck();
+    dynS->ackedOneSlice();
+    this->issueStreamAckToMLC(sliceId, forceIdea);
   }
 }
 
@@ -3789,7 +3808,7 @@ bool LLCStreamEngine::tryProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
 
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     auto elem = dynS->getElemPanic(idx, "Process UpdateStream");
-    LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu vaddr %#x.\n",
+    LLC_SLICE_DPRINTF(sliceId, "TriggerDirectUpdate for elem %llu vaddr %#x.\n",
                       elem->idx, elem->vaddr);
     if (!elem->isComputedValueReady() && !elem->isComputationScheduled()) {
       this->pushReadyComputation(elem, true /* TryVectorize */);
@@ -3809,7 +3828,7 @@ bool LLCStreamEngine::tryPostProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     auto element = dynS->getElemPanic(idx, "Process UpdateStream");
     LLC_SLICE_DPRINTF(sliceId,
-                      "TryPostProcess for UpdateElement %llu vaddr %#x.\n",
+                      "TryPostProcess for UpdateElem %llu vaddr %#x.\n",
                       element->idx, element->vaddr);
     if (!element->isComputationDone()) {
       return false;
@@ -3843,7 +3862,7 @@ void LLCStreamEngine::postProcessDirectUpdateSlice(
     uint32_t totalPayloadSize = 0;
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
       auto element = dynS->getElemPanic(idx, "PostProcess UpdateStream");
-      LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu vaddr %#x.\n",
+      LLC_SLICE_DPRINTF(sliceId, "PostDirectUpdate for elem %llu vaddr %#x.\n",
                         element->idx, element->vaddr);
       if (!element->isReady()) {
         // Not ready yet. Break.

@@ -95,7 +95,7 @@ private:
   void splitIntoStrands(StrandSplitContext &context, ConfigVec &configs);
   ConfigVec splitIntoStrands(StrandSplitContext &context, ConfigPtr config);
   ConfigVec splitIntoStrandsImpl(StrandSplitContext &context, ConfigPtr config,
-                                 StrandSplitInfo &strandSplit, bool isDirect);
+                                 StrandSplitInfo strandSplit, bool isDirect);
   DynStreamFormalParamV splitAffinePattern(StrandSplitContext &context,
                                            ConfigPtr config,
                                            const StrandSplitInfo &strandSplit,

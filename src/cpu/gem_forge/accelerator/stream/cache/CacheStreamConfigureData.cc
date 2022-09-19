@@ -35,8 +35,8 @@ CacheStreamConfigureDataPtr CacheStreamConfigureData::getUsedByBaseConfig() {
   DYN_S_PANIC(this->dynamicId, "Failed to get UsedByBaseConfig.");
 }
 
-void CacheStreamConfigureData::addUsedBy(CacheStreamConfigureDataPtr &data) {
-  int reuse = 1;
+void CacheStreamConfigureData::addUsedBy(CacheStreamConfigureDataPtr &data,
+                                         int reuse) {
   int skip = 0;
   this->depEdges.emplace_back(DepEdge::Type::UsedBy, data, reuse, skip);
   data->baseEdges.emplace_back(BaseEdge::Type::BaseOn, this->shared_from_this(),
@@ -74,6 +74,15 @@ void CacheStreamConfigureData::addBaseOn(CacheStreamConfigureDataPtr &data,
           this->dynamicId, data->dynamicId);
   }
   this->baseEdges.emplace_back(BaseEdge::Type::BaseOn, data, reuse, skip);
+}
+
+void CacheStreamConfigureData::addBaseAffineIV(
+    CacheStreamConfigureDataPtr &data, int reuse, int skip) {
+  if (reuse <= 0 || skip < 0) {
+    panic("Illegal BaseAffineIV Reuse %d Skip %d This %s -> Base %s.", reuse,
+          skip, this->dynamicId, data->dynamicId);
+  }
+  this->baseEdges.emplace_back(data, reuse, skip);
 }
 
 uint64_t CacheStreamConfigureData::convertBaseToDepElemIdx(uint64_t baseElemIdx,

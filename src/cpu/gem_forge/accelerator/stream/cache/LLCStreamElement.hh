@@ -171,9 +171,6 @@ public:
   void setCoreCommitted() { this->coreCommitted = true; }
   bool hasCoreCommitted() const { return this->coreCommitted; }
 
-  void setIndirectTriggered() { this->indirectTriggered = true; }
-  bool hasIndirectTriggered() const { return this->indirectTriggered; }
-
   void setRangeBuilt() { this->rangeBuilt = true; }
   bool hasRangeBuilt() const { return this->rangeBuilt; }
 
@@ -233,10 +230,6 @@ private:
    * We have received the StreamCommit from the core.
    */
   bool coreCommitted = false;
-  /**
-   * We have triggered the indirect elements.
-   */
-  bool indirectTriggered = false;
   /**
    * We have added this element to the RangeBuilder.
    * This is used to prevent multi-line elements from being added multiple

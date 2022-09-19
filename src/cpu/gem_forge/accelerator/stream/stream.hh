@@ -436,6 +436,12 @@ public:
   CacheStreamConfigureDataPtr
   allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect = false);
 
+  /**
+   * Allocate the CacheStreamConfigureData for UsedAffineIV.
+   */
+  CacheStreamConfigureDataPtr
+  allocateCacheConfigureDataForAffineIV(uint64_t configSeqNum);
+
   std::deque<DynStream> dynamicStreams;
   bool hasDynStream() const { return !this->dynamicStreams.empty(); }
   DynStream &getDynStream(uint64_t seqNum);

@@ -424,7 +424,8 @@ private:
   /**
    * Helper function to process stream data for indirect/update.
    */
-  void triggerIndirectElem(LLCDynStreamPtr stream, LLCStreamElementPtr elem);
+  void triggerIndElems(LLCDynStreamPtr stream, LLCStreamElementPtr elem);
+  void triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx);
   void triggerUpdate(LLCDynStreamPtr dynS, LLCStreamElementPtr element,
                      const DynStreamSliceId &sliceId,
                      const DataBlock &storeValueBlock,

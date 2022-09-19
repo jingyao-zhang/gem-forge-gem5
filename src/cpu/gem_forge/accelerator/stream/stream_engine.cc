@@ -1238,15 +1238,14 @@ bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
       auto elem = dynS->getFirstUnsteppedElem();
       if (staticStreamRegion.step.skipStepSecondLastElemStreams.count(S)) {
         if (!elem->isInnerSecondLastElem()) {
-          S_ELEMENT_DPRINTF(elem,
-                        "[NotDispatchStreamEnd] Not LoopEliminated "
-                        "InnerSecondLastElem.\n");
+          S_ELEMENT_DPRINTF(elem, "[NotDispatchStreamEnd] Not LoopEliminated "
+                                  "InnerSecondLastElem.\n");
           return false;
         }
       } else {
         if (!elem->isLastElement()) {
-          S_ELEMENT_DPRINTF(elem,
-              "[NotDispatchStreamEnd] Not LoopEliminated LastElem.\n");
+          S_ELEMENT_DPRINTF(
+              elem, "[NotDispatchStreamEnd] Not LoopEliminated LastElem.\n");
           return false;
         }
       }
@@ -1433,7 +1432,8 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
         S_ELEMENT_DPRINTF(
             endElement,
             "[StreamEnd] Cannot commit as not enough Ack %llu < %llu.\n",
-            dynS.cacheAckedElements.size(), endElementIdx);
+            dynS.cacheAckedElements.size(),
+            dynS.getNumFloatedElemUntil(endElementIdx));
         return false;
       }
     }

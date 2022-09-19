@@ -144,16 +144,11 @@ void MLCDynIndirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
   this->advanceStream();
 }
 
-void MLCDynIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
-                                                 uint64_t baseData) {
-
-  MLC_S_DPRINTF(this->strandId,
-                "Receive BaseStreamData element %lu data %lu tailSliceIdx %lu "
-                "tailElementIdx %lu.\n",
-                elementIdx, baseData, this->tailSliceIdx, this->tailElementIdx);
+void MLCDynIndirectStream::fillElemVAddr(uint64_t strandElemIdx,
+                                         uint64_t baseData) {
 
   // It's possible that we are behind the base stream?
-  while (this->tailElementIdx <= elementIdx) {
+  while (this->tailElementIdx <= strandElemIdx) {
     this->allocateSlice();
   }
 
@@ -171,23 +166,23 @@ void MLCDynIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
     }
     return;
   } else {
-    if (elementIdx < this->slices.front().sliceId.getStartIdx()) {
+    if (strandElemIdx < this->slices.front().sliceId.getStartIdx()) {
       // The stream is lagging behind the core. The slice has already been
       // released.
       return;
     }
   }
 
-  auto elementVAddr = this->genElementVAddr(elementIdx, baseData);
+  auto elementVAddr = this->genElemVAddr(strandElemIdx, baseData);
   auto elementSize = this->elementSize;
 
   DynStreamSliceId sliceId;
   sliceId.getDynStrandId() = this->strandId;
-  sliceId.getStartIdx() = elementIdx;
-  sliceId.getEndIdx() = elementIdx + 1;
+  sliceId.getStartIdx() = strandElemIdx;
+  sliceId.getEndIdx() = strandElemIdx + 1;
 
   // Search for the slices with the elementIdx.
-  auto elementSlices = this->findSliceByElementIdx(elementIdx);
+  auto elementSlices = this->findSliceByElementIdx(strandElemIdx);
   auto slicesBegin = elementSlices.first;
   auto slicesEnd = elementSlices.second;
 
@@ -226,6 +221,67 @@ void MLCDynIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
                         sliceIter->sliceId.vaddr);
     }
     totalSliceSize += curSliceSize;
+  }
+}
+
+void MLCDynIndirectStream::receiveBaseStreamData(uint64_t baseStrandElemIdx,
+                                                 uint64_t baseData) {
+
+  MLC_S_DPRINTF(this->strandId,
+                "Recv BaseStreamData BaseStrandElemIdx %lu Data %lu "
+                "TailSliceIdx %lu TailElemIdx %lu.\n",
+                baseStrandElemIdx, baseData, this->tailSliceIdx,
+                this->tailElementIdx);
+
+  auto reuse = 1;
+  auto skip = 0;
+  for (const auto &edge : this->getConfig()->baseEdges) {
+    if (edge.isUsedBy) {
+      reuse = edge.reuse;
+      skip = edge.skip;
+    }
+  }
+
+  assert(skip == 0 && "IndirectS with Non-Zero skip.");
+
+  auto baseStreamElemIdx =
+      this->baseStream->getConfig()->getStreamElemIdxFromStrandElemIdx(
+          baseStrandElemIdx);
+
+  auto myStreamElemIdxLhs =
+      this->config->convertBaseToDepElemIdx(baseStreamElemIdx, reuse, skip);
+  auto myStreamElemIdxRhs =
+      this->config->convertBaseToDepElemIdx(baseStreamElemIdx + 1, reuse, skip);
+
+  // Decrement Rhs to make sure it's within the same strand.
+  assert(myStreamElemIdxRhs > myStreamElemIdxLhs);
+  myStreamElemIdxRhs--;
+
+  auto myStrandElemIdxLhs =
+      this->config->getStrandElemIdxFromStreamElemIdx(myStreamElemIdxLhs);
+  auto myStrandElemIdxRhs =
+      this->config->getStrandElemIdxFromStreamElemIdx(myStreamElemIdxRhs);
+
+  auto myStrandIdLhs =
+      this->config->getStrandIdFromStreamElemIdx(myStreamElemIdxLhs);
+  auto myStrandIdRhs =
+      this->config->getStrandIdFromStreamElemIdx(myStreamElemIdxRhs);
+
+  MLC_S_DPRINTF(this->strandId,
+                "IndS RecvBase %d-%lu(%lu) Reuse %d My Lhs %d-%lu(%lu) Rhs "
+                "%d-%lu(%lu).\n",
+                this->baseStream->getDynStrandId().strandIdx, baseStrandElemIdx,
+                baseStreamElemIdx, reuse, myStrandIdLhs.strandIdx,
+                myStrandElemIdxLhs, myStreamElemIdxLhs, myStrandIdRhs.strandIdx,
+                myStrandElemIdxRhs, myStreamElemIdxRhs);
+
+  assert(myStrandIdLhs == myStrandIdRhs &&
+         "IndirectS with Reuse Splitted into Multiple Strands.");
+  assert(myStrandIdLhs == this->strandId && "Mismatch IndStrandId.");
+
+  for (uint64_t strandElemIdx = myStrandElemIdxLhs;
+       strandElemIdx <= myStrandElemIdxRhs; ++strandElemIdx) {
+    this->fillElemVAddr(strandElemIdx, baseData);
   }
 
   this->advanceStream();
@@ -313,22 +369,48 @@ void MLCDynIndirectStream::setTotalTripCount(int64_t totalTripCount,
   MLC_S_PANIC(this->getDynStrandId(), "Set TotalTripCount for IndirectS.");
 }
 
-Addr MLCDynIndirectStream::genElementVAddr(uint64_t elementIdx,
-                                           uint64_t baseData) {
+Addr MLCDynIndirectStream::genElemVAddr(uint64_t strandElemIdx,
+                                        uint64_t baseData) {
 
   StreamValue baseValue;
   baseValue.front() = baseData;
-  auto getBaseStreamValue = [this,
+  auto getBaseStreamValue = [this, strandElemIdx,
                              &baseValue](uint64_t streamId) -> StreamValue {
-    if (!this->baseStream->getStaticStream()->isCoalescedHere(streamId)) {
-      MLC_S_PANIC(this->getDynStrandId(), "Invalid BaseStreamId %llu.",
-                  streamId);
+    if (this->baseStream->getStaticStream()->isCoalescedHere(streamId)) {
+      return baseValue;
     }
-    return baseValue;
+
+    /**
+     * Search through UsedAffineIV to find the value.
+     */
+    for (const auto &edge : this->getConfig()->baseEdges) {
+      if (!edge.isUsedAffineIV) {
+        continue;
+      }
+      const auto &affineIVConfig = edge.usedAffineIV;
+      if (!affineIVConfig->stream->isCoalescedHere(streamId)) {
+        continue;
+      }
+      auto streamElemIdx =
+          this->getConfig()->getStreamElemIdxFromStrandElemIdx(strandElemIdx);
+      auto baseStreamElemIdx = this->getConfig()->convertDepToBaseElemIdx(
+          streamElemIdx, edge.reuse, edge.skip);
+      auto value = affineIVConfig->addrGenCallback->genAddr(
+          baseStreamElemIdx, affineIVConfig->addrGenFormalParams,
+          getStreamValueFail);
+
+      MLC_S_DPRINTF(this->getDynStrandId(),
+                    "Gen AffineIV %s %lu/%lu R/S %d/%d -> %lu Value %lu.\n",
+                    edge.dynStreamId, strandElemIdx, streamElemIdx, edge.reuse,
+                    edge.skip, baseStreamElemIdx, value.uint64());
+      return value;
+    }
+
+    MLC_S_PANIC(this->getDynStrandId(), "Invalid BaseStreamId %llu.", streamId);
   };
 
   return this->addrGenCallback
-      ->genAddr(elementIdx, this->formalParams, getBaseStreamValue)
+      ->genAddr(strandElemIdx, this->formalParams, getBaseStreamValue)
       .front();
 }
 

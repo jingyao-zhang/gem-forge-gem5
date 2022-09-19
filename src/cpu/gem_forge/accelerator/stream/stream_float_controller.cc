@@ -475,24 +475,53 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
     if (!S->isLoadStream() && !S->isAtomicComputeStream()) {
       continue;
     }
-    if (S->addrBaseStreams.size() != 1) {
-      continue;
+    const auto &addrBaseStreams = S->addrBaseStreams;
+    /**
+     * We assume:
+     * 1. Only one AddrBaseMemS.
+     * 2. All other AddrBaseS are IndVar streams with AffinePattern.
+     */
+    Stream *addrBaseMemS = nullptr;
+    {
+      bool canFloat = true;
+      for (auto addrBaseS : addrBaseStreams) {
+        if (addrBaseS->isMemStream()) {
+          if (addrBaseMemS) {
+            StreamFloatPolicy::logS(*dynS)
+                << "[Not Float] multi AddrBaseMemS.\n"
+                << std::flush;
+            canFloat = false;
+            break;
+          }
+          addrBaseMemS = addrBaseS;
+        } else if (addrBaseS->isPointerChaseIndVar()) {
+          StreamFloatPolicy::logS(*dynS) << "[Not Float] AddrBasePtrChaseS.\n"
+                                         << std::flush;
+          canFloat = false;
+          break;
+        } else if (addrBaseS->isReduction()) {
+          StreamFloatPolicy::logS(*dynS) << "[Not Float] AddrBaseReduceS.\n"
+                                         << std::flush;
+          canFloat = false;
+          break;
+        }
+      }
+      if (!canFloat) {
+        continue;
+      }
     }
-    auto addrBaseS = *S->addrBaseStreams.begin();
-    if (!floatedMap.count(addrBaseS)) {
+    if (!floatedMap.count(addrBaseMemS)) {
       // AddrBaseStream is not floated.
-      StreamFloatPolicy::logS(*dynS)
-          << "[Not Float] due to unfloat addr base stream.\n"
-          << std::flush;
+      StreamFloatPolicy::logS(*dynS) << "[Not Float] Unfloat AddrBaseMemS.\n"
+                                     << std::flush;
       continue;
     }
     // Check if all ValueBaseStreams are floated.
     for (auto valueBaseS : S->valueBaseStreams) {
       if (!floatedMap.count(valueBaseS)) {
         // ValueBaseStream is not floated.
-        StreamFloatPolicy::logS(*dynS)
-            << "[Not Float] due to unfloat value base stream.\n"
-            << std::flush;
+        StreamFloatPolicy::logS(*dynS) << "[Not Float] Unfloat ValueBaseS.\n"
+                                       << std::flush;
         continue;
       }
     }
@@ -507,29 +536,63 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
         << std::flush;
     if (S->aliasBaseStream->hasAliasedStoreStream && S->isLoadStream() &&
         !S->isUpdateStream()) {
-      StreamFloatPolicy::logS(*dynS)
-          << "[Not Float] due to aliased store stream.\n"
-          << std::flush;
+      StreamFloatPolicy::logS(*dynS) << "[Not Float] Aliased StoreS.\n"
+                                     << std::flush;
       continue;
     }
-    auto baseConfig = floatedMap.at(addrBaseS);
+    auto baseConfig = floatedMap.at(addrBaseMemS);
     // Only dependent on this direct stream.
     auto config = S->allocateCacheConfigureData(dynS->configSeqNum,
                                                 true /* isIndirect */);
-    baseConfig->addUsedBy(config);
-    // Add SendTo edges if the ValueBaseStream is not my AddrBaseStream.
+    auto addrBaseMemSReuse = dynS->getBaseElemReuseCount(addrBaseMemS);
+    baseConfig->addUsedBy(config, addrBaseMemSReuse);
+
+    /**
+     * Add UsedAffineIVS.
+     */
+    for (auto addrBaseS : S->addrBaseStreams) {
+      if (addrBaseS == addrBaseMemS) {
+        continue;
+      }
+      auto affineIVConfig =
+          addrBaseS->allocateCacheConfigureDataForAffineIV(dynS->configSeqNum);
+      auto reuse = dynS->getBaseElemReuseCount(addrBaseS);
+      auto skip = dynS->getBaseElemSkipCount(addrBaseS);
+      DYN_S_DPRINTF(dynS->dynStreamId,
+                    "Add AffineIV as AddrBaseS %s R/S %d/%d.\n",
+                    addrBaseS->streamName, reuse, skip);
+      config->addBaseAffineIV(affineIVConfig, reuse, skip);
+    }
+
+    // Add SendTo edges if the ValueBaseS is not my AddrBaseMemS.
     for (auto valueBaseS : S->valueBaseStreams) {
-      if (valueBaseS == addrBaseS) {
+      if (valueBaseS == addrBaseMemS) {
         continue;
       }
       auto &valueBaseConfig = floatedMap.at(valueBaseS);
       auto reuse = dynS->getBaseElemReuseCount(valueBaseS);
       auto skip = dynS->getBaseElemSkipCount(valueBaseS);
-      valueBaseConfig->addSendTo(config, reuse, skip);
       config->addBaseOn(valueBaseConfig, reuse, skip);
+
+      /**
+       * ValueBaseS will send to my AddrBaseS.
+       * See the comment in CacheStreamConfigureData for the reuse/skip here.
+       */
+      auto sendReuse = reuse;
+      auto sendSkip = skip;
+      if (addrBaseMemSReuse > 1) {
+        assert(reuse == 1 && skip == 0 &&
+               "Cannot have two reuses for IndS with ValueBaseS.");
+        sendSkip = addrBaseMemSReuse;
+      }
+      valueBaseConfig->addSendTo(baseConfig, sendReuse, sendSkip);
     }
-    DYN_S_DPRINTF(dynS->dynStreamId, "Offload as indirect.\n");
-    StreamFloatPolicy::logS(*dynS) << "[Float] as indirect.\n" << std::flush;
+    DYN_S_DPRINTF(dynS->dynStreamId, "Offload as indirect Reuse %d.\n",
+                  addrBaseMemSReuse);
+    StreamFloatPolicy::logS(*dynS)
+        << "[Float] IndS with " << addrBaseMemS->streamName << " Reuse "
+        << addrBaseMemSReuse << ".\n"
+        << std::flush;
     floatedMap.emplace(S, config);
     if (S->getEnabledStoreFunc()) {
       if (!dynS->hasTotalTripCount()) {

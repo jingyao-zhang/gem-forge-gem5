@@ -435,7 +435,7 @@ void MLCDynDirectStream::trySendCreditToLLC() {
           sendToConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
 
       if (auto recvRemoteS = LLCDynStream::getLLCStream(recvStrandId)) {
-        if (!recvRemoteS->isElementInitialized(recvStrandElemIdx)) {
+        if (!recvRemoteS->isElemInitialized(recvStrandElemIdx)) {
           waitForRecvS = recvRemoteS;
           waitForRecvStrandElemIdx = recvStrandElemIdx;
           break;
@@ -459,7 +459,7 @@ void MLCDynDirectStream::trySendCreditToLLC() {
                   recvStreamElemIdx);
 
           if (auto recvRemoteS = LLCDynStream::getLLCStream(recvStrandId)) {
-            if (!recvRemoteS->isElementInitialized(recvStrandElemIdx)) {
+            if (!recvRemoteS->isElemInitialized(recvStrandElemIdx)) {
               waitForRecvS = recvRemoteS;
               waitForRecvStrandElemIdx = recvStrandElemIdx;
               break;
@@ -658,11 +658,11 @@ void MLCDynDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
 
   const auto &sliceId = slice.sliceId;
   MLC_SLICE_DPRINTF(sliceId, "Notify IndirectSream.\n");
-  for (auto elementIdx = sliceId.getStartIdx();
-       elementIdx < sliceId.getEndIdx(); ++elementIdx) {
+  for (auto elemIdx = sliceId.getStartIdx(); elemIdx < sliceId.getEndIdx();
+       ++elemIdx) {
 
     // Try to extract the stream data.
-    auto elementVAddr = this->slicedStream.getElementVAddr(elementIdx);
+    auto elementVAddr = this->slicedStream.getElementVAddr(elemIdx);
     auto elementSize = this->slicedStream.getMemElementSize();
     auto elementLineOffset = elementVAddr % RubySystem::getBlockSizeBytes();
 
@@ -701,7 +701,7 @@ void MLCDynDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
       }
     }
     MLC_SLICE_DPRINTF(
-        sliceId, "Extract element %lu data %s.\n", elementIdx,
+        sliceId, "Extract element %lu data %s.\n", elemIdx,
         GemForgeUtils::dataToString(elementData.data(), elementData.size()));
     for (auto indirectStream : this->indirectStreams) {
       auto IS = indirectStream->getStaticStream();
@@ -714,17 +714,20 @@ void MLCDynDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
       int32_t subSize = elementSize;
       /**
        * In case the base stream is coalesced, we have to translate the offset
-       * for the indirect streams.
+       * for the indirect streams. Ignore the other AddrBaseS.
        */
       const auto &baseEdges = IS->baseEdges;
       auto baseId = DynStreamId::InvalidStaticStreamId;
       for (const auto &baseEdge : baseEdges) {
         if (baseEdge.type == Stream::StreamDepEdge::TypeE::Addr) {
+          if (!S->isCoalescedHere(baseEdge.toStaticId)) {
+            continue;
+          }
           if (baseId == DynStreamId::InvalidStaticStreamId) {
             baseId = baseEdge.toStaticId;
           } else {
             if (baseEdge.toStaticId != baseId) {
-              MLC_SLICE_PANIC(sliceId, "IS has multiple base streams.",
+              MLC_SLICE_PANIC(sliceId, "IS has multiple BaseMemS to myself.",
                               baseEdges.size());
             }
           }
@@ -741,8 +744,8 @@ void MLCDynDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
           GemForgeUtils::rebuildData(elementData.data() + subOffset, subSize);
       MLC_SLICE_DPRINTF(sliceId,
                         "Notify IndS base %lu offset %d size %d data %llu.\n",
-                        elementIdx, subOffset, subSize, baseData);
-      indirectStream->receiveBaseStreamData(elementIdx, baseData);
+                        elemIdx, subOffset, subSize, baseData);
+      indirectStream->receiveBaseStreamData(elemIdx, baseData);
     }
   }
 }

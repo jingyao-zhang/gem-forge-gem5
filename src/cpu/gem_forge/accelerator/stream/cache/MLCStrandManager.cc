@@ -583,13 +583,8 @@ MLCStrandManager::splitIntoStrands(StrandSplitContext &context,
 }
 
 MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
-    StrandSplitContext &context, ConfigPtr config, StrandSplitInfo &strandSplit,
+    StrandSplitContext &context, ConfigPtr config, StrandSplitInfo strandSplit,
     bool isDirect) {
-
-  config->strandSplit = strandSplit;
-  config->totalStrands = strandSplit.totalStrands;
-
-  CacheStreamConfigureVec strands;
 
   if (isDirect) {
     MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
@@ -599,7 +594,29 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
   } else {
     MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
                    "[StrandSplit] ---------- Start Split Indirect.\n");
+    /*********************************************************************
+     * Now that IndS may have reuse on the BaseS. Adjust the StrandSplit.
+     *********************************************************************/
+    for (const auto &base : config->baseEdges) {
+      if (base.isUsedBy) {
+        if (base.reuse > 1) {
+          assert(strandSplit.tailInterleave == 0 &&
+                 "Cannot handle TailInterleave and IndS with reuse for now.");
+          strandSplit.interleave *= base.reuse;
+          MLC_S_DPRINTF_(
+              MLCRubyStrandSplit, config->dynamicId,
+              "[StrandSplit] Adjust Interleave by IndReuse %d -> %ld.\n",
+              base.reuse, strandSplit.interleave);
+        }
+        break;
+      }
+    }
   }
+
+  config->strandSplit = strandSplit;
+  config->totalStrands = strandSplit.totalStrands;
+
+  CacheStreamConfigureVec strands;
 
   for (auto strandIdx = 0; strandIdx < strandSplit.totalStrands; ++strandIdx) {
 
@@ -669,16 +686,13 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
     for (auto &base : config->baseEdges) {
       auto baseConfig = base.data.lock();
       assert(baseConfig && "BaseConfig already released?");
-      bool isUsedBy = false;
-      for (const auto &dep : baseConfig->depEdges) {
-        if (dep.data == config &&
-            dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
-          isUsedBy = true;
-          break;
-        }
-      }
-      if (!isUsedBy) {
+      if (base.isUsedBy) {
         // UsedBy is handled below.
+        continue;
+      }
+      if (base.isUsedAffineIV) {
+        strand->addBaseAffineIV(baseConfig, base.reuse, base.skip);
+      } else {
         strand->addBaseOn(baseConfig, base.reuse, base.skip);
       }
     }
@@ -704,7 +718,7 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
     for (int strandIdx = 0; strandIdx < depStrands.size(); ++strandIdx) {
       auto strand = strands.at(strandIdx);
       auto depStrand = depStrands.at(strandIdx);
-      strand->addUsedBy(depStrand);
+      strand->addUsedBy(depStrand, dep.reuse);
       depStrand->totalTripCount = strand->getTotalTripCount();
     }
   }
