@@ -170,6 +170,14 @@ protected:
   void sendCreditToLLC(const LLCSegmentPosition &segment);
 
   /**
+   * Check whether we are running ahead than the LLCDynS.
+   */
+  bool checkWaitForLLCRecvS(uint64_t tailStrandElemIdx,
+                            uint64_t tailStreamElemIdx,
+                            DynStrandId &waitForRecvStrandId,
+                            uint64_t &waitForRecvStrandElemIdx) const;
+
+  /**
    * Send commit message to the LLC stream.
    */
   void sendCommitToLLC(const LLCSegmentPosition &segment);

@@ -223,6 +223,45 @@ void MLCDynIndirectStream::fillElemVAddr(uint64_t strandElemIdx,
   }
 }
 
+void MLCDynIndirectStream::mapBaseElemToMyElemIdxRange(
+    uint64_t baseStrandElemIdx, uint64_t baseStreamElemIdx,
+    uint64_t &streamElemIdxLhs, uint64_t &strandElemIdxLhs,
+    DynStrandId &strandIdLhs, uint64_t &streamElemIdxRhs,
+    uint64_t &strandElemIdxRhs, DynStrandId &strandIdRhs) const {
+
+  auto reuse = this->getBaseStreamReuse();
+  auto skip = this->getBaseStreamSkip();
+
+  streamElemIdxLhs =
+      this->config->convertBaseToDepElemIdx(baseStreamElemIdx, reuse, skip);
+  streamElemIdxRhs =
+      this->config->convertBaseToDepElemIdx(baseStreamElemIdx + 1, reuse, skip);
+
+  // Decrement Rhs to make sure it's within the same strand.
+  assert(streamElemIdxRhs > streamElemIdxLhs);
+  streamElemIdxRhs--;
+
+  strandElemIdxLhs =
+      this->config->getStrandElemIdxFromStreamElemIdx(streamElemIdxLhs);
+  strandElemIdxRhs =
+      this->config->getStrandElemIdxFromStreamElemIdx(streamElemIdxRhs);
+
+  strandIdLhs = this->config->getStrandIdFromStreamElemIdx(streamElemIdxLhs);
+  strandIdRhs = this->config->getStrandIdFromStreamElemIdx(streamElemIdxRhs);
+
+  MLC_S_DPRINTF(this->strandId,
+                "IndS MapBase %d-%lu(%lu) Reuse %d My Lhs %d-%lu(%lu) Rhs "
+                "%d-%lu(%lu).\n",
+                this->baseStream->getDynStrandId().strandIdx, baseStrandElemIdx,
+                baseStreamElemIdx, reuse, strandIdLhs.strandIdx,
+                strandElemIdxLhs, streamElemIdxLhs, strandIdRhs.strandIdx,
+                strandElemIdxRhs, streamElemIdxRhs);
+
+  assert(strandIdLhs == strandIdRhs &&
+         "IndirectS with Reuse Splitted into Multiple Strands.");
+  assert(strandIdLhs == this->strandId && "Mismatch IndStrandId.");
+}
+
 void MLCDynIndirectStream::receiveBaseStreamData(uint64_t baseStrandElemIdx,
                                                  uint64_t baseData,
                                                  bool tryAdvance) {
@@ -233,51 +272,21 @@ void MLCDynIndirectStream::receiveBaseStreamData(uint64_t baseStrandElemIdx,
                 baseStrandElemIdx, baseData, this->tailSliceIdx,
                 this->tailElementIdx);
 
-  auto reuse = 1;
-  auto skip = 0;
-  for (const auto &edge : this->getConfig()->baseEdges) {
-    if (edge.isUsedBy) {
-      reuse = edge.reuse;
-      skip = edge.skip;
-    }
-  }
-
-  assert(skip == 0 && "IndirectS with Non-Zero skip.");
-
   auto baseStreamElemIdx =
       this->baseStream->getConfig()->getStreamElemIdxFromStrandElemIdx(
           baseStrandElemIdx);
 
-  auto myStreamElemIdxLhs =
-      this->config->convertBaseToDepElemIdx(baseStreamElemIdx, reuse, skip);
-  auto myStreamElemIdxRhs =
-      this->config->convertBaseToDepElemIdx(baseStreamElemIdx + 1, reuse, skip);
+  uint64_t myStreamElemIdxLhs;
+  uint64_t myStrandElemIdxLhs;
+  DynStrandId myStrandIdLhs;
+  uint64_t myStreamElemIdxRhs;
+  uint64_t myStrandElemIdxRhs;
+  DynStrandId myStrandIdRhs;
 
-  // Decrement Rhs to make sure it's within the same strand.
-  assert(myStreamElemIdxRhs > myStreamElemIdxLhs);
-  myStreamElemIdxRhs--;
-
-  auto myStrandElemIdxLhs =
-      this->config->getStrandElemIdxFromStreamElemIdx(myStreamElemIdxLhs);
-  auto myStrandElemIdxRhs =
-      this->config->getStrandElemIdxFromStreamElemIdx(myStreamElemIdxRhs);
-
-  auto myStrandIdLhs =
-      this->config->getStrandIdFromStreamElemIdx(myStreamElemIdxLhs);
-  auto myStrandIdRhs =
-      this->config->getStrandIdFromStreamElemIdx(myStreamElemIdxRhs);
-
-  MLC_S_DPRINTF(this->strandId,
-                "IndS RecvBase %d-%lu(%lu) Reuse %d My Lhs %d-%lu(%lu) Rhs "
-                "%d-%lu(%lu).\n",
-                this->baseStream->getDynStrandId().strandIdx, baseStrandElemIdx,
-                baseStreamElemIdx, reuse, myStrandIdLhs.strandIdx,
-                myStrandElemIdxLhs, myStreamElemIdxLhs, myStrandIdRhs.strandIdx,
-                myStrandElemIdxRhs, myStreamElemIdxRhs);
-
-  assert(myStrandIdLhs == myStrandIdRhs &&
-         "IndirectS with Reuse Splitted into Multiple Strands.");
-  assert(myStrandIdLhs == this->strandId && "Mismatch IndStrandId.");
+  this->mapBaseElemToMyElemIdxRange(baseStrandElemIdx, baseStreamElemIdx,
+                                    myStreamElemIdxLhs, myStrandElemIdxLhs,
+                                    myStrandIdLhs, myStreamElemIdxRhs,
+                                    myStrandElemIdxRhs, myStrandIdRhs);
 
   for (uint64_t strandElemIdx = myStrandElemIdxLhs;
        strandElemIdx <= myStrandElemIdxRhs; ++strandElemIdx) {

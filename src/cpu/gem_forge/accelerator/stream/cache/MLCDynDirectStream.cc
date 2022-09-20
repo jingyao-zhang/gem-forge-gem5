@@ -137,7 +137,7 @@ MLCDynDirectStream::MLCDynDirectStream(
    * to avoid deadlock as the initial credits are not sent because RecvS can not
    * allocate that many slices.
    */
-  if (config->sendToInnerLoopStreamWithReuse()) {
+  if (config->sendToInnerLoopStream()) {
     this->maxNumSlicesPerSegment = 1;
     MLC_S_DPRINTF(this->getDynStreamId(),
                   "Adjust MaxNumSlicesPerSegment to %llu as send to InnerLoopS "
@@ -368,8 +368,7 @@ void MLCDynDirectStream::trySendCreditToLLC() {
     }
 
     /**
-     * Additional sanity check that the RemoteStream does not have too many
-     * slices.
+     * Additional sanity check that the RemoteS does not have too many slices.
      */
     {
       auto remoteDynS = LLCDynStream::getLLCStreamPanic(this->getDynStrandId(),
@@ -420,74 +419,27 @@ void MLCDynDirectStream::trySendCreditToLLC() {
     auto tailStreamElemIdx =
         this->config->getStreamElemIdxFromStrandElemIdx(tailStrandElemIdx);
 
-    LLCDynStreamPtr waitForRecvS = nullptr;
+    DynStrandId waitForRecvStrandId;
     uint64_t waitForRecvStrandElemIdx = 0;
 
-    for (const auto &sendToEdge : this->sendToEdges) {
-      const auto &sendToConfig = sendToEdge.data;
-      if (sendToConfig->dynamicId == this->getDynStreamId()) {
-        continue;
-      }
-
-      auto recvStreamElemIdx =
-          CacheStreamConfigureData::convertBaseToDepElemIdx(
-              tailStreamElemIdx, sendToEdge.reuse, sendToEdge.skip);
-
-      auto recvStrandId =
-          sendToConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
-      auto recvStrandElemIdx =
-          sendToConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
-
-      if (auto recvRemoteS = LLCDynStream::getLLCStream(recvStrandId)) {
-        if (!recvRemoteS->isElemInitialized(recvStrandElemIdx)) {
-          waitForRecvS = recvRemoteS;
-          waitForRecvStrandElemIdx = recvStrandElemIdx;
-          break;
-        }
-      }
-    }
-
-    if (!waitForRecvS) {
-      for (auto dynIS : this->indirectStreams) {
-        for (const auto &sendToEdge : dynIS->getSendToEdges()) {
-
-          const auto &sendToConfig = sendToEdge.data;
-          auto recvStreamElemIdx =
-              CacheStreamConfigureData::convertBaseToDepElemIdx(
-                  tailStreamElemIdx, sendToEdge.reuse, sendToEdge.skip);
-
-          auto recvStrandId =
-              sendToConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
-          auto recvStrandElemIdx =
-              sendToConfig->getStrandElemIdxFromStreamElemIdx(
-                  recvStreamElemIdx);
-
-          if (auto recvRemoteS = LLCDynStream::getLLCStream(recvStrandId)) {
-            if (!recvRemoteS->isElemInitialized(recvStrandElemIdx)) {
-              waitForRecvS = recvRemoteS;
-              waitForRecvStrandElemIdx = recvStrandElemIdx;
-              break;
-            }
-          }
-        }
-        if (waitForRecvS) {
-          break;
-        }
-      }
-    }
-    if (waitForRecvS) {
+    if (this->checkWaitForLLCRecvS(tailStrandElemIdx, tailStreamElemIdx,
+                                   waitForRecvStrandId,
+                                   waitForRecvStrandElemIdx)) {
       // Register callbacks when the receiver elements are initialized.
       MLC_S_DPRINTF(this->getDynStrandId(),
-                    "Delayed sending credit as Recv %s has not initialized "
-                    "StrandElem %llu StreamElem %llu.\n",
-                    waitForRecvS->getDynStrandId(), waitForRecvStrandElemIdx,
-                    tailStreamElemIdx);
+                    "Delayed sending credit Tail %llu(%llu) by Recv %s%llu.\n",
+                    tailStrandElemIdx, tailStreamElemIdx, waitForRecvStrandId,
+                    waitForRecvStrandElemIdx);
       auto elementInitCallback = [this](const DynStreamId &dynStreamId,
                                         uint64_t elementIdx) -> void {
         this->blockedSendingCredit = false;
         this->trySendCreditToLLC();
       };
       this->blockedSendingCredit = true;
+
+      auto waitForRecvS = LLCDynStream::getLLCStreamPanic(waitForRecvStrandId,
+                                                          "WaitForLLCRecvS");
+
       waitForRecvS->registerElementInitCallback(waitForRecvStrandElemIdx,
                                                 elementInitCallback);
       return;
@@ -498,6 +450,88 @@ void MLCDynDirectStream::trySendCreditToLLC() {
     this->llcSegments.emplace_back(segment);
     this->llcSegmentsAllocated.pop_front();
   }
+}
+
+bool MLCDynDirectStream::checkWaitForLLCRecvS(
+    uint64_t tailStrandElemIdx, uint64_t tailStreamElemIdx,
+    DynStrandId &waitForRecvStrandId,
+    uint64_t &waitForRecvStrandElemIdx) const {
+
+  for (const auto &sendToEdge : this->sendToEdges) {
+    const auto &sendToConfig = sendToEdge.data;
+    if (sendToConfig->dynamicId == this->getDynStreamId()) {
+      continue;
+    }
+
+    auto recvStreamElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
+        tailStreamElemIdx, sendToEdge.reuse, sendToEdge.skip);
+
+    auto recvStrandId =
+        sendToConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+    auto recvStrandElemIdx =
+        sendToConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
+
+    if (auto recvRemoteS = LLCDynStream::getLLCStream(recvStrandId)) {
+      if (!recvRemoteS->isElemInitialized(recvStrandElemIdx)) {
+        waitForRecvStrandId = recvStrandId;
+        waitForRecvStrandElemIdx = recvStrandElemIdx;
+
+        MLC_S_DPRINTF(this->getDynStrandId(),
+                      "TailElem %lu(%lu) WaitForRecv %s%lu(%lu).\n",
+                      tailStrandElemIdx, tailStreamElemIdx, recvStrandId,
+                      recvStrandElemIdx, recvStreamElemIdx);
+
+        return true;
+      }
+    }
+  }
+
+  // Check IndirectS.
+  for (auto dynIS : this->indirectStreams) {
+
+    uint64_t indStreamElemIdxLhs;
+    uint64_t indStrandElemIdxLhs;
+    DynStrandId indStrandIdLhs;
+    uint64_t indStreamElemIdxRhs;
+    uint64_t indStrandElemIdxRhs;
+    DynStrandId indStrandIdRhs;
+
+    dynIS->mapBaseElemToMyElemIdxRange(tailStrandElemIdx, tailStreamElemIdx,
+                                       indStreamElemIdxLhs, indStrandElemIdxLhs,
+                                       indStrandIdLhs, indStreamElemIdxRhs,
+                                       indStrandElemIdxRhs, indStrandIdRhs);
+
+    for (const auto &sendToEdge : dynIS->getSendToEdges()) {
+
+      const auto &sendToConfig = sendToEdge.data;
+      auto recvStreamElemIdx =
+          CacheStreamConfigureData::convertBaseToDepElemIdx(
+              indStreamElemIdxRhs, sendToEdge.reuse, sendToEdge.skip);
+
+      auto recvStrandId =
+          sendToConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+      auto recvStrandElemIdx =
+          sendToConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
+
+      if (auto recvRemoteS = LLCDynStream::getLLCStream(recvStrandId)) {
+        if (!recvRemoteS->isElemInitialized(recvStrandElemIdx)) {
+          waitForRecvStrandId = recvStrandId;
+          waitForRecvStrandElemIdx = recvStrandElemIdx;
+
+          MLC_S_DPRINTF(this->getDynStrandId(),
+                        "TailElem %lu(%lu) IndTailEllem %lu(%lu) WaitForRecv "
+                        "%s%lu(%lu).\n",
+                        tailStrandElemIdx, tailStreamElemIdx,
+                        indStrandElemIdxRhs, indStreamElemIdxRhs, recvStrandId,
+                        recvStrandElemIdx, recvStreamElemIdx);
+
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 void MLCDynDirectStream::sendCreditToLLC(const LLCSegmentPosition &segment) {

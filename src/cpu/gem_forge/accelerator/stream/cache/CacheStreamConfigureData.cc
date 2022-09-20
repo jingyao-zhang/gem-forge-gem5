@@ -115,12 +115,25 @@ uint64_t CacheStreamConfigureData::convertDepToBaseElemIdx(uint64_t depElemIdx,
   return baseElemIdx;
 }
 
-bool CacheStreamConfigureData::sendToInnerLoopStreamWithReuse() const {
+bool CacheStreamConfigureData::sendToInnerLoopStream() const {
+  auto check = [this](const CacheStreamConfigureData &config) -> bool {
+    for (const auto &e : config.depEdges) {
+      if (e.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
+        const auto &recvConfig = e.data;
+        if (recvConfig->stream->getLoopLevel() > this->stream->getLoopLevel()) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  if (check(*this)) {
+    return true;
+  }
   for (const auto &e : this->depEdges) {
-    if (e.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
-      const auto &recvConfig = e.data;
-      if (recvConfig->stream->getLoopLevel() > this->stream->getLoopLevel() &&
-          e.reuse > 1) {
+    if (e.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
+      const auto &indConfig = e.data;
+      if (check(*indConfig)) {
         return true;
       }
     }

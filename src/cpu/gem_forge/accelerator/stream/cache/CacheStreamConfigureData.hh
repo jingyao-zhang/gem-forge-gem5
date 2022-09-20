@@ -275,7 +275,12 @@ public:
                                           int skip);
   static uint64_t convertDepToBaseElemIdx(uint64_t depElemIdx, int reuse,
                                           int skip);
-  bool sendToInnerLoopStreamWithReuse() const;
+  /**
+   * Check whether this stream or any indirect stream sends to inner-loop stream
+   * Used to force fine-grained control flow on the outer-loop stream to avoid
+   * deadlock.
+   */
+  bool sendToInnerLoopStream() const;
 
   /**
    * @brief Hint to MLCStrandManager to avoid split outer dimension.

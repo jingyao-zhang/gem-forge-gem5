@@ -57,6 +57,16 @@ public:
   void setBaseStream(MLCDynStream *baseStream) {
     assert(!this->baseStream && "Already has base stream.");
     this->baseStream = baseStream;
+
+    for (const auto &edge : this->getConfig()->baseEdges) {
+      if (edge.isUsedBy) {
+        assert(edge.dynStreamId == baseStream->getDynStreamId() &&
+               "Mismatch MLCBaseS.");
+        assert(edge.skip == 0 && "IndirectS with Non-Zero skip.");
+        this->baseStreamReuse = edge.reuse;
+        break;
+      }
+    }
   }
 
   bool hasOverflowed() const override;
@@ -64,7 +74,7 @@ public:
    * We query the DirectStream for TotalTripCount.
    */
   int64_t getTotalTripCount() const override {
-    return this->baseStream->getTotalTripCount();
+    return this->baseStream->getTotalTripCount() * this->getBaseStreamReuse();
   }
   bool hasTotalTripCount() const override {
     return this->baseStream->hasTotalTripCount();
@@ -77,6 +87,17 @@ public:
   }
   void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr,
                          MachineType brokenMachineType) override;
+  int getBaseStreamReuse() const { return this->baseStreamReuse; }
+  int getBaseStreamSkip() const { return 0; }
+
+  /**
+   * Map the BaseStreamElemIdx to a range of [Lhs, Rhs].
+   */
+  void mapBaseElemToMyElemIdxRange(
+      uint64_t baseStrandElemIdx, uint64_t baseStreamElemIdx,
+      uint64_t &streamElemIdxLhs, uint64_t &strandElemIdxLhs,
+      DynStrandId &strandIdLhs, uint64_t &streamElemIdxRhs,
+      uint64_t &strandElemIdxRhs, DynStrandId &strandIdRhs) const;
 
 private:
   // Remember the root stream id.
@@ -85,6 +106,7 @@ private:
   AddrGenCallbackPtr addrGenCallback;
   const int32_t elementSize;
   MLCDynStream *baseStream = nullptr;
+  int baseStreamReuse = 1;
 
   // Remember if this indirect stream is behind one iteration.
   bool isOneIterationBehind;

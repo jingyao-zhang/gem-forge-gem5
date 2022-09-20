@@ -84,7 +84,7 @@ void MLCStrandManager::checkShouldBeSliced(ConfigVec &configs) const {
     /**
      * We also disable slicing if we are sending to inner-loop streams.
      */
-    if (config->sendToInnerLoopStreamWithReuse()) {
+    if (config->sendToInnerLoopStream()) {
       MLC_S_DPRINTF(config->dynamicId,
                     "Disabled Slicing as send to InnerLoopS.\n");
       config->shouldBeSlicedToCacheLines = false;
