@@ -51,7 +51,8 @@ public:
    * Receive data from the base direct stream.
    * Try to generate more slices.
    */
-  void receiveBaseStreamData(uint64_t baseStrandElemIdx, uint64_t baseData);
+  void receiveBaseStreamData(uint64_t baseStrandElemIdx, uint64_t baseData,
+                             bool tryAdvance);
 
   void setBaseStream(MLCDynStream *baseStream) {
     assert(!this->baseStream && "Already has base stream.");

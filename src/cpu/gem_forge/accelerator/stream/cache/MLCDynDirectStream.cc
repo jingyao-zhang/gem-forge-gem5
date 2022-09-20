@@ -33,6 +33,8 @@ MLCDynDirectStream::MLCDynDirectStream(
                           _controller->getMLCStreamBufferToSegmentRatio())),
       indirectStreams(_indirectStreams) {
 
+  this->isInConstructor = true;
+
   /**
    * Initialize the LLC bank.
    * Be careful that for MidwayFloat, we reset the InitPAddr.
@@ -170,6 +172,8 @@ MLCDynDirectStream::MLCDynDirectStream(
   MLC_S_DPRINTF(this->strandId, "InitAllocatedSlice %d overflowed %d.\n",
                 this->tailSliceIdx, this->slicedStream.hasOverflowed());
 
+  this->isInConstructor = false;
+
   this->scheduleAdvanceStream();
 }
 
@@ -284,7 +288,7 @@ void MLCDynDirectStream::allocateSlice() {
      */
     assert(this->controller->params()->ruby_system->getAccessBackingStore() &&
            "This only works with backing store.");
-    this->notifyIndirectStream(this->slices.back());
+    this->notifyIndStreams(this->slices.back());
 
     /**
      * The address is valid, but we check if this stream has no core user,
@@ -635,7 +639,7 @@ void MLCDynDirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
                   this->tailSliceIdx);
 }
 
-void MLCDynDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
+void MLCDynDirectStream::notifyIndStreams(const MLCStreamSlice &slice) {
   if (this->indirectStreams.empty()) {
     return;
   }
@@ -657,7 +661,7 @@ void MLCDynDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
   }
 
   const auto &sliceId = slice.sliceId;
-  MLC_SLICE_DPRINTF(sliceId, "Notify IndirectSream.\n");
+  MLC_SLICE_DPRINTF(sliceId, "Notify IndS.\n");
   for (auto elemIdx = sliceId.getStartIdx(); elemIdx < sliceId.getEndIdx();
        ++elemIdx) {
 
@@ -745,7 +749,24 @@ void MLCDynDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
       MLC_SLICE_DPRINTF(sliceId,
                         "Notify IndS base %lu offset %d size %d data %llu.\n",
                         elemIdx, subOffset, subSize, baseData);
-      indirectStream->receiveBaseStreamData(elemIdx, baseData);
+
+      /**
+       * There is a subtle dependence bug when constructing MLC streams.
+       *
+       * When the DirectS allocates some slices, it notifies
+       * the IndS. When the IndS is waiting nothing, it actually tries to
+       * advance itself. And when trying to advance, it checks that LLCRecvDynS
+       * is allocated and the LLCRecvElem is already released, so that it's safe
+       * to advance.
+       *
+       * However, this assumption is broken when constructing the DirectS,
+       * as the LLCRecvS is not allocated yet. As a quick fix, we add a flag to
+       * indicate whether this is during construction phase, and avoid advancing
+       * IndS.
+       */
+
+      indirectStream->receiveBaseStreamData(elemIdx, baseData,
+                                            !isInConstructor);
     }
   }
 }

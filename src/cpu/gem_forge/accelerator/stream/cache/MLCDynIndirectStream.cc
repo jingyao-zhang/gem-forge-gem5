@@ -155,7 +155,6 @@ void MLCDynIndirectStream::fillElemVAddr(uint64_t strandElemIdx,
   if (this->isWaitingNothing()) {
     // If we are waiting for nothing, this is the only place we advance.
     MLC_S_DPRINTF(this->strandId, "WaitNothing. Skip BaseElement.\n");
-    this->advanceStream();
     return;
   }
 
@@ -225,7 +224,8 @@ void MLCDynIndirectStream::fillElemVAddr(uint64_t strandElemIdx,
 }
 
 void MLCDynIndirectStream::receiveBaseStreamData(uint64_t baseStrandElemIdx,
-                                                 uint64_t baseData) {
+                                                 uint64_t baseData,
+                                                 bool tryAdvance) {
 
   MLC_S_DPRINTF(this->strandId,
                 "Recv BaseStreamData BaseStrandElemIdx %lu Data %lu "
@@ -284,7 +284,11 @@ void MLCDynIndirectStream::receiveBaseStreamData(uint64_t baseStrandElemIdx,
     this->fillElemVAddr(strandElemIdx, baseData);
   }
 
-  this->advanceStream();
+  if (this->isWaitingNothing() && tryAdvance) {
+    // If we are waiting for nothing, this is the only place we advance.
+    MLC_S_DPRINTF(this->strandId, "WaitNothing. Advance.\n");
+    this->advanceStream();
+  }
 }
 
 void MLCDynIndirectStream::advanceStream() {

@@ -177,7 +177,9 @@ protected:
   /**
    * Notify the indirect stream that I have data.
    */
-  void notifyIndirectStream(const MLCStreamSlice &slice);
+  void notifyIndStreams(const MLCStreamSlice &slice);
+
+  bool isInConstructor = false;
 };
 
 #endif
