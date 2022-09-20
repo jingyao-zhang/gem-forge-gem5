@@ -71,6 +71,10 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
       dest.f.f1 = src1.f.f1 / src2.f.f1;
       dest.f.f2 = src1.f.f2 / src2.f.f2;
       break;
+    case BinaryOp::FloatMax:
+      dest.f.f1 = std::max(src1.f.f1, src2.f.f1);
+      dest.f.f2 = std::max(src1.f.f2, src2.f.f2);
+      break;
     case BinaryOp::IntAdd:
       dest.si.i1 = src1.si.i1 + src2.si.i1;
       dest.si.i2 = src1.si.i2 + src2.si.i2;
@@ -122,6 +126,9 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
       break;
     case BinaryOp::FloatDiv:
       dest.d = src1.d / src2.d;
+      break;
+    case BinaryOp::FloatMax:
+      dest.d = std::max(src1.d, src2.d);
       break;
     case BinaryOp::IntAdd:
       dest.sl = src1.sl + src2.sl;

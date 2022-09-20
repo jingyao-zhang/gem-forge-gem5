@@ -165,6 +165,7 @@ const EVEXTupleType EVEXTupleTypeTwoByteF2[256] =
  * 5A vcvtps2pd            HALF
  * 5C vsubps               FULL
  * 5E vdivps               FULL
+ * 5F vmaxps               FULL
  */
 const EVEXTupleType EVEXTupleTypeTwoByte[256] =
     {    //LSB
@@ -174,7 +175,7 @@ const EVEXTupleType EVEXTupleTypeTwoByte[256] =
 /*  2 */ O , O , O , O , O , O , O , O , FM, FM, O , O , O , O , O , O ,
 /*  3 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  5 */ O , O , O , O , O , O , O , O , FU, FU, HA, O , FU, O , FU, O ,
+/*  5 */ O , O , O , O , O , O , O , O , FU, FU, HA, O , FU, O , FU, FU,
 /*  6 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  7 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  8 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,

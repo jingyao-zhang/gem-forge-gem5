@@ -128,6 +128,11 @@
                     0x1: VDIVPS(VYdo, WYdo);
                     0x0: VDIVPS(Vo, Wo);
                 }
+                0x7: decode EVEX_L_EXTEND {
+                    0x2: VMAXPS(VZqo, WZqo);
+                    0x1: VMAXPS(VYdo, WYdo);
+                    0x0: VMAXPS(Vo, Wo);
+                }
             }
             // 66, packed double
             0x1: decode OPCODE_OP_BOTTOM3 {

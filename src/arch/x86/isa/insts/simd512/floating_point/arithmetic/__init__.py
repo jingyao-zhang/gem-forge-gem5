@@ -2,6 +2,7 @@ categories = [
     "vaddss",
     "vaddsd",
     "vaddps",
+    "vmaxps",
     "vaddpd",
     "vandps",
     "vcmpps",
