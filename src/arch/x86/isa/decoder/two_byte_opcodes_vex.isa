@@ -215,6 +215,9 @@
                 0x6: decode EVEX_L {
                     0x0: VDIVSS(Vo, Wo);
                 }
+                0x7: decode EVEX_L {
+                    0x0: VMAXSS(Vo, Wo);
+                }
             }
             // 0xF2 scalar double
             0x8: decode OPCODE_OP_BOTTOM3 {
