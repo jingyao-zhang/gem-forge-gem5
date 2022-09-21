@@ -411,6 +411,7 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
       return false;
     }
 
+    bool usedAsPUMConfig = false;
     if (computeConfig == config) {
       if (!rangeMap->isStreamPUM) {
         MLC_S_DPRINTF(groupDynId, "[NoPUM] RangeMap not PUM %s.\n", dynId);
@@ -427,14 +428,21 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
        * For UsedConfigs, split them into PUM and NonPUM
        * categories. NOTE: NonPUMConfigs have no PatternInfo.
        */
-      if (rangeMap->isStreamPUM &&
-          rangeMap->pumTile ==
-              group.patternInfo.at(computeConfig->stream).pumTile) {
-        MLC_S_DPRINTF(groupDynId, "[CheckCanPUM]   Add UsedPUMConfig %s.\n",
-                      dynId);
-        group.usedPUMConfigs.push_back(config);
-      } else {
-        MLC_S_DPRINTF(groupDynId, "[CheckCanPUM]   Add UsedNonPUMConfig %s.\n",
+      if (rangeMap->isStreamPUM) {
+        auto sendTile = rangeMap->pumTile;
+        const auto &recvTile =
+            group.patternInfo.at(computeConfig->stream).pumTile;
+
+        MLC_S_DPRINTF(groupDynId,
+                      "[CheckCanPUM]   Checking tile compatible %s.\n", dynId);
+        if (this->isPUMTileCompatibleTo(sendTile, recvTile)) {
+          usedAsPUMConfig = true;
+          MLC_S_DPRINTF(groupDynId, "[CheckCanPUM]   Add UsedPUM %s.\n", dynId);
+          group.usedPUMConfigs.push_back(config);
+        }
+      }
+      if (!usedAsPUMConfig) {
+        MLC_S_DPRINTF(groupDynId, "[CheckCanPUM]   Add UsedNonPUM %s.\n",
                       dynId);
         group.usedNonPUMConfigs.push_back(config);
       }
@@ -505,7 +513,16 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
                      std::forward_as_tuple())
             .first->second;
     patInfo.regionName = streamNUCARegion.name;
-    patInfo.pumTile = rangeMap->pumTile;
+
+    if (usedAsPUMConfig) {
+      const auto &recvTile =
+          group.patternInfo.at(computeConfig->stream).pumTile;
+      patInfo.pumTile = this->getCompatiblePUMTile(rangeMap->pumTile, recvTile);
+    } else {
+      // My PUMTile is by definition compatible.
+      // NonPUMTile we don't care if compatible or not.
+      patInfo.pumTile = rangeMap->pumTile;
+    }
     patInfo.pattern = pattern;
     patInfo.regionVAddr = regionVAddr;
     patInfo.scalarElemSize = scalarElemSize;
@@ -519,11 +536,8 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
   const auto &computeTile = group.patternInfo.at(computeConfig->stream).pumTile;
   for (const auto &baseConfig : group.usedPUMConfigs) {
     const auto &tile = group.patternInfo.at(baseConfig->stream).pumTile;
-    if (tile != computeTile) {
-      MLC_S_DPRINTF(groupDynId, "[NoPUM] Mismatch Tile %s and %s from %s.\n",
-                    computeTile, tile, baseConfig->dynamicId);
-      return false;
-    }
+    assert(this->isPUMTileCompatibleTo(tile, computeTile) &&
+           "PUMTile should be compatible.");
   }
 
   // Before asking DataMoveCompiler, we need some preprocessing on the stream
@@ -551,19 +565,9 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
 
     auto recvS = computeConfig->stream;
     const auto &recvPatternInfo = group.patternInfo.at(recvS);
-    auto recvTile = recvPatternInfo.pumTile;
-
-    if (recvTile != myTile) {
-      // TODO: Handle different mapping of source and dest stream.
-      MLC_S_DPRINTF(groupDynId,
-                    "[NoPUM] Mismatch RecvTile %s and SendTile %s.\n", recvTile,
-                    myTile);
-      return false;
-    }
 
     if (recvPatternInfo.scalarPatterns.size() != 1) {
-      MLC_S_DPRINTF(groupDynId, "[NoPUM] Multi RecvPatterns.\n", recvTile,
-                    myTile);
+      MLC_S_DPRINTF(groupDynId, "[NoPUM] Multi RecvPatterns.\n");
       return false;
     }
     const auto &recvPattern = recvPatternInfo.scalarPatterns.front();
@@ -581,6 +585,88 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
   }
 
   return true;
+}
+
+bool MLCPUMManager::isPUMTileCompatibleTo(const AffinePattern &sendTile,
+                                          const AffinePattern &recvTile) const {
+  /**
+   * The send tile is compatible with recv tile.
+   *
+   * - If sendTile has more dimension than recvTile, it should be able to
+   * contract into the same dimension.
+   *
+   * - After contraction, the tileSizes should be exactly the same, the
+   * ArraySizes should be exactly the same except the outer-most dimension.
+   *
+   */
+  auto sendTileDim = sendTile.getCanonicalTileDim();
+  auto recvTileDim = recvTile.getCanonicalTileDim();
+
+  if (sendTileDim < recvTileDim) {
+    MLCSE_DPRINTF("[IncompatibleTile] SendDim < RecvDim %s -> %s.\n", sendTile,
+                  recvTile);
+    return false;
+  }
+
+  if (!sendTile.canContractCanonicalTileToDim(recvTileDim)) {
+    MLCSE_DPRINTF("[IncompatibleTile] Send Incontractable %s -> %s.\n",
+                  sendTile, recvTile);
+    return false;
+  }
+
+  auto contractedSendTile = sendTile.contractCanonicalTileToDim(recvTileDim);
+  MLCSE_DPRINTF("[TileCompatible] Send Contracted %s -> %s.\n", sendTile,
+                contractedSendTile);
+
+  auto sendTileArraySizes = contractedSendTile.getTileAndArraySize();
+  auto recvTileArraySizes = recvTile.getTileAndArraySize();
+
+  const auto &sendTileSizes = sendTileArraySizes.first;
+  const auto &sendArraySizes = sendTileArraySizes.second;
+  const auto &recvTileSizes = recvTileArraySizes.first;
+  const auto &recvArraySizes = recvTileArraySizes.second;
+
+  for (auto i = 0; i < recvTileDim; ++i) {
+    if (sendTileSizes.at(i) != recvTileSizes.at(i)) {
+      MLCSE_DPRINTF("[IncompatibleTile] MismatchTile %d %d != %d.\n", i,
+                    sendTileSizes.at(i), recvTileSizes.at(i));
+      return false;
+    }
+    if (sendArraySizes.at(i) != recvArraySizes.at(i) && i + 1 < recvTileDim) {
+      MLCSE_DPRINTF("[IncompatibleTile] MismatchArray %d %d != %d.\n", i,
+                    sendArraySizes.at(i), recvArraySizes.at(i));
+      return false;
+    }
+  }
+
+  return true;
+}
+
+AffinePattern
+MLCPUMManager::getCompatiblePUMTile(const AffinePattern &sendTile,
+                                    const AffinePattern &recvTile) const {
+
+  assert(this->isPUMTileCompatibleTo(sendTile, recvTile));
+  auto recvTileDim = recvTile.getCanonicalTileDim();
+  auto contractedSendTile = sendTile.contractCanonicalTileToDim(recvTileDim);
+
+  /**
+   * If the SendTile's outer-most trip is smaller than RecvTile, we expand the
+   * SendTile to make sure they are the same.
+   */
+  MLCSE_DPRINTF("[TileCompatible] Contract Tile %s -> %s.\n", sendTile,
+                contractedSendTile);
+  assert(contractedSendTile.params.size() == recvTile.params.size());
+  if (contractedSendTile.params.back().trip < recvTile.params.back().trip) {
+    MLCSE_DPRINTF("[TileCompatible] Expand TileOuterTrip %d -> %d.\n",
+                  contractedSendTile.params.back().trip,
+                  recvTile.params.back().trip);
+    contractedSendTile.params.back().trip = recvTile.params.back().trip;
+  }
+
+  MLCSE_DPRINTF("[TileCompatible] Make Compatible Tile %s -> %s.\n", sendTile,
+                contractedSendTile);
+  return contractedSendTile;
 }
 
 void MLCPUMManager::buildPUMDataGraph(PUMContext &context) {

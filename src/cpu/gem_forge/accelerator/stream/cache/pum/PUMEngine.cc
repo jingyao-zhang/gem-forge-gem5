@@ -403,6 +403,7 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
       // Assume one cycle to read 1 bit of constant value.
       computeLatency = wordlineBits;
       break;
+    case SimdCmpOp:
     case IntAluOp:
       computeLatency = wordlineBits;
       break;

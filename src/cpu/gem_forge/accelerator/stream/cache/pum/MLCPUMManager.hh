@@ -504,6 +504,14 @@ private:
   bool canApplyPUMToGroup(PUMContext &context, PUMComputeStreamGroup &group);
 
   /**
+   * Check if the SendPUMTile is compatible with RecvPUMTile.
+   */
+  bool isPUMTileCompatibleTo(const AffinePattern &sendTile,
+                             const AffinePattern &recvTile) const;
+  AffinePattern getCompatiblePUMTile(const AffinePattern &sendTile,
+                                     const AffinePattern &recvTile) const;
+
+  /**
    * Build the PUMDataGraph.
    */
   using PUMDataGraphNodeVec = std::vector<PUMDataGraphNode *>;

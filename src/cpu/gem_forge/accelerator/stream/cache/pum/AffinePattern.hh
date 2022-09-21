@@ -134,7 +134,7 @@ public:
 
     TODO: How to support nested tiling?
    */
-  bool is_canonical_tile() const {
+  bool isCanonicalTile() const {
     if (start != 0) {
       return false;
     }
@@ -197,6 +197,11 @@ public:
     return totalTileSize;
   }
 
+  int64_t getCanonicalTileDim() const { return params.size() / 2; }
+
+  bool canContractCanonicalTileToDim(int64_t targetDim) const;
+  AffinePattern contractCanonicalTileToDim(int64_t targetDim) const;
+
   static AffinePattern construct_canonical_tile(IntVecT tile_sizes,
                                                 IntVecT array_sizes) {
     auto dimension = tile_sizes.size();
@@ -222,7 +227,7 @@ public:
   }
 
   AffinePattern revert_canonical_tile() const {
-    assert(is_canonical_tile());
+    assert(isCanonicalTile());
     auto dimension = params.size() / 2;
 
     auto ret = getTileAndArraySize();

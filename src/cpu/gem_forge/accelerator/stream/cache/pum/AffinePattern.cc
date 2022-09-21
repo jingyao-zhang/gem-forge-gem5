@@ -62,6 +62,48 @@ AffinePattern AffinePattern::parse(const std::string &s) {
   return AffinePattern(start, params);
 }
 
+bool AffinePattern::canContractCanonicalTileToDim(int64_t targetDim) const {
+  auto dimension = this->getCanonicalTileDim();
+  if (dimension < targetDim) {
+    return false;
+  }
+  if (dimension == targetDim) {
+    return true;
+  }
+  /**
+   * Contractable if all TileSize higher than TargetDim is 1.
+   */
+  for (auto i = targetDim; i < dimension; ++i) {
+    if (this->params[i].trip != 1) {
+      return false;
+    }
+  }
+  return true;
+}
+
+AffinePattern
+AffinePattern::contractCanonicalTileToDim(int64_t targetDim) const {
+
+  assert(this->canContractCanonicalTileToDim(targetDim));
+
+  auto dimension = this->getCanonicalTileDim();
+
+  auto tileArraySize = this->getTileAndArraySize();
+  auto &tileSizes = tileArraySize.first;
+  auto &arraySizes = tileArraySize.second;
+
+  // Contract the tile sizes.
+  tileSizes.resize(targetDim);
+
+  // Adjust the array sizes.
+  for (int i = targetDim; i < dimension; ++i) {
+    arraySizes.at(targetDim - 1) *= arraySizes.at(i);
+  }
+  arraySizes.resize(targetDim);
+
+  return AffinePattern::construct_canonical_tile(tileSizes, arraySizes);
+}
+
 AffinePattern::IntVecT
 AffinePattern::getArrayPosition(const IntVecT &arraySizes, int64_t linearPos) {
   /**
