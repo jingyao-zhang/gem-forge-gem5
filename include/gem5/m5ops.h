@@ -98,6 +98,7 @@ void m5_stream_nuca_align(void *A, void *B, int64_t elementOffset);
 enum StreamNUCARegionProperty {
   // Manually overrite the interleaving (in elements).
   STREAM_NUCA_REGION_PROPERTY_INTERLEAVE = 0,
+  STREAM_NUCA_REGION_PROPERTY_USE_PUM,
 };
 void m5_stream_nuca_set_property(void *buffer,
                                  enum StreamNUCARegionProperty property,

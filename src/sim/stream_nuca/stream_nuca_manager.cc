@@ -130,6 +130,11 @@ void StreamNUCAManager::setProperty(Addr start, uint64_t property,
                                          value);
     break;
   }
+  case StreamNUCARegionProperty::USE_PUM: {
+    region.userDefinedProperties.emplace(StreamNUCARegionProperty::USE_PUM,
+                                         value);
+    break;
+  }
   }
 }
 
@@ -1150,8 +1155,8 @@ bool StreamNUCAManager::canRemapDirectRegionPUM(const StreamRegion &region) {
    * to PUM.
    * TODO: Add pseudo-instructions to pass in this information.
    */
-  if (region.name == "gfm.kmeans.new_centers" ||
-      region.name == "gfm.kmeans.cluster_size") {
+  if (region.userDefinedProperties.count(StreamNUCARegionProperty::USE_PUM) &&
+      region.userDefinedProperties.at(StreamNUCARegionProperty::USE_PUM) == 0) {
     DPRINTF(StreamNUCAManager, "[StreamPUM] Region %s Manually Disabled PUM.\n",
             region.name);
     return false;

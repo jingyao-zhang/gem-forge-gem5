@@ -31,6 +31,7 @@ public:
   enum StreamNUCARegionProperty {
     // Manually overrite the interleaving (in elements).
     INTERLEAVE = 0,
+    USE_PUM,
   };
   void setProperty(Addr start, uint64_t property, uint64_t value);
 
