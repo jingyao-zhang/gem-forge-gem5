@@ -4,6 +4,7 @@
 #include "../stream_float_policy.hh"
 
 #include "mem/ruby/protocol/RequestMsg.hh"
+#include "sim/stream_nuca/stream_nuca_manager.hh"
 
 #include "base/trace.hh"
 #include "debug/MLCRubyStrandSplit.hh"
@@ -895,8 +896,79 @@ void MLCStrandManager::receiveStreamEnd(const std::vector<DynStreamId> &endIds,
   }
 }
 
+void MLCStrandManager::tryMarkPUMRegionCached(const DynStreamId &dynId) {
+
+  std::vector<std::pair<DynStrandId, std::pair<Addr, MachineType>>>
+      rootStrandTailPAddrMachineTypeVec;
+
+  Stream *S = nullptr;
+  AddrGenCallbackPtr addrGenCb;
+  DynStreamFormalParamV formalParams;
+
+  for (const auto &entry : this->strandMap) {
+    const auto &strandId = entry.first;
+    if (strandId.dynStreamId == dynId) {
+      auto dynS = entry.second;
+
+      auto config = dynS->getConfig();
+      if (config->streamConfig) {
+        // Get the stream config from strand config.
+        config = config->streamConfig;
+      }
+
+      S = dynS->getStaticStream();
+      addrGenCb = config->addrGenCallback;
+      formalParams = config->addrGenFormalParams;
+
+      break;
+    }
+  }
+
+  assert(S && "Not a Stream?");
+
+  auto linearAddrGen =
+      std::dynamic_pointer_cast<LinearAddrGenCallback>(addrGenCb);
+  if (!linearAddrGen) {
+    // We cannot handle non-affine stream.
+    return;
+  }
+
+  auto nucaManager =
+      S->getCPUDelegator()->getSingleThreadContext()->getStreamNUCAManager();
+
+  auto initVAddr =
+      linearAddrGen
+          ->genAddr(0,
+                    convertFormalParamToParam(formalParams, getStreamValueFail))
+          .uint64();
+
+  Addr initPAddr;
+  if (!S->getCPUDelegator()->translateVAddrOracle(initVAddr, initPAddr)) {
+    return;
+  }
+
+  const auto &region = nucaManager->getContainingStreamRegion(initVAddr);
+  auto nucaMapEntry = StreamNUCAMap::getRangeMapContaining(initPAddr);
+
+  /**
+   * As some heuristic, check that initVAddr is the same as regionStartVAddr.
+   * TODO: Really check that the stream accessed the whole region.
+   */
+  if (!nucaMapEntry->isStreamPUM) {
+    // So far only enable this feature for PUM region.
+    return;
+  }
+  if (region.vaddr != initVAddr) {
+    return;
+  }
+  MLC_S_DPRINTF(dynId, "Mark Cached PUMRegion %s.\n", region.name);
+  nucaManager->markRegionCached(region.vaddr);
+}
+
 void MLCStrandManager::endStream(const DynStreamId &endId, MasterID masterId) {
   MLC_S_DPRINTF_(MLCRubyStreamLife, endId, "Received StreamEnd.\n");
+
+  this->tryMarkPUMRegionCached(endId);
 
   /**
    * Find all root strands and record the PAddr and MachineType to multicast

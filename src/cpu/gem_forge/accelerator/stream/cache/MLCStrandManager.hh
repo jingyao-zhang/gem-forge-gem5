@@ -115,6 +115,10 @@ private:
    */
   void sendConfigToRemoteSE(ConfigPtr streamConfigureData, MasterID masterId);
   /**
+   * Mark a PUMRegion cached when a stream accessed the entire region.
+   */
+  void tryMarkPUMRegionCached(const DynStreamId &dynId);
+  /**
    * Receive a StreamEnd message.
    * The difference between StreamConfigure and StreamEnd message
    * is that the first one already knows the destination LLC bank from the core
