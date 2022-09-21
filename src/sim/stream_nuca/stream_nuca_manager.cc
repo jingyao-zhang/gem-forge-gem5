@@ -125,16 +125,17 @@ void StreamNUCAManager::setProperty(Addr start, uint64_t property,
   default: {
     panic("[StreamNUCA] Invalid property %lu.", property);
   }
-  case StreamNUCARegionProperty::INTERLEAVE: {
-    region.userDefinedProperties.emplace(StreamNUCARegionProperty::INTERLEAVE,
-                                         value);
-    break;
+#define CASE(E)                                                                \
+  case RegionProperty::E: {                                                    \
+    region.userDefinedProperties.emplace(RegionProperty::E, value);            \
+    break;                                                                     \
   }
-  case StreamNUCARegionProperty::USE_PUM: {
-    region.userDefinedProperties.emplace(StreamNUCARegionProperty::USE_PUM,
-                                         value);
-    break;
-  }
+
+    CASE(INTERLEAVE);
+    CASE(USE_PUM);
+    CASE(PUM_NO_INIT);
+
+#undef CASE
   }
 }
 
@@ -980,14 +981,12 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
    * If the region has user-defined interleave, use it.
    * Check that there are no alignment defined.
    */
-  if (region.userDefinedProperties.count(
-          StreamNUCARegionProperty::INTERLEAVE)) {
+  if (region.userDefinedProperties.count(RegionProperty::INTERLEAVE)) {
     if (!region.aligns.empty()) {
       panic("Range %s has both aligns and user-defined interleave.",
             region.name);
     }
-    return region.userDefinedProperties.at(
-               StreamNUCARegionProperty::INTERLEAVE) *
+    return region.userDefinedProperties.at(RegionProperty::INTERLEAVE) *
            region.elementSize;
   }
 
@@ -1155,8 +1154,8 @@ bool StreamNUCAManager::canRemapDirectRegionPUM(const StreamRegion &region) {
    * to PUM.
    * TODO: Add pseudo-instructions to pass in this information.
    */
-  if (region.userDefinedProperties.count(StreamNUCARegionProperty::USE_PUM) &&
-      region.userDefinedProperties.at(StreamNUCARegionProperty::USE_PUM) == 0) {
+  if (region.userDefinedProperties.count(RegionProperty::USE_PUM) &&
+      region.userDefinedProperties.at(RegionProperty::USE_PUM) == 0) {
     DPRINTF(StreamNUCAManager, "[StreamPUM] Region %s Manually Disabled PUM.\n",
             region.name);
     return false;
@@ -1293,6 +1292,11 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
   DPRINTF(StreamNUCAManager,
           "[StreamPUM] Map %s PAddr %#x ElemBit %d StartWdLine %d Tile %s.\n",
           region.name, startPAddr, elemBits, startWordline, pumTile);
+
+  if (region.userDefinedProperties.count(RegionProperty::PUM_NO_INIT) &&
+      region.userDefinedProperties.at(RegionProperty::PUM_NO_INIT) == 1) {
+    this->markRegionCached(region.vaddr);
+  }
 }
 
 std::vector<int>

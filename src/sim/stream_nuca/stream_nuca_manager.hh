@@ -28,10 +28,11 @@ public:
   /**
    * Allow the user to manually set some property of the region.
    */
-  enum StreamNUCARegionProperty {
+  enum RegionProperty {
     // Manually overrite the interleaving (in elements).
     INTERLEAVE = 0,
     USE_PUM,
+    PUM_NO_INIT,
   };
   void setProperty(Addr start, uint64_t property, uint64_t value);
 
@@ -81,7 +82,7 @@ public:
     /**
      * Some user-defined properties.
      */
-    using UserDefinedPropertyMap = std::map<StreamNUCARegionProperty, uint64_t>;
+    using UserDefinedPropertyMap = std::map<RegionProperty, uint64_t>;
     UserDefinedPropertyMap userDefinedProperties;
     StreamRegion(const std::string &_name, Addr _vaddr, uint64_t _elementSize,
                  int64_t _numElement, const std::vector<int64_t> &_arraySizes)
