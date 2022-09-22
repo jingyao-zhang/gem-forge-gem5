@@ -177,6 +177,28 @@ void AVXOpBase::doPackedBinaryOp(ExecContext *xc, BinaryOp op) const {
   }
 }
 
+void AVXOpBase::doSingleBinaryOpFillSrc1(ExecContext *xc, BinaryOp op) const {
+  auto vRegs = destVL / sizeof(uint64_t);
+  FloatInt src1;
+  FloatInt src2;
+  FloatInt dest;
+  for (int i = 0; i < vRegs; i++) {
+    src1.ul = xc->readFloatRegOperandBits(this, i * 2 + 0);
+    src2.ul = xc->readFloatRegOperandBits(this, i * 2 + 1);
+
+    if (i == 0) {
+      dest = this->calcPackedBinaryOp(src1, src2, op);
+      if (this->srcSize == 4) {
+        // We only care about the first 32bit. Reset the remain to src1.
+        dest.ui.i2 = src1.ui.i2;
+      }
+    } else {
+      dest.ul = src1.ul;
+    }
+    xc->setFloatRegOperandBits(this, i, dest.ul);
+  }
+}
+
 void AVXOpBase::doFusedPackedBinaryOp(ExecContext *xc, BinaryOp op1,
                                       BinaryOp op2) const {
   auto vRegs = destVL / sizeof(uint64_t);

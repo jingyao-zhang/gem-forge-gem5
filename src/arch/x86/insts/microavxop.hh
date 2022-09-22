@@ -135,6 +135,8 @@ protected:
   // void doBroadcast(ExecContext *xc) const;
   // A helper function to perform vcmpf operation.
   void doFloatCompare(ExecContext *xc, bool isSingle = false) const;
+  // A helper function to perform single src1 op src2
+  void doSingleBinaryOpFillSrc1(ExecContext *xc, BinaryOp op) const;
 
   // A helper function to add dest regs.
   inline void addAVXDestRegs() {

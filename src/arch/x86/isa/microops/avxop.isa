@@ -233,6 +233,12 @@ let {{
             this->doPackedBinaryOp(xc, BinaryOp::FloatAdd);
         '''
 
+    class Saddf(Varithp):
+        opClass = 'FloatAddOp'
+        code = '''
+            this->doSingleBinaryOpFillSrc1(xc, BinaryOp::FloatAdd);
+        '''
+
     class Vmaxf(Varithp):
         opClass = 'SimdFloatCmpOp'
         code = '''
@@ -255,6 +261,12 @@ let {{
         opClass = 'SimdFloatMultOp'
         code = '''
             this->doPackedBinaryOp(xc, BinaryOp::FloatMul);
+        '''
+
+    class Smulf(Varithp):
+        opClass = 'FloatMultOp'
+        code = '''
+            this->doSingleBinaryOpFillSrc1(xc, BinaryOp::FloatMul);
         '''
 
     class Vdivf(Varithp):

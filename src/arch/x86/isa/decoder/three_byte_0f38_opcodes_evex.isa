@@ -99,6 +99,18 @@
                         }
                     }
                 }
+                0xA8: decode REX_W {
+                    0x0: decode EVEX_B {
+                        0x0: decode EVEX_L_EXTEND {
+                            0x2: VFMADD213PS(VZqo, WZqo);
+                            0x1: VFMADD213PS(VYdo, WYdo);
+                            0x0: VFMADD213PS(Vo, Wo);
+                        }
+                        0x1: decode EVEX_L_EXTEND {
+                            0x2: VFMADD213PSBROADCAST(VZqo, WZqo);
+                        }
+                    }
+                }
                 0xB8: decode REX_W {
                     0x0: decode EVEX_B {
                         0x0: decode EVEX_L_EXTEND {
