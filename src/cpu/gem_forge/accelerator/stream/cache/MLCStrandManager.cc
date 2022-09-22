@@ -418,8 +418,8 @@ bool MLCStrandManager::fixSplitDimIntrlv(StrandSplitContext &context,
     }
     if (splitDimTrip != firstSplitDimTrip) {
       STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
-                  "[Strand] Mismatch in SplitDimTrip %ld %ld %s.", splitDimTrip,
-                  firstSplitDimTrip, configs.front()->dynamicId);
+                  "[Strand] Mismatch in SplitDimTrip %ld %ld %s.\n",
+                  splitDimTrip, firstSplitDimTrip, configs.front()->dynamicId);
       return false;
     }
 

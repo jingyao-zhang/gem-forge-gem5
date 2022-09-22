@@ -779,14 +779,21 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
     }
 
     /**
-     * Special case for kmeans: the reduction should be associated with
-     * "feature.ld".
+     * Special cases:
+     * kmeans: with "feature.ld".
+     * pointnet: with "mlp_inner.input.ld".
      */
     for (int i = 0; i < backBaseStreamConfigs.size(); ++i) {
       const auto &config = backBaseStreamConfigs.at(i);
       std::string strStreamName = config->dynamicId.streamName;
       if (strStreamName.find("gfm.kmeans.feature.ld") != std::string::npos) {
         S_DPRINTF(S, "ReduceS floated with kmeans %s.\n", config->dynamicId);
+        selectedBackBaseConfigIdx = i;
+        break;
+      }
+      if (strStreamName.find("gfm.pointnet.mlp_inner.input.ld") !=
+          std::string::npos) {
+        S_DPRINTF(S, "ReduceS floated with pointnet %s.\n", config->dynamicId);
         selectedBackBaseConfigIdx = i;
         break;
       }

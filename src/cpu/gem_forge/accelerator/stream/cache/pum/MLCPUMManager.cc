@@ -990,13 +990,33 @@ void MLCPUMManager::buildPUMDataGraphMove(
       }
     }
 
-    auto moveNode = PUMDataGraphNode::newMoveNode(
-        recvPatInfo.regionName, recvTile, recvPat, recvSplitOutDim, sendPat,
-        sendSplitOutDim, valueNode, recvPatInfo.scalarElemSize);
-    context.pumDataGraphNodes.push_back(moveNode);
-    resultNodes.emplace(logicalStreamId, moveNode);
-
-    MLCSE_DPRINTF("New move node: %p\n", moveNode);
+    /**
+     * If the pattern matches, we avoid generate the move node at all.
+     */
+    PUMDataGraphNode *finalNode = nullptr;
+    if (recvPat == sendPat && recvSplitOutDim == sendSplitOutDim) {
+      finalNode = valueNode;
+    } else {
+      finalNode = PUMDataGraphNode::newMoveNode(
+          recvPatInfo.regionName, recvTile, recvPat, recvSplitOutDim, sendPat,
+          sendSplitOutDim, valueNode, recvPatInfo.scalarElemSize);
+      context.pumDataGraphNodes.push_back(finalNode);
+      MLCSE_DPRINTF("New move node: %p for logical stream id %lu.\n", finalNode,
+                    logicalStreamId);
+    }
+    /**
+     * Notice that here we may override the original LogicalStreamId.
+     * This is the case for PointNetInner -- where we have to move the reduce
+     * results.
+     */
+    if (resultNodes.emplace(logicalStreamId, finalNode).second) {
+      MLCSE_DPRINTF("Final node: %p for logical stream id %lu.\n", finalNode,
+                    logicalStreamId);
+    } else {
+      resultNodes[logicalStreamId] = finalNode;
+      MLCSE_DPRINTF("Final node: %p override logical stream id %lu.\n",
+                    finalNode, logicalStreamId);
+    }
   }
 }
 
@@ -1314,7 +1334,8 @@ void MLCPUMManager::buildPUMDataGraphCompute(
      */
     {
       auto name = inst->getName();
-      if (name == "movfp" || name == "mov2fp" || name == "mov2int") {
+      if (name == "movfp" || name == "mov2fp" || name == "mov2int" ||
+          name == "vclear") {
         curOpTy = OpTypeE::Misc;
       }
     }
@@ -2255,7 +2276,21 @@ void MLCPUMManager::runPrefetchStage(PUMContext &context,
 
   // Dispatch & track prefetch streams.
   auto configsCpy = *configs;
-  this->dispatchStreamConfigs(configs, context.savedPkt->req->masterId());
+
+  /**
+   * Configure them one by one so that StrandManager have the freedom to split
+   * them as it like.
+   */
+  for (auto config : *configs) {
+    auto singleConfig = new CacheStreamConfigureVec;
+    singleConfig->push_back(config);
+    // SingleConfig will be deleted in MLCStrandManager.
+    this->dispatchStreamConfigs(singleConfig,
+                                context.savedPkt->req->masterId());
+  }
+  // Delete configs.
+  delete configs;
+  // this->dispatchStreamConfigs(configs, context.savedPkt->req->masterId());
 
   this->inFlightPrefetchStreams = 0;
   this->totalSentPrefetchPkts = 0;
@@ -2353,8 +2388,6 @@ MLCPUMManager::generatePrefetchStreams(PUMComputeStreamGroup &group) {
       return std::shared_ptr<CacheStreamConfigureData>(nullptr);
     }
 
-    MLCSE_DPRINTF("Prefetch stream %s.\n", config->dynamicId);
-
     /**
      * ! Hack: Assume prefetch streams will fetch the whole region.
      * This avoids us creating multiple prefetch streams for one region.
@@ -2411,6 +2444,10 @@ MLCPUMManager::generatePrefetchStreams(PUMComputeStreamGroup &group) {
 
     // Fix the TripCount in config.
     prefetchConfig->totalTripCount = numCLs;
+
+    MLC_S_DPRINTF(
+        config->dynamicId, "Prefetch stream %s.\n",
+        printAffinePatternParams(prefetchConfig->addrGenFormalParams));
 
     /**
      * Set the float plan to offload to the LLC controller.
@@ -3030,6 +3067,7 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
   context.savedPkt = pkt;
 
   if (prefetchConfigs->empty()) {
+    delete prefetchConfigs;
     this->runPUMExecutionStage(context);
   } else {
     this->runPrefetchStage(context, prefetchConfigs);
@@ -3367,20 +3405,28 @@ void MLCPUMManager::tryAddInnerDim(PUMContext &context,
   }
 
   auto &recvPat = recvPatInfo.scalarPatterns.front();
+  auto recvPatDims = recvPat.params.size();
   auto arrayDims = recvTile.params.size() / 2;
-  if (recvPat.params.size() + 1 != arrayDims) {
+  if (recvPatDims + 1 < arrayDims) {
     return;
   }
 
   auto arraySizes = recvTile.getArraySize();
-  for (int dim = 0; dim < recvPat.params.size(); ++dim) {
+
+  for (int dim = 0; dim + 1 < arrayDims; ++dim) {
     auto stride = recvPat.params.at(dim).stride;
     auto arraySize = arraySizes.at(dim);
     if (stride != arraySize) {
-      MLC_S_DPRINTF(groupDynId, "[PUM] Mismatch at Dim %d %ld %ld.\n", dim,
+      MLC_S_DPRINTF(groupDynId,
+                    "[PUM] NotAddInnerDim: Mismatch at Dim %d %ld %ld.\n", dim,
                     stride, arraySize);
       return;
     }
+  }
+  if (arrayDims == 1 && recvPatDims >= 1) {
+    // So far don't bother adding InnerDim for 1D array?
+    MLC_S_DPRINTF(groupDynId, "[PUM] NotAddInnerDim: 1D array.\n");
+    return;
   }
 
   // Add one inner dimension.
@@ -3420,8 +3466,19 @@ void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
     }
   }
 
-  this->trySplitOuterDim(context, group);
+  /**
+   * AddInnerDim should happen before SplitOuterDim as the case in this
+   * implementation of GEMM for (int i = 0; i < N; ++i) for (int j = 0; j < M;
+   * ++j) int sum = 0; for (int k = 0; k < K; ++k) sum += A[j * K + k] * Bt[i *
+   * N + k] C[j * N + i] = sum
+   *
+   * C would have pattern:    0 : N : M : 1 : N
+   * We first add inner dim:  0 : 1 : 1 : N : M : 1 : N
+   * Then split outer dim:    0 : 1 : 1 : N : M, outer 0 : 1 : N
+   */
+
   this->tryAddInnerDim(context, group);
+  this->trySplitOuterDim(context, group);
 }
 
 AffinePattern
@@ -3648,7 +3705,8 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
 void MLCPUMManager::tryKickNextComputeRound(PUMContext &context) {
 
   for (auto &group : context.pumGroups) {
-    if (!group.appliedPUM || !group.reduceConfig || group.nextOuterIter == 0) {
+    if (!group.appliedPUM || !group.pumReduceConfig ||
+        group.nextOuterIter == 0) {
       // This is not PUMReduction, or this is the first round.
       continue;
     }

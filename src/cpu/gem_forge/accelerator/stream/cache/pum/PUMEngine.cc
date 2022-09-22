@@ -410,6 +410,8 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
     case IntMultOp:
       computeLatency = wordlineBits * wordlineBits / 2;
       break;
+    case FloatAddOp:
+    case FloatMultOp:
     case SimdFloatAddOp:
     case SimdFloatMultOp:
     case SimdFloatDivOp:
