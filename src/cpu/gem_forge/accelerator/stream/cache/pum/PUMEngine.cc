@@ -105,7 +105,8 @@ void PUMEngine::configure(MLCPUMManager *pumManager, int64_t pumContextId,
   }
 
   if (Debug::LLCStreamPUM) {
-    LLC_SE_DPRINTF("[PUMEngine]   Configured with CMD.\n");
+    LLC_SE_DPRINTF("[PUMEngine]   Configured with CMD %lu.\n",
+                   this->commands.size());
     for (int i = 0; i < this->commands.size(); ++i) {
       LLC_SE_DPRINTF("[PUMEngine]   CMD %ld %s.", i,
                      this->commands.at(i).to_string(myBankIdx));
@@ -261,6 +262,20 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
      */
     auto myBankIdx = this->getBankIdx();
 
+    auto numBankSubRegionCount =
+        command.llcSplitTileCmds.getBankSubRegionCount(myBankIdx);
+    assert(numBankSubRegionCount > 0 && "Empty LLC Inter-Array command.");
+    /**
+     * We should really handle each TileMask separately. However, here I just
+     * sum all of them.
+     */
+    int64_t totalTiles = 0;
+    for (auto i = 0; i < numBankSubRegionCount; ++i) {
+      const auto &tileMask =
+          command.llcSplitTileCmds.getAffinePattern(myBankIdx, 0);
+      totalTiles += tileMask.getTotalTrip();
+    }
+
     auto llcTreeLeafBandwidthBits = this->hwConfig->tree_leaf_bw_bytes * 8;
     auto bitlinesPerArray = command.bitline_mask.getTotalTrip();
     auto latencyPerWordline =
@@ -275,7 +290,7 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
     auto numSubTreeNodes = hwConfig->tree_degree;
     for (int level = 0; level < numLevels;
          ++level, numSubTreeNodes *= hwConfig->tree_degree) {
-      auto levelArrays = 0;
+      int64_t levelArrays = 0;
       for (const auto &splitPattern : command.inter_array_splits[level]) {
         // TODO: Intersect with LLC array masks.
         if (level + 1 == numLevels) {
@@ -284,7 +299,9 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
            * Notice that PUMEngine is placed at bank level, here we only
            * care about the first trip.
            */
-          levelArrays += splitPattern.getTrips().front();
+          auto numInterBankTiles =
+              std::min(splitPattern.getTrips().front(), totalTiles);
+          levelArrays += numInterBankTiles;
 
           auto srcArrayIdx = this->hwConfig->get_array_per_bank() * myBankIdx +
                              splitPattern.start;
@@ -297,8 +314,7 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
           auto dstBankIdx =
               this->hwConfig->get_bank_idx_from_array_idx(dstArrayIdx);
 
-          auto numInterBankBitlines =
-              splitPattern.getTrips().front() * bitlinesPerArray;
+          auto numInterBankBitlines = numInterBankTiles * bitlinesPerArray;
           interBankBitlineTraffic.emplace_back(dstBankIdx,
                                                numInterBankBitlines);
 
@@ -314,20 +330,22 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
            * 2. Otherwise, we need to perform shift in each sub-tree
            * sequentially.
            */
+          auto shiftedArrays =
+              std::min(splitPattern.getTotalTrip(), totalTiles);
           if (this->controller->myParams
                   ->stream_pum_enable_parallel_inter_array_shift) {
-            levelArrays += splitPattern.getTotalTrip();
+            levelArrays += shiftedArrays;
           } else {
             if (level + 2 == numLevels) {
               // This is the inter-way level. Can always shift in parallel.
-              levelArrays += splitPattern.getTotalTrip();
+              levelArrays += shiftedArrays;
             } else {
               // Intra-way inter-array level.
               auto numLeafNodes = this->hwConfig->array_per_way;
               assert(numSubTreeNodes <= numLeafNodes);
               assert(numLeafNodes % numSubTreeNodes == 0);
               auto levelSubTrees = numLeafNodes / numSubTreeNodes;
-              levelArrays += splitPattern.getTotalTrip() * levelSubTrees;
+              levelArrays += shiftedArrays * levelSubTrees;
             }
           }
         }
