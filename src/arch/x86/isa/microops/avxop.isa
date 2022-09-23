@@ -379,10 +379,22 @@ let {{
             this->doFusedPackedBinaryOp(xc, BinaryOp::FloatMul, BinaryOp::FloatAdd);
         '''
 
+    class Vfnmaddf(Vfused):
+        opClass = 'SimdFloatMultOp'
+        code = '''
+            this->doFusedPackedBinaryOp(xc, BinaryOp::FloatNegMul, BinaryOp::FloatAdd);
+        '''
+
     class Sfmaddf(Sfused):
         opClass = 'SimdFloatMultOp'
         code = '''
             this->doFusedSingleBinaryOp(xc, BinaryOp::FloatMul, BinaryOp::FloatAdd);
+        '''
+
+    class Sfnmaddf(Sfused):
+        opClass = 'SimdFloatMultOp'
+        code = '''
+            this->doFusedSingleBinaryOp(xc, BinaryOp::FloatNegMul, BinaryOp::FloatAdd);
         '''
 
     class Vbroadcast8(AVXOp):

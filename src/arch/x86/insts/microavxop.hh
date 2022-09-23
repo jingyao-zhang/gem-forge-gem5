@@ -106,6 +106,7 @@ protected:
     FloatMul,
     FloatDiv,
     FloatMax,
+    FloatNegMul,
     // Add/Sub can ignore sign.
     IntAdd,
     IntSub,

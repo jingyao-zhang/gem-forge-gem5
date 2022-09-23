@@ -55,6 +55,21 @@
                         0x0: VFMADD213SS(Vo, Wq);
                     }
                 }
+                0xAD: decode EVEX_B {
+                    0x0: decode EVEX_L {
+                        0x0: VFNMADD213SS(Vo, Wq);
+                    }
+                }
+                0xB9: decode EVEX_B {
+                    0x0: decode EVEX_L {
+                        0x0: VFMADD231SS(Vo, Wq);
+                    }
+                }
+                0xBD: decode EVEX_B {
+                    0x0: decode EVEX_L {
+                        0x0: VFNMADD231SS(Vo, Wq);
+                    }
+                }
             }
         }
     }

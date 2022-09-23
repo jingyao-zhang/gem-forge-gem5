@@ -67,6 +67,10 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
       dest.f.f1 = src1.f.f1 * src2.f.f1;
       dest.f.f2 = src1.f.f2 * src2.f.f2;
       break;
+    case BinaryOp::FloatNegMul:
+      dest.f.f1 = -src1.f.f1 * src2.f.f1;
+      dest.f.f2 = -src1.f.f2 * src2.f.f2;
+      break;
     case BinaryOp::FloatDiv:
       dest.f.f1 = src1.f.f1 / src2.f.f1;
       dest.f.f2 = src1.f.f2 / src2.f.f2;
@@ -123,6 +127,9 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
       break;
     case BinaryOp::FloatMul:
       dest.d = src1.d * src2.d;
+      break;
+    case BinaryOp::FloatNegMul:
+      dest.d = -src1.d * src2.d;
       break;
     case BinaryOp::FloatDiv:
       dest.d = src1.d / src2.d;
