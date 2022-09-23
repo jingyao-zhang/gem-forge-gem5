@@ -72,6 +72,9 @@ void StreamStatistic::dump(std::ostream &os) const {
     dumpScalar(numRemoteReuseSlice);
     dumpScalarIfNonZero(numRemoteMulticastSlice);
 
+    dumpScalarIfNonZero(numStrands);
+    dumpScalarIfNonZero(numPrefetchStrands);
+
     dumpScalar(numRemoteConfigure);
     dumpScalar(numRemoteConfigureCycle);
     dumpAvg(avgConfigureCycle, numRemoteConfigureCycle, numRemoteConfigure);
@@ -245,6 +248,8 @@ void StreamStatistic::clear() {
   this->numLLCSentSlice = 0;
   this->numLLCMulticastSlice = 0;
   this->numLLCCanMulticastSlice = 0;
+  this->numStrands = 0;
+  this->numPrefetchStrands = 0;
   this->numLLCFaultSlice = 0;
   this->numLLCPredYSlice = 0;
   this->numLLCPredNSlice = 0;

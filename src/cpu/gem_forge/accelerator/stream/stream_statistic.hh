@@ -58,6 +58,10 @@ public:
   size_t numLLCAliveElementSamples = 0;
   size_t numRemoteMulticastSlice = 0;
 
+  // Strand statistics.
+  size_t numStrands = 0;
+  size_t numPrefetchStrands = 0;
+
   // Float statistics in Mem.
   size_t numMemIssueSlice = 0;
   size_t numRemoteReuseSlice = 0;
