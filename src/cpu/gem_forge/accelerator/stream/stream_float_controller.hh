@@ -117,6 +117,12 @@ private:
    * Check if a MidwayFloat is ready to issue.
    */
   bool isMidwayFloatReady(CacheStreamConfigureDataPtr &config);
+
+  /**
+   * Allocate and add AffineIV Config.
+   */
+  void allocateAddUsedAffineIV(CacheStreamConfigureDataPtr &config,
+                               DynStream *dynS, Stream *affineIVS);
 };
 
 #endif

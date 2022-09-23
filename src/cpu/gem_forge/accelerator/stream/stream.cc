@@ -119,6 +119,20 @@ bool Stream::isMemStream() const {
   }
 }
 
+bool Stream::isAffineIVStream() const {
+  if (this->getStreamType() != ::LLVM::TDG::StreamInfo_Type_IV) {
+    return false;
+  }
+  if (this->isReduction() || this->isPointerChaseIndVar()) {
+    return false;
+  }
+  if (!std::dynamic_pointer_cast<LinearAddrGenCallback>(
+          this->addrGenCallback)) {
+    return false;
+  }
+  return true;
+}
+
 void Stream::addBaseStream(StreamDepEdge::TypeE type, bool isInnerLoop,
                            StaticId baseId, StaticId depId, Stream *baseS) {
 

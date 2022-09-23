@@ -204,6 +204,7 @@ public:
   bool isLoadStream() const;
   bool isUpdateStream() const;
   bool isMemStream() const;
+  bool isAffineIVStream() const;
   bool isDirectLoadStream() const;
   bool isDirectStoreStream() const;
   bool isIndirectLoadStream() const;

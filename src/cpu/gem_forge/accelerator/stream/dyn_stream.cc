@@ -1322,8 +1322,10 @@ bool DynStream::isInnerSecondLastElem(uint64_t elemIdx) const {
 }
 
 void DynStream::setInnerFinalValue(uint64_t elemIdx, const StreamValue &value) {
-  assert(this->isInnerLastElem(elemIdx) &&
-         "SetFinalValue for Non-InnerLastElem.");
+  if (!this->isInnerLastElem(elemIdx)) {
+    DYN_S_PANIC(this->dynStreamId, "SetFinalValue for Non-InnerLastElem %lu.",
+                elemIdx);
+  }
   if (this->innerFinalValueMap.count(elemIdx)) {
     DYN_S_PANIC(this->dynStreamId, "Reset InnerFinalValue at %lu.", elemIdx);
   }

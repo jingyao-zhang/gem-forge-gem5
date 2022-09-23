@@ -554,14 +554,7 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
       if (addrBaseS == addrBaseMemS) {
         continue;
       }
-      auto affineIVConfig =
-          addrBaseS->allocateCacheConfigureDataForAffineIV(dynS->configSeqNum);
-      auto reuse = dynS->getBaseElemReuseCount(addrBaseS);
-      auto skip = dynS->getBaseElemSkipCount(addrBaseS);
-      DYN_S_DPRINTF(dynS->dynStreamId,
-                    "Add AffineIV as AddrBaseS %s R/S %d/%d.\n",
-                    addrBaseS->streamName, reuse, skip);
-      config->addBaseAffineIV(affineIVConfig, reuse, skip);
+      this->allocateAddUsedAffineIV(config, dynS, addrBaseS);
     }
 
     // Add SendTo edges if the ValueBaseS is not my AddrBaseMemS.
@@ -650,6 +643,11 @@ void StreamFloatController::floatDirectStoreComputeOrUpdateStream(
    */
   bool allValueBaseSFloated = true;
   for (auto valueBaseS : S->valueBaseStreams) {
+    if (valueBaseS->isAffineIVStream()) {
+      StreamFloatPolicy::logS(*dynS)
+          << "Use AffineIVS " << valueBaseS->getStreamName() << "\n"
+          << std::flush;
+    }
     if (!floatedMap.count(valueBaseS)) {
       allValueBaseSFloated = false;
       StreamFloatPolicy::logS(*dynS) << "[Not Float] as UnFloated ValueBaseS "
@@ -665,6 +663,10 @@ void StreamFloatController::floatDirectStoreComputeOrUpdateStream(
   S_DPRINTF(S, "Offload DirectStore/UpdateS.\n");
   auto config = S->allocateCacheConfigureData(dynS->configSeqNum);
   for (auto valueBaseS : S->valueBaseStreams) {
+    if (valueBaseS->isAffineIVStream()) {
+      this->allocateAddUsedAffineIV(config, dynS, valueBaseS);
+      continue;
+    }
     auto &valueBaseConfig = floatedMap.at(valueBaseS);
     auto reuse = dynS->getBaseElemReuseCount(valueBaseS);
     auto skip = dynS->getBaseElemSkipCount(valueBaseS);
@@ -782,19 +784,31 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
      * Special cases:
      * kmeans: with "feature.ld".
      * pointnet: with "mlp_inner.input.ld".
+     * mm_inner_lnm: with "Bt.ld"
+     * mm_inner_nlm: with "A.ld"
      */
     for (int i = 0; i < backBaseStreamConfigs.size(); ++i) {
       const auto &config = backBaseStreamConfigs.at(i);
       std::string strStreamName = config->dynamicId.streamName;
+      bool found = false;
       if (strStreamName.find("gfm.kmeans.feature.ld") != std::string::npos) {
-        S_DPRINTF(S, "ReduceS floated with kmeans %s.\n", config->dynamicId);
+        found = true;
         selectedBackBaseConfigIdx = i;
-        break;
+      } else if (strStreamName.find("gfm.pointnet.mlp_inner.input.ld") !=
+                 std::string::npos) {
+        found = true;
+        selectedBackBaseConfigIdx = i;
+      } else if (strStreamName.find("gfm.mm_inner_lnm.Bt.ld") !=
+                 std::string::npos) {
+        found = true;
+        selectedBackBaseConfigIdx = i;
+      } else if (strStreamName.find("gfm.mm_inner_nlm.A.ld") !=
+                 std::string::npos) {
+        found = true;
+        selectedBackBaseConfigIdx = i;
       }
-      if (strStreamName.find("gfm.pointnet.mlp_inner.input.ld") !=
-          std::string::npos) {
+      if (found) {
         S_DPRINTF(S, "ReduceS floated with pointnet %s.\n", config->dynamicId);
-        selectedBackBaseConfigIdx = i;
         break;
       }
     }
@@ -1256,4 +1270,16 @@ bool StreamFloatController::trySendMidwayFloat(SeqNumToPktMapIter iter) {
   }
 
   return readyToFloat;
+}
+
+void StreamFloatController::allocateAddUsedAffineIV(
+    CacheStreamConfigureDataPtr &config, DynStream *dynS, Stream *affineIVS) {
+
+  auto affineIVConfig =
+      affineIVS->allocateCacheConfigureDataForAffineIV(dynS->configSeqNum);
+  auto reuse = dynS->getBaseElemReuseCount(affineIVS);
+  auto skip = dynS->getBaseElemSkipCount(affineIVS);
+  DYN_S_DPRINTF(dynS->dynStreamId, "Add AffineIV %s R/S %d/%d.\n",
+                affineIVS->streamName, reuse, skip);
+  config->addBaseAffineIV(affineIVConfig, reuse, skip);
 }
