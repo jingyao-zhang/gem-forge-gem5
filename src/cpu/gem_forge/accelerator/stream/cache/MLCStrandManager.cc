@@ -763,6 +763,15 @@ void MLCStrandManager::configureStream(ConfigPtr config, MasterID masterId) {
   }
 
   /**
+   * Record the strand information.
+   */
+  if (config->isPUMPrefetch) {
+    config->stream->statistic.numPrefetchStrands++;
+  } else {
+    config->stream->statistic.numStrands++;
+  }
+
+  /**
    * ! We initialize the indirect stream first so that
    * ! the direct stream's constructor can start notify it about base stream
    * data.
