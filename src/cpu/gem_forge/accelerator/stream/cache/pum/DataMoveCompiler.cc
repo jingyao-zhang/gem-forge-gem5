@@ -293,6 +293,7 @@ DataMoveCompiler::compileStreamPair(AffinePattern srcStream,
     for (const auto &c : commands) {
       DPRINTF(MLCStreamPUM, "%s", c);
     }
+    DPRINTF(MLCStreamPUM, "-------------- Done StreamPair -----------\n");
   }
 
   // // 5. Filter out empty commands.

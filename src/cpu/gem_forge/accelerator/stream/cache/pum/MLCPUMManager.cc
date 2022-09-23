@@ -1951,6 +1951,7 @@ void MLCPUMManager::compilePUMDataGraphToCommands(PUMContext &context) {
       panic("Don't know how to compile PUMDataGraphNode %d.\n", node->type);
     }
     }
+    MLCSE_DPRINTF("[PUM] >>>>>>>>>> Finish Compile TDFG Node %s.\n", *node);
   }
 
   /**
