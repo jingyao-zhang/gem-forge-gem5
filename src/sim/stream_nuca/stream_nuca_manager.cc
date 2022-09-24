@@ -134,6 +134,7 @@ void StreamNUCAManager::setProperty(Addr start, uint64_t property,
     CASE(INTERLEAVE);
     CASE(USE_PUM);
     CASE(PUM_NO_INIT);
+    CASE(PUM_TILE_SIZE_DIM0);
 
 #undef CASE
   }
@@ -1194,21 +1195,32 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
   if (numAlignDims == 1) {
     /**
      * Just align to one dimension.
-     * 1. If bitlines <= arraySize: tileSize = bitlines.
-     * 2. If bitlines > arraySize:
-     *    Try to map more from the next dimension here.
+     * Pick the minimum of:
+     *  bitlines, arraySize, userDefinedTileSize (if defined).
+     *
+     * Then -- if there is more space, try to map the next dimension.
      *
      */
     auto alignDim = alignDims.front();
     auto arraySize = arraySizes.at(alignDim);
-    if (bitlines <= arraySize) {
-      tileSizes.at(alignDim) = bitlines;
-    } else {
+
+    auto alignDimTileSize = std::min(bitlines, arraySize);
+    if (region.userDefinedProperties.count(
+            RegionProperty::PUM_TILE_SIZE_DIM0)) {
+      auto userDefinedTileSize =
+          region.userDefinedProperties.at(RegionProperty::PUM_TILE_SIZE_DIM0);
+      if (userDefinedTileSize < alignDimTileSize) {
+        alignDimTileSize = userDefinedTileSize;
+      }
+    }
+
+    tileSizes.at(alignDim) = alignDimTileSize;
+
+    if (alignDimTileSize < bitlines) {
       // Check if we have next dimension to map.
       assert(alignDim + 1 < dimensions);
-      assert(bitlines % arraySize == 0);
-      auto ratio = bitlines / arraySize;
-      tileSizes.at(alignDim) = arraySize;
+      assert(bitlines % alignDimTileSize == 0);
+      auto ratio = bitlines / alignDimTileSize;
       tileSizes.at(alignDim + 1) = ratio;
     }
   } else if (numAlignDims == 2) {
@@ -1304,6 +1316,15 @@ StreamNUCAManager::getAlignDimsForDirectRegion(const StreamRegion &region) {
 
   auto dimensions = region.arraySizes.size();
   std::vector<int> ret;
+
+  if (region.userDefinedProperties.count(RegionProperty::PUM_TILE_SIZE_DIM0)) {
+    /**
+     * User specified dim0 tile size. So we just set align to dim0.
+     */
+    ret.push_back(0);
+    return ret;
+  }
+
   for (const auto &align : region.aligns) {
     if (align.vaddrB == region.vaddr) {
       // Found a self align.

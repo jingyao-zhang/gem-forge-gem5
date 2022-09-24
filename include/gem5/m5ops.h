@@ -102,6 +102,8 @@ enum StreamNUCARegionProperty {
   STREAM_NUCA_REGION_PROPERTY_USE_PUM,
   // Manually set if region need initilization (from DRAM) when used as PUM.
   STREAM_NUCA_REGION_PROPERTY_PUM_NO_INIT,
+  // Manually set PUM tile size.
+  STREAM_NUCA_REGION_PROPERTY_PUM_TILE_SIZE_DIM0,
 };
 void m5_stream_nuca_set_property(void *buffer,
                                  enum StreamNUCARegionProperty property,

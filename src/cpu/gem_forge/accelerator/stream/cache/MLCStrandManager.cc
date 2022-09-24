@@ -76,11 +76,26 @@ void MLCStrandManager::checkShouldBeSliced(ConfigVec &configs) const {
   for (auto &config : configs) {
     if (config->storeCallback &&
         config->stream->getLoopLevel() < innerMostLoopLevel) {
-      MLC_S_DPRINTF(config->dynamicId,
-                    "Disabled Slicing as StoreCallback in LoopLevel %u < "
-                    "InnerMostLoopLevel %u.\n",
-                    config->stream->getLoopLevel(), innerMostLoopLevel);
-      config->shouldBeSlicedToCacheLines = false;
+      /**
+       * Check if we use any ValueBaseS from InnerLoop.
+       */
+      bool useInnerLoopNonReduceValueBaseS = false;
+      for (const auto &edge : config->baseEdges) {
+        auto baseConfig = edge.data.lock();
+        assert(baseConfig && "Missing BaseConfig.");
+        if (baseConfig->stream->getLoopLevel() >
+                config->stream->getLoopLevel() &&
+            !baseConfig->stream->isReduction()) {
+          useInnerLoopNonReduceValueBaseS = true;
+          break;
+        }
+      }
+      if (useInnerLoopNonReduceValueBaseS) {
+        MLC_S_DPRINTF(config->dynamicId,
+                      "Disabled StoreS Slicing in LoopLevel %u < %u.\n",
+                      config->stream->getLoopLevel(), innerMostLoopLevel);
+        config->shouldBeSlicedToCacheLines = false;
+      }
     }
     /**
      * We also disable slicing if we are sending to inner-loop streams.
@@ -220,6 +235,50 @@ bool MLCStrandManager::precheckSplitable(StrandSplitContext &context,
   return true;
 }
 
+void MLCStrandManager::tryAvoidStartStrandsAtSameBank(
+    ConfigPtr config, const int llcBankIntrlv, const int64_t splitDimStride,
+    int64_t &splitDimTripPerStrand) const {
+
+  auto bankRows = StreamNUCAMap::getNumRows();
+  auto bankCols = StreamNUCAMap::getNumCols();
+  auto llcBanks = bankRows * bankCols;
+
+  auto totalBankIntrlv = llcBankIntrlv * bankRows * bankCols;
+  while ((splitDimStride * splitDimTripPerStrand) % totalBankIntrlv == 0) {
+    bool updated = false;
+    auto multiple = (splitDimStride * splitDimTripPerStrand) / totalBankIntrlv;
+    if (multiple > 1) {
+      if (splitDimTripPerStrand >= 2) {
+        STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+                    "[Strand] Adjust SplitDimTrip/Strand %lu -> %lu.\n",
+                    splitDimTripPerStrand, splitDimTripPerStrand / 2);
+        splitDimTripPerStrand /= 2;
+        updated = true;
+      }
+    } else {
+      if (splitDimTripPerStrand >= llcBanks &&
+          splitDimTripPerStrand % llcBanks == 0) {
+        STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+                    "[Strand] SplitToBanks SplitDimTrip/Strand %lu -> %lu.\n",
+                    splitDimTripPerStrand, splitDimTripPerStrand / llcBanks);
+        splitDimTripPerStrand /= llcBanks;
+        updated = true;
+      } else if (splitDimTripPerStrand >= bankRows &&
+                 splitDimTripPerStrand % bankRows == 0) {
+        STRAND_LOG_(
+            MLCRubyStrandSplit, config->dynamicId,
+            "[Strand] SplitToBankRows SplitDimTrip/Strand %lu -> %lu.\n",
+            splitDimTripPerStrand, splitDimTripPerStrand / bankRows);
+        splitDimTripPerStrand /= bankRows;
+        updated = true;
+      }
+    }
+    if (!updated) {
+      break;
+    }
+  }
+}
+
 bool MLCStrandManager::chooseSplitDimIntrlv(StrandSplitContext &context,
                                             ConfigPtr config) const {
 
@@ -333,45 +392,27 @@ bool MLCStrandManager::chooseSplitDimIntrlv(StrandSplitContext &context,
    *
    * When this is the case, we try to reduce splitDimTripPerStrand by number
    * of Bank rows.
+   *
+   * NOTE: Do not do this for PUM region, as they are not interleaved in the
+   * same way.
    */
   auto splitDimStride = strides.at(splitDim);
-  auto bankRows = StreamNUCAMap::getNumRows();
-  auto bankCols = StreamNUCAMap::getNumCols();
-  auto llcBanks = bankRows * bankCols;
-  const auto llcBankIntrlv = 1024;
-  auto totalBankIntrlv = llcBankIntrlv * bankRows * bankCols;
-  while ((splitDimStride * splitDimTripPerStrand) % totalBankIntrlv == 0) {
-    bool updated = false;
-    auto multiple = (splitDimStride * splitDimTripPerStrand) / totalBankIntrlv;
-    if (multiple > 1) {
-      if (splitDimTripPerStrand >= 2) {
-        STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
-                    "[Strand] Adjust SplitDimTrip/Strand %lu -> %lu.\n",
-                    splitDimTripPerStrand, splitDimTripPerStrand / 2);
-        splitDimTripPerStrand /= 2;
-        updated = true;
-      }
+
+  assert(config->initPAddrValid && "InitPAddr is not valid.");
+  auto region = StreamNUCAMap::getRangeMapContaining(config->initPAddr);
+  if (region) {
+    if (!region->isStreamPUM) {
+      const auto llcBankIntrlv = region->interleave;
+      this->tryAvoidStartStrandsAtSameBank(
+          config, llcBankIntrlv, splitDimStride, splitDimTripPerStrand);
     } else {
-      if (splitDimTripPerStrand >= llcBanks &&
-          splitDimTripPerStrand % llcBanks == 0) {
-        STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
-                    "[Strand] SplitToBanks SplitDimTrip/Strand %lu -> %lu.\n",
-                    splitDimTripPerStrand, splitDimTripPerStrand / llcBanks);
-        splitDimTripPerStrand /= llcBanks;
-        updated = true;
-      } else if (splitDimTripPerStrand >= bankRows &&
-                 splitDimTripPerStrand % bankRows == 0) {
-        STRAND_LOG_(
-            MLCRubyStrandSplit, config->dynamicId,
-            "[Strand] SplitToBankRows SplitDimTrip/Strand %lu -> %lu.\n",
-            splitDimTripPerStrand, splitDimTripPerStrand / bankRows);
-        splitDimTripPerStrand /= bankRows;
-        updated = true;
-      }
+      // Don't do this on PUM region.
     }
-    if (!updated) {
-      break;
-    }
+  } else {
+    // Default 1kB interleave.
+    const auto llcBankIntrlv = 1024;
+    this->tryAvoidStartStrandsAtSameBank(config, llcBankIntrlv, splitDimStride,
+                                         splitDimTripPerStrand);
   }
 
   perStreamContext.splitDim = splitDim;

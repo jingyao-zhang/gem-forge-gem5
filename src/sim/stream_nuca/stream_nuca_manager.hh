@@ -33,6 +33,7 @@ public:
     INTERLEAVE = 0,
     USE_PUM,
     PUM_NO_INIT,
+    PUM_TILE_SIZE_DIM0,
   };
   void setProperty(Addr start, uint64_t property, uint64_t value);
 

@@ -87,6 +87,12 @@ private:
   bool canSplitIntoStrands(StrandSplitContext &context,
                            const ConfigVec &configs) const;
   bool precheckSplitable(StrandSplitContext &context, ConfigPtr config) const;
+  /**
+   * Try reduce SplitDimIntrlv to avoid starting all strands at the same bank.
+   */
+  void tryAvoidStartStrandsAtSameBank(ConfigPtr config, const int llcBankIntrlv,
+                                      const int64_t splitDimStride,
+                                      int64_t &splitDimTripPerStrand) const;
   bool chooseSplitDimIntrlv(StrandSplitContext &context,
                             ConfigPtr config) const;
   bool fixSplitDimIntrlv(StrandSplitContext &context,
