@@ -9,6 +9,8 @@ categories = [
     "vpmuludq",
     "vpmulld",
     "vpslld",
+    "vpsllq",
+    "vpslldq",
     "vpsrld",
     "vpsrlq",
     "vsqrtsd",

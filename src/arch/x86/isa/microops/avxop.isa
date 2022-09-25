@@ -493,7 +493,7 @@ let {{
         code = '''
             int shift = imm8;
             auto vDestRegs = destVL / sizeof(uint64_t);
-            FloatInt src;
+            FloatInt src, src2, dst, dst2;
             if (srcSize == 8) {
                 for (int i = 0; i < vDestRegs; ++i) {
                     src.ul = xc->readFloatRegOperandBits(this, i);
@@ -506,6 +506,25 @@ let {{
                     src.ui.i1 = src.ui.i1 << shift;
                     src.ui.i2 = src.ui.i2 << shift;
                     xc->setFloatRegOperandBits(this, i, src.ul);
+                }
+            } else if (srcSize == 16) {
+                assert(vDestRegs == 2 || vDestRegs == 4 || vDestRegs == 8);
+                if (shift > 16) {
+                    // Maximum shift by 16 bytes.
+                    shift = 16;
+                }
+                for (int i = 0; i < vDestRegs; i += 2) {
+                    src.ul = xc->readFloatRegOperandBits(this, i);
+                    src2.ul = xc->readFloatRegOperandBits(this, i + 1);
+                    dst.ul = src.ul << (shift * 8);
+                    dst2.ul = src2.ul << (shift * 8);
+                    if (shift <= 8) {
+                        dst2.ul |= src.ul >> ((8 - shift) * 8);
+                    } else {
+                        dst2.ul |= src.ul << ((shift - 8) * 8);
+                    }
+                    xc->setFloatRegOperandBits(this, i, dst.ul);
+                    xc->setFloatRegOperandBits(this, i + 1, dst2.ul);
                 }
             }
         '''
