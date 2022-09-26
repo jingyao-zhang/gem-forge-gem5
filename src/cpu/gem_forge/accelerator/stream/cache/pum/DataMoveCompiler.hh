@@ -287,9 +287,26 @@ private:
     using AffPatIntVecT = typename AffPat::IntVecT;
 
     /**
-     * We can cache this.
+     * We can cache the LLCBankSubRegions as they are purely determined by the
+     * TilePattern. As an optimization, we also record the specialize case when
+     * each LLC bank is holding just one sub-region, i.e., the LLC bank tiles
+     * are aligned to the tile pattern.
+     *
+     * For example: if the data layout is 0:1:16:2048:32:16:128:65536:64,
+     * which means 2048x2048 tiled by 16x32, total 128x64 tiles.
+     *
+     * If each LLC bank holds 128 tiles, then each LLC bank is aligned to the
+     * tile dimension, with alignments: 1x64.
+     *
+     * This can be used to simplify the broacast pattern when handling reuse.
      */
     LLCBankSubRegionsT llcBankSubRegions;
+    bool llcBankSubRegionsAligned = false;
+    AffPatIntVecT llcBankSubRegionsTileAlignments;
+
+    PERF_NOINLINE void
+    initLLCBankSubRegions(const PUMHWConfiguration &llc_config,
+                          const IntVecT &tile_nums);
 
     PERF_NOINLINE const LLCBankSubRegionsT &
     getLLCBankSubRegionsImpl(const PUMHWConfiguration &llc_config,

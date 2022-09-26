@@ -80,9 +80,6 @@ void shiftRhs1D() {
 void shiftRhs2D() {
 
   // Simple 2D tile across the entire LLC.
-  auto totalSize = array_cols * array_per_way * way_per_bank * mesh_cols *
-                   mesh_rows * mesh_layers;
-
   AffinePattern::IntVecT tileSizes = {16, 32};
   AffinePattern::IntVecT arraySizes = {2048, 2048};
 
@@ -111,6 +108,44 @@ void shiftRhs2D() {
   // For now compile multiple times.
   PUMCommandVecT commands;
   const int runs = 400;
+  auto startTime = std::chrono::high_resolution_clock::now();
+  for (int i = 0; i < runs; ++i) {
+    commands = compiler.compile(sendPat, recvPat);
+  }
+  auto endTime = std::chrono::high_resolution_clock::now();
+
+  for (const auto &cmd : commands) {
+    printf(" CMD %s.\n", cmd.to_string().c_str());
+  }
+
+  std::chrono::duration<double, std::micro> compileTimeMs = endTime - startTime;
+  compileTimeMs /= runs;
+  printf(">> CompileTime %s %lf us\n", __func__, compileTimeMs.count());
+}
+
+void broadcastRhs2D() {
+
+  // Simple 2D tile across the entire LLC.
+  AffinePattern::IntVecT tileSizes = {16, 32};
+  AffinePattern::IntVecT arraySizes = {2048, 2048};
+
+  auto sendTile =
+      AffinePattern::construct_canonical_tile(tileSizes, arraySizes);
+
+  printf("SendTile %s.\n", sendTile.to_string().c_str());
+
+  DataMoveCompiler compiler(hwConfig, sendTile);
+
+  // Broadcast right by 1.
+  auto sendPat = AffinePattern::parse("0:0:2048:2048:2048");
+  auto recvPat = AffinePattern::parse("0:1:2048:2048:2048");
+
+  printf("SendPat %s.\n", sendPat.to_string().c_str());
+  printf("RecvPat %s.\n", recvPat.to_string().c_str());
+
+  // For now compile multiple times.
+  PUMCommandVecT commands;
+  const int runs = 100;
   auto startTime = std::chrono::high_resolution_clock::now();
   for (int i = 0; i < runs; ++i) {
     commands = compiler.compile(sendPat, recvPat);
@@ -165,6 +200,9 @@ void compileTDFG(const ::LLVM::TDG::TDFG &tdfg) {
         compiler = m5::make_unique<DataMoveCompiler>(hwConfig, sendTile);
       }
 
+      printf("SendTile %s.\n", sendTile.to_string().c_str());
+      printf("RecvTile %s.\n", recvTile.to_string().c_str());
+
       printf("SendPat %s.\n", sendPat.to_string().c_str());
       printf("RecvPat %s.\n", recvPat.to_string().c_str());
 
@@ -193,7 +231,8 @@ int main(int argc, char *argv[]) {
 
   if (argc == 1) {
     // shiftRhs1D();
-    shiftRhs2D();
+    // shiftRhs2D();
+    broadcastRhs2D();
     return 0;
   }
 
