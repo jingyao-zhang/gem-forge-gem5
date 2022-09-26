@@ -385,6 +385,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 neighbor_migration_valve_type=\
                     options.gem_forge_stream_engine_llc_neighbor_migration_valve_type,
                 enable_stream_float_mem=options.gem_forge_stream_engine_enable_float_mem,
+                stream_pum_force_integer=\
+                    options.gem_forge_stream_pum_force_integer,
                 stream_pum_enable_parallel_intra_array_shift=\
                     options.gem_forge_stream_pum_enable_parallel_intra_array_shift,
                 stream_pum_enable_parallel_inter_array_shift=\

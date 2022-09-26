@@ -144,6 +144,8 @@ class RubyStreamAwareController(RubyController):
     enable_stream_vectorize = \
         Param.Bool(False, "Whether to enable stream auto vectorization.")
     stream_pum_mode = Param.UInt32(0, "PUM Mode of disable, enable, mapping-only.")
+    stream_pum_force_integer = \
+        Param.Bool(False, "Whether force PUM computation to have integer data type")
     stream_pum_enable_parallel_intra_array_shift = \
         Param.Bool(False, "Whether intra-array shift can happen in parallel.")
     stream_pum_enable_parallel_inter_array_shift = \

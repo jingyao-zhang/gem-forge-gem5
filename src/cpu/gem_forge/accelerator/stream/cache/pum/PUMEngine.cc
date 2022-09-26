@@ -407,7 +407,11 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
   }
 
   if (command.type == "cmp") {
+
+    bool forceInt = this->controller->myParams->stream_pum_force_integer;
+
     auto wordlineBits = command.wordline_bits;
+    auto wordlineBitsSquare = wordlineBits * wordlineBits;
     int computeLatency = wordlineBits;
     switch (command.opClass) {
     default:
@@ -426,15 +430,24 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
       computeLatency = wordlineBits;
       break;
     case IntMultOp:
-      computeLatency = wordlineBits * wordlineBits / 2;
+      computeLatency = wordlineBitsSquare / 2;
       break;
     case FloatAddOp:
+    case SimdFloatAddOp: {
+      computeLatency = forceInt ? wordlineBits : wordlineBitsSquare;
+      break;
+    }
     case FloatMultOp:
-    case SimdFloatAddOp:
-    case SimdFloatMultOp:
-    case SimdFloatDivOp:
+    case SimdFloatMultOp: {
+      computeLatency = forceInt ? wordlineBitsSquare / 2 : wordlineBitsSquare;
+      break;
+    }
+    case SimdFloatDivOp: {
+      computeLatency = wordlineBitsSquare;
+      break;
+    }
     case SimdFloatCmpOp:
-      computeLatency = wordlineBits * wordlineBits;
+      computeLatency = forceInt ? wordlineBits : wordlineBitsSquare;
       break;
     }
     return Cycles(computeLatency);
