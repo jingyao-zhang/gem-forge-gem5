@@ -1446,15 +1446,18 @@ void MLCPUMManager::buildPUMDataGraphCompute(
 #endif // EG_OPT
 
   /**
-   * Update the LogicalStreamIdToNodeMap.
+   * Update the LogicalStreamIdToNodeMap if we have generated compute node.
+   * Sometimes we may not generate any node, e.g. memcpy.
+   * 
    * Assume we have only one LogicalStreamId.
    * Also mark the node as the final reduce node.
    */
-  assert(lastAddedNode && "No ComputeNode generated.");
-  if (group.reduceConfig) {
-    lastAddedNode->isFinalReduceNode = true;
+  if (lastAddedNode) {
+    if (group.reduceConfig) {
+      lastAddedNode->isFinalReduceNode = true;
+    }
+    resultNodes.emplace(computeDynId.staticId, lastAddedNode);
   }
-  resultNodes.emplace(computeDynId.staticId, lastAddedNode);
 }
 
 #ifdef EG_OPT
@@ -3249,10 +3252,48 @@ void MLCPUMManager::decoalesceAndDevectorizePattern(const ConfigPtr &config,
   patInfo.scalarPatLogicalStreamIds = config->stream->getLogicalStreamIds();
   auto &scalarPats = patInfo.scalarPatterns;
 
+  MLC_S_DPRINTF(config->dynamicId,
+                "[Decoalesce] ScalarElemSize %d PUMTile %s Pat %s.\n",
+                scalarElemSize, patInfo.pumTile, pattern);
+
+  /**
+   * We have use cases to access only a field of an array of struct.
+   * For example in kmeans_outer:
+   *  a[i][j].dist += b[i][k] * c[k][j].
+   *
+   * For now, we just check that:
+   * 1. Only one logical stream.
+   * 2. Offset is zero, size is smaller than struct size.
+   *
+   * Then we override the ScalarElemSize in PatInfo.
+   *
+   * TODO: Properly handle this information for all logical streams.
+   */
+  if (patInfo.scalarPatLogicalStreamIds.size() == 1) {
+    auto id = patInfo.scalarPatLogicalStreamIds.front();
+
+    int32_t offset = 0;
+    int32_t size = 0;
+    config->stream->getCoalescedOffsetAndSize(id, offset, size);
+
+    if (offset == 0 && size < patInfo.scalarElemSize) {
+      MLC_S_DPRINTF(config->dynamicId,
+                    "[Decoalesce] Override PatInfo.ScalarElemSize %d -> %d "
+                    "LogicalS %lu Offset %d.\n",
+                    patInfo.scalarElemSize, size, id, offset);
+      patInfo.scalarElemSize = size;
+    }
+  }
+
   for (const auto &id : patInfo.scalarPatLogicalStreamIds) {
     int32_t offset = 0;
     int32_t size = 0;
     config->stream->getCoalescedOffsetAndSize(id, offset, size);
+
+    MLC_S_DPRINTF(config->dynamicId,
+                  "[Decoalesce] LogicalS %lu Size %d Offset %d.\n", id, size,
+                  offset);
+
     AssertScalarAlign(offset);
     AssertScalarAlign(size);
 
