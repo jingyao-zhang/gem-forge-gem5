@@ -410,17 +410,17 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
   // Construct all the element data (except for StoreStream).
   if (!S->isStoreComputeStream()) {
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-      auto element = dynS->getElemPanic(idx, "RecvElementData");
-      if (element->hasFirstIndirectAtomicReqSeen()) {
+      auto elem = dynS->getElemPanic(idx, "RecvElementData");
+      if (elem->hasFirstIndirectAtomicReqSeen()) {
         // This is just the second request for IndirectAtomic.
         // No need to extract data.
         continue;
       }
-      if (element->isReady()) {
+      if (elem->isReady()) {
         LLC_SLICE_PANIC(sliceId, "Elements already ready.");
       }
-      element->extractElementDataFromSlice(
-          dynS->getStaticS()->getCPUDelegator(), sliceId, dataBlock);
+      elem->extractElementDataFromSlice(dynS->getStaticS()->getCPUDelegator(),
+                                        sliceId, dataBlock);
     }
   }
 
@@ -3456,7 +3456,7 @@ void LLCStreamEngine::tryStartComputeLoadComputeSlice(LLCDynStreamPtr dynS,
   for (auto elemIdx = sliceId.getStartIdx(); elemIdx < sliceId.getEndIdx();
        ++elemIdx) {
     auto elem = dynS->getElemPanic(elemIdx, "StartComputeLoadComputeSlice");
-    if (!elem->isReady()) {
+    if (!elem->isReady() || !elem->areBaseElemsReady()) {
       continue;
     }
     if (elem->isComputationScheduled()) {
@@ -4060,7 +4060,7 @@ void LLCStreamEngine::tryVectorizeElem(LLCStreamElementPtr &elem,
 
 void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &elem,
                                            bool tryVectorize) {
-  LLC_ELEMENT_DPRINTF(elem, "[PushReadyCmp] Ready %d Infly %d TryVec %d.\n",
+  LLC_ELEMENT_DPRINTF(elem, "[PushReadyCmp] #Ready %d #Infly %d TryVec %d.\n",
                       this->readyComputations.size(),
                       this->inflyComputations.size(), tryVectorize);
   assert(elem->areBaseElemsReady() && "Element is not ready yet.");
