@@ -12,6 +12,9 @@
 #define PERF_NOINLINE __attribute__((noinline))
 // #define PERF_NOINLINE
 
+#define PERF_PANIC_IF(...) panic_if(__VA_ARGS__)
+// #define PERF_PANIC_IF(...) 
+
 #include "base/logging.hh"
 
 /**

@@ -1213,14 +1213,8 @@ void DataMoveCompiler::CmdToLLCMapper<D, T>::initLLCBankSubRegions(
 
   auto numLLCBanks = llc_config.get_total_banks();
   auto tilePerLLCBank = llc_config.get_array_per_bank();
-  auto fixedTileNums = AffinePatternImpl<D, T>::getFixSizedIntVec(tile_nums);
 
-  this->llcBankSubRegions.reserve(numLLCBanks);
-  for (auto i = 0; i < numLLCBanks; ++i) {
-    this->llcBankSubRegions.push_back(
-        AffinePatternImpl<D, T>::breakContnuousRangeIntoSubRegionStartAndTrips(
-            fixedTileNums, i * tilePerLLCBank, tilePerLLCBank));
-  }
+  auto fixedTileNums = AffinePatternImpl<D, T>::getFixSizedIntVec(tile_nums);
 
   this->llcBankSubRegionsAligned = true;
   auto llcTileNum = tilePerLLCBank;
@@ -1242,6 +1236,19 @@ void DataMoveCompiler::CmdToLLCMapper<D, T>::initLLCBankSubRegions(
       auto ratio = tileNum / llcTileNum;
       this->llcBankSubRegionsTileAlignments[dim] = ratio;
       llcTileNum = 1;
+    }
+  }
+
+  this->llcBankSubRegions.reserve(numLLCBanks);
+  for (auto i = 0; i < numLLCBanks; ++i) {
+    this->llcBankSubRegions.push_back(
+        AffinePatternImpl<D, T>::breakContnuousRangeIntoSubRegionStartAndTrips(
+            fixedTileNums, i * tilePerLLCBank, tilePerLLCBank));
+  }
+  if (this->llcBankSubRegionsAligned) {
+    for (auto i = 0; i < numLLCBanks; ++i) {
+      PERF_PANIC_IF(this->llcBankSubRegions.at(i).count > 1,
+                    "Aligned LLCBank with Multiple SubRegions.");
     }
   }
 }
@@ -1271,8 +1278,15 @@ void DataMoveCompiler::mapCmdsToLLCImpl(PUMCommandVecT &commands,
       mapper.getLLCBankSubRegionsImpl(this->llc_config, this->tile_nums);
 
   for (auto &command : commands) {
-    mapper.mapCmdToLLCImpl(command, fixedLLCBankSubRegions, this->llc_config,
-                           fixedTileNums, this->tile_nums, this->tile_sizes);
+    if (mapper.llcBankSubRegionsAligned) {
+      mapper.template mapCmdToLLCImpl<true>(command, fixedLLCBankSubRegions,
+                                            this->llc_config, fixedTileNums,
+                                            this->tile_nums, this->tile_sizes);
+    } else {
+      mapper.template mapCmdToLLCImpl<false>(command, fixedLLCBankSubRegions,
+                                             this->llc_config, fixedTileNums,
+                                             this->tile_nums, this->tile_sizes);
+    }
   }
 
   for (auto &command : commands) {
@@ -1283,6 +1297,7 @@ void DataMoveCompiler::mapCmdsToLLCImpl(PUMCommandVecT &commands,
 }
 
 template <size_t D, typename T>
+template <bool aligned>
 void DataMoveCompiler::CmdToLLCMapper<D, T>::mapCmdToLLCImpl(
     PUMCommand &command, const LLCBankSubRegionsT &llcBankSubRegions,
     const PUMHWConfiguration &llc_config, const AffPatIntVecT &fixedTileNums,
@@ -1301,8 +1316,6 @@ void DataMoveCompiler::CmdToLLCMapper<D, T>::mapCmdToLLCImpl(
   if (command.hasReuse() && command.type == "inter-array") {
     needDstTilePattern = true;
   }
-
-  auto &llcTilePattern = command.llcSplitTileCmds.init<D>();
 
   /**
    * An optimization to skip the entire LLC bank if we know they have no
@@ -1329,6 +1342,8 @@ void DataMoveCompiler::CmdToLLCMapper<D, T>::mapCmdToLLCImpl(
           fixedInnerTileNums, fixedCmdTileMask.start);
   const auto &cmdTileTrips = fixedCmdTileMask.getTrips();
 
+  auto &llcTilePattern = command.llcSplitTileCmds.init<D, aligned>();
+
   for (auto i = llcBankStart; i < llcBankEnd; ++i) {
 
     for (int j = 0, count = llcBankSubRegions[i].count; j < count; ++j) {
@@ -1354,80 +1369,6 @@ void DataMoveCompiler::CmdToLLCMapper<D, T>::mapCmdToLLCImpl(
   }
 
   command.llcSplitDstTileCmds.resize(numLLCBanks);
-
-  if (this->llcBankSubRegionsAligned) {
-
-    // /**
-    //  * Optimization when LLC banks are aligned.
-    //  */
-    // for (auto i = llcBankStart; i < llcBankEnd; ++i) {
-
-    //   auto numSubRegions = command.llcSplitTileCmds.getBankSubRegionCount(i);
-    //   assert(numSubRegions == 1 &&
-    //          "AlignedLLCBank should only have one SubRegion.");
-
-    //   command.llcSplitDstTileCmds.at(i).resize(numSubRegions);
-
-    //   const auto &intersect = llcTilePattern.getAffinePatternImpl(i, 0);
-
-    //   // We have to explicitly write the type as LLCTilePattern.
-    //   auto &llcDstTiles = command.llcSplitDstTileCmds[i][0];
-    //   llcDstTiles.fill(false);
-
-    //   auto dstStartPos =
-    //       AffinePatternImpl<D, T>::getArrayPositionWithInnerArraySizes(
-    //           fixedInnerTileNums, intersect.start + command.tile_dist);
-    //   auto trips = intersect.getTrips();
-
-    //   /**
-    //    * Expand the dest tile pattern with reuse.
-    //    */
-    //   auto reuseDim = command.reuse.dim;
-    //   auto reuseCount = command.reuse.count;
-    //   assert(trips[reuseDim] == 1 && "ReuseDim should have trip count 1.");
-    //   auto reuseDimTileSize = tile_sizes[reuseDim];
-    //   auto reuseTileCount =
-    //       (reuseCount + reuseDimTileSize - 1) / reuseDimTileSize;
-    //   trips[reuseDim] = reuseTileCount;
-    //   // Reuse should stay within the boundary.
-    //   assert(dstStartPos[reuseDim] + reuseTileCount <= tile_nums[reuseDim]);
-
-    //   /**
-    //    * Split the dest sub region to LLC banks.
-    //    */
-    //   auto dstTilePat = AffPat::constructSubRegionWithInnerArraySizes(
-    //       fixedInnerTileNums, dstStartPos, trips);
-    //   auto dstTileStart = dstTilePat.getStart();
-    //   auto dstTileEnd = dstTilePat.getEnd();
-    //   const auto dstBankStart = dstTileStart / tilePerLLCBank;
-    //   const auto dstBankEnd = std::min(
-    //       numLLCBanks, (dstTileEnd + tilePerLLCBank - 1) / tilePerLLCBank);
-
-    //   for (int dstBankIdx = dstBankStart; dstBankIdx < dstBankEnd;
-    //        ++dstBankIdx) {
-
-    //     for (int j = 0, count = llcBankSubRegions[dstBankIdx].count; j < count;
-    //          ++j) {
-    //       const auto &dstLLCBankSubRegionStartAndTrip =
-    //           llcBankSubRegions[dstBankIdx].subRegions.at(j);
-
-    //       auto fixedDstIntersect =
-    //           AffinePatternImpl<D, T>::intersectStartAndTrips(
-    //               fixedInnerTileNums, dstStartPos, trips,
-    //               dstLLCBankSubRegionStartAndTrip.starts,
-    //               dstLLCBankSubRegionStartAndTrip.trips);
-
-    //       if (fixedDstIntersect.getTotalTrip() == 0) {
-    //         continue;
-    //       }
-
-    //       llcDstTiles.at(dstBankIdx) = true;
-    //     }
-    //   }
-    // }
-
-    // return;
-  }
 
   for (auto i = llcBankStart; i < llcBankEnd; ++i) {
 

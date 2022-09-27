@@ -312,6 +312,7 @@ private:
     getLLCBankSubRegionsImpl(const PUMHWConfiguration &llc_config,
                              const IntVecT &tile_nums);
 
+    template <bool aligned>
     PERF_NOINLINE void
     mapCmdToLLCImpl(PUMCommand &command,
                     const LLCBankSubRegionsT &llcBankSubRegions,

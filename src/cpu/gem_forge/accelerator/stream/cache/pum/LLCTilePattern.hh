@@ -20,7 +20,8 @@
  * a fixed dimension.
  */
 
-template <size_t D, typename T, size_t banks> class LLCTilePatternImpl {
+template <size_t D, typename T, size_t banks, bool aligned>
+class LLCTilePatternImpl {
 public:
   using AffPatImpl = AffinePatternImpl<D, T>;
 
@@ -29,7 +30,8 @@ public:
   static_assert(D < 4);
 
   static constexpr size_t MaxSubRegions =
-      AffinePatternImpl<D, T>::MaxSubRegionsForContinuousRange;
+      aligned ? 1 : AffinePatternImpl<D, T>::MaxSubRegionsForContinuousRange;
+  // static constexpr size_t MaxSubRegions = 1;
 
   struct BankPattern {
     std::array<AffPatImpl, MaxSubRegions> patterns;
@@ -93,61 +95,70 @@ class LLCTilePattern {
 
 public:
   static constexpr size_t NumBanks = 64;
-  using Pat1 = LLCTilePatternImpl<1, int64_t, NumBanks>;
-  using Pat2 = LLCTilePatternImpl<2, int64_t, NumBanks>;
-  using Pat3 = LLCTilePatternImpl<3, int64_t, NumBanks>;
+  using Pat1 = LLCTilePatternImpl<1, int64_t, NumBanks, false>;
+  using Pat2 = LLCTilePatternImpl<2, int64_t, NumBanks, false>;
+  using Pat3 = LLCTilePatternImpl<3, int64_t, NumBanks, false>;
+  using Pat1A = LLCTilePatternImpl<1, int64_t, NumBanks, true>;
+  using Pat2A = LLCTilePatternImpl<2, int64_t, NumBanks, true>;
+  using Pat3A = LLCTilePatternImpl<3, int64_t, NumBanks, true>;
   using PatG = LLCTilePatternGeneric;
 
   size_t dimension = 0;
-  std::shared_ptr<Pat1> pat1;
-  std::shared_ptr<Pat2> pat2;
-  std::shared_ptr<Pat3> pat3;
-  std::shared_ptr<PatG> patG;
+  bool aligned = false;
+  std::unique_ptr<Pat1> pat1 = nullptr;
+  std::unique_ptr<Pat2> pat2 = nullptr;
+  std::unique_ptr<Pat3> pat3 = nullptr;
+  std::unique_ptr<Pat1A> pat1A = nullptr;
+  std::unique_ptr<Pat2A> pat2A = nullptr;
+  std::unique_ptr<Pat3A> pat3A = nullptr;
+  std::unique_ptr<PatG> patG = nullptr;
 
-  LLCTilePattern()
-      : dimension(0), pat1(nullptr), pat2(nullptr), pat3(nullptr),
-        patG(nullptr) {}
+  LLCTilePattern() : dimension(0), aligned(false) {}
 
-  LLCTilePattern(const LLCTilePattern &other) : dimension(other.dimension) {
-    if (other.pat1) {
-      pat1 = std::make_shared<Pat1>(*other.pat1);
-    }
-    if (other.pat2) {
-      pat2 = std::make_shared<Pat2>(*other.pat2);
-    }
-    if (other.pat3) {
-      pat3 = std::make_shared<Pat3>(*other.pat3);
-    }
-    if (other.patG) {
-      patG = std::make_shared<PatG>(*other.patG);
-    }
+#define COPY_PAT(Pat, pat)                                                     \
+  if (other.pat) {                                                             \
+    pat = std::unique_ptr<Pat>(new Pat(*other.pat));                           \
+  }
+
+  LLCTilePattern(const LLCTilePattern &other)
+      : dimension(other.dimension), aligned(other.aligned) {
+    COPY_PAT(Pat1, pat1);
+    COPY_PAT(Pat2, pat2);
+    COPY_PAT(Pat3, pat3);
+    COPY_PAT(Pat1A, pat1A);
+    COPY_PAT(Pat2A, pat2A);
+    COPY_PAT(Pat3A, pat3A);
+    COPY_PAT(PatG, patG);
   }
 
   LLCTilePattern &operator=(const LLCTilePattern &other) {
     this->dimension = other.dimension;
-    if (other.pat1) {
-      pat1 = std::make_shared<Pat1>(*other.pat1);
-    }
-    if (other.pat2) {
-      pat2 = std::make_shared<Pat2>(*other.pat2);
-    }
-    if (other.pat3) {
-      pat3 = std::make_shared<Pat3>(*other.pat3);
-    }
-    if (other.patG) {
-      patG = std::make_shared<PatG>(*other.patG);
-    }
+    this->aligned = other.aligned;
+    COPY_PAT(Pat1, pat1);
+    COPY_PAT(Pat2, pat2);
+    COPY_PAT(Pat3, pat3);
+    COPY_PAT(Pat1A, pat1A);
+    COPY_PAT(Pat2A, pat2A);
+    COPY_PAT(Pat3A, pat3A);
+    COPY_PAT(PatG, patG);
     return *this;
   }
 
-  void initialize(size_t dimension) {
+#undef COPY_PAT
+
+  void initialize(size_t dimension, bool aligned = false) {
 
     assert(this->dimension == 0);
     this->dimension = dimension;
+    this->aligned = aligned;
 
 #define LLCTilePatternInitCase(dim)                                            \
   case dim: {                                                                  \
-    pat##dim = std::make_shared<Pat##dim>();                                   \
+    if (aligned) {                                                             \
+      pat##dim##A = std::unique_ptr<Pat##dim##A>(new Pat##dim##A());           \
+    } else {                                                                   \
+      pat##dim = std::unique_ptr<Pat##dim>(new Pat##dim());                    \
+    }                                                                          \
     break;                                                                     \
   }
 
@@ -156,7 +167,7 @@ public:
       LLCTilePatternInitCase(2);
       LLCTilePatternInitCase(3);
     default: {
-      patG = std::make_shared<PatG>(NumBanks);
+      patG = std::unique_ptr<PatG>(new PatG(NumBanks));
       break;
     }
     }
@@ -164,54 +175,86 @@ public:
 #undef LLCTilePatternInit
   }
 
-  template <size_t dimension>
-  LLCTilePatternImpl<dimension, int64_t, NumBanks> &init() {
-    // This should never be initialized.
-    panic("Should never instantiate.");
-  }
-
-  template <size_t dimension>
-  LLCTilePatternImpl<dimension, int64_t, NumBanks> &get() {
+  template <size_t dimension, bool aligned>
+  LLCTilePatternImpl<dimension, int64_t, NumBanks, aligned> &init() {
     // This should never be initialized.
     panic("Should never instantiate.");
   }
 
 #define LLCTilePatternDispRet(func, args...)                                   \
   assert(this->dimension != 0);                                                \
-  switch (this->dimension) {                                                   \
-  case 1: {                                                                    \
-    return this->pat1->func(args);                                             \
-  }                                                                            \
-  case 2: {                                                                    \
-    return this->pat2->func(args);                                             \
-  }                                                                            \
-  case 3: {                                                                    \
-    return this->pat3->func(args);                                             \
-  }                                                                            \
-  default: {                                                                   \
-    return this->patG->func(args);                                             \
-  }                                                                            \
+  if (this->aligned) {                                                         \
+    switch (this->dimension) {                                                 \
+    case 1: {                                                                  \
+      return this->pat1A->func(args);                                          \
+    }                                                                          \
+    case 2: {                                                                  \
+      return this->pat2A->func(args);                                          \
+    }                                                                          \
+    case 3: {                                                                  \
+      return this->pat3A->func(args);                                          \
+    }                                                                          \
+    default: {                                                                 \
+      return this->patG->func(args);                                           \
+    }                                                                          \
+    }                                                                          \
+  } else {                                                                     \
+    switch (this->dimension) {                                                 \
+    case 1: {                                                                  \
+      return this->pat1->func(args);                                           \
+    }                                                                          \
+    case 2: {                                                                  \
+      return this->pat2->func(args);                                           \
+    }                                                                          \
+    case 3: {                                                                  \
+      return this->pat3->func(args);                                           \
+    }                                                                          \
+    default: {                                                                 \
+      return this->patG->func(args);                                           \
+    }                                                                          \
+    }                                                                          \
   }
 
 #define LLCTilePatternDispVoid(func, args...)                                  \
   assert(this->dimension != 0);                                                \
-  switch (this->dimension) {                                                   \
-  case 1: {                                                                    \
-    this->pat1->func(args);                                                    \
-    break;                                                                     \
-  }                                                                            \
-  case 2: {                                                                    \
-    this->pat2->func(args);                                                    \
-    break;                                                                     \
-  }                                                                            \
-  case 3: {                                                                    \
-    this->pat3->func(args);                                                    \
-    break;                                                                     \
-  }                                                                            \
-  default: {                                                                   \
-    this->patG->func(args);                                                    \
-    break;                                                                     \
-  }                                                                            \
+  if (this->aligned) {                                                         \
+    switch (this->dimension) {                                                 \
+    case 1: {                                                                  \
+      this->pat1A->func(args);                                                 \
+      break;                                                                   \
+    }                                                                          \
+    case 2: {                                                                  \
+      this->pat2A->func(args);                                                 \
+      break;                                                                   \
+    }                                                                          \
+    case 3: {                                                                  \
+      this->pat3A->func(args);                                                 \
+      break;                                                                   \
+    }                                                                          \
+    default: {                                                                 \
+      this->patG->func(args);                                                  \
+      break;                                                                   \
+    }                                                                          \
+    }                                                                          \
+  } else {                                                                     \
+    switch (this->dimension) {                                                 \
+    case 1: {                                                                  \
+      this->pat1->func(args);                                                  \
+      break;                                                                   \
+    }                                                                          \
+    case 2: {                                                                  \
+      this->pat2->func(args);                                                  \
+      break;                                                                   \
+    }                                                                          \
+    case 3: {                                                                  \
+      this->pat3->func(args);                                                  \
+      break;                                                                   \
+    }                                                                          \
+    default: {                                                                 \
+      this->patG->func(args);                                                  \
+      break;                                                                   \
+    }                                                                          \
+    }                                                                          \
   }
 
   size_t getBankSubRegionCount(int bankIdx) const {
@@ -242,26 +285,22 @@ public:
 
 #define LLCTilePatternInit(dim)                                                \
   template <>                                                                  \
-  LLCTilePatternImpl<dim, int64_t, LLCTilePattern::NumBanks>                   \
-      &LLCTilePattern::init<dim>();
+  LLCTilePatternImpl<dim, int64_t, LLCTilePattern::NumBanks, false>            \
+      &LLCTilePattern::init<dim, false>();
+
+#define LLCTilePatternInitAligned(dim)                                         \
+  template <>                                                                  \
+  LLCTilePatternImpl<dim, int64_t, LLCTilePattern::NumBanks, true>             \
+      &LLCTilePattern::init<dim, true>();
 
 LLCTilePatternInit(1);
 LLCTilePatternInit(2);
 LLCTilePatternInit(3);
+LLCTilePatternInitAligned(1);
+LLCTilePatternInitAligned(2);
+LLCTilePatternInitAligned(3);
 
 #undef LLCTilePatternInit
-
-#define LLCTilePatternGet(dim)                                                 \
-  template <>                                                                  \
-  inline LLCTilePatternImpl<dim, int64_t, LLCTilePattern::NumBanks>            \
-      &LLCTilePattern::get<dim>() {                                            \
-    return *this->pat##dim;                                                    \
-  }
-
-LLCTilePatternGet(1);
-LLCTilePatternGet(2);
-LLCTilePatternGet(3);
-
-#undef LLCTilePatternInit
+#undef LLCTilePatternInitAligned
 
 #endif
