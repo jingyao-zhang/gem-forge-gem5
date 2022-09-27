@@ -4092,7 +4092,7 @@ void LLCStreamEngine::skipComputation(LLCStreamElementPtr &elem) {
 
   LLC_ELEMENT_DPRINTF(elem, "Skip computation. Vectorized %d.\n",
                       elem->isComputationVectorized());
-  StreamValue result = dynS->computeStreamElementValue(elem);
+  StreamValue result = dynS->computeElemValue(elem);
   dynS->completeComputation(this, elem, result);
 }
 
@@ -4236,7 +4236,7 @@ void LLCStreamEngine::startComputation() {
             elem,
             "Start computation. Latency %llu (ZeroLat %d) Vectorized %d.\n",
             latency, forceZeroLat, elem->isComputationVectorized());
-        result = dynS->computeStreamElementValue(elem);
+        result = dynS->computeElemValue(elem);
       } else {
         LLC_ELEMENT_DPRINTF(elem,
                             "Start IndirectReduction fake computation. Latency "

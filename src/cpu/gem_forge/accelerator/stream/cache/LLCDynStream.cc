@@ -1331,8 +1331,7 @@ bool LLCDynStream::hasComputation() const {
          S->isUpdateStream() || S->isAtomicComputeStream();
 }
 
-StreamValue
-LLCDynStream::computeStreamElementValue(const LLCStreamElementPtr &element) {
+StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &element) {
 
   auto S = element->S;
   const auto &config = this->configData;
@@ -1340,8 +1339,9 @@ LLCDynStream::computeStreamElementValue(const LLCStreamElementPtr &element) {
   auto getBaseStreamValue = [&element](uint64_t baseStreamId) -> StreamValue {
     return element->getBaseStreamValue(baseStreamId);
   };
-  auto getStreamValue = [&element](uint64_t baseStreamId) -> StreamValue {
-    return element->getValueByStreamId(baseStreamId);
+  auto getBaseOrMyStreamValue =
+      [&element](uint64_t baseStreamId) -> StreamValue {
+    return element->getBaseOrMyStreamValue(baseStreamId);
   };
   if (S->isReduction() || S->isPointerChaseIndVar()) {
     // This is a reduction stream.
@@ -1403,10 +1403,9 @@ LLCDynStream::computeStreamElementValue(const LLCStreamElementPtr &element) {
     return storeValue;
 
   } else if (S->isLoadComputeStream()) {
-    // So far LoadComputeStream only takes loaded value as input.
     Cycles latency = config->loadCallback->getEstimatedLatency();
-    auto params =
-        convertFormalParamToParam(config->loadFormalParams, getStreamValue);
+    auto params = convertFormalParamToParam(config->loadFormalParams,
+                                            getBaseOrMyStreamValue);
     auto loadComputeValue = config->loadCallback->invoke(params);
 
     LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, element,
@@ -1417,11 +1416,8 @@ LLCDynStream::computeStreamElementValue(const LLCStreamElementPtr &element) {
   } else if (S->isUpdateStream()) {
 
     Cycles latency = config->storeCallback->getEstimatedLatency();
-    auto getStreamValue = [&element](uint64_t streamId) -> StreamValue {
-      return element->getBaseOrMyStreamValue(streamId);
-    };
-    auto params =
-        convertFormalParamToParam(config->storeFormalParams, getStreamValue);
+    auto params = convertFormalParamToParam(config->storeFormalParams,
+                                            getBaseOrMyStreamValue);
     auto storeValue = config->storeCallback->invoke(params);
 
     LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, element,
@@ -1547,7 +1543,7 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
             LLCRubyStreamReduce, this->getDynStrandId(),
             "[IndirectReduce] Really computed NextComputingElem %llu.\n",
             nextComputingElementIdx);
-        auto result = this->computeStreamElementValue(nextComputingElement);
+        auto result = this->computeElemValue(nextComputingElement);
         nextComputingElement->setValue(result);
         this->lastComputedReductionElemIdx++;
       }

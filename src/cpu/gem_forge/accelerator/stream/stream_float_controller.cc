@@ -346,6 +346,9 @@ void StreamFloatController::floatDirectLoadStreams(const Args &args) {
                             baseEdge.baseElemSkipCnt);
       config->addBaseOn(baseConfig, baseEdge.baseElemReuseCnt,
                         baseEdge.baseElemSkipCnt);
+      StreamFloatPolicy::logS(baseConfig->dynamicId)
+          << "[Send] to DirectLoadComputeS " << config->dynamicId << '\n'
+          << std::flush;
     }
   }
 }

@@ -209,7 +209,7 @@ public:
                          const DataBlock &dataBlk);
 
   bool hasComputation() const;
-  StreamValue computeStreamElementValue(const LLCStreamElementPtr &element);
+  StreamValue computeElemValue(const LLCStreamElementPtr &element);
   void completeComputation(LLCStreamEngine *se, const LLCStreamElementPtr &elem,
                            const StreamValue &value);
   void tryComputeNextDirectReduceElem(LLCStreamEngine *se,
