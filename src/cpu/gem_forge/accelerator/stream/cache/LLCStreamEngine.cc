@@ -1370,11 +1370,13 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
   }
 
   /**
-   * Allocate the element on Atomic and StoreStream.
-   * Additional check on StoreStream, which should have StoreValue
-   * ready.
+   * Allocate the element on Atomic/Store/UpdateS. Additional check:
+   *
+   * UpdateS should have BaseElems ready (except itself).
+   * StoreS should have StoreValue ready.
    */
-  if (S->isStoreComputeStream() || S->isAtomicComputeStream()) {
+  if (S->isStoreComputeStream() || S->isAtomicComputeStream() ||
+      S->isUpdateStream()) {
     auto nextSlice = dynS->getNextAllocSlice();
     if (!nextSlice) {
       LLC_S_PANIC(dynS->getDynStrandId(), "Failed to get next alloc slice.");
@@ -1433,6 +1435,20 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
             statistic.sampleLLCStreamEngineIssueReason(
                 StreamStatistic::LLCStreamEngineIssueReason::ValueNotReady);
           }
+          return nullptr;
+        }
+      }
+    } else if (S->isUpdateStream()) {
+      for (auto idx = nextSliceId.getStartIdx(); idx < nextSliceId.getEndIdx();
+           ++idx) {
+        auto elem = dynS->getElemPanic(idx, "Check UpdateBaseElem Ready.");
+        // Check if the element is ready.
+        if (!elem->areBaseElemsReady()) {
+          LLC_SLICE_DPRINTF_(LLCRubyStreamNotIssue, nextSliceId,
+                             "UpdateElem %llu Base not ready, delay issuing.\n",
+                             idx);
+          statistic.sampleLLCStreamEngineIssueReason(
+              StreamStatistic::LLCStreamEngineIssueReason::BaseValueNotReady);
           return nullptr;
         }
       }
