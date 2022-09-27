@@ -1004,7 +1004,7 @@ void MLCStrandManager::tryMarkPUMRegionCached(const DynStreamId &dynId) {
    * As some heuristic, check that initVAddr is the same as regionStartVAddr.
    * TODO: Really check that the stream accessed the whole region.
    */
-  if (!nucaMapEntry->isStreamPUM) {
+  if (!nucaMapEntry || !nucaMapEntry->isStreamPUM) {
     // So far only enable this feature for PUM region.
     return;
   }
