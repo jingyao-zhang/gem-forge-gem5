@@ -79,10 +79,6 @@ std::ostream &operator<<(std::ostream &os,
       os << "ConstInt";
       break;
     }
-    case MLCPUMManager::PUMDataGraphNode::CompValueE::Reg: {
-      os << "Reg " << node.symbol;
-      break;
-    }
     case MLCPUMManager::PUMDataGraphNode::CompValueE::None: {
       os << "Cmp";
       for (const auto &operand : node.operands) {
@@ -1223,17 +1219,15 @@ void MLCPUMManager::buildPUMDataGraphCompute(
       node = new PUMDataGraphNode(PUMDataGraphNode::TypeE::Compute);
       context.pumDataGraphNodes.push_back(node);
 
-      // TODO: Will need some symbol table for registers that don't have
-      //       a predetermined value.
-
-      // NOTE: Otherwise, this is also possible.
+      auto val = formalParams[i].invariant.uint64();
       if (func->getFuncInfo().args(i).type() ==
           ::LLVM::TDG::DataType::INTEGER) {
         node->compValTy = PUMDataGraphNode::CompValueE::ConstInt;
+        node->iVal = val;
       } else {
         node->compValTy = PUMDataGraphNode::CompValueE::ConstFloat;
+        node->fVal = *reinterpret_cast<float *>(&val);
       }
-      node->iVal = formalParams[i].invariant.uint64();
 
     } else if (resultNodes.count(formalParams[i].baseStreamId)) {
 
@@ -1248,13 +1242,15 @@ void MLCPUMManager::buildPUMDataGraphCompute(
         context.pumDataGraphNodes.push_back(node);
 
         // NOTE: Otherwise, this is also possible.
+        auto val = group.reduceConfig->reductionInitValue.uint64();
         if (func->getFuncInfo().args(i).type() ==
             ::LLVM::TDG::DataType::INTEGER) {
           node->compValTy = PUMDataGraphNode::CompValueE::ConstInt;
+          node->iVal = val;
         } else {
           node->compValTy = PUMDataGraphNode::CompValueE::ConstFloat;
+          node->fVal = *reinterpret_cast<float *>(&val);
         }
-        node->iVal = group.reduceConfig->reductionInitValue.uint64();
 
       } else {
         assert(false && "Failed to find InputNode.");
@@ -1319,9 +1315,8 @@ void MLCPUMManager::buildPUMDataGraphCompute(
     case Enums::MemWrite:
     case Enums::FloatMemWrite:
     case Enums::Num_OpClass:
-      MLCSE_DPRINTF("Unrecognized op type: %s\n",
-                    Enums::OpClassStrings[inst->opClass()]);
-      assert(false && "Unrecognized op type");
+      MLCSE_PANIC("Unrecognized op type: %s\n",
+                  Enums::OpClassStrings[inst->opClass()]);
       break;
     default:
       curOpTy = OpTypeE::Compute;
@@ -1448,7 +1443,7 @@ void MLCPUMManager::buildPUMDataGraphCompute(
   /**
    * Update the LogicalStreamIdToNodeMap if we have generated compute node.
    * Sometimes we may not generate any node, e.g. memcpy.
-   * 
+   *
    * Assume we have only one LogicalStreamId.
    * Also mark the node as the final reduce node.
    */
@@ -1476,24 +1471,38 @@ void MLCPUMManager::dumpTDFGToJson(const ::LLVM::TDG::TDFG &tdfg) {
 
   auto directory = simout.findOrCreateSubdirectory(tdfg_folder);
 
-  std::string fn = "tdfg." + std::to_string(dumpCount) + ".json";
-  auto log = directory->create(fn);
+  // Dump to JSON.
+  {
+    std::string fn = "tdfg." + std::to_string(dumpCount) + ".json";
+    auto log = directory->create(fn);
 
-  std::string json;
-  google::protobuf::util::JsonPrintOptions jsonOptions;
-  jsonOptions.add_whitespace = true;
-  jsonOptions.always_print_primitive_fields = true;
-  jsonOptions.preserve_proto_field_names = true;
+    std::string json;
+    google::protobuf::util::JsonPrintOptions jsonOptions;
+    jsonOptions.add_whitespace = true;
+    jsonOptions.always_print_primitive_fields = true;
+    jsonOptions.preserve_proto_field_names = true;
 
-  auto status =
-      google::protobuf::util::MessageToJsonString(tdfg, &json, jsonOptions);
-  if (!status.ok()) {
-    panic("Failed to convert TDFG to json.");
+    auto status =
+        google::protobuf::util::MessageToJsonString(tdfg, &json, jsonOptions);
+    if (!status.ok()) {
+      panic("Failed to convert TDFG to json.");
+    }
+
+    (*log->stream()) << json;
+
+    directory->close(log);
   }
 
-  (*log->stream()) << json;
+  // Dump to binary.
+  {
+    std::string fn = "tdfg." + std::to_string(dumpCount) + ".bin";
+    auto log = directory->create(fn);
 
-  directory->close(log);
+    tdfg.SerializeToOstream(log->stream());
+
+    directory->close(log);
+  }
+
   dumpCount++;
 }
 
@@ -1563,9 +1572,58 @@ void MLCPUMManager::buildTDFG(PUMContext &context) {
       break;
     }
 
-    case PUMDataGraphNode::TypeE::Compute:
-      // TODO: not done
+    case PUMDataGraphNode::TypeE::Compute: {
+      TDFGComputeNodePtr computePtr;
+      if (context.computeNodeMap.count(node)) {
+        computePtr = context.computeNodeMap.at(node);
+      } else {
+        computePtr = context.computeNodeMap.size();
+        context.computeNodeMap.insert(computePtr, node);
+      }
+
+      auto tdfgCompute = tdfgNode.mutable_compute();
+      tdfgCompute->set_compute_node_ptr(computePtr);
+
+      switch (node->compValTy) {
+      case PUMDataGraphNode::CompValueE::ConstInt:
+        tdfgCompute->set_int_const(node->iVal);
+        break;
+      case PUMDataGraphNode::CompValueE::ConstFloat:
+        tdfgCompute->set_float_const(node->fVal);
+        break;
+      case PUMDataGraphNode::CompValueE::None: {
+        auto lastInst = node->insts.back();
+        switch (lastInst->opClass()) {
+        case Enums::OpClass::IntAlu:
+        case Enums::OpClass::FloatAdd:
+        case Enums::OpClass::SimdAdd:
+        case Enums::OpClass::SimdFloatAdd:
+          tdfgCompute->set_op(::LLVM::TDG::TDFG::Node::Compute::ADD);
+          break;
+
+        case Enums::OpClass::IntMult:
+        case Enums::OpClass::FloatMult:
+        case Enums::OpClass::SimdMult:
+        case Enums::OpClass::SimdFloatMult:
+          tdfgCompute->set_op(::LLVM::TDG::TDFG::Node::Compute::MUL);
+          break;
+
+        case Enums::OpClass::IntDiv:
+        case Enums::OpClass::FloatDiv:
+        case Enums::OpClass::SimdDiv:
+        case Enums::OpClass::SimdFloatDiv:
+          tdfgCompute->set_op(::LLVM::TDG::TDFG::Node::Compute::DIV);
+          break;
+
+        default:
+          MLCSE_PANIC("Unrecognized op type: %s\n",
+                      Enums::OpClassStrings[lastInst->opClass()]);
+        }
+      }
+      }
+
       break;
+    }
 
     case PUMDataGraphNode::TypeE::Sync:
       MLCSE_PANIC("Sync node should not be in TDFG");

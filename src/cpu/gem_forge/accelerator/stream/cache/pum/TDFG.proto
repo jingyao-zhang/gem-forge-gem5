@@ -57,7 +57,22 @@ message TDFG {
       uint64 recv_config_ptr = 2;
     }
     // A compute node that executes its operands.
-    message Compute { uint64 pum_compute_stream_group_ptr = 1; }
+    message Compute { 
+      enum OpCode {
+        ADD = 0;
+        SUB = 1;
+        MUL = 2;
+        DIV = 3;
+      }
+
+      uint64 compute_node_ptr = 4;
+
+      oneof type {
+          int32 int_const = 7;
+          float float_const = 8;
+          OpCode op = 9;
+        }
+    }
     // A sync node that represents a global barrier.
     message Sync {}
 

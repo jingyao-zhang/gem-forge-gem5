@@ -289,15 +289,11 @@ private:
      */
     PUMComputeStreamGroup *group = nullptr;
 #ifdef EG_OPT
-    enum CompValueE { None, ConstFloat, ConstInt, Reg };
+    enum CompValueE { None, ConstFloat, ConstInt };
     CompValueE compValTy;
     union {
       float fVal;
       uint32_t iVal;
-      std::string
-          *symbol; // For dynamic values, assign them to a symbolic value. If
-                   // two values come from the same register, they should have
-                   // the same symbol to maximize optimization opportunity.
     };
 
     std::vector<StaticInstPtr> insts;
@@ -384,6 +380,9 @@ private:
   using TDFGConfigPtr = decltype(std::declval<::LLVM::TDG::TDFG::Node>()
                                      .mutable_load()
                                      ->send_config_ptr());
+  using TDFGComputeNodePtr = decltype(std::declval<::LLVM::TDG::TDFG::Node>()
+                                          .mutable_compute()
+                                          ->compute_node_ptr());
 #endif // EG_OPT
 
   /**
@@ -401,6 +400,7 @@ private:
 #ifdef EG_OPT
     // Map from ConfigPtr <-> TDFGConfigPtrId
     BiMap<ConfigPtr, TDFGConfigPtr> configMap;
+    BiMap<PUMDataGraphNode *, TDFGComputeNodePtr> computeNodeMap;
 #endif // EG_OPT
     friend class MLCPUMManager;
 
