@@ -85,6 +85,7 @@ public:
   int getNumInstsBeforeStreamConfig() const {
     return this->numInstsBeforeStreamConfig;
   }
+  bool isNop() const { return this->instructions.empty(); }
   const std::vector<StaticInstPtr> &getStaticInsts() const {
     return this->instructions;
   }

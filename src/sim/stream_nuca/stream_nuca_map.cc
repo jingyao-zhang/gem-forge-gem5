@@ -109,7 +109,7 @@ void StreamNUCAMap::addRangeMap(Addr startPAddr, Addr endPAddr,
 
 void StreamNUCAMap::addRangeMap(Addr startPAddr, Addr endPAddr,
                                 const AffinePattern &pumTile, int elementBits,
-                                int startWordline) {
+                                int startWordline, int vBitlines) {
   checkOverlapRange(startPAddr, endPAddr);
   DPRINTF(
       StreamNUCAMap,
@@ -117,7 +117,8 @@ void StreamNUCAMap::addRangeMap(Addr startPAddr, Addr endPAddr,
       startPAddr, endPAddr, elementBits, startWordline, pumTile);
   rangeMaps.emplace(std::piecewise_construct, std::forward_as_tuple(startPAddr),
                     std::forward_as_tuple(startPAddr, endPAddr, pumTile,
-                                          elementBits, startWordline));
+                                          elementBits, startWordline,
+                                          vBitlines));
 }
 
 StreamNUCAMap::RangeMap &
@@ -164,16 +165,30 @@ StreamNUCAMap::getPUMLocation(Addr paddr, const RangeMap &range) {
   assert(range.isStreamPUM);
 
   auto elemIdx = (paddr - range.startPAddr) / (range.elementBits / 8);
-  auto vBitlineIdx = range.pumTileRev(elemIdx);
+  auto bitlineIdx = range.pumTileRev(elemIdx);
 
   const auto &cacheParams = getCacheParams();
 
-  auto tileSize = range.pumTile.getCanonicalTotalTileSize();
-  auto bitlines = cacheParams.bitlines;
-  auto pBitlineIdx =
-      (vBitlineIdx / tileSize) * bitlines + vBitlineIdx % tileSize;
+  /**
+   * Now we have virtual bitlines, handle the possible wrap around.
+   */
 
-  auto arrayIdx = pBitlineIdx / bitlines;
+  auto tileSize = range.pumTile.getCanonicalTotalTileSize();
+  auto pBitlines = cacheParams.bitlines;
+
+  auto vBitlines = range.vBitlines;
+
+  auto tileIdx = bitlineIdx / tileSize;
+  auto vBitlineIdx = tileIdx * vBitlines + bitlineIdx % tileSize;
+
+  auto vBitlineIdxWithinTile = vBitlineIdx % vBitlines;
+
+  auto pBitlineIdxWithinTile = vBitlineIdxWithinTile % pBitlines;
+  auto pWordlineIdx = (vBitlineIdxWithinTile / pBitlines) * range.elementBits +
+                      range.startWordline;
+
+  // One tile is always one SRAM array.
+  auto arrayIdx = tileIdx;
   auto wayIdx = arrayIdx / cacheParams.arrayPerWay;
   auto bankIdx = wayIdx / cacheParams.assoc;
 
@@ -184,8 +199,8 @@ StreamNUCAMap::getPUMLocation(Addr paddr, const RangeMap &range) {
   loc.bank = bank;
   loc.way = wayIdx % cacheParams.assoc;
   loc.array = arrayIdx % cacheParams.arrayPerWay;
-  loc.bitline = pBitlineIdx;
-  loc.wordline = 0;
+  loc.bitline = pBitlineIdxWithinTile;
+  loc.wordline = pWordlineIdx;
 
   DPRINTF(StreamNUCAMap,
           "[PUM] Map PAddr %#x in [%#x, %#x) Tile %s to Bank %d Way %d Array "
@@ -263,22 +278,20 @@ int StreamNUCAMap::getPUMSet(Addr paddr, const RangeMap &range) {
    *
    */
 
-  auto elemIdx = (paddr - range.startPAddr) / (range.elementBits / 8);
-  auto vBitlineIdx = range.pumTileRev(elemIdx);
-
   const auto &cacheParams = getCacheParams();
+  auto location = getPUMLocation(paddr, range);
+
+  auto vBitlineWrap =
+      (location.wordline - range.startWordline) / range.elementBits;
+  auto vBitlineIdxInWay = location.array * range.vBitlines +
+                          vBitlineWrap * cacheParams.bitlines +
+                          location.bitline;
+
   const auto cacheBlockSize = getCacheBlockSize();
   assert(paddr % cacheBlockSize == 0 && "Not Align to Line.");
   const auto elementsPerLine = cacheBlockSize / (range.elementBits / 8);
 
-  auto tileSize = range.pumTile.getCanonicalTotalTileSize();
-  auto bitlines = cacheParams.bitlines;
-  assert(tileSize <= bitlines && "TileSize > BitlinesPerArray");
-  auto pBitlineIdx =
-      (vBitlineIdx / tileSize) * bitlines + vBitlineIdx % tileSize;
-
-  auto pBitlineIdxInWay = pBitlineIdx % (bitlines * cacheParams.arrayPerWay);
-  auto cacheSetIdx = pBitlineIdxInWay / elementsPerLine;
+  auto cacheSetIdx = vBitlineIdxInWay / elementsPerLine;
   auto finalCacheSetIdx = cacheSetIdx + range.startSet;
 
   assert(finalCacheSetIdx < getCacheNumSet() && "CacheSet Overflow.");

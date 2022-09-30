@@ -169,9 +169,17 @@ void PUMEngine::kickNextCommand() {
 
     /**
      * Estimate the latency of each command.
+     *
+     * After we introduced virtual bitlines, each command may involves multiple
+     * rounds as vbitlines wrap around pbitlines. So far we just charge the
+     * latency * rounds.
+     *
+     * TODO: Properly handle virtual bitlines to physical bitlines.
      */
     scheduledArrays.insert(usedArrays.begin(), usedArrays.end());
     auto cmdLat = this->estimateCommandLatency(command);
+    auto vBitlineRatio = this->getVBitlineRatio(command);
+    cmdLat = Cycles(cmdLat * vBitlineRatio);
 
     /**
      * Record the number of bitline ops we have done for compute cmd.
@@ -417,35 +425,50 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
     default:
       panic("Unknown PUM OpClass %s.", Enums::OpClassStrings[command.opClass]);
       break;
+
     case No_OpClass:
     case SimdMiscOp:
       computeLatency = 1;
       break;
+
     case FloatMemReadOp:
       // Assume one cycle to read 1 bit of constant value.
       computeLatency = wordlineBits;
       break;
+
     case SimdCmpOp:
     case IntAluOp:
       computeLatency = wordlineBits;
       break;
+
     case IntMultOp:
       computeLatency = wordlineBitsSquare / 2;
       break;
+
     case FloatAddOp:
-    case SimdFloatAddOp: {
+    case SimdFloatAddOp:
       computeLatency = forceInt ? wordlineBits : wordlineBitsSquare;
       break;
-    }
+
     case FloatMultOp:
-    case SimdFloatMultOp: {
+    case SimdFloatMultOp:
       computeLatency = forceInt ? wordlineBitsSquare / 2 : wordlineBitsSquare;
       break;
-    }
-    case SimdFloatDivOp: {
+
+    case SimdFloatDivOp:
       computeLatency = wordlineBitsSquare;
       break;
-    }
+
+    case SimdMultAccOp:
+      computeLatency = wordlineBitsSquare / 2 + wordlineBits;
+      break;
+
+    case FloatMultAccOp:
+    case SimdFloatMultAccOp:
+      computeLatency = forceInt ? (wordlineBitsSquare / 2 + wordlineBits)
+                                : (2 * wordlineBitsSquare);
+      break;
+
     case SimdFloatCmpOp:
       computeLatency = forceInt ? wordlineBits : wordlineBitsSquare;
       break;
@@ -454,6 +477,16 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
   }
 
   panic("Unknown PUMCommand %s.", command.type);
+}
+
+int PUMEngine::getVBitlineRatio(const PUMCommand &command) {
+  auto pBitlines = this->hwConfig->array_cols;
+  auto tileSize = command.srcMapPattern.getCanonicalTotalTileSize();
+  auto ratio = (tileSize + pBitlines - 1) / pBitlines;
+  if (ratio < 1 || ratio > 2) {
+    panic("Illegal ratio %ld.", ratio);
+  }
+  return ratio;
 }
 
 void PUMEngine::tick() {

@@ -469,7 +469,7 @@ private:
   PUMContextListT contexts;
 
   // Last time I received the first context.
-  Cycles firstContextInitCycle = Cycles(0);
+  Cycles prevRecordedPUMTotalCycle = Cycles(0);
 
   /**
    * Find all PUMComputeStreamGroups.

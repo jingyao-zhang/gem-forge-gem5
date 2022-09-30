@@ -1608,11 +1608,22 @@ void MLCPUMManager::buildTDFG(PUMContext &context) {
           tdfgCompute->set_op(::LLVM::TDG::TDFG::Node::Compute::MUL);
           break;
 
+        case Enums::OpClass::SimdMultAcc:
+        case Enums::OpClass::FloatMultAcc:
+        case Enums::OpClass::SimdFloatMultAcc:
+          tdfgCompute->set_op(::LLVM::TDG::TDFG::Node::Compute::MADD);
+          break;
+
         case Enums::OpClass::IntDiv:
         case Enums::OpClass::FloatDiv:
         case Enums::OpClass::SimdDiv:
         case Enums::OpClass::SimdFloatDiv:
           tdfgCompute->set_op(::LLVM::TDG::TDFG::Node::Compute::DIV);
+          break;
+
+        case Enums::OpClass::SimdCmp:
+        case Enums::OpClass::SimdFloatCmp:
+          tdfgCompute->set_op(::LLVM::TDG::TDFG::Node::Compute::CMP);
           break;
 
         default:
@@ -3087,7 +3098,7 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
 
   // If this is the first context, record the cycle.
   if (this->contexts.size() == 1) {
-    this->firstContextInitCycle = this->controller->curCycle();
+    this->prevRecordedPUMTotalCycle = this->controller->curCycle();
   }
 
   /**
@@ -3793,6 +3804,13 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
   }
 
   if (allGroupsDone) {
+
+    // Update total cycles here.
+    Cycles totalPUMCycles =
+        this->controller->curCycle() - this->prevRecordedPUMTotalCycle;
+    this->controller->m_statPUMTotalCycles += totalPUMCycles;
+    this->prevRecordedPUMTotalCycle = this->controller->curCycle();
+
     context.state = PUMContext::StateE::Done;
     return;
   }
@@ -3938,7 +3956,8 @@ void MLCPUMManager::receiveStreamEnd(std::vector<DynStreamId> &endIds) {
   // If this is the last context, record the total PUM cycles.
   if (this->contexts.empty()) {
     Cycles totalPUMCycles =
-        this->controller->curCycle() - this->firstContextInitCycle;
+        this->controller->curCycle() - this->prevRecordedPUMTotalCycle;
+    this->prevRecordedPUMTotalCycle = this->controller->curCycle();
     this->controller->m_statPUMTotalCycles += totalPUMCycles;
   }
 

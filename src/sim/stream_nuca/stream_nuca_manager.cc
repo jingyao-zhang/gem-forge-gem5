@@ -202,6 +202,7 @@ void StreamNUCAManager::remap(ThreadContext *tc) {
    */
   std::unordered_map<Addr, int> regionRemapStateMap;
   std::vector<Addr> stack;
+  std::vector<Addr> sortedRegionVAddrs;
   while (true) {
     stack.clear();
     for (const auto &entry : this->startVAddrRegionMap) {
@@ -249,7 +250,7 @@ void StreamNUCAManager::remap(ThreadContext *tc) {
 
       } else if (state == 1) {
         // Second time, we can try to remap this region.
-        this->remapRegion(tc, region);
+        sortedRegionVAddrs.push_back(regionVAddr);
         regionRemapStateMap.at(regionVAddr) = 2;
         stack.pop_back();
 
@@ -259,6 +260,8 @@ void StreamNUCAManager::remap(ThreadContext *tc) {
       }
     }
   }
+
+  this->remapRegions(tc, sortedRegionVAddrs);
 
   this->computeCacheSet();
 
@@ -275,21 +278,67 @@ void StreamNUCAManager::remap(ThreadContext *tc) {
           static_cast<uint64_t>(indRegionMemToLLCRemappedHops.value()));
 }
 
-void StreamNUCAManager::remapRegion(ThreadContext *tc, StreamRegion &region) {
-  bool hasIndirectAlign = false;
-  for (const auto &align : region.aligns) {
-    if (align.elementOffset < 0) {
-      hasIndirectAlign = true;
-      break;
+void StreamNUCAManager::remapRegions(ThreadContext *tc,
+                                     const AddrVecT &regionVAddrs) {
+
+  /**
+   * Collect remap decision for each region.
+   */
+  std::vector<int> remapDecisions;
+  const int REMAP_INDIRECT = 0;
+  const int REMAP_NUCA = 1;
+  const int REMAP_PUM = 2;
+  for (const auto &regionVAddr : regionVAddrs) {
+
+    auto &region = this->getRegionFromStartVAddr(regionVAddr);
+
+    bool hasIndirectAlign = false;
+    for (const auto &align : region.aligns) {
+      if (align.elementOffset < 0) {
+        hasIndirectAlign = true;
+        break;
+      }
+    }
+    if (hasIndirectAlign) {
+      remapDecisions.push_back(REMAP_INDIRECT);
+    } else {
+      if (this->enablePUM && this->canRemapDirectRegionPUM(region)) {
+        remapDecisions.push_back(REMAP_PUM);
+      } else {
+        remapDecisions.push_back(REMAP_NUCA);
+      }
     }
   }
-  if (hasIndirectAlign) {
-    this->remapIndirectRegion(tc, region);
-  } else {
-    if (this->enablePUM && this->canRemapDirectRegionPUM(region)) {
-      this->remapDirectRegionPUM(region);
-    } else {
+
+  /**
+   * For now we enforce the same virtual bitlines for all PUM region.
+   */
+  int64_t vBitlines = 0;
+  for (int i = 0; i < regionVAddrs.size(); ++i) {
+    if (remapDecisions.at(i) != REMAP_PUM) {
+      continue;
+    }
+    auto &region = this->getRegionFromStartVAddr(regionVAddrs.at(i));
+    vBitlines = std::max(vBitlines, this->getVirtualBitlinesForPUM(region));
+  }
+  for (int i = 0; i < regionVAddrs.size(); ++i) {
+    auto decision = remapDecisions.at(i);
+    auto &region = this->getRegionFromStartVAddr(regionVAddrs.at(i));
+    switch (decision) {
+    default:
+      panic("Invalid Remap Decision %d.", decision);
+    case REMAP_INDIRECT: {
+      this->remapIndirectRegion(tc, region);
+      break;
+    }
+    case REMAP_NUCA: {
       this->remapDirectRegionNUCA(region);
+      break;
+    }
+    case REMAP_PUM: {
+      this->remapDirectRegionPUM(region, vBitlines);
+      break;
+    }
     }
   }
 }
@@ -884,7 +933,6 @@ void StreamNUCAManager::computeCacheSetPUM() {
   const auto llcNumSets = StreamNUCAMap::getCacheNumSet();
   const auto llcBlockSize = StreamNUCAMap::getCacheBlockSize();
   const auto llcArraysPerWay = StreamNUCAMap::getCacheParams().arrayPerWay;
-  const auto llcBitlinesPerArray = StreamNUCAMap::getCacheParams().bitlines;
 
   auto startSet = 0;
   for (const auto &entry : this->startVAddrRegionMap) {
@@ -893,18 +941,22 @@ void StreamNUCAManager::computeCacheSetPUM() {
 
     auto startPAddr = this->translate(startVAddr);
     auto &rangeMap = StreamNUCAMap::getRangeMapByStartPAddr(startPAddr);
+    if (!rangeMap.isStreamPUM) {
+      continue;
+    }
     rangeMap.startSet = startSet;
 
     auto elemSize = region.elementSize;
-    auto usedBytesPerWay = elemSize * llcArraysPerWay * llcBitlinesPerArray;
+    auto usedBytesPerWay = elemSize * llcArraysPerWay * rangeMap.vBitlines;
     auto usedSets = usedBytesPerWay / llcBlockSize;
-    assert(startSet + usedSets <= llcNumSets && "LLC Sets overflow.");
 
     DPRINTF(StreamNUCAManager,
             "[CacheSet] Range %s %#x ElementSize %d UsedBytesPerWay %lu "
             "StartSet %d UsedSet %d.\n",
             region.name, region.vaddr, region.elementSize, usedBytesPerWay,
             startSet, usedSets);
+
+    assert(startSet + usedSets <= llcNumSets && "LLC Sets overflow.");
     startSet = (startSet + usedSets) % llcNumSets;
   }
 }
@@ -1164,7 +1216,45 @@ bool StreamNUCAManager::canRemapDirectRegionPUM(const StreamRegion &region) {
   return true;
 }
 
-void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
+int64_t
+StreamNUCAManager::getVirtualBitlinesForPUM(const StreamRegion &region) {
+
+  /**
+   * When the total elements in the region is less than the total available
+   * bitlines, we just map to the number of physical bitlines.
+   *
+   * However, when the total elements in the region is more than available
+   * bitlines, we introduce the concept of virtual bitlines, and we may increase
+   * the virtual bitlines beyond the actual physical bitlines, so that we make
+   * sure that the number of tiles is within the number of SRAM arrays.
+   *
+   * When virtual bitlines is more than physical bitlines, it means that the
+   * tile will be wrap around, and in PUMEngine, we charge multiple latency to
+   * perform the bit-serial logic.
+   */
+
+  auto pumHWConfig = StreamNUCAMap::getPUMHWConfig();
+
+  auto bitlines = pumHWConfig.array_cols;
+  auto totalBitlines = pumHWConfig.get_total_arrays() * pumHWConfig.array_cols;
+
+  auto totalElems = region.numElement;
+  auto ratio = (totalElems + totalBitlines - 1) / totalBitlines;
+
+  if (ratio > 2 || ratio < 1) {
+    panic("[StreamPUM] Region %s TotalElem %lu / Bitlines %ld = %lu Illegal.",
+          region.name, totalElems, totalBitlines, ratio);
+  }
+
+  auto vBitlines = ratio * bitlines;
+
+  DPRINTF(StreamNUCAManager, "[StreamPUM] Region %s vBitlines %ld.\n",
+          region.name, vBitlines);
+  return vBitlines;
+}
+
+void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
+                                             int64_t vBitlines) {
   if (!this->isPAddrContinuous(region)) {
     panic("[StreamPUM] Region %s %#x PAddr is not continuous.", region.name,
           region.vaddr);
@@ -1175,19 +1265,15 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
 
   auto endPAddr = startPAddr + region.elementSize * region.numElement;
 
-  auto pumHWConfig = StreamNUCAMap::getPUMHWConfig();
-
   auto dimensions = region.arraySizes.size();
+
+  AffinePattern::IntVecT arraySizes = region.arraySizes;
+  AffinePattern::IntVecT tileSizes(dimensions, 1);
 
   /**
    * We want to search for aligned dimensions from this region or it's
    * AlignedToRegion, and try to tile for those aligned dimensions.
    */
-  auto bitlines = pumHWConfig.array_cols;
-
-  AffinePattern::IntVecT arraySizes = region.arraySizes;
-  AffinePattern::IntVecT tileSizes(dimensions, 1);
-
   auto alignDims = this->getAlignDimsForDirectRegion(region);
   auto numAlignDims = alignDims.size();
   assert(numAlignDims > 0 && "No AlignDims.");
@@ -1204,7 +1290,7 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
     auto alignDim = alignDims.front();
     auto arraySize = arraySizes.at(alignDim);
 
-    auto alignDimTileSize = std::min(bitlines, arraySize);
+    auto alignDimTileSize = std::min(vBitlines, arraySize);
     if (region.userDefinedProperties.count(
             RegionProperty::PUM_TILE_SIZE_DIM0)) {
       auto userDefinedTileSize =
@@ -1216,11 +1302,11 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
 
     tileSizes.at(alignDim) = alignDimTileSize;
 
-    if (alignDimTileSize < bitlines) {
+    if (alignDimTileSize < vBitlines) {
       // Check if we have next dimension to map.
       assert(alignDim + 1 < dimensions);
-      assert(bitlines % alignDimTileSize == 0);
-      auto ratio = bitlines / alignDimTileSize;
+      assert(vBitlines % alignDimTileSize == 0);
+      auto ratio = vBitlines / alignDimTileSize;
       tileSizes.at(alignDim + 1) = ratio;
     }
   } else if (numAlignDims == 2) {
@@ -1228,7 +1314,7 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
     if (this->enablePUMTiling) {
       auto &x = tileSizes.at(alignDims.at(0));
       auto &y = tileSizes.at(alignDims.at(1));
-      x = bitlines;
+      x = vBitlines;
       y = 1;
       while (y * 2 < x) {
         y *= 2;
@@ -1239,13 +1325,13 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
       // bitlines.
       auto &x = tileSizes.at(0);
       auto &y = tileSizes.at(1);
-      x = bitlines;
+      x = vBitlines;
       y = 1;
       auto size0 = arraySizes.at(0);
-      if (size0 < bitlines) {
-        assert(bitlines % size0 == 0);
+      if (size0 < vBitlines) {
+        assert(vBitlines % size0 == 0);
         x = size0;
-        y = bitlines / size0;
+        y = vBitlines / size0;
       }
     }
   } else if (dimensions == 3) {
@@ -1253,7 +1339,7 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
       auto &x = tileSizes.at(alignDims.at(0));
       auto &y = tileSizes.at(alignDims.at(1));
       auto &z = tileSizes.at(alignDims.at(2));
-      x = bitlines;
+      x = vBitlines;
       y = 1;
       z = 1;
       while (y * 4 < x) {
@@ -1267,14 +1353,14 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
       auto &x = tileSizes.at(0);
       auto &y = tileSizes.at(1);
       auto &z = tileSizes.at(2);
-      x = bitlines;
+      x = vBitlines;
       y = 1;
       z = 1;
       auto size0 = arraySizes.at(0);
-      if (size0 < bitlines) {
-        assert(bitlines % size0 == 0);
+      if (size0 < vBitlines) {
+        assert(vBitlines % size0 == 0);
         x = size0;
-        y = bitlines / size0;
+        y = vBitlines / size0;
         z = 1;
       }
     }
@@ -1300,7 +1386,7 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
   auto startWordline = 0;
 
   StreamNUCAMap::addRangeMap(startPAddr, endPAddr, pumTile, elemBits,
-                             startWordline);
+                             startWordline, vBitlines);
   DPRINTF(StreamNUCAManager,
           "[StreamPUM] Map %s PAddr %#x ElemBit %d StartWdLine %d Tile %s.\n",
           region.name, startPAddr, elemBits, startWordline, pumTile);

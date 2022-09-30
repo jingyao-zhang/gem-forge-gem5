@@ -482,6 +482,7 @@ public:
 
   const ExecFuncPtr &getComputeCallback() const;
 
+  bool isComputationNop() const { return this->getComputeCallback()->isNop(); }
   int getComputationNumMicroOps() const {
     return this->getComputeCallback()->getNumInstructions();
   }

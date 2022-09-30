@@ -80,6 +80,7 @@ private:
 
   void kickNextCommand();
   Cycles estimateCommandLatency(const PUMCommand &command);
+  int getVBitlineRatio(const PUMCommand &command);
 
   void synced();
 

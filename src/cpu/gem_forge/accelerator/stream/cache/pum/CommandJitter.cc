@@ -237,28 +237,34 @@ int main(int argc, char *argv[]) {
   }
 
   if (argc != 2) {
-    fprintf(stderr, "Usage: <exe> tdfg_json\n");
+    fprintf(stderr, "Usage: <exe> tdfg\n");
     exit(1);
   }
 
-  auto jsonFn = argv[1];
-  std::string json;
+  std::string fn = argv[1];
+  std::string jsonSuffix = ".json";
+  ::LLVM::TDG::TDFG tdfg;
   {
-    std::ifstream t(jsonFn);
+    std::ifstream t(fn);
     if (!t.is_open()) {
-      fprintf(stderr, "Failed to open json tdfg %s.\n", jsonFn);
+      fprintf(stderr, "Failed to open tdfg %s.\n", fn.c_str());
       exit(1);
     }
-    std::stringstream buffer;
-    buffer << t.rdbuf();
-    json = buffer.str();
-  }
-
-  ::LLVM::TDG::TDFG tdfg;
-  auto status = ::google::protobuf::util::JsonStringToMessage(json, &tdfg);
-  if (!status.ok()) {
-    fprintf(stderr, "Failed to parse json to tdfg %s.\n", jsonFn);
-    exit(1);
+    if (fn.size() > jsonSuffix.size() &&
+        fn.find(jsonSuffix) == fn.size() - jsonSuffix.size()) {
+      // This is json.
+      std::string json;
+      std::stringstream buffer;
+      buffer << t.rdbuf();
+      json = buffer.str();
+      auto status = ::google::protobuf::util::JsonStringToMessage(json, &tdfg);
+      if (!status.ok()) {
+        fprintf(stderr, "Failed to parse json to tdfg %s.\n", fn.c_str());
+        exit(1);
+      }
+    } else {
+      tdfg.ParseFromIstream(&t);
+    }
   }
 
   printf("Parsed TDFG.\n");

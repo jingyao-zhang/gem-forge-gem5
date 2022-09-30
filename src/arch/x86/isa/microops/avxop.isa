@@ -374,25 +374,25 @@ let {{
         '''
     
     class Vfmaddf(Vfused):
-        opClass = 'SimdFloatMultOp'
+        opClass = 'SimdFloatMultAccOp'
         code = '''
             this->doFusedPackedBinaryOp(xc, BinaryOp::FloatMul, BinaryOp::FloatAdd);
         '''
 
     class Vfnmaddf(Vfused):
-        opClass = 'SimdFloatMultOp'
+        opClass = 'SimdFloatMultAccOp'
         code = '''
             this->doFusedPackedBinaryOp(xc, BinaryOp::FloatNegMul, BinaryOp::FloatAdd);
         '''
 
     class Sfmaddf(Sfused):
-        opClass = 'SimdFloatMultOp'
+        opClass = 'SimdFloatMultAccOp'
         code = '''
             this->doFusedSingleBinaryOp(xc, BinaryOp::FloatMul, BinaryOp::FloatAdd);
         '''
 
     class Sfnmaddf(Sfused):
-        opClass = 'SimdFloatMultOp'
+        opClass = 'SimdFloatMultAccOp'
         code = '''
             this->doFusedSingleBinaryOp(xc, BinaryOp::FloatNegMul, BinaryOp::FloatAdd);
         '''

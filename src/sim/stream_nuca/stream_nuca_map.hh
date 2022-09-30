@@ -129,6 +129,7 @@ public:
     AffinePattern pumTileRev;
     int elementBits;
     int startWordline;
+    int vBitlines;
 
     RangeMap(Addr _startPAddr, Addr _endPAddr, uint64_t _interleave,
              int _startBank, int _startSet)
@@ -136,17 +137,18 @@ public:
           interleave(_interleave), startBank(_startBank), startSet(_startSet) {}
 
     RangeMap(Addr _startPAddr, Addr _endPAddr, const AffinePattern &_pumTile,
-             int _elementBits, int _startWordline)
+             int _elementBits, int _startWordline, int _vBitlines)
         : startPAddr(_startPAddr), endPAddr(_endPAddr), isStreamPUM(true),
           pumTile(_pumTile), pumTileRev(_pumTile.revert_canonical_tile()),
-          elementBits(_elementBits), startWordline(_startWordline) {}
+          elementBits(_elementBits), startWordline(_startWordline),
+          vBitlines(_vBitlines) {}
   };
 
   static void addRangeMap(Addr startPAddr, Addr endPAddr, uint64_t interleave,
                           int startBank, int startSet);
   static void addRangeMap(Addr startPAddr, Addr endPAddr,
                           const AffinePattern &pumTile, int elementBits,
-                          int startWordline);
+                          int startWordline, int vBitlines);
 
   static RangeMap &getRangeMapByStartPAddr(Addr startPAddr);
   static RangeMap *getRangeMapContaining(Addr paddr);

@@ -2334,20 +2334,16 @@ void LLCStreamEngine::issueStreamDataToLLC(
   auto recvStrandId =
       recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
 
-  if (Debug::LLCRubyStreamBase) {
-    auto sendStreamElemIdx =
-        dynS->configData->getStreamElemIdxFromStrandElemIdx(sendStrandElemIdx);
-    auto recvStrandId =
-        recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
-    auto recvStrandElemIdx =
-        recvConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
-    LLC_SLICE_DPRINTF(
-        sliceId,
-        "[LLCFwd] SendStrandElemIdx %lu SendStreamElemIdx %lu R/S %ld/%ld -> "
-        "RecvStreamElemIdx %lu RecvStrand %s RecvStrandElemIdx %lu.\n",
-        sendStrandElemIdx, sendStreamElemIdx, sendToEdge.reuse, sendToEdge.skip,
-        recvStreamElemIdx, recvStrandId, recvStrandElemIdx);
-  }
+  auto sendStreamElemIdx =
+      dynS->configData->getStreamElemIdxFromStrandElemIdx(sendStrandElemIdx);
+  auto recvStrandElemIdx =
+      recvConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
+  LLC_SLICE_DPRINTF(
+      sliceId,
+      "[LLCFwd] SendStrandElemIdx %lu SendStreamElemIdx %lu R/S %ld/%ld -> "
+      "RecvStreamElemIdx %lu RecvStrand %s RecvStrandElemIdx %lu.\n",
+      sendStrandElemIdx, sendStreamElemIdx, sendToEdge.reuse, sendToEdge.skip,
+      recvStreamElemIdx, recvStrandId, recvStrandElemIdx);
 
   auto recvElemVAddr = getRecvElemVAddr(recvStreamElemIdx);
   auto recvElemVAddrEnd = recvElemVAddr + recvConfig->elementSize;
@@ -2392,8 +2388,9 @@ void LLCStreamEngine::issueStreamDataToLLC(
     reqIter->dataBlock = dataBlock;
     reqIter->payloadSize = payloadSize;
   } else {
-    LLC_SLICE_PANIC(sliceId, "Translation fault on the ReceiverStream: %s.",
-                    recvConfig->dynamicId);
+    LLC_SLICE_PANIC(sliceId, "Fault on RecvS: %s%lu(%lu) VAddr %#x.",
+                    recvStrandId, recvStrandElemIdx, recvStreamElemIdx,
+                    recvElemVAddrLine);
   }
 }
 
@@ -4064,6 +4061,13 @@ void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &elem,
                       this->readyComputations.size(),
                       this->inflyComputations.size(), tryVectorize);
   assert(elem->areBaseElemsReady() && "Element is not ready yet.");
+  if (elem->S->isComputationNop()) {
+    // Nop computation is directly skipped.
+    LLC_ELEMENT_DPRINTF(elem, "Skip nop.\n");
+    elem->vectorizedComputation();
+    this->skipComputation(elem);
+    return;
+  }
   if (!elem->isNDCElement) {
     auto dynS = LLCDynStream::getLLCStream(elem->strandId);
     if (!dynS) {

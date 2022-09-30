@@ -124,10 +124,12 @@ private:
 
   Addr translate(Addr vaddr);
 
-  void remapRegion(ThreadContext *tc, StreamRegion &region);
+  using AddrVecT = std::vector<Addr>;
+  void remapRegions(ThreadContext *tc, const AddrVecT &regionVAddrs);
 
   bool canRemapDirectRegionPUM(const StreamRegion &region);
-  void remapDirectRegionPUM(const StreamRegion &region);
+  int64_t getVirtualBitlinesForPUM(const StreamRegion &region);
+  void remapDirectRegionPUM(const StreamRegion &region, int64_t vBitlines);
   void remapDirectRegionNUCA(const StreamRegion &region);
   uint64_t determineInterleave(const StreamRegion &region);
   int determineStartBank(const StreamRegion &region, uint64_t interleave);
