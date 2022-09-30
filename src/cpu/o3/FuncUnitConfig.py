@@ -99,7 +99,8 @@ class SIMD_Unit(FUDesc):
                OpDesc(opClass='SimdReduceAlu'),
                OpDesc(opClass='SimdReduceCmp'),
                OpDesc(opClass='SimdFloatReduceAdd'),
-               OpDesc(opClass='SimdFloatReduceCmp') ]
+               OpDesc(opClass='SimdFloatReduceCmp'),
+    ]
     count = 4
 
 class PredALU(FUDesc):

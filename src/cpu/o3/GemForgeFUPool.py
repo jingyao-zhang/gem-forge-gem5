@@ -60,20 +60,20 @@ class GemForgeIntSIMDUnit(FUDesc):
     count = 2
 
 class GemForgeFpSIMDUnit(FUDesc):
-    opList = [ OpDesc(opLat=2, opClass='SimdFloatAdd'),
-               OpDesc(opLat=2, opClass='SimdFloatAlu'),
-               OpDesc(opLat=2, opClass='SimdFloatCmp'),
-               OpDesc(opLat=2, opClass='SimdFloatCvt'),
-               OpDesc(opLat=2, opClass='SimdFloatDiv'),
-               OpDesc(opLat=2, opClass='SimdFloatMisc'),
-               OpDesc(opLat=2, opClass='SimdFloatMult'),
-               OpDesc(opLat=2, opClass='SimdFloatMultAcc'),
-               OpDesc(opLat=2, opClass='SimdFloatSqrt'),
-               OpDesc(opLat=2, opClass='SimdReduceAdd'),
-               OpDesc(opLat=2, opClass='SimdReduceAlu'),
-               OpDesc(opLat=2, opClass='SimdReduceCmp'),
-               OpDesc(opLat=2, opClass='SimdFloatReduceAdd'),
-               OpDesc(opLat=2, opClass='SimdFloatReduceCmp') ]
+    opList = [ OpDesc(opLat=2, pipelined=False, opClass='SimdFloatAdd'),
+               OpDesc(opLat=2, pipelined=False, opClass='SimdFloatAlu'),
+               OpDesc(opLat=2, pipelined=False, opClass='SimdFloatCmp'),
+               OpDesc(opLat=2, pipelined=False, opClass='SimdFloatCvt'),
+               OpDesc(opLat=2, pipelined=False, opClass='SimdFloatDiv'),
+               OpDesc(opLat=2, pipelined=False, opClass='SimdFloatMisc'),
+               OpDesc(opLat=2, pipelined=False, opClass='SimdFloatMult'),
+               OpDesc(opLat=2, pipelined=False, opClass='SimdFloatMultAcc'),
+               OpDesc(opLat=2, pipelined=False, opClass='SimdFloatSqrt'),
+               OpDesc(opLat=2, pipelined=False, opClass='SimdReduceAdd'),
+               OpDesc(opLat=2, pipelined=False, opClass='SimdReduceAlu'),
+               OpDesc(opLat=2, pipelined=False, opClass='SimdReduceCmp'),
+               OpDesc(opLat=2, pipelined=False, opClass='SimdFloatReduceAdd'),
+               OpDesc(opLat=2, pipelined=False, opClass='SimdFloatReduceCmp') ]
     count = 2
 
 class GemForgeO4FUPool(FUPool):
