@@ -94,6 +94,10 @@ void AbstractStreamAwareController::regStats() {
       .desc("number of llc stream computation microops scheduled")
       .flags(Stats::nozero);
 
+  m_statMLCStreamCycles.name(name() + ".mlcStreamCycles")
+      .desc("number of cycles with streams offloaded")
+      .flags(Stats::nozero);
+
 #define complete_micro_op(Addr, Compute)                                       \
   m_statLLCScheduled##Addr##Compute##MicroOps                                  \
       .name(name() + ".llcScheduledStream" #Addr #Compute "MicroOps")          \

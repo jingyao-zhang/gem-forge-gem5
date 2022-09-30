@@ -295,6 +295,8 @@ protected:
 
 public:
   Stats::Distribution m_statLLCNumDirectStreams;
+  // Stats for cycles when streams are offloaded.
+  Stats::Scalar m_statMLCStreamCycles;
   // Stats for stream computing.
   Stats::Scalar m_statLLCScheduledComputation;
   Stats::Scalar m_statLLCScheduledComputeMicroOps;

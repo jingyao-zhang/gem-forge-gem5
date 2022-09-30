@@ -46,6 +46,12 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream configure when stream float is disabled.\n");
 
+  // Init the stats.
+  if (!this->pumManager->isInPUM() &&
+      !this->strandManager->hasConfiguredStreams()) {
+    this->prevRecordedStreamCycle = this->controller->curCycle();
+  }
+
   this->pumManager->receiveStreamConfigure(pkt);
 }
 
@@ -61,10 +67,15 @@ void MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   this->pumManager->receiveStreamEnd(*endIds);
   this->strandManager->receiveStreamEnd(*endIds, masterId);
 
+  this->recordStreamCycle();
+
   delete endIds;
 }
 
 void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
+
+  this->recordStreamCycle();
+
   if (msg.m_Type == CoherenceResponseType_STREAM_NDC) {
     this->receiveStreamNDCResponse(msg);
     return;

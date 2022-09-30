@@ -79,6 +79,11 @@ public:
 
   MachineID getMachineID() const { return this->controller->getMachineID(); }
 
+  /**
+   * Whether we are in PUM stage.
+   */
+  bool isInPUM() const { return !this->contexts.empty(); }
+
 private:
   using ConfigPtr = CacheStreamConfigureDataPtr;
   MLCStreamEngine *mlcSE;

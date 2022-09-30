@@ -129,6 +129,17 @@ private:
   std::unique_ptr<MLCStreamNDCController> ndcController;
   std::unique_ptr<MLCStrandManager> strandManager;
   std::unique_ptr<MLCPUMManager> pumManager;
+
+  /**
+   * Used to record stream offloading cycles.
+   */
+  Cycles prevRecordedStreamCycle = Cycles(0);
+  void recordStreamCycle() {
+    auto curCycle = this->controller->curCycle();
+    this->controller->m_statMLCStreamCycles +=
+        curCycle - this->prevRecordedStreamCycle;
+    this->prevRecordedStreamCycle = curCycle;
+  }
 };
 
 #endif

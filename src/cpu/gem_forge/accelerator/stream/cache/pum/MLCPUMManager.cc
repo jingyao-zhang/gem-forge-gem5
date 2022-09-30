@@ -1361,6 +1361,14 @@ void MLCPUMManager::buildPUMDataGraphCompute(
     //       would be `maddf` and `mmulf`.
     //       https://www.felixcloutier.com/x86/mulsd
     auto numSrc = std::min(inst->numSrcRegs(), static_cast<int8_t>(2));
+    /**
+     * Zhengrong: this is a bad choice for gem5 to track too many false WAR
+     * dependencies. And this breaks our fused multiply-add. So for now I
+     * just add a special case and will try to fix that later.
+     */
+    if (inst->getName() == "sfmaddf" || inst->getName() == "sfnmaddf") {
+      numSrc = 3;
+    }
     for (auto s = 0; s < numSrc; ++s) {
       MLCSE_DPRINTF("        Requesting register %s\n", inst->srcRegIdx(s));
 
