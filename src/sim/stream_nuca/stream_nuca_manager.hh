@@ -111,6 +111,7 @@ private:
   const bool enabledNUCA;
   const bool enablePUM;
   const bool enablePUMTiling;
+  const std::string forcePUMTilingDim;
   enum DirectRegionFitPolicy {
     CROP,
     DROP,

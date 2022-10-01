@@ -28,6 +28,7 @@ StreamNUCAManager::StreamNUCAManager(Process *_process, ProcessParams *_params)
       enabledNUCA(_params->enableStreamNUCA),
       enablePUM(_params->enableStreamPUMMapping),
       enablePUMTiling(_params->enableStreamPUMTiling),
+      forcePUMTilingDim(_params->forceStreamPUMTilingDim),
       enableIndirectPageRemap(_params->streamNUCAEnableIndPageRemap) {
   const auto &directRegionFitPolicy = _params->streamNUCADirectRegionFitPolicy;
   if (directRegionFitPolicy == "crop") {
@@ -1283,6 +1284,7 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
      * Just align to one dimension.
      * Pick the minimum of:
      *  bitlines, arraySize, userDefinedTileSize (if defined).
+     * NOTE: UserDefinedTileSize is ignored if forceTilingDim is set.
      *
      * Then -- if there is more space, try to map the next dimension.
      *
@@ -1291,7 +1293,8 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
     auto arraySize = arraySizes.at(alignDim);
 
     auto alignDimTileSize = std::min(vBitlines, arraySize);
-    if (region.userDefinedProperties.count(
+    if (this->forcePUMTilingDim == "none" &&
+        region.userDefinedProperties.count(
             RegionProperty::PUM_TILE_SIZE_DIM0)) {
       auto userDefinedTileSize =
           region.userDefinedProperties.at(RegionProperty::PUM_TILE_SIZE_DIM0);
@@ -1303,11 +1306,23 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
     tileSizes.at(alignDim) = alignDimTileSize;
 
     if (alignDimTileSize < vBitlines) {
-      // Check if we have next dimension to map.
-      assert(alignDim + 1 < dimensions);
+      /**
+       * We have more bitlines than this dimension. Try to fill in upper/lower
+       * dimension.
+       */
       assert(vBitlines % alignDimTileSize == 0);
       auto ratio = vBitlines / alignDimTileSize;
-      tileSizes.at(alignDim + 1) = ratio;
+      if (alignDim + 1 < dimensions) {
+        auto s = arraySizes.at(alignDim + 1);
+        assert(s >= ratio);
+        assert(s % ratio == 0);
+        tileSizes.at(alignDim + 1) = ratio;
+      } else if (alignDim > 0) {
+        auto s = arraySizes.at(alignDim - 1);
+        assert(s >= ratio);
+        assert(s % ratio == 0);
+        tileSizes.at(alignDim - 1) = ratio;
+      }
     }
   } else if (numAlignDims == 2) {
     // Just try to get square root of bitlines?
@@ -1402,6 +1417,18 @@ StreamNUCAManager::getAlignDimsForDirectRegion(const StreamRegion &region) {
 
   auto dimensions = region.arraySizes.size();
   std::vector<int> ret;
+
+  // Force tiling on certain dimension.
+  if (this->forcePUMTilingDim != "none") {
+    if (this->forcePUMTilingDim == "inner") {
+      ret.push_back(0);
+    } else if (this->forcePUMTilingDim == "outer") {
+      ret.push_back(dimensions - 1);
+    } else {
+      panic("Illegal forced PUM tiling dim %s.", this->forcePUMTilingDim);
+    }
+    return ret;
+  }
 
   if (region.userDefinedProperties.count(RegionProperty::PUM_TILE_SIZE_DIM0)) {
     /**

@@ -81,6 +81,8 @@ class Process(SimObject):
         "Enable remap indirect page.")
     enableStreamPUMMapping = Param.Bool(False, "Enable StreamPUM Mapping.")
     enableStreamPUMTiling = Param.Bool(False, "Enable StreamPUM Tiling.")
+    forceStreamPUMTilingDim = Param.String('none',
+        'Force PUM tiling in certain dimensions: none/inner/outer')
 
     @classmethod
     def export_methods(cls, code):
