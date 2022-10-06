@@ -145,6 +145,9 @@ parser.add_option("--gem-forge-stream-engine-enable-float-subline", action="stor
 parser.add_option("--gem-forge-stream-engine-enable-float-idea-ack", action="store",
                   default=0, type="int",
                   help="Enable idea (instant, no NoC) StreamAck in stream float.")
+parser.add_option("--gem-forge-stream-engine-enable-float-idea-fwd", action="store",
+                  default=0, type="int",
+                  help="Enable idea (instant, no NoC) StreamForward in near-stream computing.")
 parser.add_option("--gem-forge-stream-engine-enable-float-idea-end", action="store",
                   default=0, type="int",
                   help="Enable idea (instant, no NoC) StreamEnd in stream float.")
@@ -249,6 +252,9 @@ parser.add_option("--gem-forge-stream-engine-llc-neighbor-migration-valve-type",
 parser.add_option("--gem-forge-stream-engine-enable-fine-grained-near-data-computing",
                   action="store_true", default="False",
                   help="Enable per element computation offloading.")
+parser.add_option("--gem-forge-enable-mlc-prefetch-stream", type="int",
+                  action="store", default="0",
+                  help="Enable mlc prefetch stream.")
 parser.add_option("--gem-forge-enable-stream-nuca", type="int",
                   action="store", default="0",
                   help="Enable stream nuca.")

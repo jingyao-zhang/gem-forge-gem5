@@ -2179,6 +2179,15 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
      * Issue to StreamRequestBuffer to enforce
      * MaxInqueueRequestPerStream.
      */
+    if (req.requestType == CoherenceRequestType_STREAM_FORWARD) {
+      if (this->controller->myParams->enable_stream_idea_forward) {
+        auto recvCtrl = AbstractStreamAwareController::getController(
+            msg->getDestination().singleElement());
+        auto recvSE = recvCtrl->getLLCStreamEngine();
+        recvSE->receiveStreamForwardRequest(*msg);
+        return;
+      }
+    }
     this->indReqBuffer->pushRequest(msg);
   }
 }

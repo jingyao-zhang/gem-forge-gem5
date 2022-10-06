@@ -243,6 +243,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 enable_stream_idea_flow=options.gem_forge_stream_engine_enable_float_idea_flow,
                 enable_stream_multicast=\
                     options.gem_forge_stream_engine_enable_float_multicast,
+                enable_mlc_prefetch_stream=\
+                    options.gem_forge_enable_mlc_prefetch_stream,
                 stream_multicast_group_size=\
                     options.gem_forge_stream_engine_llc_multicast_group_size,
                 stream_multicast_issue_policy=\
@@ -338,6 +340,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 enable_stream_idea_ack=options.gem_forge_stream_engine_enable_float_idea_ack,
                 enable_stream_idea_end=options.gem_forge_stream_engine_enable_float_idea_end,
                 enable_stream_idea_flow=options.gem_forge_stream_engine_enable_float_idea_flow,
+                enable_stream_idea_forward=\
+                    options.gem_forge_stream_engine_enable_float_idea_fwd,
                 enable_stream_idea_store=\
                     options.gem_forge_stream_engine_enable_float_idea_store,
                 enable_stream_compact_store=\

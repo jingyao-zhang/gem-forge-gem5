@@ -326,6 +326,10 @@ public:
                                                 int totalStrands);
 
   /**
+   * After splitting into strands, we try to detect broadcast opportunity.
+   */
+
+  /**
    * Get the StrandId from StreamElemIdx.
    * Must be called on the original StreamConfig.
    * Used to find out the receiving strand for sending strand.

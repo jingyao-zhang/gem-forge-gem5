@@ -95,6 +95,7 @@ class RubyStreamAwareController(RubyController):
     enable_stream_idea_end = Param.Bool(False, "Whether to enable immediate StreamEnd.")
     enable_stream_idea_flow = Param.Bool(False, "Whether to enable immediate stream flow control.")
     enable_stream_idea_store = Param.Bool(False, "Whether to enable immediate stream store.")
+    enable_stream_idea_forward = Param.Bool(False, "Whether to enable immediate stream forward.")
     enable_stream_compact_store = Param.Bool(False, "Whether to enable compact stream store.")
     enable_stream_advance_migrate = Param.Bool(False, "Whether to enable advance stream migrate.")
     enable_stream_multicast = Param.Bool(False, "Whether to enable multicast stream.")
