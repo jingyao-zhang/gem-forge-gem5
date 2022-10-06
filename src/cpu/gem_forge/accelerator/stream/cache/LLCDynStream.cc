@@ -657,6 +657,8 @@ void LLCDynStream::initNextElem(Addr vaddr) {
                   ->genAddr(baseStreamElemIdx, baseConfig->addrGenFormalParams,
                             getStreamValueFail)
                   .front();
+          LLC_ELEMENT_DPRINTF(elem, "BaseStrandElem %s%llu VAddr %#x.\n",
+                              baseStrandId, baseStrandElemIdx, baseElemVAddr);
         }
 
         baseElem = std::make_shared<LLCStreamElement>(
@@ -1993,9 +1995,8 @@ LLCStreamElementPtr LLCDynStream::getElemPanic(uint64_t elementIdx,
                                                const char *errMsg) const {
   auto element = this->getElem(elementIdx);
   if (!element) {
-    LLC_S_PANIC(this->getDynStrandId(),
-                "Failed to get LLCStreamElement %llu for %s.", elementIdx,
-                errMsg);
+    LLC_S_PANIC(this->getDynStrandId(), "Failed to get LLCElem %llu for %s.",
+                elementIdx, errMsg);
   }
   return element;
 }

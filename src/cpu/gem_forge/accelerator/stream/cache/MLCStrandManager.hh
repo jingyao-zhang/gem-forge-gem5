@@ -71,10 +71,10 @@ private:
     // We allow each stream to have specific interleaving.
     struct ContextPerStream {
       int splitDim = 0;
-      int innerTrip = 0;
-      int outerTrip = 0;
-      int splitInterleave = 0;
-      int splitTailInterleave = 0;
+      int64_t innerTrip = 0;
+      int64_t outerTrip = 0;
+      int64_t splitTripPerStrand = 0;
+      // int64_t splitTailInterleave = 0;
       std::vector<int64_t> trips;
       std::vector<int64_t> strides;
     };

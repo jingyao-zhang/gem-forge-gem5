@@ -1068,7 +1068,11 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
 
     if ((&alignToRegion) == (&region)) {
       // Self alignment.
-      if ((bytesOffset % defaultWrapAroundBytes) == 0) {
+      if ((elementOffset < region.arraySizes.front())) {
+        // Align along the inner-most dimension is considered implicitly done.
+        DPRINTF(StreamNUCAManager, "Range %s %#x Self Aligned.\n", region.name,
+                region.vaddr);
+      } else if ((bytesOffset % defaultWrapAroundBytes) == 0) {
         // Already aligned.
         DPRINTF(StreamNUCAManager, "Range %s %#x Self Aligned.\n", region.name,
                 region.vaddr);

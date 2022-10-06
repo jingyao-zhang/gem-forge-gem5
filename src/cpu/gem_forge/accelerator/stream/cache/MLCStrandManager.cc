@@ -182,11 +182,11 @@ bool MLCStrandManager::precheckSplitable(StrandSplitContext &context,
   const auto llcBankIntrlv = 1024;
   if (config->floatPlan.isFloatedToMem()) {
     // We assume MemCtrl interleavs at 4kB -> 64 cache lines.
-    perStreamContext.splitInterleave =
+    perStreamContext.splitTripPerStrand =
         memChannelIntrlv / RubySystem::getBlockSizeBytes();
   } else {
     // We assume LLC interleavs at 1kB -> 16 cache lines.
-    perStreamContext.splitInterleave =
+    perStreamContext.splitTripPerStrand =
         llcBankIntrlv / RubySystem::getBlockSizeBytes();
   }
 
@@ -416,7 +416,7 @@ bool MLCStrandManager::chooseSplitDimIntrlv(StrandSplitContext &context,
   }
 
   perStreamContext.splitDim = splitDim;
-  perStreamContext.splitInterleave = innerTrip * splitDimTripPerStrand;
+  perStreamContext.splitTripPerStrand = splitDimTripPerStrand;
 
   return true;
 }
@@ -464,8 +464,7 @@ bool MLCStrandManager::fixSplitDimIntrlv(StrandSplitContext &context,
       return false;
     }
 
-    auto splitDimIntrlv =
-        perStreamContext.splitInterleave / perStreamContext.innerTrip;
+    auto splitDimIntrlv = perStreamContext.splitTripPerStrand;
     if (splitDimIntrlv < minSplitDimIntrlv) {
       STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
                   "[Strand] Min SplitDimIntrlv %d.\n", splitDimIntrlv);
@@ -475,39 +474,38 @@ bool MLCStrandManager::fixSplitDimIntrlv(StrandSplitContext &context,
 
   for (const auto &config : configs) {
     auto &perStreamContext = context.perStreamContext.at(config->dynamicId);
-    auto splitDimIntrlv =
-        perStreamContext.splitInterleave / perStreamContext.innerTrip;
+    auto splitDimIntrlv = perStreamContext.splitTripPerStrand;
     if (splitDimIntrlv > minSplitDimIntrlv) {
       STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
                   "[Strand] Adjust SplitDimIntrlv %d -> %d.\n", splitDimIntrlv,
                   minSplitDimIntrlv);
-      perStreamContext.splitInterleave =
-          minSplitDimIntrlv * perStreamContext.innerTrip;
+      perStreamContext.splitTripPerStrand = minSplitDimIntrlv;
     }
 
-    /**
-     * Check if we need to handle TailInterleave.
-     */
-    auto splitDim = perStreamContext.splitDim;
-    auto splitDimTrip = perStreamContext.trips.at(splitDim);
-    auto splitCount = context.totalStrands;
-    auto splitDimTripPerStrand = (splitDimTrip + splitCount - 1) / splitCount;
-    auto innerTrip = perStreamContext.innerTrip;
-    if (config->getTotalTripCount() > innerTrip * splitDimTrip) {
-      // There are some outer rounds.
-      auto v = splitDimTripPerStrand * splitCount;
-      if (v < splitDimTrip) {
-        if (splitDimTrip % v != 0) {
-          DYN_S_PANIC(config->dynamicId,
-                      "[Strand] Can not handle this TailInterleave.\n");
-        }
-      } else {
-        STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
-                    "[Strand] TailIntreleave %lu * %lu.\n", innerTrip,
-                    v - splitDimTrip);
-        perStreamContext.splitTailInterleave = innerTrip * (v - splitDimTrip);
-      }
-    }
+    // /**
+    //  * Check if we need to handle TailInterleave.
+    //  */
+    // auto splitDim = perStreamContext.splitDim;
+    // auto splitDimTrip = perStreamContext.trips.at(splitDim);
+    // auto splitCount = context.totalStrands;
+    // auto splitDimTripPerStrand = (splitDimTrip + splitCount - 1) /
+    // splitCount; auto innerTrip = perStreamContext.innerTrip; if
+    // (config->getTotalTripCount() > innerTrip * splitDimTrip) {
+    //   // There are some outer rounds.
+    //   auto v = splitDimTripPerStrand * splitCount;
+    //   if (v < splitDimTrip) {
+    //     if (splitDimTrip % v != 0) {
+    //       DYN_S_PANIC(config->dynamicId,
+    //                   "[Strand] Can not handle this TailInterleave.\n");
+    //     }
+    //   } else {
+    //     STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+    //                 "[Strand] TailIntreleave %lu * %lu.\n", innerTrip,
+    //                 v - splitDimTrip);
+    //     perStreamContext.splitTailInterleave = innerTrip * (v -
+    //     splitDimTrip);
+    //   }
+    // }
   }
 
   return true;
@@ -556,21 +554,22 @@ bool MLCStrandManager::postcheckSplitable(StrandSplitContext &context,
    * TotalStrands.
    */
   if (config->pumElemPerSync > 0) {
-    auto totalInterleave =
-        perStreamContext.splitInterleave * context.totalStrands;
+    auto totalInterleave = perStreamContext.splitTripPerStrand *
+                           perStreamContext.innerTrip * context.totalStrands;
     if (config->pumElemPerSync < totalInterleave) {
-      STRAND_LOG_(
-          MLCRubyStrandSplit, config->dynamicId,
-          "[Strand] NoSplit PUMElemPerSync %ld < Intrlv %d * Strands %d.\n",
-          config->pumElemPerSync, perStreamContext.splitInterleave,
-          context.totalStrands);
+      STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+                  "[Strand] NoSplit PUMElemPerSync %ld < Intrlv %ld * %ld * "
+                  "Strands %d.\n",
+                  config->pumElemPerSync, perStreamContext.splitTripPerStrand,
+                  perStreamContext.innerTrip, context.totalStrands);
       return false;
     }
     if ((config->pumElemPerSync % totalInterleave) != 0) {
-      STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
-                  "[Strand] NoSplit PUMElemPerSync %ld %% (%d * %d) != 0.\n",
-                  config->pumElemPerSync, perStreamContext.splitInterleave,
-                  context.totalStrands);
+      STRAND_LOG_(
+          MLCRubyStrandSplit, config->dynamicId,
+          "[Strand] NoSplit PUMElemPerSync %ld %% (%d * %ld * %d) != 0.\n",
+          config->pumElemPerSync, perStreamContext.splitTripPerStrand,
+          perStreamContext.innerTrip, context.totalStrands);
       return false;
     }
   }
@@ -604,7 +603,7 @@ MLCStrandManager::splitIntoStrands(StrandSplitContext &context,
                                    ConfigPtr config) {
   assert(config->totalStrands == 1 && "Already splited.");
   assert(config->strandIdx == 0 && "Already splited.");
-  assert(config->strandSplit.totalStrands == 1 && "Already splited.");
+  assert(config->strandSplit.getTotalStrands() == 1 && "Already splited.");
   assert(config->streamConfig == nullptr && "This is a strand.");
   assert(config->isPseudoOffload == false && "Split PseudoOffload.");
   assert(config->rangeSync == false && "Split RangeSync.");
@@ -613,14 +612,16 @@ MLCStrandManager::splitIntoStrands(StrandSplitContext &context,
   assert(config->isPointerChase == false && "Split pointer chase.");
 
   // For now just split by interleave = 1kB / 64B = 16, totalStrands = 64.
-  auto &perStreamState = context.perStreamContext.at(config->dynamicId);
-  auto initOffset = 0;
-  auto interleave = perStreamState.splitInterleave;
-  auto tailInterleave = perStreamState.splitTailInterleave;
+  auto &psc = context.perStreamContext.at(config->dynamicId);
+  // auto interleave =
+  //     perStreamState.splitTripPerStrand * perStreamState.innerTrip;
+  // auto tailInterleave = perStreamState.splitTailInterleave;
 
   bool isDirect = true;
-  StrandSplitInfo strandSplit(initOffset, interleave, tailInterleave,
-                              context.totalStrands);
+  StrandSplitInfo strandSplit(psc.innerTrip, psc.trips.at(psc.splitDim),
+                              psc.splitTripPerStrand, context.totalStrands);
+  // StrandSplitInfo strandSplit(interleave, tailInterleave,
+  // context.totalStrands);
   return this->splitIntoStrandsImpl(context, config, strandSplit, isDirect);
 }
 
@@ -642,13 +643,13 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
     for (const auto &base : config->baseEdges) {
       if (base.isUsedBy) {
         if (base.reuse > 1) {
-          assert(strandSplit.tailInterleave == 0 &&
+          assert(strandSplit.getTailInterleave() == 0 &&
                  "Cannot handle TailInterleave and IndS with reuse for now.");
-          strandSplit.interleave *= base.reuse;
+          strandSplit.setInnerTrip(strandSplit.getInnerTrip() * base.reuse);
           MLC_S_DPRINTF_(
               MLCRubyStrandSplit, config->dynamicId,
               "[StrandSplit] Adjust Interleave by IndReuse %d -> %ld.\n",
-              base.reuse, strandSplit.interleave);
+              base.reuse, strandSplit.getInterleave());
         }
         break;
       }
@@ -656,11 +657,12 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
   }
 
   config->strandSplit = strandSplit;
-  config->totalStrands = strandSplit.totalStrands;
+  config->totalStrands = strandSplit.getTotalStrands();
 
   CacheStreamConfigureVec strands;
 
-  for (auto strandIdx = 0; strandIdx < strandSplit.totalStrands; ++strandIdx) {
+  for (auto strandIdx = 0; strandIdx < strandSplit.getTotalStrands();
+       ++strandIdx) {
 
     // Shallow copy every thing.
     auto strand = std::make_shared<CacheStreamConfigureData>(*config);
@@ -672,7 +674,7 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
 
     // Strand specific field.
     strand->strandIdx = strandIdx;
-    strand->totalStrands = strandSplit.totalStrands;
+    strand->totalStrands = strandSplit.getTotalStrands();
     strand->strandSplit = strandSplit;
     strand->streamConfig = config;
 
@@ -774,16 +776,12 @@ DynStreamFormalParamV MLCStrandManager::splitAffinePattern(
 
   auto iter = context.perStreamContext.find(config->dynamicId);
 
-  // if (config->addrGenFormalParams.size() > 3) {
   assert(iter != context.perStreamContext.end());
 
   const auto &psc = iter->second;
-  return config->splitAffinePatternAtDim(psc.splitDim, psc.splitInterleave,
-                                         strandIdx, strandSplit.totalStrands);
-
-  // } else {
-  //   return config->splitLinearParam1D(strandSplit, strandIdx);
-  //
+  return config->splitAffinePatternAtDim(
+      psc.splitDim, psc.splitTripPerStrand * psc.innerTrip, strandIdx,
+      strandSplit.getTotalStrands());
 }
 
 void MLCStrandManager::configureStream(ConfigPtr config, MasterID masterId) {
@@ -1167,7 +1165,7 @@ bool MLCStrandManager::isStreamElemAcked(
    *
    * Define InterleaveCount = StreamElemIdx / (Interleave * TotalStrands).
    * For all strands:
-   * 1. If streandId < targetStrandId:
+   * 1. If strendId < targetStrandId:
    *    Check that ((InterleaveCount + 1) * Interleave - 1) is Acked.
    * 2. If strandId == targetStrandId:
    *    Check that StreamElemIdx is Acked.
@@ -1181,23 +1179,25 @@ bool MLCStrandManager::isStreamElemAcked(
 
   auto firstConfig = firstDynS->getConfig();
   const auto &splitInfo = firstConfig->strandSplit;
-  assert(splitInfo.initOffset == 0 && "Can not NonZero InitOffset.");
 
   auto targetStrandId =
       firstConfig->getStrandIdFromStreamElemIdx(streamElemIdx);
 
   auto interleaveCount =
-      streamElemIdx / (splitInfo.interleave * splitInfo.totalStrands);
-  for (auto strandIdx = 0; strandIdx < splitInfo.totalStrands; ++strandIdx) {
-    auto strandId = DynStrandId(streamId, strandIdx, splitInfo.totalStrands);
+      streamElemIdx / (splitInfo.getInterleave() * splitInfo.getTotalStrands());
+  for (auto strandIdx = 0; strandIdx < splitInfo.getTotalStrands();
+       ++strandIdx) {
+    auto strandId =
+        DynStrandId(streamId, strandIdx, splitInfo.getTotalStrands());
     auto dynS = this->mlcSE->getStreamFromStrandId(strandId);
     assert(dynS && "MLCDynS already released.");
 
     uint64_t checkStrandElemIdx = 0;
     if (strandIdx < targetStrandId.strandIdx) {
-      checkStrandElemIdx = (interleaveCount + 1) * splitInfo.interleave - 1;
+      checkStrandElemIdx =
+          (interleaveCount + 1) * splitInfo.getInterleave() - 1;
     } else if (strandIdx > targetStrandId.strandIdx) {
-      checkStrandElemIdx = interleaveCount * splitInfo.interleave;
+      checkStrandElemIdx = interleaveCount * splitInfo.getInterleave();
     } else {
       checkStrandElemIdx =
           dynS->getConfig()->getStrandElemIdxFromStreamElemIdx(streamElemIdx);

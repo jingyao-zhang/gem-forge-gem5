@@ -368,7 +368,7 @@ private:
   /**
    * Notify the MLCPUMManager when a PUMPrefetchStream is done.
    */
-  void tryFinishPUMPrefetchStream(LLCDynStreamPtr dynS,
+  bool tryFinishPUMPrefetchStream(LLCDynStreamPtr dynS,
                                   const DynStreamSliceId &sliceId);
 
   /**
@@ -442,6 +442,7 @@ private:
   using SliceList = std::list<LLCStreamSlicePtr>;
   LLCStreamSlicePtr allocateSlice(LLCDynStreamPtr dynS);
   LLCStreamSlicePtr tryGetSlice(const DynStreamSliceId &sliceId);
+  SliceList::iterator tryGetSliceIter(const DynStreamSliceId &sliceId);
   SliceList::iterator releaseSlice(SliceList::iterator sliceIter);
   void processSlices();
   SliceList::iterator processSlice(SliceList::iterator sliceIter);

@@ -71,16 +71,19 @@ public:
    *   TripCount = FinalStrandElemIdx
    * If StrandIdx > FinalStrandIdx:
    *   TripCount = FinalRoundIdx * StrandRoundElem
+   *
+   * Second implementation: split some dimension.
    */
-  int64_t initOffset = 0;
-  int64_t interleave = 1;
-  int64_t tailInterleave = 0;
-  int64_t totalStrands = 1;
 
   StrandSplitInfo() = default;
 
-  StrandSplitInfo(int64_t _initOffset, int64_t _interleave,
-                  int64_t _tailInterleave, int64_t _totalStrands);
+private:
+  StrandSplitInfo(int64_t _interleave, int64_t _tailInterleave,
+                  int64_t _totalStrands);
+
+public:
+  StrandSplitInfo(int64_t _innerTrip, int64_t _splitTrip,
+                  int64_t _splitTripPerStrand, int64_t _totalStrands);
 
   using StreamElemIdx = uint64_t;
   using StrandIdx = DynStrandId::StrandIndex;
@@ -91,6 +94,28 @@ public:
   TripCount getStrandTripCount(TripCount streamTripCount,
                                StrandIdx strandIdx) const;
 
+  int64_t getInterleave() const {
+    return this->innerTrip * this->splitTripPerStrand;
+  }
+
+  int64_t getInnerTrip() const { return this->innerTrip; }
+  void setInnerTrip(int64_t innerTrip) { this->innerTrip = innerTrip; }
+
+  int64_t getTailInterleave() const {
+    return this->splitTrip % (this->splitTripPerStrand * this->totalStrands);
+  }
+  int64_t getTotalStrands() const { return this->totalStrands; }
+
+private:
+  int64_t interleave = 1;
+  int64_t tailInterleave = 0;
+  int64_t totalStrands = 1;
+
+  bool splitByDim = false;
+  int64_t innerTrip = 1;
+  int64_t splitTrip = 1;
+  int64_t splitTripPerStrand = 1;
+
   TripCount getElemPerRound() const {
     return interleave * totalStrands - tailInterleave;
   }
@@ -99,6 +124,15 @@ public:
     return std::min(elemPerRound, (strandIdx + 1) * interleave) -
            std::min(elemPerRound, strandIdx * interleave);
   }
+
+  /**
+   * These are the new implementation to splitByDim.
+   */
+  StrandElemSplitIdx mapStreamToStrandImpl(StreamElemIdx streamElemIdx) const;
+  StreamElemIdx mapStrandToStreamImpl(StrandElemSplitIdx strandElemIdx) const;
+  TripCount getStrandTripCountImpl(TripCount streamTripCount,
+                                   StrandIdx strandIdx) const;
+  TripCount getSplitDimTotalTripForStrand(StrandIdx strandIdx) const;
 };
 
 #endif

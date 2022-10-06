@@ -152,7 +152,6 @@ CacheStreamConfigureData::splitLinearParam1D(const StrandSplitInfo &strandSplit,
       std::dynamic_pointer_cast<LinearAddrGenCallback>(callback);
   assert(linearAddrGen && "Callback is not linear.");
   assert(params.size() == 3 && "Only support 1D linear pattern so far.");
-  assert(strandSplit.initOffset == 0 && "Does not support InitOffset yet.");
 
   /**
    * * Split an 1D stream pattern of:
@@ -167,8 +166,8 @@ CacheStreamConfigureData::splitLinearParam1D(const StrandSplitInfo &strandSplit,
   auto start = params.at(2).invariant.uint64();
   auto stride = params.at(0).invariant.uint64();
   auto tripCount = params.at(1).invariant.uint64();
-  auto interleave = strandSplit.interleave;
-  auto totalStrands = strandSplit.totalStrands;
+  auto interleave = strandSplit.getInterleave();
+  auto totalStrands = strandSplit.getTotalStrands();
   auto strandTripCount = strandSplit.getStrandTripCount(tripCount, strandIdx);
 
   if (strandTripCount >= interleave) {
@@ -200,8 +199,8 @@ CacheStreamConfigureData::splitLinearParam1D(const StrandSplitInfo &strandSplit,
                  "start %#x stride %d tripCount %llu.\n", start, stride,
                  tripCount);
   DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId,
-                 "interleave %d initOffset %d totalStrands %llu.\n", interleave,
-                 strandSplit.initOffset, totalStrands);
+                 "interleave %d totalStrands %llu.\n", interleave,
+                 totalStrands);
   DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId,
                  "strandStart %#x strandStride %d strandTripCount %lu.\n",
                  strandStart, strandStride, strandTripCount);
@@ -368,7 +367,7 @@ DynStrandId CacheStreamConfigureData::getStrandIdFromStreamElemIdx(
   } else {
     auto strandElemSplit = this->strandSplit.mapStreamToStrand(streamElemIdx);
     return DynStrandId(this->dynamicId, strandElemSplit.strandIdx,
-                       this->strandSplit.totalStrands);
+                       this->strandSplit.getTotalStrands());
   }
 }
 

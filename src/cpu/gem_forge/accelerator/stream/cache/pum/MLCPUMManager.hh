@@ -93,6 +93,9 @@ private:
    * Number of in-flight prefetch streams.
    * Assumption: PUM currently has no time slicing capabilities.
    */
+  PacketPtr savedNonPUMPkt = nullptr;
+  CacheStreamConfigureVec inFlightNonPUMPrefetchConfigs;
+  bool inFlightPUMPrefetch = false;
   int inFlightPrefetchStreams = 0;
   int64_t totalSentPrefetchPkts = 0;
   int64_t totalRecvPrefetchPkts = 0;
@@ -595,7 +598,7 @@ private:
   /**
    * Run prefetch stage.
    */
-  void runPrefetchStage(PUMContext &context, CacheStreamConfigureVec *configs);
+  void runPrefetchStage(CacheStreamConfigureVec *configs, MasterID masterId);
 
   /**
    * Run PUM execution stage.
@@ -623,12 +626,21 @@ private:
   /**
    * Conditionally prefetches data from DRAM->LLC.
    */
-  CacheStreamConfigureVec generatePrefetchStreams(PUMComputeStreamGroup &group);
+  CacheStreamConfigureVec
+  generatePUMPrefetchStreams(PUMComputeStreamGroup &group);
+
+  CacheStreamConfigureVec
+  generatePrefetchStreams(const CacheStreamConfigureVec &configs);
 
   /**
-   * Clean up PrefetchStreams and start normal PUM execution.
+   * Conditionally generate a single prefetch stream.
    */
-  void finishPrefetchStream(PUMContext &context);
+  ConfigPtr generatePrefetchStream(const ConfigPtr &config);
+
+  /**
+   * Clean up PrefetchStreams and start normal execution.
+   */
+  void finishPrefetchStage();
 
   /**
    * Decoalesce and devectorize stream pattern.

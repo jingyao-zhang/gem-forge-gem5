@@ -407,6 +407,15 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
                     dynS->inflyRequests, needIndirect, needUpdate, needSendTo,
                     storeValueBlock);
 
+  // Alert MLC prefetch stream is done.
+  if (dynS->configData->isPUMPrefetch) {
+    if (dynS->isIndirect()) {
+      LLC_SLICE_PANIC(sliceId, "PUMPrefetchStream should not be indirect.");
+    }
+    this->tryFinishPUMPrefetchStream(dynS, sliceId);
+    return;
+  }
+
   // Construct all the element data (except for StoreStream).
   if (!S->isStoreComputeStream()) {
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
@@ -495,11 +504,6 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
       this->triggerIndElems(dynS, element);
       dynS->markElemTriggeredIndirect(element->idx);
     }
-  }
-
-  // Alert MLC prefetch stream is done.
-  if (dynS->configData->isPUMPrefetch) {
-    this->tryFinishPUMPrefetchStream(dynS, sliceId);
   }
 
   /**
@@ -1636,6 +1640,22 @@ void LLCStreamEngine::issueStreamDirect(LLCDynStream *dynS) {
   // This is also considered issued.
   dynS->prevIssuedCycle = this->controller->curCycle();
   dynS->updateIssueClearCycle();
+
+  // If this is PUMPrefetchStream, release the slice.
+  if (dynS->configData->isPUMPrefetch) {
+    slice->responded(DataBlock(), DataBlock());
+    auto sliceIter = this->tryGetSliceIter(sliceId);
+    assert(sliceIter != this->allocatedSlices.end());
+    while (!dynS->idxToElementMap.empty()) {
+      auto elemIter = dynS->idxToElementMap.begin();
+      auto &element = elemIter->second;
+      if (element->idx >= sliceId.getStartIdx()) {
+        break;
+      }
+      dynS->eraseElem(elemIter);
+    }
+    this->releaseSlice(sliceIter);
+  }
 }
 
 CoherenceRequestType
@@ -2555,7 +2575,7 @@ void LLCStreamEngine::issuePUMPrefetchStreamDataToLLC(
   stream->sentPUMPackets += recvBanks.count();
 }
 
-void LLCStreamEngine::tryFinishPUMPrefetchStream(
+bool LLCStreamEngine::tryFinishPUMPrefetchStream(
     LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId) {
   assert(dynS->hasTotalTripCount());
 
@@ -2571,7 +2591,9 @@ void LLCStreamEngine::tryFinishPUMPrefetchStream(
     assert(mlcSE);
 
     mlcSE->notifyMLCPUMManagerPrefetchDone(dynS->sentPUMPackets);
+    return true;
   }
+  return false;
 }
 
 void LLCStreamEngine::sendOffloadedLoopBoundRetToMLC(LLCDynStreamPtr stream,
@@ -3246,6 +3268,24 @@ LLCStreamEngine::tryGetSlice(const DynStreamSliceId &sliceId) {
 }
 
 LLCStreamEngine::SliceList::iterator
+LLCStreamEngine::tryGetSliceIter(const DynStreamSliceId &sliceId) {
+
+  auto iter = this->allocatedSlices.begin();
+  for (; iter != this->allocatedSlices.end(); ++iter) {
+    const auto &slice = *iter;
+    const auto &id = slice->getSliceId();
+    /**
+     * We have additional check for the vaddr in case for multi-line
+     * elements.
+     */
+    if (id == sliceId && id.vaddr == sliceId.vaddr) {
+      break;
+    }
+  }
+  return iter;
+}
+
+LLCStreamEngine::SliceList::iterator
 LLCStreamEngine::releaseSlice(SliceList::iterator sliceIter) {
   const auto &slice = *sliceIter;
   LLC_SLICE_DPRINTF(slice->getSliceId(), "Released.\n");
@@ -3801,6 +3841,11 @@ bool LLCStreamEngine::tryProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
                                                   LLCStreamSlicePtr slice) {
   const auto &sliceId = slice->getSliceId();
 
+  if (dynS->configData->isPUMPrefetch) {
+    slice->setProcessed();
+    return true;
+  }
+
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     auto elem =
         dynS->getElemPanic(idx, "Check base elements ready for update.");
@@ -3837,6 +3882,9 @@ bool LLCStreamEngine::tryPostProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
   /**
    * We hato to check that all elements are computed.
    */
+  if (dynS->configData->isPUMPrefetch) {
+    return true;
+  }
   const auto &sliceId = slice->getSliceId();
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     auto element = dynS->getElemPanic(idx, "Process UpdateStream");
