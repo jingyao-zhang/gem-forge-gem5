@@ -380,6 +380,14 @@ bool LLCDynStream::isNextSliceOverflown() const {
               "No Initialized Slice to check overflown.");
 }
 
+bool LLCDynStream::isNextElemOverflown() const {
+  if (!this->hasTotalTripCount()) {
+    return false;
+  }
+  auto nextElemIdx = this->peekNextAllocElemIdx();
+  return nextElemIdx >= this->getTotalTripCount();
+}
+
 LLCStreamSlicePtr LLCDynStream::getNextAllocSlice() const {
   if (this->nextAllocSliceIdx == this->nextInitSliceIdx) {
     // The next slice is not initialized yet.

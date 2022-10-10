@@ -316,6 +316,9 @@ public:
   StrandSplitInfo strandSplit;
   // The original StreamConfig before split into strands.
   CacheStreamConfigureDataPtr streamConfig = nullptr;
+  DynStrandId getStrandId() const {
+    return DynStrandId(dynamicId, strandIdx, totalStrands);
+  }
   bool isStrandConfig() const { return streamConfig != nullptr; }
   bool isSplitIntoStrands() const { return this->totalStrands > 1; }
   DynStreamFormalParamV splitLinearParam1D(const StrandSplitInfo &strandSplit,
@@ -327,7 +330,9 @@ public:
 
   /**
    * After splitting into strands, we try to detect broadcast opportunity.
+   * Those broadcast strands will be merged here (excluding myself).
    */
+  std::vector<CacheStreamConfigureDataPtr> broadcastStrands;
 
   /**
    * Get the StrandId from StreamElemIdx.

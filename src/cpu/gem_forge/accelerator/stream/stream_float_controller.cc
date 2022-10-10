@@ -696,8 +696,13 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
     bool allBackBaseStreamsAreFloated = true;
     int numPointerChaseBackBaseStreams = 0;
     std::vector<CacheStreamConfigureDataPtr> backBaseStreamConfigs;
+    std::vector<Stream *> usedAffineIVStreams;
     for (auto backBaseS : S->backBaseStreams) {
       if (backBaseS == S) {
+        continue;
+      }
+      if (backBaseS->isAffineIVStream()) {
+        usedAffineIVStreams.push_back(backBaseS);
         continue;
       }
       if (!backBaseS->isDirectMemStream() &&
@@ -835,6 +840,11 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
       auto skip = dynS->getBaseElemSkipCount(backBaseConfig->stream);
       backBaseConfig->addSendTo(selectedBackBaseConfig, reuse, skip);
       reductionConfig->addBaseOn(backBaseConfig, reuse, skip);
+    }
+
+    // Add all the UsedAffineIVS.
+    for (auto usedAffineIVS : usedAffineIVStreams) {
+      this->allocateAddUsedAffineIV(reductionConfig, dynS, usedAffineIVS);
     }
   }
 }

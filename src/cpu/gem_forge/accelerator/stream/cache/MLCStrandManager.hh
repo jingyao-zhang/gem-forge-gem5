@@ -86,6 +86,8 @@ private:
    */
   bool canSplitIntoStrands(StrandSplitContext &context,
                            const ConfigVec &configs) const;
+  bool chooseNoSplitOuterTrip(StrandSplitContext &context,
+                              const ConfigVec &configs) const;
   bool precheckSplitable(StrandSplitContext &context, ConfigPtr config) const;
   /**
    * Try reduce SplitDimIntrlv to avoid starting all strands at the same bank.
@@ -106,6 +108,11 @@ private:
                                            ConfigPtr config,
                                            const StrandSplitInfo &strandSplit,
                                            int strandIdx);
+
+  /**
+   * Recognize the broadcast opportunities between strands.
+   */
+  void mergeBroadcastStrands(CacheStreamConfigureVec &strands);
 
   /**
    * Configure a single stream.

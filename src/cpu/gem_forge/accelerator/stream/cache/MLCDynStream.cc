@@ -180,58 +180,66 @@ void MLCDynStream::receiveStreamRequestHit(const DynStreamSliceId &sliceId) {
 bool MLCDynStream::checkRecvDynSForPop(const DynStreamSliceId &sliceId) {
 
   auto strandElemIdx = sliceId.getEndIdx();
-  auto streamElemIdx =
-      this->config->getStreamElemIdxFromStrandElemIdx(strandElemIdx);
 
-  for (const auto &dep : this->config->depEdges) {
-    if (dep.type != CacheStreamConfigureData::DepEdge::Type::SendTo) {
-      continue;
-    }
+  // Handle merged broadcast including myself.
+  auto broadcastStrands = this->config->broadcastStrands;
+  broadcastStrands.insert(broadcastStrands.begin(), this->config);
 
-    auto recvStreamElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
-        streamElemIdx, dep.reuse, dep.skip);
+  for (const auto &dep : this->sendToEdges) {
 
-    auto recvStrandId =
-        dep.data->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
-    auto recvStrandElemIdx =
-        dep.data->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
+    // Check all the receiver.
+    for (auto &config : broadcastStrands) {
 
-    auto remoteRecvS = LLCDynStream::getLLCStream(recvStrandId);
-    if (!remoteRecvS) {
-      MLC_S_PANIC(this->getDynStrandId(), "LLCRecvDynS already released: %s.",
-                  recvStrandId);
-    }
+      auto streamElemIdx =
+          config->getStreamElemIdxFromStrandElemIdx(strandElemIdx);
 
-    auto recvInitStrandElemIdx = remoteRecvS->getNextInitElementIdx();
+      auto recvStreamElemIdx =
+          CacheStreamConfigureData::convertBaseToDepElemIdx(
+              streamElemIdx, dep.reuse, dep.skip);
 
-    if (recvInitStrandElemIdx >= recvStrandElemIdx) {
-      continue;
-    }
+      auto recvStrandId =
+          dep.data->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+      auto recvStrandElemIdx =
+          dep.data->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
 
-    /**
-     * The RecvDynS has not allocated this yet.
-     */
-    auto se = this->controller->getMLCStreamEngine();
-    auto dynId = this->getDynStrandId();
-    auto elemInitCallback = [se, dynId](const DynStreamId &dynStreamId,
-                                        uint64_t elementIdx) -> void {
-      if (auto dynS = se->getStreamFromStrandId(dynId)) {
-        dynS->popBlocked = false;
-        dynS->scheduleAdvanceStream();
-      } else {
-        // This MLC stream already released.
+      auto remoteRecvS = LLCDynStream::getLLCStream(recvStrandId);
+      if (!remoteRecvS) {
+        MLC_S_PANIC(this->getDynStrandId(), "LLCRecvDynS already released: %s.",
+                    recvStrandId);
       }
-    };
-    this->popBlocked = true;
-    MLC_SLICE_DPRINTF(sliceId,
-                      "[DelayPop] RecvElemIdx MLC %lu(%lu) -> LLC %s%lu-%lu > "
-                      "%lu. RegisterCB at %lu\n",
-                      strandElemIdx, streamElemIdx, recvStrandId,
-                      recvStrandElemIdx, recvStreamElemIdx,
-                      recvInitStrandElemIdx, recvStrandElemIdx);
-    remoteRecvS->registerElementInitCallback(recvStrandElemIdx,
-                                             elemInitCallback);
-    return false;
+
+      auto recvInitStrandElemIdx = remoteRecvS->getNextInitElementIdx();
+
+      if (recvInitStrandElemIdx >= recvStrandElemIdx) {
+        continue;
+      }
+
+      /**
+       * The RecvDynS has not allocated this yet.
+       */
+      auto se = this->controller->getMLCStreamEngine();
+      auto dynId = this->getDynStrandId();
+      auto elemInitCallback = [se, dynId](const DynStreamId &dynStreamId,
+                                          uint64_t elementIdx) -> void {
+        if (auto dynS = se->getStreamFromStrandId(dynId)) {
+          dynS->popBlocked = false;
+          dynS->scheduleAdvanceStream();
+        } else {
+          // This MLC stream already released.
+        }
+      };
+      this->popBlocked = true;
+      MLC_SLICE_DPRINTF(
+          sliceId,
+          "[DelayPop] RecvElemIdx MLC BrdStrand %d %lu(%lu) -> LLC %s%lu-%lu > "
+          "%lu. RegisterCB at %lu\n",
+          config->strandIdx, strandElemIdx, streamElemIdx, recvStrandId,
+          recvStrandElemIdx, recvStreamElemIdx, recvInitStrandElemIdx,
+          recvStrandElemIdx);
+      remoteRecvS->registerElementInitCallback(recvStrandElemIdx,
+                                               elemInitCallback);
+      return false;
+    }
   }
 
   return true;

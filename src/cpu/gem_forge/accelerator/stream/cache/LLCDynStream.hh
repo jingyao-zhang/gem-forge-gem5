@@ -142,6 +142,7 @@ public:
    * With StreamLoopBound, we may allocated more slices beyond TotalTripCount.
    */
   bool isNextSliceOverflown() const;
+  bool isNextElemOverflown() const;
   uint64_t getNextAllocSliceIdx() const { return this->nextAllocSliceIdx; }
   const DynStreamSliceId &peekNextAllocSliceId() const;
   std::pair<Addr, MachineType> peekNextAllocVAddrAndMachineType() const;

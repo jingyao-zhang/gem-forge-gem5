@@ -55,6 +55,7 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
   this->ndcController = m5::make_unique<LLCStreamNDCController>(this);
   this->indReqBuffer = m5::make_unique<StreamRequestBuffer>(
       this->controller, this->streamIndirectIssueMsgBuffer, Cycles(1),
+      false /* For now disable indirect multicast */,
       4 /* Max Inqueue Requests Per Stream */,
       this->controller->myParams->ind_stream_req_max_per_multicast_msg,
       this->controller->myParams->ind_stream_req_multicast_group_size);
@@ -78,16 +79,18 @@ int LLCStreamEngine::getNumDirectStreams() const {
   return this->streams.size() + this->migratingStreams.size();
 }
 
-int LLCStreamEngine::getNumDirectStreamsWithStaticId(
+int LLCStreamEngine::getNumNonOverflownDirectStreamsWithStaticId(
     const DynStreamId &dynStreamId) const {
   int count = 0;
   for (auto dynS : this->streams) {
-    if (dynS->getDynStreamId().staticId == dynStreamId.staticId) {
+    if (dynS->getDynStreamId().staticId == dynStreamId.staticId &&
+        !dynS->isNextElemOverflown()) {
       count++;
     }
   }
   for (auto dynS : this->migratingStreams) {
-    if (dynS->getDynStreamId().staticId == dynStreamId.staticId) {
+    if (dynS->getDynStreamId().staticId == dynStreamId.staticId &&
+        !dynS->isNextElemOverflown()) {
       count++;
     }
   }
@@ -2147,7 +2150,13 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
   }
 
   if (req.requestType == CoherenceRequestType_STREAM_FORWARD) {
-    auto dynS = LLCDynStream::getLLCStream(sliceId.getDynStrandId());
+    /**
+     * Due to broadcast strand, we may not have the DynS.
+     * Always find the first strand for recording this statistic.
+     */
+    auto sendStrandId = sliceId.getDynStrandId();
+    sendStrandId.strandIdx = DynStrandId::DefaultFirstStrandIdx;
+    auto dynS = LLCDynStream::getLLCStream(sendStrandId);
     if (dynS) {
       auto totalNodesBeforeLLC =
           MachineType_base_number(MachineType::MachineType_L2Cache);
@@ -2334,9 +2343,10 @@ void LLCStreamEngine::issueStreamDataToLLC(
   auto recvConfig = sendToEdge.data;
 
   auto convertSendStrandElemIdxToRecvStreamElemIdx =
-      [dynS, &sendToEdge](uint64_t sendStrandElemIdx) -> uint64_t {
+      [&sendToEdge](const CacheStreamConfigureDataPtr &sendConfig,
+                    uint64_t sendStrandElemIdx) -> uint64_t {
     auto sendStreamElemIdx =
-        dynS->configData->getStreamElemIdxFromStrandElemIdx(sendStrandElemIdx);
+        sendConfig->getStreamElemIdxFromStrandElemIdx(sendStrandElemIdx);
     auto recvStreamElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
         sendStreamElemIdx, sendToEdge.reuse, sendToEdge.skip);
     return recvStreamElemIdx;
@@ -2358,68 +2368,85 @@ void LLCStreamEngine::issueStreamDataToLLC(
     assert(sendStrandElemIdx > 0);
     sendStrandElemIdx--;
   }
-  auto recvStreamElemIdx =
-      convertSendStrandElemIdxToRecvStreamElemIdx(sendStrandElemIdx);
-  auto recvStrandId =
-      recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
 
-  auto sendStreamElemIdx =
-      dynS->configData->getStreamElemIdxFromStrandElemIdx(sendStrandElemIdx);
-  auto recvStrandElemIdx =
-      recvConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
-  LLC_SLICE_DPRINTF(
-      sliceId,
-      "[LLCFwd] SendStrandElemIdx %lu SendStreamElemIdx %lu R/S %ld/%ld -> "
-      "RecvStreamElemIdx %lu RecvStrand %s RecvStrandElemIdx %lu.\n",
-      sendStrandElemIdx, sendStreamElemIdx, sendToEdge.reuse, sendToEdge.skip,
-      recvStreamElemIdx, recvStrandId, recvStrandElemIdx);
+  /**
+   * Handle strand broadcast.
+   */
+  auto broadcastStrands = dynS->configData->broadcastStrands;
+  broadcastStrands.insert(broadcastStrands.begin(), dynS->configData);
 
-  auto recvElemVAddr = getRecvElemVAddr(recvStreamElemIdx);
-  auto recvElemVAddrEnd = recvElemVAddr + recvConfig->elementSize;
+  for (const auto &sendConfig : broadcastStrands) {
 
-  // Check that receiver does not across lines.
-  for (auto sendStrandElemIdx = sliceId.getStartIdx() + 1;
-       sendStrandElemIdx < sliceId.getEndIdx(); ++sendStrandElemIdx) {
-
-    auto recvStreamElemIdx =
-        convertSendStrandElemIdxToRecvStreamElemIdx(sendStrandElemIdx);
-
-    auto newRecvStrandId =
+    auto recvStreamElemIdx = convertSendStrandElemIdxToRecvStreamElemIdx(
+        sendConfig, sendStrandElemIdx);
+    auto recvStrandId =
         recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
-    assert(newRecvStrandId == recvStrandId && "Forward to MultiStrand.");
 
-    auto vaddr = getRecvElemVAddr(recvStreamElemIdx);
-    auto vaddrEnd = vaddr + recvConfig->elementSize;
+    auto sendStreamElemIdx =
+        sendConfig->getStreamElemIdxFromStrandElemIdx(sendStrandElemIdx);
+    auto recvStrandElemIdx =
+        recvConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
+    LLC_SLICE_DPRINTF(
+        sliceId,
+        "[LLCFwd] SendStrandElemIdx %lu SendStreamElemIdx %lu R/S %ld/%ld -> "
+        "RecvStreamElemIdx %lu RecvStrand %s RecvStrandElemIdx %lu.\n",
+        sendStrandElemIdx, sendStreamElemIdx, sendToEdge.reuse, sendToEdge.skip,
+        recvStreamElemIdx, recvStrandId, recvStrandElemIdx);
 
-    recvElemVAddr = std::min(recvElemVAddr, vaddr);
-    recvElemVAddrEnd = std::max(recvElemVAddrEnd, vaddrEnd);
-  }
+    auto recvElemVAddr = getRecvElemVAddr(recvStreamElemIdx);
+    auto recvElemVAddrEnd = recvElemVAddr + recvConfig->elementSize;
 
-  auto recvElemVAddrLine = makeLineAddress(recvElemVAddr);
-  auto recvElemVAddrEndLine = makeLineAddress(recvElemVAddr);
-  if (recvElemVAddrLine != recvElemVAddrEndLine) {
-    LLC_SLICE_PANIC(sliceId, "Multiline StreamForward Receiver: %s.",
-                    recvConfig->dynamicId);
-  }
+    // Check that receiver does not across lines.
+    for (auto sendStrandElemIdx = sliceId.getStartIdx() + 1;
+         sendStrandElemIdx < sliceId.getEndIdx(); ++sendStrandElemIdx) {
 
-  Addr recvElemPAddrLine;
-  if (dynS->translateToPAddr(recvElemVAddrLine, recvElemPAddrLine)) {
-    // Now we enqueue the translation request.
-    auto recvElementMachineType =
-        recvConfig->floatPlan.getMachineTypeAtElem(recvStreamElemIdx);
-    auto reqIter = this->enqueueRequest(
-        dynS->getStaticS(), sliceId, recvElemVAddrLine, recvElemPAddrLine,
-        recvElementMachineType, CoherenceRequestType_STREAM_FORWARD);
+      auto recvStreamElemIdx = convertSendStrandElemIdxToRecvStreamElemIdx(
+          sendConfig, sendStrandElemIdx);
 
-    // Remember the receiver StrandId and forwarded data block.
-    reqIter->forwardToStrandId =
-        recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
-    reqIter->dataBlock = dataBlock;
-    reqIter->payloadSize = payloadSize;
-  } else {
-    LLC_SLICE_PANIC(sliceId, "Fault on RecvS: %s%lu(%lu) VAddr %#x.",
-                    recvStrandId, recvStrandElemIdx, recvStreamElemIdx,
-                    recvElemVAddrLine);
+      auto newRecvStrandId =
+          recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+      assert(newRecvStrandId == recvStrandId && "Forward to MultiStrand.");
+
+      auto vaddr = getRecvElemVAddr(recvStreamElemIdx);
+      auto vaddrEnd = vaddr + recvConfig->elementSize;
+
+      recvElemVAddr = std::min(recvElemVAddr, vaddr);
+      recvElemVAddrEnd = std::max(recvElemVAddrEnd, vaddrEnd);
+    }
+
+    auto recvElemVAddrLine = makeLineAddress(recvElemVAddr);
+    auto recvElemVAddrEndLine = makeLineAddress(recvElemVAddr);
+    if (recvElemVAddrLine != recvElemVAddrEndLine) {
+      LLC_SLICE_PANIC(sliceId, "Multiline StreamForward Receiver: %s.",
+                      recvConfig->dynamicId);
+    }
+
+    Addr recvElemPAddrLine;
+    if (dynS->translateToPAddr(recvElemVAddrLine, recvElemPAddrLine)) {
+
+      /**
+       * For now just adjust the sliceId according to the broadcast strand.
+       */
+      auto sendSliceId = sliceId;
+      sendSliceId.getDynStrandId() = sendConfig->getStrandId();
+
+      // Now we enqueue the translation request.
+      auto recvElementMachineType =
+          recvConfig->floatPlan.getMachineTypeAtElem(recvStreamElemIdx);
+      auto reqIter = this->enqueueRequest(
+          dynS->getStaticS(), sendSliceId, recvElemVAddrLine, recvElemPAddrLine,
+          recvElementMachineType, CoherenceRequestType_STREAM_FORWARD);
+
+      // Remember the receiver StrandId and forwarded data block.
+      reqIter->forwardToStrandId =
+          recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+      reqIter->dataBlock = dataBlock;
+      reqIter->payloadSize = payloadSize;
+    } else {
+      LLC_SLICE_PANIC(sliceId, "Fault on RecvS: %s%lu(%lu) VAddr %#x.",
+                      recvStrandId, recvStrandElemIdx, recvStreamElemIdx,
+                      recvElemVAddrLine);
+    }
   }
 }
 
@@ -2753,7 +2780,17 @@ void LLCStreamEngine::print(std::ostream &out) const {}
 
 void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
 
-  this->receiveStreamIndirectRequestImpl(req);
+  /**
+   * After supporting broadcast strands, it's possible that even the first req
+   * is not mapped here. Check the paddr.
+   */
+  if (req.getType() == CoherenceRequestType_STREAM_FORWARD) {
+    if (this->isPAddrHandledByMe(req.getaddr(), this->myMachineType())) {
+      this->receiveStreamIndirectRequestImpl(req);
+    }
+  } else {
+    this->receiveStreamIndirectRequestImpl(req);
+  }
 
   /**
    * Unchain each indirect requests and call receiveStreamIndirectRequestImpl().
@@ -2782,8 +2819,8 @@ void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
           chainReq->m_Type, chainReqDest, chainReq->m_addr);
 
       // Record the Mulitcast.
-      if (auto dynS =
-              LLCDynStream::getLLCStream(chainSliceId.getDynStrandId())) {
+      if (auto dynS = LLCDynStream::getLLCStream(
+              chainSliceId.getDynStrandId().getFirstStrandId())) {
         auto &statistic = dynS->getStaticS()->statistic;
         statistic.numRemoteMulticastSlice++;
       }

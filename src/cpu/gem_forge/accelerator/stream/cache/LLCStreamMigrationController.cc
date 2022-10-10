@@ -179,7 +179,8 @@ int LLCStreamMigrationController::countStreamsWithSameStaticId(
   auto neighborSE = AbstractStreamAwareController::getController(machineId)
                         ->getLLCStreamEngine();
   auto neighborStreams =
-      neighborSE->getNumDirectStreamsWithStaticId(dynS->getDynStreamId());
+      neighborSE->getNumNonOverflownDirectStreamsWithStaticId(
+          dynS->getDynStreamId());
 
   auto neighborIdx = this->getNeighborIndex(machineId);
   for (const auto &migratingDynStreamId :

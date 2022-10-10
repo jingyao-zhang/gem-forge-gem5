@@ -114,27 +114,8 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
     return false;
   }
 
-  /**
-   * @brief First we collect NoSplitOuterTripCount hints and check conflicts.
-   */
-  context.noSplitOuterTrip = 0;
-  for (const auto &config : configs) {
-    if (config->hintNoStrandSplitOuterTrip == 0) {
-      continue;
-    }
-    if (context.noSplitOuterTrip != config->hintNoStrandSplitOuterTrip) {
-      if (context.noSplitOuterTrip != 0) {
-        STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
-                    "[NoSplit] Conflict NoSplitOuterTrip %ld != Prev %ld.\n",
-                    config->hintNoStrandSplitOuterTrip,
-                    context.noSplitOuterTrip);
-        return false;
-      }
-      STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
-                  "[Strand] Found NoSplitOuterTrip Hint %ld.\n",
-                  config->hintNoStrandSplitOuterTrip);
-      context.noSplitOuterTrip = config->hintNoStrandSplitOuterTrip;
-    }
+  if (!this->chooseNoSplitOuterTrip(context, configs)) {
+    return false;
   }
 
   for (const auto &config : configs) {
@@ -277,6 +258,94 @@ void MLCStrandManager::tryAvoidStartStrandsAtSameBank(
       break;
     }
   }
+}
+
+bool MLCStrandManager::chooseNoSplitOuterTrip(StrandSplitContext &context,
+                                              const ConfigVec &configs) const {
+
+  /**
+   * @brief First we collect NoSplitOuterTripCount hints and check conflicts.
+   */
+  context.noSplitOuterTrip = 0;
+  for (const auto &config : configs) {
+    if (config->hintNoStrandSplitOuterTrip == 0) {
+      continue;
+    }
+    if (context.noSplitOuterTrip != config->hintNoStrandSplitOuterTrip) {
+      if (context.noSplitOuterTrip != 0) {
+        STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+                    "[NoSplit] Conflict NoSplitOuterTrip %ld != Prev %ld.\n",
+                    config->hintNoStrandSplitOuterTrip,
+                    context.noSplitOuterTrip);
+        return false;
+      }
+      STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+                  "[Strand] Found NoSplitOuterTrip Hint %ld.\n",
+                  config->hintNoStrandSplitOuterTrip);
+      context.noSplitOuterTrip = config->hintNoStrandSplitOuterTrip;
+    }
+  }
+
+  if (this->controller->myParams->stream_strand_broadcast_size <= 1) {
+    return true;
+  }
+
+  for (auto &config : configs) {
+
+    STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+                "[Strand] Analyzing Pattern %s.\n",
+                printAffinePatternParams(config->addrGenFormalParams));
+
+    std::vector<int64_t> trips;
+    std::vector<int64_t> strides;
+    {
+      assert((config->addrGenFormalParams.size() % 2) == 1);
+      uint64_t prevTrip = 1;
+      for (int i = 1; i + 1 < config->addrGenFormalParams.size(); i += 2) {
+        const auto &p = config->addrGenFormalParams.at(i);
+        assert(p.isInvariant);
+        auto trip = p.invariant.uint64();
+        trips.push_back(trip / prevTrip);
+        prevTrip = trip;
+        const auto &s = config->addrGenFormalParams.at(i - 1);
+        assert(s.isInvariant);
+        auto stride = s.invariant.uint64();
+        strides.push_back(stride);
+      }
+      assert(!trips.empty());
+    }
+
+    /**
+     * If we enable the strand broadcast, we try to split at some reused
+     * dimention to enable broadcast.
+     */
+    int64_t outerTripCount = 1;
+    bool foundReusedDim = false;
+    for (int dim = trips.size() - 1; dim >= 0; --dim) {
+      if (strides.at(dim) == 0) {
+        // This is a reused dim.
+        foundReusedDim = true;
+        break;
+      }
+      outerTripCount *= trips.at(dim);
+    }
+    if (foundReusedDim) {
+      // For now just enable this for kmeans/pointnet.
+      if (context.noSplitOuterTrip < outerTripCount) {
+        if (config->stream->streamName.find("gfm.kmeans.B.ld") !=
+                std::string::npos ||
+            config->stream->streamName.find("pointnet") != std::string::npos) {
+          context.noSplitOuterTrip = outerTripCount;
+          STRAND_LOG_(
+              MLCRubyStrandSplit, config->dynamicId,
+              "[Strand] Override NoSplitOuterTrip to %ld Due to Reuse.\n",
+              context.noSplitOuterTrip);
+        }
+      }
+    }
+  }
+
+  return true;
 }
 
 bool MLCStrandManager::chooseSplitDimIntrlv(StrandSplitContext &context,
@@ -767,7 +836,108 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
     }
   }
 
+  this->mergeBroadcastStrands(strands);
+
   return strands;
+}
+
+void MLCStrandManager::mergeBroadcastStrands(CacheStreamConfigureVec &strands) {
+
+  /**
+   * We can merge iff:
+   * 1. All strands have the same address pattern.
+   * 2. No indirect streams, only SendToEdges.
+   * 3. LoadStream but no computation.
+   */
+  if (this->controller->myParams->stream_strand_broadcast_size <= 1) {
+    return;
+  }
+  if (strands.size() <= 1) {
+    return;
+  }
+
+  auto firstStrand = strands.front();
+  if (!firstStrand->baseEdges.empty()) {
+    STRAND_LOG_(MLCRubyStrandSplit, firstStrand->dynamicId,
+                "[NoBroadcast] Has BaseEdge.\n");
+    return;
+  }
+  for (const auto &dep : firstStrand->depEdges) {
+    if (dep.type != CacheStreamConfigureData::DepEdge::Type::SendTo) {
+      STRAND_LOG_(MLCRubyStrandSplit, firstStrand->dynamicId,
+                  "[NoBroadcast] Has NonSendTo DepEdge.\n");
+      return;
+    }
+    if (dep.skip != 0 || dep.reuse != 1) {
+      STRAND_LOG_(MLCRubyStrandSplit, firstStrand->dynamicId,
+                  "[NoBroadcast] Has SendTo R/S %d/%d.\n", dep.reuse, dep.skip);
+      return;
+    }
+  }
+
+  auto S = firstStrand->stream;
+  if (!S->isDirectLoadStream()) {
+    STRAND_LOG_(MLCRubyStrandSplit, firstStrand->dynamicId,
+                "[NoBroadcast] Not DirectLoadS.\n");
+    return;
+  }
+  if (S->isLoadComputeStream()) {
+    STRAND_LOG_(MLCRubyStrandSplit, firstStrand->dynamicId,
+                "[NoBroadcast] LoadComputeS.\n");
+    return;
+  }
+
+  /**
+   * Check that all params are the same.
+   * It's possible that some last strands have different parameters, and we
+   * ignore them by not merging.
+   */
+  auto mergedStrandIdxEnd = 1;
+  for (; mergedStrandIdxEnd < strands.size(); ++mergedStrandIdxEnd) {
+    auto strand = strands.at(mergedStrandIdxEnd);
+    assert(strand->addrGenFormalParams.size() ==
+           firstStrand->addrGenFormalParams.size());
+    bool allParamsMatch = true;
+    for (auto i = 0; i < strand->addrGenFormalParams.size(); ++i) {
+      const auto &p1 = strand->addrGenFormalParams.at(i);
+      const auto &p2 = firstStrand->addrGenFormalParams.at(i);
+      assert(p1.isInvariant && p2.isInvariant);
+      if (p1.invariant != p2.invariant) {
+        STRAND_LOG_(MLCRubyStrandSplit, firstStrand->dynamicId,
+                    "[NoBroadcast] Params Mismatch at Starnd %d.\n",
+                    mergedStrandIdxEnd);
+        allParamsMatch = false;
+        break;
+      }
+    }
+    if (!allParamsMatch) {
+      break;
+    }
+  }
+
+  // Merge them.
+  STRAND_LOG_(MLCRubyStrandSplit, firstStrand->dynamicId,
+              "[MergeBroadcast] Merged First %d Strands!\n",
+              mergedStrandIdxEnd);
+  CacheStreamConfigureVec mergedStrands;
+  int mergeSize = this->controller->myParams->stream_strand_broadcast_size;
+  for (auto i = 0; i < mergedStrandIdxEnd; i += mergeSize) {
+
+    auto thisStrandMergedIdxEnd = std::min(i + mergeSize, mergedStrandIdxEnd);
+    for (auto j = i + 1; j < thisStrandMergedIdxEnd; ++j) {
+      strands.at(i)->broadcastStrands.push_back(strands.at(j));
+    }
+
+    mergedStrands.push_back(strands.at(i));
+  }
+
+  // Copy all the unmerged strands.
+  for (auto i = mergedStrandIdxEnd; i < strands.size(); ++i) {
+    mergedStrands.push_back(strands.at(i));
+  }
+
+  // Just keep the first strand.
+  strands = mergedStrands;
 }
 
 DynStreamFormalParamV MLCStrandManager::splitAffinePattern(
@@ -1135,9 +1305,9 @@ MLCStrandManager::getStreamFromCoreSliceId(const DynStreamSliceId &sliceId) {
   }
   // TODO: Support the translation.
   auto dynS = this->getStreamFromStrandId(sliceId.getDynStrandId());
-  if (dynS) {
-    assert(
-        dynS->getDynStrandId().totalStrands == 1 &&
+  if (dynS && dynS->getDynStrandId().totalStrands != 1) {
+    MLC_SLICE_PANIC_NO_DUMP(
+        sliceId,
         "Translation between CoreSlice and StrandSlice not implemented yet.");
   }
   return dynS;

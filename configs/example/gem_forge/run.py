@@ -261,6 +261,9 @@ parser.add_option("--gem-forge-enable-stream-nuca", type="int",
 parser.add_option("--gem-forge-enable-stream-strand", type="int",
                   action="store", default="0",
                   help="Enable stream strand auto parallelization.")
+parser.add_option("--gem-forge-enable-stream-strand-broadcast", type="int",
+                  action="store", default="0",
+                  help="Enable stream strand auto broadcast.")
 parser.add_option("--gem-forge-enable-stream-vectorize", type="int",
                   action="store", default="0",
                   help="Enable stream auto vectorization.")

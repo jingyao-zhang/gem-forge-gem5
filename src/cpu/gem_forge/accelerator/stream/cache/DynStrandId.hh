@@ -39,6 +39,12 @@ struct DynStrandId {
     return *this;
   }
 
+  DynStrandId getFirstStrandId() const {
+    auto ret = *this;
+    ret.strandIdx = DefaultFirstStrandIdx;
+    return ret;
+  }
+
   bool isSameStaticStream(const DynStrandId &other) const {
     return this->dynStreamId.isSameStaticStream(other.dynStreamId);
   }

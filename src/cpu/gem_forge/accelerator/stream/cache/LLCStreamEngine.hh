@@ -55,7 +55,8 @@ public:
   void print(std::ostream &out) const override;
 
   int getNumDirectStreams() const;
-  int getNumDirectStreamsWithStaticId(const DynStreamId &dynStreamId) const;
+  int getNumNonOverflownDirectStreamsWithStaticId(
+      const DynStreamId &dynStreamId) const;
 
   int curRemoteBank() const;
   MachineType myMachineType() const;

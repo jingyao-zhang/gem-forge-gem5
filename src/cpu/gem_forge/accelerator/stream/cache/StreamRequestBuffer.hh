@@ -24,6 +24,7 @@ public:
 
   StreamRequestBuffer(AbstractStreamAwareController *_controller,
                       MessageBuffer *_outBuffer, Cycles _latency,
+                      bool _enableIndMulticast,
                       int _maxInqueueRequestsPerStream,
                       int _maxMulticastReqPerMsg, int _multicastBankGroupSize);
   void pushRequest(RequestPtr request);
@@ -39,6 +40,7 @@ private:
   AbstractStreamAwareController *controller;
   MessageBuffer *outBuffer;
   const Cycles latency;
+  const bool enableIndMulticast;
   const int maxInqueueRequestsPerStream;
   /**
    * @maxMulticastRequests: The max number of messages chained in a multicast.
@@ -51,6 +53,11 @@ private:
   const int multicastBankGroupSize;
 
   int totalBufferedRequests = 0;
+
+  /**
+   * Record all the Inequeue request from here.
+   */
+  std::set<RequestPtr> inqueueReqs;
 
   struct InqueueStreamState {
     int inqueueRequests = 0;

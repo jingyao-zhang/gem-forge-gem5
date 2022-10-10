@@ -7,9 +7,10 @@
 
 StreamRequestBuffer::StreamRequestBuffer(
     AbstractStreamAwareController *_controller, MessageBuffer *_outBuffer,
-    Cycles _latency, int _maxInqueueRequestsPerStream,
+    Cycles _latency, bool _enableIndMulticast, int _maxInqueueRequestsPerStream,
     int _maxMulticastReqPerMsg, int _multicastBankGroupSize)
     : controller(_controller), outBuffer(_outBuffer), latency(_latency),
+      enableIndMulticast(_enableIndMulticast),
       maxInqueueRequestsPerStream(_maxInqueueRequestsPerStream),
       maxMulticastReqPerMsg(_maxMulticastReqPerMsg),
       multicastBankGroupSize(_multicastBankGroupSize) {
@@ -17,54 +18,61 @@ StreamRequestBuffer::StreamRequestBuffer(
       [this](MsgPtr msg) -> void { this->dequeue(msg); });
 }
 
-void StreamRequestBuffer::pushRequest(RequestPtr request) {
+void StreamRequestBuffer::pushRequest(RequestPtr req) {
   /**
    * See if we should and can multicast this request.
    * If not, we try to add to multicast group.
    */
-  if (this->shouldTryMulticast(request)) {
-    if (this->tryMulticast(request)) {
+  if (this->shouldTryMulticast(req)) {
+    if (this->tryMulticast(req)) {
       return;
     }
-    auto groupId = this->getMulticastGroupId(request);
+    auto groupId = this->getMulticastGroupId(req);
     auto groupIter = this->getOrInitMulticastGroupInqueueReq(groupId);
-    groupIter->second.insert(request);
+    groupIter->second.insert(req);
   }
-  const auto &sliceId = request->m_sliceIds.singleSliceId();
-  auto inqueueIter = this->getOrInitInqueueState(request);
+  const auto &sliceId = req->m_sliceIds.singleSliceId();
+  auto inqueueIter = this->getOrInitInqueueState(req);
   auto &inqueueState = inqueueIter->second;
   if (inqueueState.inqueueRequests == this->maxInqueueRequestsPerStream) {
     // Reached maximum inqueue requests. Buffered.
-    inqueueState.buffered.push_back(request);
+    inqueueState.buffered.push_back(req);
     this->totalBufferedRequests++;
     LLC_SLICE_DPRINTF(
         sliceId, "[ReqBuffer] Delayed as Inqueued %d Buffered %lu.\n",
         inqueueState.inqueueRequests, inqueueState.buffered.size());
   } else {
     // Can directly enqueue.
-    this->enqueue(request, inqueueState.inqueueRequests);
+    this->enqueue(req, inqueueState.inqueueRequests);
   }
 }
 
 void StreamRequestBuffer::dequeue(MsgPtr msg) {
-  auto request = std::dynamic_pointer_cast<RequestMsg>(msg);
-  if (!request) {
+  auto req = std::dynamic_pointer_cast<RequestMsg>(msg);
+  if (!req) {
     LLC_SE_PANIC("Message should be RequestMsg.");
   }
 
-  if (request->m_Type == CoherenceRequestType_STREAM_PUM_DATA) {
+  if (req->m_Type == CoherenceRequestType_STREAM_PUM_DATA) {
     // This not handled by us.
     return;
   }
 
-  if (this->shouldTryMulticast(request)) {
-    auto groupId = this->getMulticastGroupId(request);
-    auto groupIter = this->getOrInitMulticastGroupInqueueReq(groupId);
-    groupIter->second.erase(request);
+  {
+    auto iter = this->inqueueReqs.find(req);
+    if (iter == this->inqueueReqs.end()) {
+      return;
+    }
+    this->inqueueReqs.erase(iter);
   }
 
-  const auto &sliceId = request->m_sliceIds.singleSliceId();
-  auto inqueueIter = this->getOrInitInqueueState(request);
+  // Simply erase it from every where.
+  for (auto &entry : this->multicastGroupToInqueueReqMap) {
+    entry.second.erase(req);
+  }
+
+  const auto &sliceId = req->m_sliceIds.singleSliceId();
+  auto inqueueIter = this->getOrInitInqueueState(req);
   auto &inqueueState = inqueueIter->second;
   if (inqueueState.inqueueRequests == 0) {
     LLC_SLICE_PANIC(sliceId, "[ReqBuffer] Dequeued with Zero InqueueRequests.");
@@ -90,6 +98,7 @@ StreamRequestBuffer::getOrInitInqueueState(const RequestPtr &request) {
   const auto &dynStreamId = sliceId.getDynStreamId();
   auto inqueueIter = this->inqueueStreamMap.find(dynStreamId);
   if (inqueueIter == this->inqueueStreamMap.end()) {
+    LLC_SLICE_DPRINTF(sliceId, "[ReqBuffer] Init InqueueState.\n");
     inqueueIter = this->inqueueStreamMap
                       .emplace(std::piecewise_construct,
                                std::forward_as_tuple(dynStreamId),
@@ -99,15 +108,15 @@ StreamRequestBuffer::getOrInitInqueueState(const RequestPtr &request) {
   return inqueueIter;
 }
 
-void StreamRequestBuffer::enqueue(const RequestPtr &request,
-                                  int &inqueueRequests) {
-  const auto &sliceId = request->m_sliceIds.singleSliceId();
-  this->outBuffer->enqueue(request, this->controller->clockEdge(),
+void StreamRequestBuffer::enqueue(const RequestPtr &req, int &inqueueRequests) {
+  const auto &sliceId = req->m_sliceIds.singleSliceId();
+  this->outBuffer->enqueue(req, this->controller->clockEdge(),
                            this->controller->cyclesToTicks(this->latency));
   inqueueRequests++;
-  LLC_SLICE_DPRINTF(
-      sliceId, "[ReqBuffer] Enqueued into Out MessageBuffer. Inqueue %d.\n",
-      inqueueRequests);
+  this->inqueueReqs.insert(req);
+  LLC_SLICE_DPRINTF(sliceId,
+                    "[ReqBuffer] Enqueued into OutBuffer. Inqueue %d.\n",
+                    inqueueRequests);
 }
 
 StreamRequestBuffer::MulticastGroupId
@@ -146,11 +155,24 @@ bool StreamRequestBuffer::shouldTryMulticast(const RequestPtr &req) const {
   if (!req->m_sliceIds.isValid()) {
     return false;
   }
-  if (req->getType() != CoherenceRequestType_GETU &&
-      req->getType() != CoherenceRequestType_GETH &&
-      req->getType() != CoherenceRequestType_STREAM_STORE &&
-      req->getType() != CoherenceRequestType_STREAM_UNLOCK) {
+  switch (req->getType()) {
+  default:
     return false;
+  case CoherenceRequestType_GETU:
+  case CoherenceRequestType_GETH:
+  case CoherenceRequestType_STREAM_STORE:
+  case CoherenceRequestType_STREAM_UNLOCK: {
+    if (!this->enableIndMulticast) {
+      return false;
+    }
+    break;
+  }
+  case CoherenceRequestType_STREAM_FORWARD: {
+    if (this->controller->myParams->stream_strand_broadcast_size == 0) {
+      return false;
+    }
+    break;
+  }
   }
   if (this->getMulticastGroupId(req) == InvalidMulticastGroupId) {
     return false;
@@ -172,6 +194,9 @@ bool StreamRequestBuffer::tryMulticast(const RequestPtr &req) {
 
   auto groupId = this->getMulticastGroupId(req);
 
+  LLC_SLICE_DPRINTF_(LLCRubyStreamMulticast, req->getsliceIds().firstSliceId(),
+                     "[ReqBuffer] TryMulticast GroupId %d.\n", groupId);
+
   auto groupIter = this->getOrInitMulticastGroupInqueueReq(groupId);
   auto &group = groupIter->second;
 
@@ -180,6 +205,38 @@ bool StreamRequestBuffer::tryMulticast(const RequestPtr &req) {
   for (; multicastReqIter != multicastReqEnd; ++multicastReqIter) {
     const auto &candidate = *multicastReqIter;
     if (candidate->getType() == req->getType()) {
+      /**
+       * For STREAM_FORWARD, we require them:
+       * 1. Same Stream, and StrandElemIdx.
+       * 2. Belong to merged broadcast strand.
+       */
+      if (req->getType() == CoherenceRequestType_STREAM_FORWARD) {
+        auto sliceId1 = candidate->getsliceIds().firstSliceId();
+        auto sliceId2 = req->getsliceIds().firstSliceId();
+        if (sliceId1.getDynStreamId() != sliceId2.getDynStreamId() ||
+            sliceId1.getStartIdx() != sliceId2.getStartIdx()) {
+          continue;
+        }
+        auto strandIdx1 = sliceId1.getDynStrandId().strandIdx;
+        // auto strandIdx2 = sliceId2.getDynStrandId().strandIdx;
+        auto broadcastSize =
+            this->controller->myParams->stream_strand_broadcast_size;
+        assert(broadcastSize != 0);
+        auto mergedStrandIdx1 = (strandIdx1 / broadcastSize) * broadcastSize;
+        // auto mergedStrandIdx2 = strandIdx2 / broadcastSize;
+        auto mergedStrandId = sliceId1.getDynStrandId();
+        mergedStrandId.strandIdx = mergedStrandIdx1;
+        auto llcDynS = LLCDynStream::getLLCStream(mergedStrandId);
+        if (!llcDynS) {
+          // The LLCDynS is already released?
+          continue;
+        }
+        if (llcDynS->configData->broadcastStrands.empty()) {
+          // The LLCDynS is not merged as broadcast.
+          continue;
+        }
+      }
+
       // Found it.
       break;
     }
@@ -211,21 +268,26 @@ bool StreamRequestBuffer::tryMulticast(const RequestPtr &req) {
   prevChainMsg->chainMsg(req);
 
   /**
+   * Adjust the request destination for multicast.
+   */
+  multicastReq->m_Destination.addNetDest(req->getDestination());
+
+  /**
    * Make sure that MessageBuffer won't unchain this message when enqueued,
    * so that StreamEngine can manually unchain it at the destination.
    */
   req->setUnchainWhenEnqueue(false);
   prevChainMsg->setUnchainWhenEnqueue(false);
 
-  LLC_SLICE_DPRINTF_(LLCRubyStreamMulticast,
-                     multicastReq->m_sliceIds.firstSliceId(),
-                     "[Multicast] MsgType %s ChainLen %d Chaining %s.\n",
-                     multicastReq->getType(), multicastSize, req->m_sliceIds);
+  LLC_SLICE_DPRINTF_(
+      LLCRubyStreamMulticast, multicastReq->m_sliceIds.firstSliceId(),
+      "[ReqBuffer][Multicast] MsgType %s ChainLen %d Chaining %s.\n",
+      multicastReq->getType(), multicastSize, req->m_sliceIds);
 
   if (multicastSize >= this->maxMulticastReqPerMsg) {
-    LLC_SLICE_DPRINTF_(LLCRubyStreamMulticast,
-                       multicastReq->m_sliceIds.firstSliceId(),
-                       "[Multicast] Erased due to MaxMulticastSize.\n");
+    LLC_SLICE_DPRINTF_(
+        LLCRubyStreamMulticast, multicastReq->m_sliceIds.firstSliceId(),
+        "[ReqBuffer][Multicast] Erased due to MaxMulticastSize.\n");
     group.erase(multicastReqIter);
   }
 

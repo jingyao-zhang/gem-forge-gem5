@@ -104,6 +104,36 @@ MLCDynDirectStream::MLCDynDirectStream(
         this->getDynStreamId(),
         "Adjust MaxNumSlicesPerSegment from %llu as MaxRatio %llu to %llu.\n",
         originalMaxNumSlicesPerSegment, maxRatio, this->maxNumSlicesPerSegment);
+
+    /**
+     * As a hack for now, limit the sender stream for transposing the matrix.
+     * Before:
+     *   Sender: N slices, N/4 slices per segment, N/4*16 elems per segment.
+     *   Receiver: N slices, N/4 slices per segment, N/4 elems per segment.
+     * After:
+     *   Sender: N/4 slices, N/16 slices per segment, N elems per segment.
+     *   Receiver: N slices, N/4 slices per segment, N/4 elems per segment.
+     * TODO: Correctly detect this problem.
+     */
+    if (this->stream->getStreamName().find("(transpose_row)") !=
+        std::string::npos) {
+      this->maxNumSlices = this->maxNumSlicesPerSegment;
+      this->maxNumSlicesPerSegment /= 4;
+      MLC_S_DPRINTF(this->getDynStreamId(),
+                    "Adjust MaxNumSlicesPerSegment -> %llu MaxSlices %llu for "
+                    "TransposeRow.\n",
+                    this->maxNumSlicesPerSegment, this->maxNumSlices);
+      assert(this->maxNumSlicesPerSegment >= 1);
+    } else if (this->stream->getStreamName().find("(transpose_col)") !=
+               std::string::npos) {
+      this->maxNumSlicesPerSegment = this->maxNumSlices;
+      this->maxNumSlices *= 4;
+      MLC_S_DPRINTF(this->getDynStreamId(),
+                    "Adjust MaxNumSlicesPerSegment -> %llu MaxSlices %llu for "
+                    "TransposeCol.\n",
+                    this->maxNumSlicesPerSegment, this->maxNumSlices);
+      assert(this->maxNumSlicesPerSegment >= 1);
+    }
   }
 
   /**
@@ -416,19 +446,16 @@ void MLCDynDirectStream::trySendCreditToLLC() {
      * TODO: receiving strands, and we need to check for all slices.
      */
     auto tailStrandElemIdx = segment.sliceIds.sliceIds.back().getEndIdx() - 1;
-    auto tailStreamElemIdx =
-        this->config->getStreamElemIdxFromStrandElemIdx(tailStrandElemIdx);
 
     DynStrandId waitForRecvStrandId;
     uint64_t waitForRecvStrandElemIdx = 0;
 
-    if (this->checkWaitForLLCRecvS(tailStrandElemIdx, tailStreamElemIdx,
-                                   waitForRecvStrandId,
+    if (this->checkWaitForLLCRecvS(tailStrandElemIdx, waitForRecvStrandId,
                                    waitForRecvStrandElemIdx)) {
       // Register callbacks when the receiver elements are initialized.
       MLC_S_DPRINTF(this->getDynStrandId(),
-                    "Delayed sending credit Tail %llu(%llu) by Recv %s%llu.\n",
-                    tailStrandElemIdx, tailStreamElemIdx, waitForRecvStrandId,
+                    "Delayed sending credit Tail %llu by Recv %s%llu.\n",
+                    tailStrandElemIdx, waitForRecvStrandId,
                     waitForRecvStrandElemIdx);
       auto elementInitCallback = [this](const DynStreamId &dynStreamId,
                                         uint64_t elementIdx) -> void {
@@ -453,9 +480,12 @@ void MLCDynDirectStream::trySendCreditToLLC() {
 }
 
 bool MLCDynDirectStream::checkWaitForLLCRecvS(
-    uint64_t tailStrandElemIdx, uint64_t tailStreamElemIdx,
-    DynStrandId &waitForRecvStrandId,
+    uint64_t tailStrandElemIdx, DynStrandId &waitForRecvStrandId,
     uint64_t &waitForRecvStrandElemIdx) const {
+
+  // Handle merged broadcast including myself.
+  auto broadcastStrands = this->config->broadcastStrands;
+  broadcastStrands.insert(broadcastStrands.begin(), this->config);
 
   for (const auto &sendToEdge : this->sendToEdges) {
     const auto &sendToConfig = sendToEdge.data;
@@ -463,25 +493,33 @@ bool MLCDynDirectStream::checkWaitForLLCRecvS(
       continue;
     }
 
-    auto recvStreamElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
-        tailStreamElemIdx, sendToEdge.reuse, sendToEdge.skip);
+    for (auto &config : broadcastStrands) {
 
-    auto recvStrandId =
-        sendToConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
-    auto recvStrandElemIdx =
-        sendToConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
+      auto tailStreamElemIdx =
+          config->getStreamElemIdxFromStrandElemIdx(tailStrandElemIdx);
 
-    if (auto recvRemoteS = LLCDynStream::getLLCStream(recvStrandId)) {
-      if (!recvRemoteS->isElemInitialized(recvStrandElemIdx)) {
-        waitForRecvStrandId = recvStrandId;
-        waitForRecvStrandElemIdx = recvStrandElemIdx;
+      auto recvStreamElemIdx =
+          CacheStreamConfigureData::convertBaseToDepElemIdx(
+              tailStreamElemIdx, sendToEdge.reuse, sendToEdge.skip);
 
-        MLC_S_DPRINTF(this->getDynStrandId(),
-                      "TailElem %lu(%lu) WaitForRecv %s%lu(%lu).\n",
-                      tailStrandElemIdx, tailStreamElemIdx, recvStrandId,
-                      recvStrandElemIdx, recvStreamElemIdx);
+      auto recvStrandId =
+          sendToConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+      auto recvStrandElemIdx =
+          sendToConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
 
-        return true;
+      if (auto recvRemoteS = LLCDynStream::getLLCStream(recvStrandId)) {
+        if (!recvRemoteS->isElemInitialized(recvStrandElemIdx)) {
+          waitForRecvStrandId = recvStrandId;
+          waitForRecvStrandElemIdx = recvStrandElemIdx;
+
+          MLC_S_DPRINTF(
+              this->getDynStrandId(),
+              "BrdStrand %d TailElem %lu(%lu) WaitForRecv %s%lu(%lu).\n",
+              config->strandIdx, tailStrandElemIdx, tailStreamElemIdx,
+              recvStrandId, recvStrandElemIdx, recvStreamElemIdx);
+
+          return true;
+        }
       }
     }
   }
@@ -495,6 +533,11 @@ bool MLCDynDirectStream::checkWaitForLLCRecvS(
     uint64_t indStreamElemIdxRhs;
     uint64_t indStrandElemIdxRhs;
     DynStrandId indStrandIdRhs;
+
+    assert(this->config->broadcastStrands.empty() &&
+           "Can never have broadcast with IndS.");
+    auto tailStreamElemIdx =
+        this->config->getStreamElemIdxFromStrandElemIdx(tailStrandElemIdx);
 
     dynIS->mapBaseElemToMyElemIdxRange(tailStrandElemIdx, tailStreamElemIdx,
                                        indStreamElemIdxLhs, indStrandElemIdxLhs,

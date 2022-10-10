@@ -143,6 +143,8 @@ class RubyStreamAwareController(RubyController):
     reuse_buffer_lines_per_core = Param.UInt32(0, "Number of cache lines per core in the reuse buffer.")
 
     enable_stream_strand = Param.Bool(False, "Whether to enable stream strand auto parallelization.")
+    stream_strand_broadcast_size = \
+        Param.UInt32(0, "Whether to enable stream strand auto broadcast.")
     enable_stream_vectorize = \
         Param.Bool(False, "Whether to enable stream auto vectorization.")
     stream_pum_mode = Param.UInt32(0, "PUM Mode of disable, enable, mapping-only.")
