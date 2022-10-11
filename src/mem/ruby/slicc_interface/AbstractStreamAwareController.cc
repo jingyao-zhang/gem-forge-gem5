@@ -190,6 +190,10 @@ void AbstractStreamAwareController::regStats() {
   pum_stats(NormalAccesses);
   pum_stats(NormalAccessConflicts);
   pum_stats(NormalAccessDelayCycles);
+  pum_stats(IntraArrayShiftBits);
+  pum_stats(InterArrayShiftBits);
+  pum_stats(InterBankShiftBits);
+  pum_stats(InterBankShiftReuseBits);
   m_statPUMNormalAccessAvgDelayCycles
       .name(name() + ".pumNormalAccessAvgDelayCycles")
       .desc("Avg Delay Cycles for normal access to PUM array.")

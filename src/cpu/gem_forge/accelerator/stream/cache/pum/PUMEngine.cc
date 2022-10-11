@@ -247,6 +247,9 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
      * 2. Otherwise, charge one cycle for each bitline shifted.
      *
      */
+    this->controller->m_statPUMIntraArrayShiftBits +=
+        command.wordline_bits * command.bitline_mask.getTotalTrip();
+
     if (this->controller->myParams
             ->stream_pum_enable_parallel_intra_array_shift) {
       return Cycles(command.wordline_bits);
@@ -326,6 +329,9 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
           interBankBitlineTraffic.emplace_back(dstBankIdx,
                                                numInterBankBitlines);
 
+          this->controller->m_statPUMInterBankShiftBits +=
+              command.wordline_bits * numInterBankBitlines;
+
           LLC_SE_DPRINTF("Bank %d -> %d Array %d -> %d Bitlines %d.\n",
                          myBankIdx, dstBankIdx, srcArrayIdx, dstArrayIdx,
                          numInterBankBitlines);
@@ -340,6 +346,11 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
            */
           auto shiftedArrays =
               std::min(splitPattern.getTotalTrip(), totalTiles);
+
+          this->controller->m_statPUMInterArrayShiftBits +=
+              command.wordline_bits * command.bitline_mask.getTotalTrip() *
+              shiftedArrays;
+
           if (this->controller->myParams
                   ->stream_pum_enable_parallel_inter_array_shift) {
             levelArrays += shiftedArrays;
@@ -388,6 +399,7 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
           }
           MachineID dstMachineId(MachineType_L2Cache, dstBankIdx);
           dstBanks.add(dstMachineId);
+          this->controller->m_statPUMInterBankShiftReuseBits += totalBits;
         }
 
       } else {

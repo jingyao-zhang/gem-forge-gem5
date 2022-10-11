@@ -346,6 +346,11 @@ public:
   Stats::Scalar m_statPUMNormalAccessConflicts;
   Stats::Scalar m_statPUMNormalAccessDelayCycles;
   Stats::Formula m_statPUMNormalAccessAvgDelayCycles;
+
+  Stats::Scalar m_statPUMIntraArrayShiftBits;
+  Stats::Scalar m_statPUMInterArrayShiftBits;
+  Stats::Scalar m_statPUMInterBankShiftBits;
+  Stats::Scalar m_statPUMInterBankShiftReuseBits;
 };
 
 #endif
