@@ -112,6 +112,7 @@ private:
   const bool enablePUM;
   const bool enablePUMTiling;
   const std::string forcePUMTilingDim;
+  const int64_t forcePUMTilingInnerSize;
   enum DirectRegionFitPolicy {
     CROP,
     DROP,
@@ -129,6 +130,7 @@ private:
   void remapRegions(ThreadContext *tc, const AddrVecT &regionVAddrs);
 
   bool canRemapDirectRegionPUM(const StreamRegion &region);
+  int64_t getVirtualBitlinesForPUM(const std::vector<Addr> &pumRegionVAddrs);
   int64_t getVirtualBitlinesForPUM(const StreamRegion &region);
   void remapDirectRegionPUM(const StreamRegion &region, int64_t vBitlines);
   void remapDirectRegionNUCA(const StreamRegion &region);

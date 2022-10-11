@@ -83,6 +83,8 @@ class Process(SimObject):
     enableStreamPUMTiling = Param.Bool(False, "Enable StreamPUM Tiling.")
     forceStreamPUMTilingDim = Param.String('none',
         'Force PUM tiling in certain dimensions: none/inner/outer')
+    forceStreamPUMTilingInnerSize = Param.UInt64(0,
+        'Force PUM tiling size in the inner dim.')
 
     @classmethod
     def export_methods(cls, code):

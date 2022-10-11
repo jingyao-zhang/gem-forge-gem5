@@ -29,6 +29,7 @@ StreamNUCAManager::StreamNUCAManager(Process *_process, ProcessParams *_params)
       enablePUM(_params->enableStreamPUMMapping),
       enablePUMTiling(_params->enableStreamPUMTiling),
       forcePUMTilingDim(_params->forceStreamPUMTilingDim),
+      forcePUMTilingInnerSize(_params->forceStreamPUMTilingInnerSize),
       enableIndirectPageRemap(_params->streamNUCAEnableIndPageRemap) {
   const auto &directRegionFitPolicy = _params->streamNUCADirectRegionFitPolicy;
   if (directRegionFitPolicy == "crop") {
@@ -44,6 +45,7 @@ StreamNUCAManager::StreamNUCAManager(const StreamNUCAManager &other)
     : process(other.process), enabledMemStream(other.enabledMemStream),
       enabledNUCA(other.enabledNUCA), enablePUM(other.enablePUM),
       enablePUMTiling(other.enablePUMTiling),
+      forcePUMTilingInnerSize(other.forcePUMTilingInnerSize),
       directRegionFitPolicy(other.directRegionFitPolicy),
       enableIndirectPageRemap(other.enableIndirectPageRemap) {
   panic("StreamNUCAManager does not have copy constructor.");
@@ -286,6 +288,7 @@ void StreamNUCAManager::remapRegions(ThreadContext *tc,
    * Collect remap decision for each region.
    */
   std::vector<int> remapDecisions;
+  std::vector<Addr> remapPUMRegionVAddrs;
   const int REMAP_INDIRECT = 0;
   const int REMAP_NUCA = 1;
   const int REMAP_PUM = 2;
@@ -305,6 +308,7 @@ void StreamNUCAManager::remapRegions(ThreadContext *tc,
     } else {
       if (this->enablePUM && this->canRemapDirectRegionPUM(region)) {
         remapDecisions.push_back(REMAP_PUM);
+        remapPUMRegionVAddrs.push_back(regionVAddr);
       } else {
         remapDecisions.push_back(REMAP_NUCA);
       }
@@ -314,14 +318,7 @@ void StreamNUCAManager::remapRegions(ThreadContext *tc,
   /**
    * For now we enforce the same virtual bitlines for all PUM region.
    */
-  int64_t vBitlines = 0;
-  for (int i = 0; i < regionVAddrs.size(); ++i) {
-    if (remapDecisions.at(i) != REMAP_PUM) {
-      continue;
-    }
-    auto &region = this->getRegionFromStartVAddr(regionVAddrs.at(i));
-    vBitlines = std::max(vBitlines, this->getVirtualBitlinesForPUM(region));
-  }
+  int64_t vBitlines = this->getVirtualBitlinesForPUM(remapPUMRegionVAddrs);
   for (int i = 0; i < regionVAddrs.size(); ++i) {
     auto decision = remapDecisions.at(i);
     auto &region = this->getRegionFromStartVAddr(regionVAddrs.at(i));
@@ -1221,6 +1218,18 @@ bool StreamNUCAManager::canRemapDirectRegionPUM(const StreamRegion &region) {
   return true;
 }
 
+int64_t StreamNUCAManager::getVirtualBitlinesForPUM(
+    const std::vector<Addr> &pumRegionVAddrs) {
+
+  int64_t vBitlines = 0;
+  for (auto regionVAddr : pumRegionVAddrs) {
+    auto &region = this->getRegionFromStartVAddr(regionVAddr);
+    vBitlines = std::max(vBitlines, this->getVirtualBitlinesForPUM(region));
+  }
+
+  return vBitlines;
+}
+
 int64_t
 StreamNUCAManager::getVirtualBitlinesForPUM(const StreamRegion &region) {
 
@@ -1297,6 +1306,11 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
     auto arraySize = arraySizes.at(alignDim);
 
     auto alignDimTileSize = std::min(vBitlines, arraySize);
+    if (this->forcePUMTilingInnerSize > 0 && arraySizes.size() > 1) {
+      // Only force PUMTilingInnerSize when we have multi-dim array.
+      alignDimTileSize =
+          std::min(this->forcePUMTilingInnerSize, alignDimTileSize);
+    }
     if (this->forcePUMTilingDim == "none" &&
         region.userDefinedProperties.count(
             RegionProperty::PUM_TILE_SIZE_DIM0)) {
@@ -1333,11 +1347,17 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
     if (this->enablePUMTiling) {
       auto &x = tileSizes.at(alignDims.at(0));
       auto &y = tileSizes.at(alignDims.at(1));
-      x = vBitlines;
-      y = 1;
-      while (y * 2 < x) {
-        y *= 2;
-        x /= 2;
+      if (this->forcePUMTilingInnerSize > 0) {
+        x = std::min(this->forcePUMTilingInnerSize,
+                     arraySizes.at(alignDims.at(0)));
+        y = vBitlines / x;
+      } else {
+        x = vBitlines;
+        y = 1;
+        while (y * 2 < x) {
+          y *= 2;
+          x /= 2;
+        }
       }
     } else {
       // Tiling is not enabled, however, we tile to handle the case when dim0 <
@@ -1358,13 +1378,24 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
       auto &x = tileSizes.at(alignDims.at(0));
       auto &y = tileSizes.at(alignDims.at(1));
       auto &z = tileSizes.at(alignDims.at(2));
-      x = vBitlines;
-      y = 1;
-      z = 1;
-      while (y * 4 < x) {
-        x /= 4;
-        y *= 2;
-        z *= 2;
+      if (this->forcePUMTilingInnerSize > 0) {
+        x = std::min(this->forcePUMTilingInnerSize,
+                     arraySizes.at(alignDims.at(0)));
+        y = vBitlines / x;
+        z = 1;
+        while (z * 2 < y) {
+          y /= 2;
+          z *= 2;
+        }
+      } else {
+        x = vBitlines;
+        y = 1;
+        z = 1;
+        while (y * 4 < x) {
+          x /= 4;
+          y *= 2;
+          z *= 2;
+        }
       }
     } else {
       // Tiling is not enabled, however, we tile to handle the case when dim0 <

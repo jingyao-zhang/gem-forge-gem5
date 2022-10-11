@@ -284,6 +284,9 @@ parser.add_option("--gem-forge-stream-pum-enable-tiling", type="int",
 parser.add_option("--gem-forge-stream-pum-force-tiling-dim", type="choice",
                   choices=['none', 'inner', 'outer'], default='none',
                   help="Force PUM tiling on certain dimension.")
+parser.add_option("--gem-forge-stream-pum-force-tiling-inner-size", type="int",
+                  action="store", default="0",
+                  help="Force PUM tiling size on inner dimension.")
 parser.add_option("--gem-forge-stream-pum-num-bitlines", type="int",
                   action="store", default="256",
                   help="Number of bitlines per SRAM array.")
