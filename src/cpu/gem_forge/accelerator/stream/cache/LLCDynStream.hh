@@ -232,8 +232,14 @@ public:
   bool isNextIdeaAck() const;
   void ackedOneSlice() { streamAckedSlices++; }
 
+  void doneOnePUMPrefetchSlice() { this->pumPrefetchDoneSlices++; }
+  uint64_t getPUMPrefetchDoneSlices() const {
+    return this->pumPrefetchDoneSlices;
+  }
+
 private:
   uint64_t streamAckedSlices = 0;
+  uint64_t pumPrefetchDoneSlices = 0;
 
   State state = INITIALIZED;
   AbstractStreamAwareController *mlcController;

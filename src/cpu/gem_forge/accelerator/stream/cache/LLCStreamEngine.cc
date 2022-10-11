@@ -2615,10 +2615,11 @@ bool LLCStreamEngine::tryFinishPUMPrefetchStream(
     LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId) {
   assert(dynS->hasTotalTripCount());
 
-  auto tc = dynS->getTotalTripCount();
-  auto elemIdx = sliceId.getEndIdx();
+  dynS->doneOnePUMPrefetchSlice();
 
-  if (elemIdx >= tc) {
+  auto tc = dynS->getTotalTripCount();
+
+  if (dynS->getPUMPrefetchDoneSlices() >= tc) {
     LLC_SLICE_DPRINTF(sliceId, "PUM prefetch done.\n");
     MachineID mlcMachineID(MachineType_L1Cache, dynS->getDynStreamId().coreId);
     auto mlcCtrl = AbstractStreamAwareController::getController(mlcMachineID);
