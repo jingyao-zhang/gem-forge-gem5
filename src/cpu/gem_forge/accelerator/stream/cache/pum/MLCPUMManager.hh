@@ -545,8 +545,8 @@ private:
 #ifdef EG_OPT
   using TDFGNodeID = decltype(std::declval<::LLVM::TDG::TDFG::Node>().id());
   using TDFGNodeVec = std::vector<TDFGNodeID>;
-  void buildTDFG(PUMContext &context);
-  void dumpTDFGToJson(const ::LLVM::TDG::TDFG &tdfg);
+  void buildTDFG(PUMContext &context, const std::string &prefix);
+  void dumpTDFGToJson(const ::LLVM::TDG::TDFG &tdfg, const std::string &prefix);
 #endif //  EG_OPT
 
   /**
@@ -554,6 +554,11 @@ private:
    * small boundary difference.
    */
   void mergePUMDataGraphMoveNode(PUMContext &context);
+
+  /**
+   * Try to expand TDFG tensor to align with boundary.
+   */
+  void expandPUMDataGraphNode(PUMContext &context);
 
   /**
    * Schedule PUMDataGraph nodes and insert sync nodes.

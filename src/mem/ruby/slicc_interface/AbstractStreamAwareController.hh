@@ -342,6 +342,9 @@ public:
   Stats::Scalar m_statPUMMixCycles;
   Stats::Scalar m_statPUMComputeCmds;
   Stats::Scalar m_statPUMComputeOps;
+  Stats::Scalar m_statPUMInterArrayCmds;
+  Stats::Scalar m_statPUMIntraArrayCmds;
+  Stats::Scalar m_statPUMSyncCmds;
   Stats::Scalar m_statPUMNormalAccesses;
   Stats::Scalar m_statPUMNormalAccessConflicts;
   Stats::Scalar m_statPUMNormalAccessDelayCycles;

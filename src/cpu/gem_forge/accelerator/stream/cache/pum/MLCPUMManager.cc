@@ -1,6 +1,7 @@
 #include "MLCPUMManager.hh"
 #include "PUMEngine.hh"
 
+#include "../../stream_float_policy.hh"
 #include "../LLCStreamEngine.hh"
 #include "../MLCStrandManager.hh"
 
@@ -26,6 +27,14 @@
 #define MLCSE_PANIC(format, args...)                                           \
   panic("[MLC_SE%d]: [PUM] " format, this->controller->getMachineID().num,     \
         ##args)
+
+#define PUM_LOG_(format, args...)                                              \
+  {                                                                            \
+    MLCSE_DPRINTF(format, ##args);                                             \
+    std::ostringstream __s;                                                    \
+    ccprintf(__s, format, ##args);                                             \
+    StreamFloatPolicy::getLog() << __s.str() << std::flush;                    \
+  }
 
 int64_t MLCPUMManager::PUMContext::nextContextId = 0;
 
@@ -678,36 +687,37 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context) {
     }
   }
 
-  if (Debug::MLCStreamPUM) {
-    MLCSE_DPRINTF("--------------------- PUMDataGraph Nodes.\n");
-    for (const auto &node : context.pumDataGraphNodes) {
-      MLCSE_DPRINTF("-- Node %s.\n", *node);
-    }
+  PUM_LOG_("--------------------- PUMDataGraph Nodes.\n");
+  for (const auto &node : context.pumDataGraphNodes) {
+    PUM_LOG_("-- Node %s.\n", *node);
   }
 
 #ifdef EG_OPT
   MLCSE_DPRINTF("Building TDFG\n");
-  this->buildTDFG(context);
+  this->buildTDFG(context, "tdfg");
 #endif // EG_OPT
 
   this->mergePUMDataGraphMoveNode(context);
+  this->expandPUMDataGraphNode(context);
 
-  if (Debug::MLCStreamPUM) {
-    MLCSE_DPRINTF("--------------------- PUMDataGraph After Merge.\n");
-    for (const auto &node : context.pumDataGraphNodes) {
-      MLCSE_DPRINTF("-- Node %s.\n", *node);
-    }
+  PUM_LOG_("--------------------- PUMDataGraph After Merge.\n");
+  for (const auto &node : context.pumDataGraphNodes) {
+    PUM_LOG_("-- Node %s.\n", *node);
   }
 
   auto scheduledNodes = this->schedulePUMDataGraph(context);
   context.pumDataGraphNodes = scheduledNodes;
 
-  if (Debug::MLCStreamPUM) {
-    MLCSE_DPRINTF("--------------------- PUMDataGraph After Schedule.\n");
-    for (const auto &node : context.pumDataGraphNodes) {
-      MLCSE_DPRINTF("-- Node %s.\n", *node);
-    }
+  PUM_LOG_("--------------------- PUMDataGraph After Schedule.\n");
+  for (const auto &node : context.pumDataGraphNodes) {
+    PUM_LOG_("-- Node %s.\n", *node);
   }
+
+  // Dump once more before lowering.
+#ifdef EG_OPT
+  MLCSE_DPRINTF("Building TDFG\n");
+  this->buildTDFG(context, "tdfg-before-lowering");
+#endif // EG_OPT
 }
 
 void MLCPUMManager::buildPUMDataGraph(
@@ -1465,8 +1475,12 @@ void MLCPUMManager::buildPUMDataGraphCompute(
 
 #ifdef EG_OPT
 
-void MLCPUMManager::dumpTDFGToJson(const ::LLVM::TDG::TDFG &tdfg) {
+void MLCPUMManager::dumpTDFGToJson(const ::LLVM::TDG::TDFG &tdfg,
+                                   const std::string &prefix) {
   static int dumpCount = 0;
+  static std::map<std::string, int> prefixDumpCountMap;
+
+  auto &prefixDumpCount = prefixDumpCountMap.emplace(prefix, 0).first->second;
 
   const std::string &tdfg_folder = "stream_pum_tdfg";
 
@@ -1481,7 +1495,7 @@ void MLCPUMManager::dumpTDFGToJson(const ::LLVM::TDG::TDFG &tdfg) {
 
   // Dump to JSON.
   {
-    std::string fn = "tdfg." + std::to_string(dumpCount) + ".json";
+    std::string fn = prefix + "." + std::to_string(prefixDumpCount) + ".json";
     auto log = directory->create(fn);
 
     std::string json;
@@ -1512,9 +1526,10 @@ void MLCPUMManager::dumpTDFGToJson(const ::LLVM::TDG::TDFG &tdfg) {
   }
 
   dumpCount++;
+  prefixDumpCount++;
 }
 
-void MLCPUMManager::buildTDFG(PUMContext &context) {
+void MLCPUMManager::buildTDFG(PUMContext &context, const std::string &prefix) {
   auto &tdfg = context.tdfg;
 
   // Reset TDFG in context.
@@ -1645,7 +1660,7 @@ void MLCPUMManager::buildTDFG(PUMContext &context) {
     }
 
     case PUMDataGraphNode::TypeE::Sync:
-      MLCSE_PANIC("Sync node should not be in TDFG");
+      // Just ignore sync node.
       break;
     default:
       MLCSE_PANIC("Unrecognized node type %d", node->type);
@@ -1663,7 +1678,7 @@ void MLCPUMManager::buildTDFG(PUMContext &context) {
   }
 
   // Dump to file.
-  this->dumpTDFGToJson(tdfg);
+  this->dumpTDFGToJson(tdfg, prefix);
 }
 #endif // EG_OPT
 
@@ -1867,6 +1882,104 @@ void MLCPUMManager::mergePUMDataGraphMoveNode(PUMContext &context) {
   }
 }
 
+void MLCPUMManager::expandPUMDataGraphNode(PUMContext &context) {
+
+  if (!this->controller->myParams->stream_pum_optimize_dfg_expand_tensor) {
+    return;
+  }
+
+  auto &nodes = context.pumDataGraphNodes;
+
+  for (auto node : nodes) {
+    switch (node->type) {
+    default:
+      panic("Don't know how to expand TDFG node %d.", node->type);
+    case PUMDataGraphNode::TypeE::Sync:
+    case PUMDataGraphNode::TypeE::Value:
+    case PUMDataGraphNode::TypeE::Load:
+      break;
+    case PUMDataGraphNode::TypeE::Compute:
+      break;
+    case PUMDataGraphNode::TypeE::Move: {
+
+      PUM_LOG_(">>>> Expanding %s.\n", *node);
+
+      auto tileAndArraySizes = node->pumTile.getTileAndArraySize();
+      auto tileSizes = tileAndArraySizes.first;
+      auto arraySizes = tileAndArraySizes.second;
+
+      auto starts = node->pattern.getSubRegionStartToArraySize(arraySizes);
+      auto sendStarts = node->sendPat.getSubRegionStartToArraySize(arraySizes);
+      auto trips = node->pattern.getTrips();
+
+      const auto &sendPat = node->sendPat;
+
+      int broadcastDim = -1;
+      for (auto dim = 0; dim < trips.size(); ++dim) {
+        const auto &p = sendPat.params.at(dim);
+        if (p.stride == 0) {
+          broadcastDim = dim;
+          break;
+        }
+      }
+      if (broadcastDim == -1) {
+        PUM_LOG_("  Can only expand Reuse.\n");
+        break;
+      }
+
+      for (auto dim = 0; dim < starts.size(); ++dim) {
+
+        if (broadcastDim != -1) {
+          // This is a broadcast. We only expand the other dimension.
+          if (dim == broadcastDim) {
+            PUM_LOG_("  Skip BroadcastDim %d.\n", dim);
+            continue;
+          }
+        }
+
+        auto s = starts.at(dim);
+        auto t = s + trips.at(dim);
+        auto p = tileSizes.at(dim);
+
+        auto x = t % p;
+
+        auto lhs = s % p;
+        auto rhs = (x == 0) ? 0 : (p - x);
+
+        // if (lhs + rhs > 4) {
+        //   PUM_LOG_("  Skip Large Expansion Dim %d [%ld, %ld) Tile %ld -> [%ld, "
+        //            "%ld).\n",
+        //            dim, s, t, p, s - lhs, t + rhs);
+        //   continue;
+        // }
+
+        starts.at(dim) = s - lhs;
+        trips.at(dim) = trips.at(dim) + lhs + rhs;
+
+        PUM_LOG_("  Expanded Dim %d [%ld, %ld) Tile %ld -> [%ld, %ld).\n", dim,
+                 s, t, p, s - lhs, t + rhs);
+
+        auto sendS = sendStarts.at(dim);
+        assert((sendS % p) == lhs);
+        sendStarts.at(dim) = sendS - lhs;
+      }
+
+      node->pattern =
+          AffinePattern::constructSubRegion(arraySizes, starts, trips);
+      node->sendPat =
+          AffinePattern::constructSubRegion(arraySizes, sendStarts, trips);
+      if (broadcastDim != -1) {
+        node->sendPat.params.at(broadcastDim).stride = 0;
+      }
+
+      PUM_LOG_(">>>> Expanded %s.\n", *node);
+
+      break;
+    }
+    }
+  }
+}
+
 MLCPUMManager::PUMDataGraphNodeVec
 MLCPUMManager::schedulePUMDataGraph(PUMContext &context) {
   if (this->controller->myParams->stream_pum_optimize_dfg) {
@@ -2033,6 +2146,11 @@ void MLCPUMManager::compilePUMDataGraphToCommands(PUMContext &context) {
     }
     MLCSE_DPRINTF("[PUM] >>>>>>>>>> Finish Compile TDFG Node %s.\n", *node);
   }
+  PUM_LOG_("[PUM] >>>>>>>>>>>>>> Compiled Nodes Begin \n");
+  for (const auto &command : context.commands) {
+    PUM_LOG_("%s", command);
+  }
+  PUM_LOG_("[PUM] >>>>>>>>>>>>>> Compiled Nodes End \n");
 
   /**
    * We try to increment the OuterIter.

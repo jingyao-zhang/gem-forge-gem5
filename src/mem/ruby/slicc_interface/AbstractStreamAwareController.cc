@@ -187,6 +187,9 @@ void AbstractStreamAwareController::regStats() {
   pum_stats(MixCycles);
   pum_stats(ComputeCmds);
   pum_stats(ComputeOps);
+  pum_stats(InterArrayCmds);
+  pum_stats(IntraArrayCmds);
+  pum_stats(SyncCmds);
   pum_stats(NormalAccesses);
   pum_stats(NormalAccessConflicts);
   pum_stats(NormalAccessDelayCycles);

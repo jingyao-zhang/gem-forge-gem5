@@ -189,6 +189,12 @@ void PUMEngine::kickNextCommand() {
           scheduledArrays.size() * command.bitline_mask.getTotalTrip();
       this->controller->m_statPUMComputeCmds++;
       this->controller->m_statPUMComputeOps += bitlineOps;
+    } else if (command.type == "intra-array") {
+      this->controller->m_statPUMIntraArrayCmds++;
+    } else if (command.type == "inter-array") {
+      this->controller->m_statPUMInterArrayCmds++;
+    } else if (command.type == "sync") {
+      this->controller->m_statPUMSyncCmds++;
     }
 
     this->nextCmdIdx++;

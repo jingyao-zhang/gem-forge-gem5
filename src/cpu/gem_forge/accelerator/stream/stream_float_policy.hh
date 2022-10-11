@@ -23,6 +23,10 @@ public:
 
   static std::ostream &logS(const DynStream &dynS);
   static std::ostream &logS(const DynStreamId &dynId);
+  static std::ostream &getLog() {
+    assert(log && "No log for StreamFloatPolicy.");
+    return *log->stream();
+  }
 
   /**
    * Set the float level for all streams.
@@ -58,11 +62,6 @@ private:
   FloatDecision shouldFloatStreamSmart(DynStream &dynS);
   bool checkReuseWithinStream(DynStream &dynS);
   bool checkAggregateHistory(DynStream &dynS);
-
-  static std::ostream &getLog() {
-    assert(log && "No log for StreamFloatPolicy.");
-    return *log->stream();
-  }
 
   static OutputStream *log;
 

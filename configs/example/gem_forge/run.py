@@ -305,6 +305,9 @@ parser.add_option("--gem-forge-stream-pum-enable-parallel-inter-array-shift", ty
 parser.add_option("--gem-forge-stream-pum-optimize-dfg", type="int",
                   action="store", default="1",
                   help="Enable tDFG optimization (e.g., merging, scheduling).")
+parser.add_option("--gem-forge-stream-pum-optimize-dfg-expand-tensor", type="int",
+                  action="store", default="0",
+                  help="Enable tDFG optimization tensor expansion.")
 parser.add_option("--gem-forge-stream-pum-compile-lat-per-cmd", type="int",
                   action="store", default="10",
                   help="Compiling latency per cmd.")
