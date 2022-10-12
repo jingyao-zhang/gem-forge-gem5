@@ -255,6 +255,9 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
      */
     this->controller->m_statPUMIntraArrayShiftBits +=
         command.wordline_bits * command.bitline_mask.getTotalTrip();
+    this->controller->m_statPUMIntraArrayShiftBitHops +=
+        command.wordline_bits * command.bitline_mask.getTotalTrip() *
+        std::abs(command.bitline_dist);
 
     if (this->controller->myParams
             ->stream_pum_enable_parallel_intra_array_shift) {
@@ -356,6 +359,9 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
           this->controller->m_statPUMInterArrayShiftBits +=
               command.wordline_bits * command.bitline_mask.getTotalTrip() *
               shiftedArrays;
+          this->controller->m_statPUMInterArrayShiftBitHops +=
+              command.wordline_bits * command.bitline_mask.getTotalTrip() *
+              shiftedArrays * level;
 
           if (this->controller->myParams
                   ->stream_pum_enable_parallel_inter_array_shift) {

@@ -711,6 +711,17 @@ private:
    */
   void tryKickNextComputeRound(PUMContext &context);
 
+  /**
+   * Check if the user of PUMReduction is done.
+   */
+  bool checkPUMReduceDepAcked(PUMContext &context,
+                              MLCDynStream::ElementCallback callback);
+
+  /**
+   * Record PUMReduce cycles.
+   */
+  void recordPUMReduceCycles(PUMContext &context);
+
   struct TryKickContextCallback {
     MLCPUMManager *manager;
     int64_t contextId;

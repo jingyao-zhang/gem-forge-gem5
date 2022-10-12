@@ -34,6 +34,7 @@ public:
     USE_PUM,
     PUM_NO_INIT,
     PUM_TILE_SIZE_DIM0,
+    REDUCE_DIM,
   };
   void setProperty(Addr start, uint64_t property, uint64_t value);
 
@@ -112,7 +113,7 @@ private:
   const bool enablePUM;
   const bool enablePUMTiling;
   const std::string forcePUMTilingDim;
-  const int64_t forcePUMTilingInnerSize;
+  const std::vector<int64_t> forcePUMTilingSize;
   enum DirectRegionFitPolicy {
     CROP,
     DROP,

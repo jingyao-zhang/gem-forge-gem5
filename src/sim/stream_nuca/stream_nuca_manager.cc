@@ -29,7 +29,7 @@ StreamNUCAManager::StreamNUCAManager(Process *_process, ProcessParams *_params)
       enablePUM(_params->enableStreamPUMMapping),
       enablePUMTiling(_params->enableStreamPUMTiling),
       forcePUMTilingDim(_params->forceStreamPUMTilingDim),
-      forcePUMTilingInnerSize(_params->forceStreamPUMTilingInnerSize),
+      forcePUMTilingSize(_params->forceStreamPUMTilingSize),
       enableIndirectPageRemap(_params->streamNUCAEnableIndPageRemap) {
   const auto &directRegionFitPolicy = _params->streamNUCADirectRegionFitPolicy;
   if (directRegionFitPolicy == "crop") {
@@ -45,7 +45,7 @@ StreamNUCAManager::StreamNUCAManager(const StreamNUCAManager &other)
     : process(other.process), enabledMemStream(other.enabledMemStream),
       enabledNUCA(other.enabledNUCA), enablePUM(other.enablePUM),
       enablePUMTiling(other.enablePUMTiling),
-      forcePUMTilingInnerSize(other.forcePUMTilingInnerSize),
+      forcePUMTilingSize(other.forcePUMTilingSize),
       directRegionFitPolicy(other.directRegionFitPolicy),
       enableIndirectPageRemap(other.enableIndirectPageRemap) {
   panic("StreamNUCAManager does not have copy constructor.");
@@ -138,6 +138,7 @@ void StreamNUCAManager::setProperty(Addr start, uint64_t property,
     CASE(USE_PUM);
     CASE(PUM_NO_INIT);
     CASE(PUM_TILE_SIZE_DIM0);
+    CASE(REDUCE_DIM);
 
 #undef CASE
   }
@@ -1306,10 +1307,10 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
     auto arraySize = arraySizes.at(alignDim);
 
     auto alignDimTileSize = std::min(vBitlines, arraySize);
-    if (this->forcePUMTilingInnerSize > 0 && arraySizes.size() > 1) {
+    if (!this->forcePUMTilingSize.empty() && arraySizes.size() > 1) {
       // Only force PUMTilingInnerSize when we have multi-dim array.
       alignDimTileSize =
-          std::min(this->forcePUMTilingInnerSize, alignDimTileSize);
+          std::min(this->forcePUMTilingSize.front(), alignDimTileSize);
     }
     if (this->forcePUMTilingDim == "none" &&
         region.userDefinedProperties.count(
@@ -1347,8 +1348,8 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
     if (this->enablePUMTiling) {
       auto &x = tileSizes.at(alignDims.at(0));
       auto &y = tileSizes.at(alignDims.at(1));
-      if (this->forcePUMTilingInnerSize > 0) {
-        x = std::min(this->forcePUMTilingInnerSize,
+      if (!this->forcePUMTilingSize.empty()) {
+        x = std::min(this->forcePUMTilingSize.front(),
                      arraySizes.at(alignDims.at(0)));
         y = vBitlines / x;
       } else {
@@ -1378,14 +1379,21 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
       auto &x = tileSizes.at(alignDims.at(0));
       auto &y = tileSizes.at(alignDims.at(1));
       auto &z = tileSizes.at(alignDims.at(2));
-      if (this->forcePUMTilingInnerSize > 0) {
-        x = std::min(this->forcePUMTilingInnerSize,
+      if (!this->forcePUMTilingSize.empty()) {
+        x = std::min(this->forcePUMTilingSize.front(),
                      arraySizes.at(alignDims.at(0)));
-        y = vBitlines / x;
-        z = 1;
-        while (z * 2 < y) {
-          y /= 2;
-          z *= 2;
+        if (this->forcePUMTilingSize.size() > 1) {
+          // Force tiling the second dimension.
+          y = std::min(this->forcePUMTilingSize.at(1),
+                       arraySizes.at(alignDims.at(1)));
+          z = vBitlines / x / y;
+        } else {
+          y = vBitlines / x;
+          z = 1;
+          while (z * 2 < y) {
+            y /= 2;
+            z *= 2;
+          }
         }
       } else {
         x = vBitlines;

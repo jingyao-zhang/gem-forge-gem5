@@ -76,8 +76,8 @@ def get_processes(options):
             options.gem_forge_stream_pum_enable_tiling
         process.forceStreamPUMTilingDim = \
             options.gem_forge_stream_pum_force_tiling_dim
-        process.forceStreamPUMTilingInnerSize = \
-            options.gem_forge_stream_pum_force_tiling_inner_size
+        process.forceStreamPUMTilingSize = \
+            options.gem_forge_stream_pum_force_tiling_size
 
         multiprocesses.append(process)
         idx += 1

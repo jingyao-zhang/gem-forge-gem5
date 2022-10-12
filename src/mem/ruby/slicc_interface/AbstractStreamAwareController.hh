@@ -352,6 +352,8 @@ public:
 
   Stats::Scalar m_statPUMIntraArrayShiftBits;
   Stats::Scalar m_statPUMInterArrayShiftBits;
+  Stats::Scalar m_statPUMIntraArrayShiftBitHops;
+  Stats::Scalar m_statPUMInterArrayShiftBitHops;
   Stats::Scalar m_statPUMInterBankShiftBits;
   Stats::Scalar m_statPUMInterBankShiftReuseBits;
 };

@@ -1947,7 +1947,8 @@ void MLCPUMManager::expandPUMDataGraphNode(PUMContext &context) {
         auto rhs = (x == 0) ? 0 : (p - x);
 
         // if (lhs + rhs > 4) {
-        //   PUM_LOG_("  Skip Large Expansion Dim %d [%ld, %ld) Tile %ld -> [%ld, "
+        //   PUM_LOG_("  Skip Large Expansion Dim %d [%ld, %ld) Tile %ld ->
+        //   [%ld, "
         //            "%ld).\n",
         //            dim, s, t, p, s - lhs, t + rhs);
         //   continue;
@@ -3871,7 +3872,7 @@ void MLCPUMManager::checkSync(PUMContext &context) {
   if (context.receivedAcks == expectedAcks &&
       context.totalSentPackets == context.totalRecvPackets) {
 
-    MLCSE_DPRINTF("Synced %d Total %d.\n", context.reachedSync,
+    MLCSE_DPRINTF("Synced %d Total %d.\n", context.reachedSync + 1,
                   context.totalSyncs);
     context.reachedSync++;
     context.receivedAcks = 0;
@@ -3993,6 +3994,16 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
     this->controller->m_statPUMTotalCycles += totalPUMCycles;
     this->prevRecordedPUMTotalCycle = this->controller->curCycle();
 
+    /**
+     * Also we try to mark the PUMReduce block cycle. So that we don't miss the
+     * PUMReduce cycle of the last round. With empty callback.
+     * Notice that I will record the final PUMReduce cycle when release the
+     * context.
+     */
+    auto pumReduceDepAckCallback = [](const DynStreamId &dynStreamId,
+                                      uint64_t elemIdx) -> void {};
+    this->checkPUMReduceDepAcked(context, pumReduceDepAckCallback);
+
     context.state = PUMContext::StateE::Done;
     return;
   }
@@ -4002,7 +4013,8 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
   this->tryKickNextComputeRound(context);
 }
 
-void MLCPUMManager::tryKickNextComputeRound(PUMContext &context) {
+bool MLCPUMManager::checkPUMReduceDepAcked(
+    PUMContext &context, MLCDynStream::ElementCallback callback) {
 
   for (auto &group : context.pumGroups) {
     if (!group.appliedPUM || !group.pumReduceConfig ||
@@ -4023,13 +4035,9 @@ void MLCPUMManager::tryKickNextComputeRound(PUMContext &context) {
 
     for (const auto &dep : pumReduceConfig->depEdges) {
       const auto &depId = dep.data->dynamicId;
-      assert(dep.data->stream->isStoreComputeStream());
+      auto depS = dep.data->stream;
+      assert(depS->isStoreComputeStream() || depS->isUpdateStream());
 
-      auto contextId = context.contextId;
-      auto callback = [this, contextId](const DynStreamId &dynStreamId,
-                                        uint64_t elemIdx) -> void {
-        this->tryKickNextComputeRound(this->getContextById(contextId));
-      };
       if (!this->mlcSE->strandManager->isStreamElemAcked(depId, ackedElemIdx,
                                                          callback)) {
         MLC_S_DPRINTF(
@@ -4039,9 +4047,37 @@ void MLCPUMManager::tryKickNextComputeRound(PUMContext &context) {
         if (context.lastBlockedByReduceCycle == Cycles(0)) {
           context.lastBlockedByReduceCycle = this->controller->curCycle();
         }
-        return;
+        return false;
       }
     }
+  }
+
+  return true;
+}
+
+void MLCPUMManager::recordPUMReduceCycles(PUMContext &context) {
+  // Record the BlockedByReduce as mixed cycles.
+  if (context.lastBlockedByReduceCycle != Cycles(0)) {
+    this->controller->m_statPUMReduceCycles +=
+        this->controller->curCycle() - context.lastBlockedByReduceCycle;
+    MLCSE_DPRINTF("[PUMReduce] Recorded PUMReduceCycle %ld.\n",
+                  this->controller->curCycle() -
+                      context.lastBlockedByReduceCycle);
+    context.lastBlockedByReduceCycle = Cycles(0);
+  }
+}
+
+void MLCPUMManager::tryKickNextComputeRound(PUMContext &context) {
+
+  // We have to check that PUMReduce dependences are acked.
+  auto contextId = context.contextId;
+  auto pumReduceDepAckCallback = [this,
+                                  contextId](const DynStreamId &dynStreamId,
+                                             uint64_t elemIdx) -> void {
+    this->tryKickNextComputeRound(this->getContextById(contextId));
+  };
+  if (!this->checkPUMReduceDepAcked(context, pumReduceDepAckCallback)) {
+    return;
   }
 
   // We can start next round.
@@ -4049,11 +4085,7 @@ void MLCPUMManager::tryKickNextComputeRound(PUMContext &context) {
   context.state = PUMContext::StateE::Initialized;
 
   // Record the BlockedByReduce as mixed cycles.
-  if (context.lastBlockedByReduceCycle != Cycles(0)) {
-    this->controller->m_statPUMReduceCycles +=
-        this->controller->curCycle() - context.lastBlockedByReduceCycle;
-    context.lastBlockedByReduceCycle = Cycles(0);
-  }
+  this->recordPUMReduceCycles(context);
   this->compileContext(context);
   this->configurePUMEngine(context);
 }
@@ -4131,6 +4163,7 @@ void MLCPUMManager::receiveStreamEnd(std::vector<DynStreamId> &endIds) {
   }
 
   MLCSE_DPRINTF("Release PUM context.\n");
+  this->recordPUMReduceCycles(context);
   bool isDone = (context.state == PUMContext::StateE::Done);
 
   this->contexts.erase(iter);

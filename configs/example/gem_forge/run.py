@@ -29,6 +29,10 @@ def parse_tdg_files(option, opt, value, parser):
     vs = value.split(',')
     setattr(parser.values, option.dest, vs)
 
+def parse_int_list(option, opt, value, parser):
+    vs = [int(v) for v in value.split('x')]
+    setattr(parser.values, option.dest, vs)
+
 parser.add_option("--gem-forge-work-mark-history", action="store", type="string",
                   help="""work mark history""")
 parser.add_option("--gem-forge-work-mark-switch-cpu", action="store", type="int", default=-1,
@@ -284,8 +288,8 @@ parser.add_option("--gem-forge-stream-pum-enable-tiling", type="int",
 parser.add_option("--gem-forge-stream-pum-force-tiling-dim", type="choice",
                   choices=['none', 'inner', 'outer'], default='none',
                   help="Force PUM tiling on certain dimension.")
-parser.add_option("--gem-forge-stream-pum-force-tiling-inner-size", type="int",
-                  action="store", default="0",
+parser.add_option("--gem-forge-stream-pum-force-tiling-size", type="string",
+                  action="callback", default=[], callback=parse_int_list,
                   help="Force PUM tiling size on inner dimension.")
 parser.add_option("--gem-forge-stream-pum-num-bitlines", type="int",
                   action="store", default="256",

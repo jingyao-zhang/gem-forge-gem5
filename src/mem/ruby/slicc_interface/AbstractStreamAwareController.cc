@@ -195,6 +195,8 @@ void AbstractStreamAwareController::regStats() {
   pum_stats(NormalAccessDelayCycles);
   pum_stats(IntraArrayShiftBits);
   pum_stats(InterArrayShiftBits);
+  pum_stats(IntraArrayShiftBitHops);
+  pum_stats(InterArrayShiftBitHops);
   pum_stats(InterBankShiftBits);
   pum_stats(InterBankShiftReuseBits);
   m_statPUMNormalAccessAvgDelayCycles
