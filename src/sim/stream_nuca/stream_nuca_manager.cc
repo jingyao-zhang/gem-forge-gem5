@@ -1352,10 +1352,43 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
         x = std::min(this->forcePUMTilingSize.front(),
                      arraySizes.at(alignDims.at(0)));
         y = vBitlines / x;
+      } else if (region.userDefinedProperties.count(
+                     RegionProperty::REDUCE_DIM)) {
+
+        /**
+         * We add a special case for reducing over inner dim.
+         * This is used to balance the stream and pum reduction,
+         * e.g. mm_inner.
+         */
+
+        auto reduceDim =
+            region.userDefinedProperties.at(RegionProperty::REDUCE_DIM);
+        assert(alignDims.at(0) == reduceDim);
+        auto reduceDimArraySize = arraySizes.at(reduceDim);
+
+        if (reduceDimArraySize <= vBitlines) {
+          // Favor pum reduction.
+          x = reduceDimArraySize;
+        } else {
+          // From profiling we know the ratio.
+          x = std::min(vBitlines, 64l);
+        }
+        y = vBitlines / x;
+      } else if (arraySizes.at(alignDims.at(0)) <= 128) {
+
+        /**
+         * Special rule when the inner dimension is very small. We heuristically
+         * pick 64 as the inner tile size as it helps confine the data move
+         * within two leaves of H-tree.
+         */
+        x = std::min(vBitlines, 64l);
+        y = vBitlines / x;
+
       } else {
+        // Balance x and y and favor y when tied.
         x = vBitlines;
         y = 1;
-        while (y * 2 < x) {
+        while (y < x) {
           y *= 2;
           x /= 2;
         }

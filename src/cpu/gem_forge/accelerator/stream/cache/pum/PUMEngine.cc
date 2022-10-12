@@ -245,6 +245,25 @@ void PUMEngine::sendPUMDataToLLC(const DynStreamSliceId &sliceId,
 
 Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
 
+  auto getTotalTiles = [this](const PUMCommand &command) -> int64_t {
+    auto myBankIdx = this->getBankIdx();
+
+    auto numBankSubRegionCount =
+        command.llcSplitTileCmds.getBankSubRegionCount(myBankIdx);
+    assert(numBankSubRegionCount > 0 && "Empty LLC command.");
+    /**
+     * We should really handle each TileMask separately. However, here I just
+     * sum all of them.
+     */
+    int64_t totalTiles = 0;
+    for (auto i = 0; i < numBankSubRegionCount; ++i) {
+      const auto &tileMask =
+          command.llcSplitTileCmds.getAffinePattern(myBankIdx, 0);
+      totalTiles += tileMask.getTotalTrip();
+    }
+    return totalTiles;
+  };
+
   if (command.type == "intra-array") {
     /**
      * Intra array is easy:
@@ -253,11 +272,14 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
      * 2. Otherwise, charge one cycle for each bitline shifted.
      *
      */
+    auto totalTiles = getTotalTiles(command);
+
     this->controller->m_statPUMIntraArrayShiftBits +=
-        command.wordline_bits * command.bitline_mask.getTotalTrip();
+        command.wordline_bits * command.bitline_mask.getTotalTrip() *
+        totalTiles;
     this->controller->m_statPUMIntraArrayShiftBitHops +=
         command.wordline_bits * command.bitline_mask.getTotalTrip() *
-        std::abs(command.bitline_dist);
+        totalTiles * std::abs(command.bitline_dist);
 
     if (this->controller->myParams
             ->stream_pum_enable_parallel_intra_array_shift) {
@@ -282,19 +304,7 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
      */
     auto myBankIdx = this->getBankIdx();
 
-    auto numBankSubRegionCount =
-        command.llcSplitTileCmds.getBankSubRegionCount(myBankIdx);
-    assert(numBankSubRegionCount > 0 && "Empty LLC Inter-Array command.");
-    /**
-     * We should really handle each TileMask separately. However, here I just
-     * sum all of them.
-     */
-    int64_t totalTiles = 0;
-    for (auto i = 0; i < numBankSubRegionCount; ++i) {
-      const auto &tileMask =
-          command.llcSplitTileCmds.getAffinePattern(myBankIdx, 0);
-      totalTiles += tileMask.getTotalTrip();
-    }
+    auto totalTiles = getTotalTiles(command);
 
     auto llcTreeLeafBandwidthBits = this->hwConfig->tree_leaf_bw_bytes * 8;
     auto bitlinesPerArray = command.bitline_mask.getTotalTrip();
