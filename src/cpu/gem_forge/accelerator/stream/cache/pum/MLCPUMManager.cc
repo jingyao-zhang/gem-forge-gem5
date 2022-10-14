@@ -2951,6 +2951,8 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
     paramSplitDimIter->stride = tileSizes.at(reducedDim);
     paramSplitDimIter->trip /= tileSizes.at(reducedDim);
 
+    newReduceConfig->pumPartialReducedElems = tileSizes.at(reducedDim);
+
     tileAlignedScalarPat.params.insert(
         paramSplitDimIter, AffinePattern::Param(1, partialResultsPerTile));
   }

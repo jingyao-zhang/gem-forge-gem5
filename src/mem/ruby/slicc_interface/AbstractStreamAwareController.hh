@@ -350,6 +350,9 @@ public:
   Stats::Scalar m_statPUMNormalAccessDelayCycles;
   Stats::Formula m_statPUMNormalAccessAvgDelayCycles;
 
+  Stats::Scalar m_statPUMIntraArrayShiftCycles;
+  Stats::Scalar m_statPUMInterArrayShiftCycles;
+  Stats::Scalar m_statPUMInterBankShiftCycles;
   Stats::Scalar m_statPUMIntraArrayShiftBits;
   Stats::Scalar m_statPUMInterArrayShiftBits;
   Stats::Scalar m_statPUMIntraArrayShiftBitHops;

@@ -35,13 +35,15 @@ public:
     int arrayTreeDegree = 0;
     int arrayTreeLeafBandwidth = 0;
     int arrayPerWay = 0;
+    int wayTreeDegree = 0;
     bool operator==(const CacheParams &other) const {
       return blockSize == other.blockSize && numSet == other.numSet &&
              assoc == other.assoc && wordlines == other.wordlines &&
              bitlines == other.bitlines &&
              arrayTreeDegree == other.arrayTreeDegree &&
              arrayTreeLeafBandwidth == other.arrayTreeLeafBandwidth &&
-             arrayPerWay == other.arrayPerWay;
+             arrayPerWay == other.arrayPerWay &&
+             wayTreeDegree == other.wayTreeDegree;
     }
     bool operator!=(const CacheParams &other) const {
       return !this->operator==(other);

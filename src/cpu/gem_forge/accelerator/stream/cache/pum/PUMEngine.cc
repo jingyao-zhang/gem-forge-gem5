@@ -281,12 +281,15 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
         command.wordline_bits * command.bitline_mask.getTotalTrip() *
         totalTiles * std::abs(command.bitline_dist);
 
+    Cycles latency;
     if (this->controller->myParams
             ->stream_pum_enable_parallel_intra_array_shift) {
-      return Cycles(command.wordline_bits);
+      latency = Cycles(command.wordline_bits);
     } else {
-      return Cycles(command.wordline_bits * std::abs(command.bitline_dist));
+      latency = Cycles(command.wordline_bits * std::abs(command.bitline_dist));
     }
+    this->controller->m_statPUMIntraArrayShiftCycles += latency;
+    return latency;
   }
 
   if (command.type == "inter-array") {
@@ -350,6 +353,8 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
 
           this->controller->m_statPUMInterBankShiftBits +=
               command.wordline_bits * numInterBankBitlines;
+          this->controller->m_statPUMInterBankShiftCycles +=
+              numInterBankTiles * latencyPerArray;
 
           LLC_SE_DPRINTF("Bank %d -> %d Array %d -> %d Bitlines %d.\n",
                          myBankIdx, dstBankIdx, srcArrayIdx, dstArrayIdx,
@@ -373,22 +378,26 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
               command.wordline_bits * command.bitline_mask.getTotalTrip() *
               shiftedArrays * level;
 
+          auto accessedArrays = shiftedArrays;
           if (this->controller->myParams
                   ->stream_pum_enable_parallel_inter_array_shift) {
-            levelArrays += shiftedArrays;
+            accessedArrays = shiftedArrays;
           } else {
             if (level + 2 == numLevels) {
               // This is the inter-way level. Can always shift in parallel.
-              levelArrays += shiftedArrays;
+              accessedArrays = shiftedArrays;
             } else {
               // Intra-way inter-array level.
               auto numLeafNodes = this->hwConfig->array_per_way;
               assert(numSubTreeNodes <= numLeafNodes);
               assert(numLeafNodes % numSubTreeNodes == 0);
               auto levelSubTrees = numLeafNodes / numSubTreeNodes;
-              levelArrays += shiftedArrays * levelSubTrees;
+              accessedArrays = shiftedArrays * levelSubTrees;
             }
           }
+          this->controller->m_statPUMInterArrayShiftCycles +=
+              accessedArrays * latencyPerArray;
+          levelArrays += accessedArrays;
         }
       }
       accumulatedLatency += levelArrays * latencyPerArray;

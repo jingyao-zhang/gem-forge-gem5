@@ -115,6 +115,8 @@ CacheMemory::init()
         cacheParams.arrayPerWay = 
             (cacheParams.blockSize * cacheParams.numSet) /
             (cacheParams.wordlines * cacheParams.bitlines / 8);
+        // Not used yet.
+        cacheParams.wayTreeDegree = m_cache_assoc;
 
         StreamNUCAMap::initializeCache(cacheParams);
     }

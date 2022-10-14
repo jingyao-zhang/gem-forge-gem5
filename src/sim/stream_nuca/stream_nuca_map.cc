@@ -323,5 +323,6 @@ PUMHWConfiguration StreamNUCAMap::getPUMHWConfig() {
 
   return PUMHWConfiguration(p.wordlines, p.bitlines, p.arrayPerWay,
                             p.arrayTreeDegree, p.arrayTreeLeafBandwidth,
-                            p.assoc, meshLayers, meshRows, meshCols);
+                            p.assoc, p.wayTreeDegree, meshLayers, meshRows,
+                            meshCols);
 }

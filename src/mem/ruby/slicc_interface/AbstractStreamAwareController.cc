@@ -193,6 +193,9 @@ void AbstractStreamAwareController::regStats() {
   pum_stats(NormalAccesses);
   pum_stats(NormalAccessConflicts);
   pum_stats(NormalAccessDelayCycles);
+  pum_stats(IntraArrayShiftCycles);
+  pum_stats(InterArrayShiftCycles);
+  pum_stats(InterBankShiftCycles);
   pum_stats(IntraArrayShiftBits);
   pum_stats(InterArrayShiftBits);
   pum_stats(IntraArrayShiftBitHops);

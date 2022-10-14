@@ -524,9 +524,19 @@ bool MLCDynIndirectStream::receiveFinalReductionValue(
   auto size = S->getCoreElementSize();
   StreamValue value;
   memcpy(value.uint8Ptr(), dataBlock.getData(0, size), size);
-  dynCoreS->setInnerFinalValue(sliceId.getStartIdx(), value);
 
-  MLC_SLICE_DPRINTF_(MLCRubyStreamReduce, sliceId, "Notify final reduction.\n");
+  auto finalElemIdx = sliceId.getStartIdx();
+  if (this->config->pumPartialReducedElems > 0) {
+    /**
+     * We basically assume that ReduceS is scalar version.
+     */
+    finalElemIdx *= this->config->pumPartialReducedElems;
+  }
+
+  dynCoreS->setInnerFinalValue(finalElemIdx, value);
+
+  MLC_SLICE_DPRINTF_(MLCRubyStreamReduce, sliceId,
+                     "Notify final reduction elem %llu.\n", finalElemIdx);
 
   return true;
 }

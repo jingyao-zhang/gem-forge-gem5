@@ -38,6 +38,7 @@ public:
   const int64_t tree_degree;
   const int64_t tree_leaf_bw_bytes;
   const int64_t way_per_bank;
+  const int64_t way_tree_degree;
   const int64_t mesh_layers;
   const int64_t mesh_rows;
   const int64_t mesh_cols;
@@ -45,13 +46,13 @@ public:
   PUMHWConfiguration(int64_t _array_rows, int64_t _array_cols,
                      int64_t _array_per_way, int64_t _tree_degree,
                      int64_t _tree_leaf_bw_bytes, int64_t _way_per_bank,
-                     int64_t _mesh_layers, int64_t _mesh_rows,
-                     int64_t _mesh_cols)
+                     int64_t _way_tree_degree, int64_t _mesh_layers,
+                     int64_t _mesh_rows, int64_t _mesh_cols)
       : array_rows(_array_rows), array_cols(_array_cols),
         array_per_way(_array_per_way), tree_degree(_tree_degree),
         tree_leaf_bw_bytes(_tree_leaf_bw_bytes), way_per_bank(_way_per_bank),
-        mesh_layers(_mesh_layers), mesh_rows(_mesh_rows),
-        mesh_cols(_mesh_cols) {}
+        way_tree_degree(_way_tree_degree), mesh_layers(_mesh_layers),
+        mesh_rows(_mesh_rows), mesh_cols(_mesh_cols) {}
 
   int64_t get_total_arrays() const {
     return mesh_rows * mesh_cols * mesh_layers * way_per_bank * array_per_way;

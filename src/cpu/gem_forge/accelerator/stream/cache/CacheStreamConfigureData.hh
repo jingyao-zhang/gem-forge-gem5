@@ -300,6 +300,13 @@ public:
   int64_t hintNoStrandSplitOuterTrip = 0;
 
   /**
+   * Remember the partial reduction handled by PUM.
+   * This is used to convert from StreamElemIdx to original core StreamElemIdx
+   * when the final value is used by the core.
+   */
+  int64_t pumPartialReducedElems = 0;
+
+  /**
    * @brief Override the default latency. This is only an AdHoc solution to
    * split out Reduction, and is only correct for latency. The stats of number
    * of instructions executed is still the same.
