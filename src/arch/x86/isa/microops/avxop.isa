@@ -287,6 +287,18 @@ let {{
             this->doPackedBinaryOp(xc, BinaryOp::IntSub);
         '''
 
+    class Vmuli(Varithp):
+        opClass = 'SimdMultOp'
+        code = '''
+            this->doPackedBinaryOp(xc, BinaryOp::IntMul);
+        '''
+
+    class Vmulilow(Varithp):
+        opClass = 'SimdMultOp'
+        code = '''
+            this->doPackedBinaryOp(xc, BinaryOp::IntMulLow);
+        '''
+
     class Vmului(Varithp):
         opClass = 'SimdMultOp'
         code = '''
@@ -443,11 +455,102 @@ let {{
                 src.ui.i2 = src.ui.i1;
             } else if (srcSize == 8) {
                 // 8 bytes -- nothing to broadcast.
+            } else if (srcSize == 2) {
+                // 2 bytes.
+                src.us.i2 = src.us.i1;
+                src.us.i3 = src.us.i1;
+                src.us.i4 = src.us.i1;
+            } else if (srcSize == 1) {
+                // 1 byte.
+                src.uc.i2 = src.uc.i1;
+                src.uc.i3 = src.uc.i1;
+                src.uc.i4 = src.uc.i1;
+                src.uc.i5 = src.uc.i1;
+                src.uc.i6 = src.uc.i1;
+                src.uc.i7 = src.uc.i1;
+                src.uc.i8 = src.uc.i1;
             } else {
                 panic("Invalid srcSize for broadcast.");
             }
             for (int i = 0; i < vDestRegs; ++i) {
                 xc->setFloatRegOperandBits(this, i, src.ul);
+            }
+        '''
+
+    class Vmovzx(AVXOp):
+        def __init__(self, dest, src, srcSize, destVL):
+            super(Vmovzx, self).__init__(
+                dest=dest, src1=src, srcSize=srcSize, destVL=destVL
+            )
+        srcType = 'AVXOpBase::SrcType::Reg'
+        constructorCode = '''
+            this->addAVXDestRegs();
+            auto vRegs = destVL / sizeof(uint64_t);
+            _numSrcRegs = vRegs / 2;
+            for (int i = 0; i < vRegs / 2; ++i) {
+                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
+            }
+        '''
+        code = '''
+            auto vDestRegs = destVL / sizeof(uint64_t);
+            if (srcSize == 1) {
+                // 1 byte. zero extension.
+                for (int i = 0; i < vDestRegs; i += 2) {
+                    FloatInt src, dst;
+                    src.ul = xc->readFloatRegOperandBits(this, i / 2);
+                    dst.us.i1 = src.uc.i1;
+                    dst.us.i2 = src.uc.i2;
+                    dst.us.i3 = src.uc.i3;
+                    dst.us.i4 = src.uc.i4;
+                    xc->setFloatRegOperandBits(this, i, dst.ul);
+
+                    dst.us.i1 = src.uc.i5;
+                    dst.us.i2 = src.uc.i6;
+                    dst.us.i3 = src.uc.i7;
+                    dst.us.i4 = src.uc.i8;
+                    xc->setFloatRegOperandBits(this, i + 1, dst.ul);
+                }
+            } else {
+                panic("Invalid srcSize for movzx.");
+            }
+        '''
+
+    class Vmovtr(AVXOp):
+        def __init__(self, dest, src, srcSize, destVL):
+            super(Vmovtr, self).__init__(
+                dest=dest, src1=src, srcSize=srcSize, destVL=destVL
+            )
+        srcType = 'AVXOpBase::SrcType::Reg'
+        constructorCode = '''
+            this->addAVXDestRegs();
+            auto vRegs = destVL / sizeof(uint64_t);
+            _numSrcRegs = vRegs * 2;
+            for (int i = 0; i < vRegs * 2; ++i) {
+                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
+            }
+        '''
+        code = '''
+            auto vRegs = destVL / sizeof(uint64_t);
+            if (srcSize == 2) {
+                // 2 byte -> 1 byte.
+                for (int i = 0; i < vRegs; ++i) {
+                    FloatInt src, dst;
+                    src.ul = xc->readFloatRegOperandBits(this, i * 2);
+                    dst.uc.i1 = src.us.i1;
+                    dst.uc.i2 = src.us.i2;
+                    dst.uc.i3 = src.us.i3;
+                    dst.uc.i4 = src.us.i4;
+
+                    src.ul = xc->readFloatRegOperandBits(this, i * 2 + 1);
+                    dst.uc.i5 = src.us.i1;
+                    dst.uc.i6 = src.us.i2;
+                    dst.uc.i7 = src.us.i3;
+                    dst.uc.i8 = src.us.i4;
+
+                    xc->setFloatRegOperandBits(this, i, dst.ul);
+                }
+            } else {
+                panic("Invalid srcSize for movtr.");
             }
         '''
 
@@ -547,6 +650,29 @@ let {{
                     src.ul = xc->readFloatRegOperandBits(this, i);
                     src.ui.i1 = src.ui.i1 >> shift;
                     src.ui.i2 = src.ui.i2 >> shift;
+                    xc->setFloatRegOperandBits(this, i, src.ul);
+                }
+            }
+        '''
+
+    class Vshiftra(AVXRegImmOp):
+        # Logical shift right with sign extension.
+        code = '''
+            int shift = imm8;
+            auto vDestRegs = destVL / sizeof(uint64_t);
+            FloatInt src;
+            // Signed shift = Arithmetic shift (sign extension).
+            if (srcSize == 8) {
+                for (int i = 0; i < vDestRegs; ++i) {
+                    src.ul = xc->readFloatRegOperandBits(this, i);
+                    src.sl = src.sl >> shift;
+                    xc->setFloatRegOperandBits(this, i, src.ul);
+                }
+            } else if (srcSize == 4) {
+                for (int i = 0; i < vDestRegs; ++i) {
+                    src.ul = xc->readFloatRegOperandBits(this, i);
+                    src.si.i1 = src.si.i1 >> shift;
+                    src.si.i2 = src.si.i2 >> shift;
                     xc->setFloatRegOperandBits(this, i, src.ul);
                 }
             }

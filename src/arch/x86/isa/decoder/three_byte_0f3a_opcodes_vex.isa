@@ -52,6 +52,11 @@
                         0x0: VPEXTRB(Eq, Vo, Ib);
                     }
                 }
+                0x15: decode EVEX_L {
+                    0x0: decode REX_W {
+                        0x0: VPEXTRW(Eq, Vo, Ib);
+                    }
+                }
                 0x16: decode EVEX_L {
                     0x0: decode REX_W {
                         0x1: decode IMMEDIATE {

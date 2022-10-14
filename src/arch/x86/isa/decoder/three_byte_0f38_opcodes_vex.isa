@@ -43,6 +43,10 @@
                     0x1: VPACKUSDW(VYdo, WYdo);
                     0x0: VPACKUSDW(Vo, Wo);
                 }
+                0x30: decode EVEX_L {
+                    0x1: VPMOVZXBW(VYdo, WYdo);
+                    0x0: VPMOVZXBW(Vo, Wo);
+                }
                 0x58: decode EVEX_L {
                     0x1: VPBROADCASTD(VYdo, Wd);
                     0x0: VPBROADCASTD(Vo, Wd);

@@ -1,5 +1,13 @@
 microcode = '''
 
+def macroop VPSRLD_XMM_I {
+    vshiftrl dest=xmm0v, src=xmm0m, imm8="IMMEDIATE", size=4, VL=16
+};
+
+def macroop VPSRLD_YMM_I {
+    vshiftrl dest=xmm0v, src=xmm0m, imm8="IMMEDIATE", size=4, VL=32
+};
+
 def macroop VPSRLD_ZMM_I {
     vshiftrl dest=xmm0v, src=xmm0m, imm8="IMMEDIATE", size=4, VL=64
 };

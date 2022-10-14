@@ -1,19 +1,27 @@
 categories = [
     "vpaddd",
     "vpaddq",
+    "vpaddsw",
+    "vpaddw",
+    "vpaddsb",
+    "vpaddb",
     "vpandd",
     "vpcmpeqd",
     "vpsubq",
     "vpminsd",
     "vpminsq",
     "vpmuludq",
+    "vpmuldq",
+    "vpmullw",
     "vpmulld",
     "vpslld",
     "vpsllq",
     "vpslldq",
     "vpsrld",
     "vpsrlq",
+    "vpsraq",
     "vsqrtsd",
+    "vpsadbw",
 ]
 
 microcode = '''

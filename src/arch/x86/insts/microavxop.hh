@@ -113,6 +113,8 @@ protected:
     IntAnd,
     IntXor,
     IntCmpEq,
+    IntMul,
+    IntMulLow,
     UIntMul,
     UIntMulLow,
     SIntMin,

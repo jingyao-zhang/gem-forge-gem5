@@ -61,6 +61,8 @@ categories = [
     "vmovsldup",
     "vmovshdup",
     "vpmovdq",
+    "vpmovzxbw",
+    "vpmovwb",
     "vpackusdw",
     "vpackuswb",
     "vpextrb",

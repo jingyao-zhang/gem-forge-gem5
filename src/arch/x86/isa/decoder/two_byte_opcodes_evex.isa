@@ -236,6 +236,11 @@
                     0x2: decode EVEX_L_EXTEND {
                         0x2: VPSRLD(WZqo, Ib);
                     }
+                    0x4: decode REX_W {
+                        0x1: decode EVEX_L_EXTEND {
+                            0x2: VPSRAQ(WZqo, Ib);
+                        }
+                    }
                     0x6: decode EVEX_L_EXTEND {
                         0x2: VPSLLD64(WZqo, Ib);
                         0x1: VPSLLD32(WYdo, Ib);
@@ -294,6 +299,9 @@
                 0x4: decode EVEX_L_EXTEND {
                     0x2: VPADDQ(VZqo, WZqo);
                 }
+                0x5: decode EVEX_L_EXTEND {
+                    0x2: VPMULLW(VZqo, WZqo);
+                }
                 0x6: decode EVEX_L_EXTEND {
                     0x0: VMOVQ(Wq, Vq);
                 }
@@ -320,7 +328,18 @@
             }
         }
         0x1D: decode LEGACY_DECODEVAL {
+            // 0x66
             0x1: decode OPCODE_OP_BOTTOM3 {
+                0x4: decode EVEX_L {
+                    0x2: VPADDSB(VZqo, WZqo);
+                    0x1: VPADDSB(VYdo, WYdo);
+                    0x0: VPADDSB(Vo, Wo);
+                }
+                0x5: decode EVEX_L {
+                    0x2: VPADDSW(VZqo, WZqo);
+                    0x1: VPADDSW(VYdo, WYdo);
+                    0x0: VPADDSW(Vo, Wo);
+                }
                 0x7: decode EVEX_L {
                     0x2: VPXOR(VZqo, WZqo);
                     0x1: VPXOR(VYdo, WYdo);

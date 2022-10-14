@@ -99,6 +99,11 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
       dest.si.i1 = (src1.si.i1 == src2.si.i1) ? 0xFFFF : 0x0;
       dest.si.i2 = (src1.si.i2 == src2.si.i2) ? 0xFFFF : 0x0;
       break;
+    case BinaryOp::IntMul:
+      // Multiplication will double the size.
+      dest.si.i1 = src1.ss.i1 * src2.ss.i1;
+      dest.si.i2 = src1.ss.i3 * src2.ss.i3;
+      break;
     case BinaryOp::UIntMul:
       // Multiplication will double the size.
       dest.ui.i1 = src1.us.i1 * src2.us.i1;
@@ -112,6 +117,41 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
     case BinaryOp::SIntMin:
       dest.si.i1 = std::min(src1.si.i1, src2.si.i1);
       dest.si.i2 = std::min(src1.si.i2, src2.si.i2);
+      break;
+    }
+  } else if (this->srcSize == 2) {
+    // 4 short;
+    switch (op) {
+    default:
+      assert(false && "Invalid op type.");
+    case BinaryOp::IntAdd:
+      dest.ss.i1 = src1.ss.i1 + src2.ss.i1;
+      dest.ss.i2 = src1.ss.i2 + src2.ss.i2;
+      dest.ss.i3 = src1.ss.i3 + src2.ss.i3;
+      dest.ss.i4 = src1.ss.i4 + src2.ss.i4;
+      break;
+    case BinaryOp::IntMulLow:
+      // Keep the lower short.
+      dest.ss.i1 = src1.ss.i1 * src2.ss.i1;
+      dest.ss.i2 = src1.ss.i2 * src2.ss.i2;
+      dest.ss.i3 = src1.ss.i3 * src2.ss.i3;
+      dest.ss.i4 = src1.ss.i4 * src2.ss.i4;
+      break;
+    }
+  } else if (this->srcSize == 1) {
+    // 4 short;
+    switch (op) {
+    default:
+      assert(false && "Invalid op type.");
+    case BinaryOp::IntAdd:
+      dest.sc.i1 = src1.sc.i1 + src2.sc.i1;
+      dest.sc.i2 = src1.sc.i2 + src2.sc.i2;
+      dest.sc.i3 = src1.sc.i3 + src2.sc.i3;
+      dest.sc.i4 = src1.sc.i4 + src2.sc.i4;
+      dest.sc.i5 = src1.sc.i5 + src2.sc.i5;
+      dest.sc.i6 = src1.sc.i6 + src2.sc.i6;
+      dest.sc.i7 = src1.sc.i7 + src2.sc.i7;
+      dest.sc.i8 = src1.sc.i8 + src2.sc.i8;
       break;
     }
   } else {
@@ -151,6 +191,10 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
       break;
     case BinaryOp::IntCmpEq:
       dest.sl = (src1.sl == src2.sl) ? 0xFFFFFFFF : 0x0;
+      break;
+    case BinaryOp::IntMul:
+      // Multiplication will double the size.
+      dest.sl = src1.si.i1 * src2.si.i1;
       break;
     case BinaryOp::UIntMul:
       // Multiplication will double the size.

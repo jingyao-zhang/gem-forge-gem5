@@ -282,6 +282,10 @@
                     0x0: VPSHUFD(Vo, Wo, Ib);
                 }
                 0x2: decode MODRM_REG {
+                    0x2: decode EVEX_L {
+                        0x1: VPSRLD(WYdo, Ib);
+                        0x0: VPSRLD(Wo, Ib);
+                    }
                     0x6: decode EVEX_L_EXTEND {
                         0x1: VPSLLD32(WYdo, Ib);
                         0x0: VPSLLD16(Wo, Ib);
@@ -349,10 +353,14 @@
             0x4: decode OPCODE_OP_BOTTOM3 {
                 default: UD2();
             }
+            // 0x66
             0x1: decode OPCODE_OP_BOTTOM3 {
                 0x4: decode EVEX_L {
                     0x1: VPADDQ(VYdo, WYdo);
                     0x0: VPADDQ(Vo,Wo);
+                }
+                0x5: decode EVEX_L {
+                    0x1: VPMULLW(VYdo, WYdo);
                 }
                 0x6: decode EVEX_L {
                     0x0: VMOVQ(Wq, Vq);
@@ -383,12 +391,28 @@
                     0x0: VPMULUDQ(Vo, Wo);
                 }
             }
+            // operand size (0x66)
+            0x1: decode OPCODE_OP_BOTTOM3 {
+                0x6: decode EVEX_L {
+                    0x1: VPSADBW(VYdo, WYdo);
+                    0x0: VPSADBW(Vo, Wo);
+                }
+            }
         }
         0x1F: decode LEGACY_DECODEVAL {
+            // 0x66
             0x1: decode OPCODE_OP_BOTTOM3 {
                 0x3: decode EVEX_L_EXTEND {
                     0x1: VPSUBQ(VYdo, WYdo);
                     0x0: VPSUBQ(Vo, Wo);
+                }
+                0x4: decode EVEX_L{
+                    0x1: VPADDB(VYdo, WYdo);
+                    0x0: VPADDB(Vo, Wo);
+                }
+                0x5: decode EVEX_L {
+                    0x1: VPADDW(VYdo, WYdo);
+                    0x0: VPADDW(Vo, Wo);
                 }
                 0x6: decode EVEX_L {
                     0x1: VPADDD(VYdo, WYdo);

@@ -60,12 +60,15 @@ enum EVEXTupleType {
  * 66 5E vdivpd         FULL
  * 66 67 vpackuswb      FULL_MEM
  * 66 6F vmovdqa(load)  FULL_MEM
- * 66 72 vpslld/vpsrld  FULL
+ * 66 72 vpslld/vpsrld/vpsraq  FULL
  * 66 73 vpsllq/vpsrlq  FULL
  * 66 7F vmovdqa(store) FULL_MEM
  * 66 D4 vpaddq         FULL
+ * 66 D5 vpmullw        FULL_MEM
  * 66 D6 vmovq          TUPLE1_SCALAR
- * 66 EF vpxord          FULL
+ * 66 EC vpaddsb        FULL_MEM
+ * 66 ED vpaddsw        FULL_MEM
+ * 66 EF vpxord         FULL
  * 66 FB vpsubq         FULL
  * 66 FE vpaddd         FULL
  */
@@ -85,8 +88,8 @@ const EVEXTupleType EVEXTupleTypeTwoByte66[256] =
 /*  A */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  B */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  C */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  D */ O , O , O , O , FU, O , TS, O , O , O , O , O , O , O , O , O ,
-/*  E */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , FU,
+/*  D */ O , O , O , O , FU, FM, TS, O , O , O , O , O , O , O , O , O ,
+/*  E */ O , O , O , O , O , O , O , O , O , O , O , O , FM, FM, O , FU,
 /*  F */ O , O , O , O , FU, O , O , O , O , O , O , FU, O , O , FU, O
     };
 /****************************************************************
@@ -192,10 +195,13 @@ const EVEXTupleType EVEXTupleTypeTwoByte[256] =
  *   66 18 vbroadcastss           TUPLE1_SCALAR
  *   66 19 vbroadcastsd(W1)       TUPLE1_SCALAR
  * ! 66 19 vbroadcastf32x2(W0)    TUPLE2
+ *   66 28 vpmuldq                FULL
  *   66 2B vpackusdw              FULL
  *   66 39 vpminsd,vpminsq        FULL
  *   66 40 vpmulld                FULL
  *   66 58 vbroadcastd            TUPLE1_SCALAR
+ *   66 7A vbroadcastb            TUPLE1_SCALAR
+ *   66 7B vbroadcastw            TUPLE1_SCALAR
  *   66 98 vfmadd132ps            FULL
  *   66 A8 vfmadd213ps            FULL
  *   66 AC vfnmadd213ps           FULL
@@ -208,12 +214,12 @@ const EVEXTupleType EVEXTupleTypeThreeByte660F38[256] =
 // MSB   O | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
 /*  O */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  1 */ O , O , O , O , O , O , O , O , TS, TS, O , O , O , O , O , O ,
-/*  2 */ O , O , O , O , O , O , O , O , O , O , O , FU, O , O , O , O ,
+/*  2 */ O , O , O , O , O , O , O , O , FU, O , O , FU, O , O , O , O ,
 /*  3 */ O , O , O , O , O , O , O , O , O , FU, O , O , O , O , O , O ,
 /*  4 */ FU, O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  5 */ O , O , O , O , O , O , O , O , TS, O , O , O , O , O , O , O ,
 /*  6 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  7 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  7 */ O , O , O , O , O , O , O , O , O , O , TS, TS, O , O , O , O ,
 /*  8 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  9 */ O , O , O , O , O , O , O , O , FU, O , O , O , O , O , O , O ,
 /*  A */ O , O , O , O , O , O , O , O , FU, O , O , O , FU, TS, O , O ,

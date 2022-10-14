@@ -44,6 +44,13 @@
                         0x1: VBROADCASTSD(VYdo, Wq);
                     }
                 }
+                0x28: decode REX_W {
+                    0x1: decode EVEX_L_EXTEND {
+                        0x2: VPMULDQ(VZqo, WZqo);
+                        0x1: VPMULDQ(VYdo, WYdo);
+                        0x0: VPMULDQ(Vo, Wo);
+                    }
+                }
                 0x2B: decode REX_W {
                     0x0: decode EVEX_L_EXTEND {
                         0x2: VPACKUSDW(VZqo, WZqo);
@@ -82,7 +89,20 @@
                         0x2: VPBROADCASTQ(VZqo, Wq);
                     }
                 }
+                0x7A: decode REX_W {
+                    0x0: decode EVEX_L_EXTEND {
+                        0x2: VPBROADCASTB(VZqo, Eqo);
+                    }
+                }
+                0x7B: decode REX_W {
+                    0x0: decode EVEX_L_EXTEND {
+                        0x2: VPBROADCASTW(VZqo, Eqo);
+                    }
+                }
                 0x7C: decode REX_W {
+                    0x0: decode EVEX_L_EXTEND {
+                        0x2: VPBROADCASTD(VZqo, Eqo);
+                    }
                     0x1: decode EVEX_L_EXTEND {
                         0x2: VPBROADCASTQ(VZqo, Eqo);
                     }
@@ -172,6 +192,11 @@
             }
             // 0xF3
             0x4: decode OPCODE_OP {
+                0x30: decode REX_W {
+                    0x0: decode EVEX_L_EXTEND {
+                        0x2: VPMOVWB(WYdo, VZqo);
+                    }
+                }
                 0x35: decode REX_W {
                     0x0: decode EVEX_L_EXTEND {
                         0x2: VPMOVDQ(WYdo, VZqo);
