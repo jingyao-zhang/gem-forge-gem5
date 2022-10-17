@@ -45,6 +45,8 @@ public:
   void sendSyncToMLC(int sentPackets);
 
 private:
+  friend class MLCPUMManager;
+
   LLCStreamEngine *se;
   AbstractStreamAwareController *controller;
 

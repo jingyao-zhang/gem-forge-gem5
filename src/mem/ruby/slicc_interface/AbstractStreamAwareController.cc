@@ -182,6 +182,7 @@ void AbstractStreamAwareController::regStats() {
   pum_stats(PrefetchCycles);
   pum_stats(CompileCycles);
   pum_stats(ComputeCycles);
+  pum_stats(ComputeBits);
   pum_stats(DataMoveCycles);
   pum_stats(ReduceCycles);
   pum_stats(MixCycles);
@@ -208,7 +209,7 @@ void AbstractStreamAwareController::regStats() {
       .precision(6);
   m_statPUMNormalAccessAvgDelayCycles =
       m_statPUMNormalAccessDelayCycles / m_statPUMNormalAccessConflicts;
-#undef pum_cycles
+#undef pum_stats
 
   // Register stats callback.
   Stats::registerResetCallback(

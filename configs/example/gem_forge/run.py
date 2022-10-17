@@ -317,6 +317,9 @@ parser.add_option("--gem-forge-stream-pum-compile-lat-per-cmd", type="int",
                   help="Compiling latency per cmd.")
 parser.add_option("--gem-forge-stream-pum-prefetch-level", type="choice", default="llc",
                   choices=['llc', 'mem', 'none'], help="Where to execute the PUMPrefetch stream.")
+parser.add_option("--gem-forge-stream-pum-optimized-directory",
+                  action="store", type="string", default="",
+                  help="Directory containing optimized tdfgs")
 
 # Stream in Mem Options.
 parser.add_option("--gem-forge-stream-engine-enable-float-mem", action="store_true", default=False,

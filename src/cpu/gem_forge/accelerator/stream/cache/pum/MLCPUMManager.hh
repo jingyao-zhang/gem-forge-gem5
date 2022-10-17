@@ -3,7 +3,6 @@
 
 // Temporary: Non-destructively add equality graph optimization code.
 #include "cpu/static_inst_fwd.hh"
-#define EG_OPT
 
 #include "../MLCStreamEngine.hh"
 #include "proto/protoio.hh"
@@ -296,7 +295,8 @@ private:
      * Fields for Compute node.
      */
     PUMComputeStreamGroup *group = nullptr;
-#ifdef EG_OPT
+
+    // For e-graph.
     enum CompValueE { None, ConstFloat, ConstInt };
     CompValueE compValTy;
     union {
@@ -312,7 +312,8 @@ private:
                                              const AffinePattern &_splitOutDim,
                                              int _scalarElemSize,
                                              PUMComputeStreamGroup *_group);
-#else  // EG_OPT
+
+    // For regular execution.
     ExecFuncPtr func = nullptr;
     static PUMDataGraphNode *newCmpNode(const std::string &_regionName,
                                         const AffinePattern &_pumTile,
@@ -320,17 +321,15 @@ private:
                                         const AffinePattern &_splitOutDim,
                                         int _scalarElemSize, ExecFuncPtr _func,
                                         PUMComputeStreamGroup *_group);
-#endif // EG_OPT
 
     /**
      * Fields for Sync node.
      */
     static PUMDataGraphNode *newSyncNode();
 
-#ifdef EG_OPT
     // FIX: Temporary dummy declaration for register nodes
-    PUMDataGraphNode(TypeE _type) : type(_type) {}
-#endif // EG_OPT
+    PUMDataGraphNode(const TypeE _type, const AffinePattern _pumTile)
+        : type(_type), pumTile(_pumTile) {}
 
   private:
     // A basic constructor for basic fields.
@@ -347,7 +346,6 @@ private:
                                   const MLCPUMManager::PUMDataGraphNode &node);
   friend std::string to_string(const MLCPUMManager::PUMDataGraphNode &node);
 
-#ifdef EG_OPT
   /**
    * Bidirectional map (left & right types must be different).
    * Implements: insert, empty, size, count, at.
@@ -385,13 +383,15 @@ private:
     const R &at(const L &l) const { return this->left.at(l); }
     const L &at(const R &r) const { return this->right.at(r); }
   };
+
+  // Protobuf types
+  using TDFGNodeId = decltype(std::declval<::LLVM::TDG::TDFG::Node>().id());
   using TDFGConfigPtr = decltype(std::declval<::LLVM::TDG::TDFG::Node>()
                                      .mutable_load()
                                      ->send_config_ptr());
   using TDFGComputeNodePtr = decltype(std::declval<::LLVM::TDG::TDFG::Node>()
                                           .mutable_compute()
                                           ->compute_node_ptr());
-#endif // EG_OPT
 
   /**
    * Track states of PUM.
@@ -405,11 +405,13 @@ private:
     static int64_t nextContextId;
     static int64_t allocateContextId() { return nextContextId++; }
 
-#ifdef EG_OPT
+    // FIX: Remove this since it's ultimately not used. We run optimizations
+    // FIX: offline so simulation variables don't really matter.
+    std::unordered_map<TDFGNodeId, TDFGNodeId> originalToCurNodeMap;
     // Map from ConfigPtr <-> TDFGConfigPtrId
     BiMap<ConfigPtr, TDFGConfigPtr> configMap;
     BiMap<PUMDataGraphNode *, TDFGComputeNodePtr> computeNodeMap;
-#endif // EG_OPT
+
     friend class MLCPUMManager;
 
   public:
@@ -433,10 +435,9 @@ private:
     CacheStreamConfigureVec prefetchConfigs;
     // Saved pkt when waiting for prefetching.
     PacketPtr savedPkt = nullptr;
-#ifdef EG_OPT
+
     // TDFG for equality graph optimization.
     ::LLVM::TDG::TDFG tdfg;
-#endif // EG_OPT
 
     /**
      * States during compiling and executing PUM.
@@ -542,12 +543,22 @@ private:
                                const AffinePattern &pat,
                                AffinePattern &splitOutDim);
 
-#ifdef EG_OPT
-  using TDFGNodeID = decltype(std::declval<::LLVM::TDG::TDFG::Node>().id());
-  using TDFGNodeVec = std::vector<TDFGNodeID>;
+  // E-Graph optimization specific.
   void buildTDFG(PUMContext &context, const std::string &prefix);
-  void dumpTDFGToJson(const ::LLVM::TDG::TDFG &tdfg, const std::string &prefix);
-#endif //  EG_OPT
+  void dumpTDFG(const ::LLVM::TDG::TDFG &tdfg, const std::string &prefix);
+
+  // std::string getOptimizerOutputDirectory() const;
+  std::pair<bool, ::LLVM::TDG::TDFG>
+  tryLoadOptimizerTDFG(bool isOptimized, const std::string &prefix) const;
+
+  std::pair<bool, std::unordered_map<TDFGNodeId, TDFGNodeId>>
+  mapOriginalToCurrentTDFG(const PUMContext &context,
+                           const ::LLVM::TDG::TDFG &original) const;
+
+  std::vector<PUMDataGraphNode *>
+  rebuildTDFG(const PUMContext &context, const ::LLVM::TDG::TDFG &optimized,
+              const std::unordered_map<TDFGNodeId, TDFGNodeId>
+                  &originalToCurNodeMap) const;
 
   /**
    * Try to merge some Move nodes if they are moving the same array but only
@@ -587,6 +598,8 @@ private:
    * Compile the computation instruction.
    */
   void compileCompute(PUMContext &context, PUMDataGraphNode *node);
+
+  Cycles estimateComputeBits(const PUMCommand &command);
 
   /**
    * Compile the final reduction instruction.

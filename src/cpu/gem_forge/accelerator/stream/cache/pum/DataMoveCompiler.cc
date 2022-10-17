@@ -216,8 +216,8 @@ DataMoveCompiler::compileStreamPair(AffinePattern srcStream,
   auto dstMasks = this->turnStrideIntoMask(dstStream);
 
   // Generate the start alignments.
-  auto srcStarts = getSubRegionStart(srcStream);
-  auto dstStarts = getSubRegionStart(dstStream);
+  auto srcStarts = this->getSubRegionStart(srcStream);
+  auto dstStarts = this->getSubRegionStart(dstStream);
 
   std::vector<std::pair<int64_t, int64_t>> aligns;
   for (auto i = 0; i < dimension; ++i) {
