@@ -139,6 +139,7 @@ void StreamNUCAManager::setProperty(Addr start, uint64_t property,
     CASE(PUM_NO_INIT);
     CASE(PUM_TILE_SIZE_DIM0);
     CASE(REDUCE_DIM);
+    CASE(BROADCAST_DIM);
 
 #undef CASE
   }
@@ -1348,12 +1349,16 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
     if (this->enablePUMTiling) {
       auto &x = tileSizes.at(alignDims.at(0));
       auto &y = tileSizes.at(alignDims.at(1));
-      if (!this->forcePUMTilingSize.empty()) {
+
+      bool tileSizeChosen = false;
+      if (!tileSizeChosen && !this->forcePUMTilingSize.empty()) {
         x = std::min(this->forcePUMTilingSize.front(),
                      arraySizes.at(alignDims.at(0)));
         y = vBitlines / x;
-      } else if (region.userDefinedProperties.count(
-                     RegionProperty::REDUCE_DIM)) {
+        tileSizeChosen = true;
+      }
+      if (!tileSizeChosen &&
+          region.userDefinedProperties.count(RegionProperty::REDUCE_DIM)) {
 
         /**
          * We add a special case for reducing over inner dim.
@@ -1374,7 +1379,33 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
           x = std::min(vBitlines, 64l);
         }
         y = vBitlines / x;
-      } else if (arraySizes.at(alignDims.at(0)) <= 128) {
+        tileSizeChosen = true;
+      }
+
+      if (!tileSizeChosen &&
+          region.userDefinedProperties.count(RegionProperty::BROADCAST_DIM)) {
+
+        /**
+         * We add a special case for reducing over inner dim.
+         * This is used to balance the stream and pum reduction,
+         * e.g. mm_inner.
+         */
+
+        auto broadcastDim =
+            region.userDefinedProperties.at(RegionProperty::BROADCAST_DIM);
+        assert(alignDims.at(0) == broadcastDim);
+        auto broadcastDimArraySize = arraySizes.at(broadcastDim);
+
+        if (broadcastDimArraySize > vBitlines) {
+          // Favor small tiling sizes on inner broadcast dim to increase
+          // bandwidth.
+          x = std::min(vBitlines, 4l);
+          y = vBitlines / x;
+          tileSizeChosen = true;
+        }
+      }
+
+      if (!tileSizeChosen && arraySizes.at(alignDims.at(0)) <= 128) {
 
         /**
          * Special rule when the inner dimension is very small. We heuristically
@@ -1383,8 +1414,11 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
          */
         x = std::min(vBitlines, 64l);
         y = vBitlines / x;
+        tileSizeChosen = true;
+      }
 
-      } else {
+      if (!tileSizeChosen) {
+        // Default case.
         // Balance x and y and favor y when tied.
         x = vBitlines;
         y = 1;
@@ -1392,6 +1426,7 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
           y *= 2;
           x /= 2;
         }
+        tileSizeChosen = true;
       }
     } else {
       // Tiling is not enabled, however, we tile to handle the case when dim0 <
@@ -1429,14 +1464,44 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
           }
         }
       } else {
-        x = vBitlines;
-        y = 1;
-        z = 1;
-        while (y * 4 < x) {
-          x /= 4;
-          y *= 2;
-          z *= 2;
+        /**
+         * We try to sellect the middle of the design space.
+         * Prioritize balance the outer dim.
+         */
+        auto sx = arraySizes.at(alignDims.at(0));
+        auto sy = arraySizes.at(alignDims.at(1));
+        auto sz = arraySizes.at(alignDims.at(2));
+        auto chooseMiddleTileSize = [](int64_t min, int64_t max) -> int64_t {
+          std::vector<int64_t> validTileSizes;
+          int64_t x = 1;
+          while (x <= max) {
+            if (x >= min) {
+              validTileSizes.push_back(x);
+            }
+            x *= 2;
+          }
+          assert(!validTileSizes.empty());
+          return validTileSizes.at(validTileSizes.size() / 2);
+        };
+        {
+          auto zTileMin = std::max(vBitlines / (sx * sy), 1l);
+          auto zTileMax = std::min(vBitlines, sz);
+          assert(zTileMax > zTileMin);
+          z = chooseMiddleTileSize(zTileMin, zTileMax);
+          auto yTileMin = std::max(vBitlines / (sx * z), 1l);
+          auto yTileMax = std::min(vBitlines / (z), sy);
+          assert(yTileMax > yTileMin);
+          y = chooseMiddleTileSize(yTileMin, yTileMax);
+          x = vBitlines / (y * z);
         }
+        // x = vBitlines;
+        // y = 1;
+        // z = 1;
+        // while (y * 4 < x) {
+        //   x /= 4;
+        //   y *= 2;
+        //   z *= 2;
+        // }
       }
     } else {
       // Tiling is not enabled, however, we tile to handle the case when dim0 <

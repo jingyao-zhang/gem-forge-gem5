@@ -106,6 +106,8 @@ enum StreamNUCARegionProperty {
   STREAM_NUCA_REGION_PROPERTY_PUM_TILE_SIZE_DIM0,
   // Specify which dimension we are going to reduce over.
   STREAM_NUCA_REGION_PROPERTY_REDUCE_DIM,
+  // Specify which dimension we are going to broadcast.
+  STREAM_NUCA_REGION_PROPERTY_BROADCAST_DIM,
 };
 void m5_stream_nuca_set_property(void *buffer,
                                  enum StreamNUCARegionProperty property,

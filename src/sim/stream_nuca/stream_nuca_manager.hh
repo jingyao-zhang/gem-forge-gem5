@@ -35,6 +35,7 @@ public:
     PUM_NO_INIT,
     PUM_TILE_SIZE_DIM0,
     REDUCE_DIM,
+    BROADCAST_DIM,
   };
   void setProperty(Addr start, uint64_t property, uint64_t value);
 

@@ -306,6 +306,9 @@ parser.add_option("--gem-forge-stream-pum-enable-parallel-intra-array-shift", ty
 parser.add_option("--gem-forge-stream-pum-enable-parallel-inter-array-shift", type="int",
                   action="store", default="1",
                   help="Whether inter-array shift can happen in parallel.")
+parser.add_option("--gem-forge-stream-pum-enable-parallel-way-read", type="int",
+                  action="store", default="1",
+                  help="Whether parallelize way read.")
 parser.add_option("--gem-forge-stream-pum-optimize-dfg", type="int",
                   action="store", default="1",
                   help="Enable tDFG optimization (e.g., merging, scheduling).")

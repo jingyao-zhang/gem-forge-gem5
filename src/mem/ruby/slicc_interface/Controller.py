@@ -154,6 +154,8 @@ class RubyStreamAwareController(RubyController):
         Param.Bool(False, "Whether intra-array shift can happen in parallel.")
     stream_pum_enable_parallel_inter_array_shift = \
         Param.Bool(False, "Whether inter-array shift can happen in parallel.")
+    stream_pum_enable_parallel_way_read = \
+        Param.Bool(False, "Whether way read can happen in parallel.")
     stream_pum_optimize_dfg = \
         Param.Bool(True, "Whether MLCPUMManager optimizes the PUM tDFG.")
     stream_pum_optimize_dfg_expand_tensor = \

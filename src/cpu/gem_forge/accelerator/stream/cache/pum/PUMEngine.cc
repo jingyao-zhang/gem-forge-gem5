@@ -325,6 +325,19 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
          ++level, numSubTreeNodes *= hwConfig->tree_degree) {
       int64_t levelArrays = 0;
       for (const auto &splitPattern : command.inter_array_splits[level]) {
+
+        // Arrays within the same way could be shifted in parallel.
+        int64_t touchedWays = 1;
+        for (auto i = 1; i < splitPattern.getTotalTrip(); ++i) {
+          auto arrayIdx = splitPattern(i);
+          auto prevArrayIdx = splitPattern(i - 1);
+          auto wayIdx = arrayIdx / this->hwConfig->array_per_way;
+          auto prevWayIdx = prevArrayIdx / this->hwConfig->array_per_way;
+          if (prevWayIdx != wayIdx) {
+            touchedWays++;
+          }
+        }
+
         // TODO: Intersect with LLC array masks.
         if (level + 1 == numLevels) {
           /**
@@ -334,7 +347,19 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
            */
           auto numInterBankTiles =
               std::min(splitPattern.getTrips().front(), totalTiles);
-          levelArrays += numInterBankTiles;
+
+          // This is the inter-way level. Can always shift in parallel.
+          if (this->controller->myParams->stream_pum_enable_parallel_way_read) {
+            auto chargedTiles =
+                std::min(numInterBankTiles, this->hwConfig->way_per_bank);
+            levelArrays += chargedTiles;
+            this->controller->m_statPUMInterBankShiftCycles +=
+                chargedTiles * latencyPerArray;
+          } else {
+            levelArrays += numInterBankTiles;
+            this->controller->m_statPUMInterBankShiftCycles +=
+                numInterBankTiles * latencyPerArray;
+          }
 
           auto srcArrayIdx = this->hwConfig->get_array_per_bank() * myBankIdx +
                              splitPattern.start;
@@ -353,8 +378,6 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
 
           this->controller->m_statPUMInterBankShiftBits +=
               command.wordline_bits * numInterBankBitlines;
-          this->controller->m_statPUMInterBankShiftCycles +=
-              numInterBankTiles * latencyPerArray;
 
           LLC_SE_DPRINTF("Bank %d -> %d Array %d -> %d Bitlines %d.\n",
                          myBankIdx, dstBankIdx, srcArrayIdx, dstArrayIdx,
@@ -379,12 +402,19 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
               shiftedArrays * level;
 
           auto accessedArrays = shiftedArrays;
-          if (this->controller->myParams
-                  ->stream_pum_enable_parallel_inter_array_shift) {
-            accessedArrays = shiftedArrays;
+          if (level + 2 == numLevels) {
+
+            // This is the inter-way level. Can always shift in parallel.
+            if (this->controller->myParams
+                    ->stream_pum_enable_parallel_way_read) {
+              accessedArrays = std::min(shiftedArrays, touchedWays);
+            } else {
+              accessedArrays = shiftedArrays;
+            }
+
           } else {
-            if (level + 2 == numLevels) {
-              // This is the inter-way level. Can always shift in parallel.
+            if (this->controller->myParams
+                    ->stream_pum_enable_parallel_inter_array_shift) {
               accessedArrays = shiftedArrays;
             } else {
               // Intra-way inter-array level.

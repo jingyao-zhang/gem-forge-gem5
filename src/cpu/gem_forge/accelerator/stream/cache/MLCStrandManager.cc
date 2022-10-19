@@ -178,10 +178,17 @@ bool MLCStrandManager::precheckSplitable(StrandSplitContext &context,
     return false;
   }
   if (config->getTotalTripCount() < 128) {
-    STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
-                "[NoSplit] Short TripCount %ld.\n",
-                config->getTotalTripCount());
-    return false;
+    /**
+     * HACK: For ASPLOS I force split for array_sum_split2d.
+     */
+    if (config->stream->getStreamName().find("omp_array_sum_avx") !=
+        std::string::npos) {
+    } else {
+      STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+                  "[NoSplit] Short TripCount %ld.\n",
+                  config->getTotalTripCount());
+      return false;
+    }
   }
   // 2.
   if (config->floatPlan.isMixedFloat()) {

@@ -681,6 +681,9 @@ void Stream::extractExtraInputValues(DynStream &dynS,
    */
   assert(inputVec && "Missing InputVec.");
   const auto &mergedPredicatedStreams = this->getMergedPredicatedStreams();
+
+  int inputIdx = 0;
+
   if (mergedPredicatedStreams.size() > 0) {
     const auto &predFuncInfo = this->getPredicateFuncInfo();
     if (!this->predCallback) {
@@ -693,6 +696,7 @@ void Stream::extractExtraInputValues(DynStream &dynS,
         this->setupFormalParams(inputVec, predFuncInfo, predFormalParams);
     // Consume these inputs.
     inputVec->erase(inputVec->begin(), inputVec->begin() + usedInputs);
+    inputIdx += usedInputs;
   }
   /**
    * Handle StoreFunc.
@@ -710,6 +714,7 @@ void Stream::extractExtraInputValues(DynStream &dynS,
         this->setupFormalParams(inputVec, storeFuncInfo, storeFormalParams);
     // Consume these inputs.
     inputVec->erase(inputVec->begin(), inputVec->begin() + usedInputs);
+    inputIdx += usedInputs;
   }
   if (this->getEnabledLoadFunc()) {
     const auto &info = this->getLoadFuncInfo();
@@ -731,6 +736,7 @@ void Stream::extractExtraInputValues(DynStream &dynS,
           this->setupFormalParams(inputVec, info, loadFormalParams);
       // Consume these inputs.
       inputVec->erase(inputVec->begin(), inputVec->begin() + usedInputs);
+      inputIdx += usedInputs;
     }
   }
   /**
@@ -745,15 +751,45 @@ void Stream::extractExtraInputValues(DynStream &dynS,
              "Missing initial value for Reduce/PtrChase stream.");
       dynS.initialValue = inputVec->front();
       inputVec->erase(inputVec->begin());
+      inputIdx++;
     }
 
     if (this->isTripCountFixed()) {
       uint64_t tripCount = 1;
       for (int loopLevel = this->getLoopLevel();
            loopLevel >= this->getConfigLoopLevel(); --loopLevel) {
-        assert(!inputVec->empty() && "Missing FixTripCount value.");
-        auto loopTripCount = inputVec->front().uint64();
-        inputVec->erase(inputVec->begin());
+        uint64_t loopTripCount;
+
+        if (inputIdx <
+            this->primeLogical->info.static_info().iv_pattern().params_size()) {
+
+          const auto &protoParam =
+              this->primeLogical->info.static_info().iv_pattern().params(
+                  inputIdx);
+          if (protoParam.is_static()) {
+            loopTripCount = protoParam.value();
+          } else {
+            if (inputVec->empty()) {
+              DYN_S_PANIC(dynS.dynStreamId,
+                          "[FixTripCount] Missing for LoopLevel %d "
+                          "ConfigLoopLevel %d.\n",
+                          loopLevel, this->getConfigLoopLevel());
+            }
+            loopTripCount = inputVec->front().uint64();
+            inputVec->erase(inputVec->begin());
+            inputIdx++;
+          }
+        } else {
+          if (inputVec->empty()) {
+            DYN_S_PANIC(dynS.dynStreamId,
+                        "[FixTripCount] Missing for LoopLevel %d "
+                        "ConfigLoopLevel %d.\n",
+                        loopLevel, this->getConfigLoopLevel());
+          }
+          loopTripCount = inputVec->front().uint64();
+          inputVec->erase(inputVec->begin());
+          inputIdx++;
+        }
         DYN_S_DPRINTF(dynS.dynStreamId,
                       "[FixTripCount] LoopLevel %d TripCount %lu x "
                       "TotalTripCount %lu = %lu.\n",
@@ -1021,8 +1057,8 @@ const ExecFuncPtr &Stream::getComputeCallback() const {
     return this->loadCallback;
   } else if (this->isAtomicComputeStream()) {
     /**
-     * AtomicOp has two callbacks, here I just return StoreCallback to estimate
-     * MicroOps and Latency.
+     * AtomicOp has two callbacks, here I just return StoreCallback to
+     * estimate MicroOps and Latency.
      */
     return this->storeCallback;
   } else {
@@ -1182,8 +1218,9 @@ void Stream::handleMergedPredicate(const DynStream &dynS,
   //   // They should be configured by the same configure instruction.
   //   const auto &predDynS = predS->getDynStream(dynS.configSeqNum);
   //   if (predS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
-  //     auto predElement = predDynS.getElementByIdx(element->FIFOIdx.entryIdx);
-  //     if (!predElement) {
+  //     auto predElement =
+  //     predDynS.getElementByIdx(element->FIFOIdx.entryIdx); if
+  //     (!predElement) {
   //       S_ELEMENT_PANIC(element, "Failed to get predicated element.");
   //     }
   //     this->performStore(predDynS, predElement, predDynS.constUpdateValue);
