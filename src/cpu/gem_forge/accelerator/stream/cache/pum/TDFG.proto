@@ -108,4 +108,18 @@ message TDFG {
 /**
  * List of TDFG nodes (used to describe schedule).
  */
-message TDFGNodeList { repeated TDFG.Node nodes = 1; }
+message TDFGSchedule {
+  message Node {
+    enum Action {
+      NORMAL = 0;
+      SPILL = 1;
+      LOAD = 2;
+    }
+
+    uint32 node_id = 3;
+    uint32 reg_id = 4;
+    Action action = 5;
+  }
+
+  repeated Node nodes = 1;
+}

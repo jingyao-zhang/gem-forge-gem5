@@ -1,22 +1,29 @@
 #include "MLCPUMManager.hh"
 #include "PUMEngine.hh"
 
+#include <algorithm>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <google/protobuf/util/json_util.h>
+#include <utility>
+
 #include "../../stream_float_policy.hh"
+
 #include "../LLCStreamEngine.hh"
 #include "../MLCStrandManager.hh"
 
 #include "cpu/gem_forge/accelerator/stream/addr_gen_callback.hh"
 #include "cpu/gem_forge/accelerator/stream/cache/CacheStreamConfigureData.hh"
+#include "cpu/gem_forge/accelerator/stream/cache/pum/PUMEngine.hh"
+#include "cpu/gem_forge/accelerator/stream/cache/pum/TDFG.pb.h"
 #include "sim/stream_nuca/stream_nuca_manager.hh"
 #include "sim/stream_nuca/stream_nuca_map.hh"
-
-#include <google/protobuf/util/json_util.h>
 
 #include "arch/x86/regs/float.hh"
 #include "arch/x86/regs/int.hh"
 
 #include "debug/MLCStreamPUM.hh"
-#include <algorithm>
 
 #define DEBUG_TYPE MLCStreamPUM
 #include "../../stream_log.hh"
@@ -37,6 +44,10 @@
   }
 
 int64_t MLCPUMManager::PUMContext::nextContextId = 0;
+
+static std::map<std::string, int> prefixDumpCountMap;
+static int dumpCount = 0;
+const std::string tdfg_folder = "stream_pum_tdfg";
 
 AffinePattern MLCPUMManager::PatternInfo::getPatternAdjustedByOuterIter(
     int64_t patternIdx, int64_t outerIter) const {
@@ -151,7 +162,6 @@ MLCPUMManager::PUMDataGraphNode *MLCPUMManager::PUMDataGraphNode::newLoadNode(
   return node;
 }
 
-#ifdef EG_OPT
 MLCPUMManager::PUMDataGraphNode *
 MLCPUMManager::PUMDataGraphNode::newEmptyCmpNode(
     const std::string &_regionName, const AffinePattern &_pumTile,
@@ -163,7 +173,7 @@ MLCPUMManager::PUMDataGraphNode::newEmptyCmpNode(
   node->group = _group;
   return node;
 }
-#else  // EG_OPT
+
 MLCPUMManager::PUMDataGraphNode *MLCPUMManager::PUMDataGraphNode::newCmpNode(
     const std::string &_regionName, const AffinePattern &_pumTile,
     const AffinePattern &_pattern, const AffinePattern &_splitOutDim,
@@ -174,7 +184,6 @@ MLCPUMManager::PUMDataGraphNode *MLCPUMManager::PUMDataGraphNode::newCmpNode(
   node->group = _group;
   return node;
 }
-#endif // EG_OPT
 
 MLCPUMManager::PUMDataGraphNode *
 MLCPUMManager::PUMDataGraphNode::newSyncNode() {
@@ -692,32 +701,72 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context) {
     PUM_LOG_("-- Node %s.\n", *node);
   }
 
-#ifdef EG_OPT
-  MLCSE_DPRINTF("Building TDFG\n");
-  this->buildTDFG(context, "tdfg");
-#endif // EG_OPT
+  if (this->controller->myParams->stream_pum_enable_egraph) {
+    // If e-graph optimizations enabled.
+    MLCSE_DPRINTF("Building TDFG\n");
+    this->buildTDFG(context, "tdfg");
+    // Try to fetch original and optimized tdfg.
+    auto originalTDFGOption =
+        this->tryLoadOptimizerTDFG(/* isOptimized */ false, "tdfg");
+    auto optimizedTDFGOption =
+        this->tryLoadOptimizerTDFG(/* isOptimized */ true, "tdfg");
 
-  this->mergePUMDataGraphMoveNode(context);
-  this->expandPUMDataGraphNode(context);
+    if (originalTDFGOption.first && optimizedTDFGOption.first) {
+      // If the original and optimized versions have been read
+      // correctly.
+      auto originalTDFG = originalTDFGOption.second;
+      auto optimizedTDFG = optimizedTDFGOption.second;
+      MLCSE_DPRINTF("Found original and optimized TDFGs\n");
 
-  PUM_LOG_("--------------------- PUMDataGraph After Merge.\n");
-  for (const auto &node : context.pumDataGraphNodes) {
-    PUM_LOG_("-- Node %s.\n", *node);
+      auto mappingOption =
+          this->mapOriginalToCurrentTDFG(context, originalTDFG);
+      if (!mappingOption.first) {
+        MLCSE_PANIC("Couldn't find mapping from original to current\n");
+      }
+
+      auto dgNodes =
+          this->rebuildTDFG(context, optimizedTDFG, mappingOption.second);
+
+      MLCSE_DPRINTF("Optimized graph nodes\n");
+      for (const auto &node : dgNodes) {
+        MLCSE_DPRINTF("  > %s\n", to_string(*node));
+      }
+
+      context.pumDataGraphNodes = dgNodes;
+    } else {
+      // Revert to using the original TDFG.
+      MLCSE_DPRINTF(
+          "WARINNG: Could not open optimized TDFG -- reverting to original\n");
+      this->mergePUMDataGraphMoveNode(context);
+      this->expandPUMDataGraphNode(context);
+    }
+
+    auto scheduledNodes = this->schedulePUMDataGraphBFS(context);
+    context.pumDataGraphNodes = scheduledNodes;
+
+    // Dump once more before lowering.
+    // WARNING: If using the optimized TDFG, this will dump the optimized TDFG
+    MLCSE_DPRINTF("Building TDFG\n");
+    this->dumpTDFG(context.tdfg, "tdfg-before-lowering");
+  } else {
+    this->mergePUMDataGraphMoveNode(context);
+    this->expandPUMDataGraphNode(context);
+
+    if (Debug::MLCStreamPUM) {
+      MLCSE_DPRINTF("--------------------- PUMDataGraph After Merge.\n");
+      for (const auto &node : context.pumDataGraphNodes) {
+        MLCSE_DPRINTF("-- Node %s.\n", *node);
+      }
+    }
+
+    auto scheduledNodes = this->schedulePUMDataGraph(context);
+    context.pumDataGraphNodes = scheduledNodes;
   }
-
-  auto scheduledNodes = this->schedulePUMDataGraph(context);
-  context.pumDataGraphNodes = scheduledNodes;
 
   PUM_LOG_("--------------------- PUMDataGraph After Schedule.\n");
   for (const auto &node : context.pumDataGraphNodes) {
     PUM_LOG_("-- Node %s.\n", *node);
   }
-
-  // Dump once more before lowering.
-#ifdef EG_OPT
-  MLCSE_DPRINTF("Building TDFG\n");
-  this->buildTDFG(context, "tdfg-before-lowering");
-#endif // EG_OPT
 }
 
 void MLCPUMManager::buildPUMDataGraph(
@@ -1165,94 +1214,72 @@ void MLCPUMManager::buildPUMDataGraphCompute(
     MLC_S_PANIC_NO_DUMP(dynId, "[PUM] Failed to find ComputeFunc.");
   }
 
-#ifdef EG_OPT
-  /**
-   * Break compute function into its individual computations.
-   * `func` is a list of instructions -- all in one TDFG node. Instead, a
-   * TDFG node should have each operation individually represented.
-   *
-   * `formalParams` is a list of arguments (stream or other) passed into the
-   * `func` call. Each will be mapped a X86 function call integer register.
-   */
+  if (this->controller->myParams->stream_pum_enable_egraph) {
+    /**
+     * Break compute function into its individual computations.
+     * `func` is a list of instructions -- all in one TDFG node. Instead, a
+     * TDFG node should have each operation individually represented.
+     *
+     * `formalParams` is a list of arguments (stream or other) passed into the
+     * `func` call. Each will be mapped a X86 function call integer register.
+     */
 
-  MLCSE_DPRINTF("Collecting operand registers values\n");
+    MLCSE_DPRINTF("Collecting operand registers values\n");
 
-  // Step 1: Define initial state of call registers.
-  const RegId intRegParams[6] = {
-      RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_RDI),
-      RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_RSI),
-      RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_RDX),
-      RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_RCX),
-      RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_R8),
-      RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_R9),
-  };
-  const RegId floatRegParams[8] = {
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM0_0),
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM1_0),
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM2_0),
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM3_0),
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM4_0),
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM5_0),
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM6_0),
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM7_0),
-  };
+    // Step 1: Define initial state of call registers.
+    const RegId intRegParams[6] = {
+        RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_RDI),
+        RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_RSI),
+        RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_RDX),
+        RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_RCX),
+        RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_R8),
+        RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_R9),
+    };
+    const RegId floatRegParams[8] = {
+        RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM0_0),
+        RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM1_0),
+        RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM2_0),
+        RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM3_0),
+        RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM4_0),
+        RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM5_0),
+        RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM6_0),
+        RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM7_0),
+    };
 
-  MLC_S_DPRINTF(dynId,
-                "Construct TDFG ComputeNode(s) for %s. InputNodes %lu:\n",
-                func->getFuncInfo().name(), resultNodes.size());
-  if (Debug::MLCStreamPUM) {
-    for (const auto &entry : resultNodes) {
-      MLC_S_DPRINTF(dynId, "   LogicalStream %lu %s\n", entry.first,
-                    *entry.second);
-    }
-  }
-
-  // assert(inputNodes.size() == formalParams.size());
-
-  std::unordered_map<RegId, PUMDataGraphNode *> regToNode;
-
-  // Define initial state of call registers.
-  MLCSE_DPRINTF("Collecting operand registers\n");
-  int intRegIdx = 0;
-  int fpRegIdx = 0;
-
-  for (auto i = 0; i < formalParams.size(); ++i) {
-    // Ignore if parameter is not a stream.
-
-    PUMDataGraphNode *node = nullptr;
-
-    if (formalParams[i].isInvariant) {
-      MLCSE_DPRINTF("  Has non-stream @\n %d", i);
-      continue;
-
-      // TODO: For register parameters
-      node = new PUMDataGraphNode(PUMDataGraphNode::TypeE::Compute);
-      context.pumDataGraphNodes.push_back(node);
-
-      auto val = formalParams[i].invariant.uint64();
-      if (func->getFuncInfo().args(i).type() ==
-          ::LLVM::TDG::DataType::INTEGER) {
-        node->compValTy = PUMDataGraphNode::CompValueE::ConstInt;
-        node->iVal = val;
-      } else {
-        node->compValTy = PUMDataGraphNode::CompValueE::ConstFloat;
-        node->fVal = *reinterpret_cast<float *>(&val);
+    MLC_S_DPRINTF(dynId,
+                  "Construct TDFG ComputeNode(s) for %s. InputNodes %lu:\n",
+                  func->getFuncInfo().name(), resultNodes.size());
+    if (Debug::MLCStreamPUM) {
+      for (const auto &entry : resultNodes) {
+        MLC_S_DPRINTF(dynId, "   LogicalStream %lu %s\n", entry.first,
+                      *entry.second);
       }
+    }
 
-    } else if (resultNodes.count(formalParams[i].baseStreamId)) {
+    // assert(inputNodes.size() == formalParams.size());
 
-      node = resultNodes.at(formalParams[i].baseStreamId);
+    std::unordered_map<RegId, PUMDataGraphNode *> regToNode;
 
-    } else {
-      // The only exception is the InitialValue of the ReduceStream.
-      if (group.reduceConfig && formalParams[i].baseStreamId ==
-                                    group.reduceConfig->dynamicId.staticId) {
+    // Define initial state of call registers.
+    MLCSE_DPRINTF("Collecting operand registers\n");
+    int intRegIdx = 0;
+    int fpRegIdx = 0;
 
-        node = new PUMDataGraphNode(PUMDataGraphNode::TypeE::Compute);
+    for (auto i = 0; i < formalParams.size(); ++i) {
+      // Ignore if parameter is not a stream.
+
+      PUMDataGraphNode *node = nullptr;
+
+      if (formalParams[i].isInvariant) {
+        MLCSE_DPRINTF("  Has non-stream @\n %d", i);
+        continue;
+
+        // TODO: For register parameters
+        node = new PUMDataGraphNode(PUMDataGraphNode::TypeE::Compute,
+                                    AffinePattern());
         context.pumDataGraphNodes.push_back(node);
 
-        // NOTE: Otherwise, this is also possible.
-        auto val = group.reduceConfig->reductionInitValue.uint64();
+        auto val = formalParams[i].invariant.uint64();
         if (func->getFuncInfo().args(i).type() ==
             ::LLVM::TDG::DataType::INTEGER) {
           node->compValTy = PUMDataGraphNode::CompValueE::ConstInt;
@@ -1262,223 +1289,246 @@ void MLCPUMManager::buildPUMDataGraphCompute(
           node->fVal = *reinterpret_cast<float *>(&val);
         }
 
+      } else if (resultNodes.count(formalParams[i].baseStreamId)) {
+
+        node = resultNodes.at(formalParams[i].baseStreamId);
+
       } else {
-        assert(false && "Failed to find InputNode.");
+        // The only exception is the InitialValue of the ReduceStream.
+        if (group.reduceConfig && formalParams[i].baseStreamId ==
+                                      group.reduceConfig->dynamicId.staticId) {
+
+          node = new PUMDataGraphNode(PUMDataGraphNode::TypeE::Compute,
+                                      AffinePattern());
+          context.pumDataGraphNodes.push_back(node);
+
+          // NOTE: Otherwise, this is also possible.
+          auto val = group.reduceConfig->reductionInitValue.uint64();
+          if (func->getFuncInfo().args(i).type() ==
+              ::LLVM::TDG::DataType::INTEGER) {
+            node->compValTy = PUMDataGraphNode::CompValueE::ConstInt;
+            node->iVal = val;
+          } else {
+            node->compValTy = PUMDataGraphNode::CompValueE::ConstFloat;
+            node->fVal = *reinterpret_cast<float *>(&val);
+          }
+
+        } else {
+          assert(false && "Failed to find InputNode.");
+        }
       }
+
+      // Get register (will miss registers for AVX instructions).
+      RegId reg;
+      if (func->getFuncInfo().args(i).type() ==
+          ::LLVM::TDG::DataType::INTEGER) {
+        reg = intRegParams[intRegIdx];
+        intRegIdx++;
+      } else {
+        reg = floatRegParams[fpRegIdx];
+        fpRegIdx++;
+      }
+
+      regToNode[reg] = node;
+
+      MLCSE_DPRINTF("  Added register %s for node %p\n", reg, node);
     }
 
-    // Get register (will miss registers for AVX instructions).
-    RegId reg;
-    if (func->getFuncInfo().args(i).type() == ::LLVM::TDG::DataType::INTEGER) {
-      reg = intRegParams[intRegIdx];
-      intRegIdx++;
-    } else {
-      reg = floatRegParams[fpRegIdx];
-      fpRegIdx++;
-    }
+    // Step 2: Decompose compute instructions.
+    MLCSE_DPRINTF("Decomposing compute instructions\n");
 
-    regToNode[reg] = node;
+    // Get intermediate register values of this computation.
+    // WARNING: Assumes there's only one destination register per instruction.
+    MLCSE_DPRINTF("Get register values\n");
 
-    MLCSE_DPRINTF("  Added register %s for node %p\n", reg, node);
-  }
+    auto get_dummy_stream_vals = [](uint64_t) -> StreamValue {
+      return StreamValue();
+    };
+    auto params =
+        convertFormalParamToParam(formalParams, get_dummy_stream_vals);
+    auto regVals = func->invoke_imvals(params);
 
-  // Step 2: Decompose compute instructions.
-  MLCSE_DPRINTF("Decomposing compute instructions\n");
+    enum OpTypeE { Compute, Load, Misc };
 
-  // Get intermediate register values of this computation.
-  // WARNING: Assumes there's only one destination register per instruction.
-  MLCSE_DPRINTF("Get register values\n");
+    // Possible nodes configurations:
+    //   1. Only one compute instruction.
+    //   2. N number of misc instructions and a final load instruction.
+    //      This node will be annotated with some constant value.
+    PUMDataGraphNode *curNode = nullptr;
+    PUMDataGraphNode *lastAddedNode = nullptr;
+    for (auto i = 0; i < func->getStaticInsts().size(); ++i) {
+      const auto &inst = func->getStaticInsts()[i];
 
-  auto get_dummy_stream_vals = [](uint64_t) -> StreamValue {
-    return StreamValue();
-  };
-  auto params = convertFormalParamToParam(formalParams, get_dummy_stream_vals);
-  auto regVals = func->invoke_imvals(params);
+      // Add current instruction.
+      MLCSE_DPRINTF("  %s (f: %d l: %d) %s\n", inst->disassemble(0x0),
+                    inst->isFirstMicroop(), inst->isLastMicroop(),
+                    Enums::OpClassStrings[inst->opClass()]);
 
-  enum OpTypeE { Compute, Load, Misc };
-
-  // Possible nodes configurations:
-  //   1. Only one compute instruction.
-  //   2. N number of misc instructions and a final load instruction.
-  //      This node will be annotated with some constant value.
-  PUMDataGraphNode *curNode = nullptr;
-  PUMDataGraphNode *lastAddedNode = nullptr;
-  for (auto i = 0; i < func->getStaticInsts().size(); ++i) {
-    const auto &inst = func->getStaticInsts()[i];
-
-    // Add current instruction.
-    MLCSE_DPRINTF("  %s (f: %d l: %d) %s\n", inst->disassemble(0x0),
-                  inst->isFirstMicroop(), inst->isLastMicroop(),
-                  Enums::OpClassStrings[inst->opClass()]);
-
-    // Get op type.
-    OpTypeE curOpTy;
-    switch (inst->opClass()) {
-    case Enums::IprAccess:
-    case Enums::No_OpClass:
-      curOpTy = OpTypeE::Misc;
-      break;
-    case Enums::MemRead:
-    case Enums::FloatMemRead:
-      curOpTy = OpTypeE::Load;
-      break;
-    case Enums::MemWrite:
-    case Enums::FloatMemWrite:
-    case Enums::Num_OpClass:
-      MLCSE_PANIC("Unrecognized op type: %s\n",
-                  Enums::OpClassStrings[inst->opClass()]);
-      break;
-    default:
-      curOpTy = OpTypeE::Compute;
-      break;
-    }
-
-    /**
-     * Special case for some instructions treated as nop in PUM.
-     * - movfp: we don't have to move around registers.
-     */
-    {
-      auto name = inst->getName();
-      if (name == "movfp" || name == "mov2fp" || name == "mov2int" ||
-          name == "vclear") {
+      // Get op type.
+      OpTypeE curOpTy;
+      switch (inst->opClass()) {
+      case Enums::IprAccess:
+      case Enums::No_OpClass:
         curOpTy = OpTypeE::Misc;
+        break;
+      case Enums::MemRead:
+      case Enums::FloatMemRead:
+        curOpTy = OpTypeE::Load;
+        break;
+      case Enums::MemWrite:
+      case Enums::FloatMemWrite:
+      case Enums::Num_OpClass:
+        MLCSE_PANIC("Unrecognized op type: %s\n",
+                    Enums::OpClassStrings[inst->opClass()]);
+        break;
+      default:
+        curOpTy = OpTypeE::Compute;
+        break;
       }
-    }
 
-    if (curNode == nullptr) {
-      curNode = PUMDataGraphNode::newEmptyCmpNode(
-          patInfo.regionName, patInfo.pumTile, pattern, splitOutDim,
-          patInfo.scalarElemSize, &group);
-      MLCSE_DPRINTF("  Building instruction node %p\n", curNode);
-    } else {
       /**
-       * Zhengrong: Get rid of the assertion.
+       * Special case for some instructions treated as nop in PUM.
+       * - movfp: we don't have to move around registers.
        */
-      //   assert(curOpTy != OpTypeE::Compute &&
-      //          "Cannot have multiple compute ops in a single node");
-    }
+      {
+        auto name = inst->getName();
+        if (name == "movfp" || name == "mov2fp" || name == "mov2int" ||
+            name == "vclear") {
+          curOpTy = OpTypeE::Misc;
+        }
+      }
 
-    curNode->insts.push_back(inst);
-
-    MLCSE_DPRINTF("      Updating operands\n");
-
-    // Update operands.
-    // TODO: (Hack) only looks at the first two operands in order to eliminate
-    //       duplication that may occur with the third (or more) operands.
-    //       For vector instructions, it takes two inputs and one output
-    //       register. As is currently abstracted, srcReg & destReg does not
-    //       deduplicate the output register. Examples of these instructions
-    //       would be `maddf` and `mmulf`.
-    //       https://www.felixcloutier.com/x86/mulsd
-    auto numSrc = std::min(inst->numSrcRegs(), static_cast<int8_t>(2));
-    /**
-     * Zhengrong: this is a bad choice for gem5 to track too many false WAR
-     * dependencies. And this breaks our fused multiply-add. So for now I
-     * just add a special case and will try to fix that later.
-     */
-    if (inst->getName() == "sfmaddf" || inst->getName() == "sfnmaddf") {
-      numSrc = 3;
-    }
-    for (auto s = 0; s < numSrc; ++s) {
-      MLCSE_DPRINTF("        Requesting register %s\n", inst->srcRegIdx(s));
-
-      auto reg = inst->srcRegIdx(s);
-
-      if (!regToNode.count(reg)) {
-        MLCSE_DPRINTF("          Ignoring...\n");
+      if (curNode == nullptr) {
+        curNode = PUMDataGraphNode::newEmptyCmpNode(
+            patInfo.regionName, patInfo.pumTile, pattern, splitOutDim,
+            patInfo.scalarElemSize, &group);
+        MLCSE_DPRINTF("  Building instruction node %p\n", curNode);
       } else {
-        // Only add if it's not the current node (cyclic) and isn't a
-        // duplicate.
-        auto operandNode = regToNode.at(reg);
-        MLCSE_DPRINTF("          Found %p\n", operandNode);
-        if (operandNode != curNode) {
-          auto &users = operandNode->users;
-          if (std::find(users.begin(), users.end(), curNode) == users.end()) {
-            MLCSE_DPRINTF("            Adding as user\n");
-            curNode->operands.push_back(operandNode);
-            operandNode->users.push_back(curNode);
+        /**
+         * Zhengrong: Get rid of the assertion.
+         */
+        //   assert(curOpTy != OpTypeE::Compute &&
+        //          "Cannot have multiple compute ops in a single node");
+      }
+
+      curNode->insts.push_back(inst);
+
+      MLCSE_DPRINTF("      Updating operands\n");
+
+      // Update operands.
+      // TODO: (Hack) only looks at the first two operands in order to eliminate
+      //       duplication that may occur with the third (or more) operands.
+      //       For vector instructions, it takes two inputs and one output
+      //       register. As is currently abstracted, srcReg & destReg does not
+      //       deduplicate the output register. Examples of these instructions
+      //       would be `maddf` and `mmulf`.
+      //       https://www.felixcloutier.com/x86/mulsd
+      auto numSrc = std::min(inst->numSrcRegs(), static_cast<int8_t>(2));
+      /**
+       * Zhengrong: this is a bad choice for gem5 to track too many false WAR
+       * dependencies. And this breaks our fused multiply-add. So for now I
+       * just add a special case and will try to fix that later.
+       */
+      if (inst->getName() == "sfmaddf" || inst->getName() == "sfnmaddf") {
+        numSrc = 3;
+      }
+      for (auto s = 0; s < numSrc; ++s) {
+        MLCSE_DPRINTF("        Requesting register %s\n", inst->srcRegIdx(s));
+
+        auto reg = inst->srcRegIdx(s);
+
+        if (!regToNode.count(reg)) {
+          MLCSE_DPRINTF("          Ignoring...\n");
+        } else {
+          // Only add if it's not the current node (cyclic) and isn't a
+          // duplicate.
+          auto operandNode = regToNode.at(reg);
+          MLCSE_DPRINTF("          Found %p\n", operandNode);
+          if (operandNode != curNode) {
+            auto &users = operandNode->users;
+            if (std::find(users.begin(), users.end(), curNode) == users.end()) {
+              MLCSE_DPRINTF("            Adding as user\n");
+              curNode->operands.push_back(operandNode);
+              operandNode->users.push_back(curNode);
+            }
           }
         }
       }
-    }
 
-    // Register compute node & update registers.
-    MLCSE_DPRINTF("      Updating registers\n");
-    for (auto d = 0; d < inst->numDestRegs(); ++d) {
-      MLCSE_DPRINTF("        Setting register %s\n", inst->destRegIdx(d));
-      regToNode[inst->destRegIdx(d)] = curNode;
-    }
-
-    // Last instruction of a node is a load or compute.
-    // For a load instruction, also save its value.
-    switch (curOpTy) {
-    case OpTypeE::Load:
-      // Get register value.
-      if (inst->destRegIdx(0).isIntReg()) {
-        uint32_t regVal = *reinterpret_cast<uint32_t *>(&regVals[i].front());
-        curNode->compValTy = PUMDataGraphNode::CompValueE::ConstInt;
-        curNode->iVal = regVal;
-      } else {
-        float regVal = *reinterpret_cast<float *>(&regVals[i].at(0));
-        curNode->compValTy = PUMDataGraphNode::CompValueE::ConstFloat;
-        curNode->fVal = regVal;
+      // Register compute node & update registers.
+      MLCSE_DPRINTF("      Updating registers\n");
+      for (auto d = 0; d < inst->numDestRegs(); ++d) {
+        MLCSE_DPRINTF("        Setting register %s\n", inst->destRegIdx(d));
+        regToNode[inst->destRegIdx(d)] = curNode;
       }
-      [[fallthrough]];
-    case OpTypeE::Compute:
-      context.pumDataGraphNodes.push_back(curNode);
-      lastAddedNode = curNode;
+
+      // Last instruction of a node is a load or compute.
+      // For a load instruction, also save its value.
+      switch (curOpTy) {
+      case OpTypeE::Load:
+        // Get register value.
+        if (inst->destRegIdx(0).isIntReg()) {
+          uint32_t regVal = *reinterpret_cast<uint32_t *>(&regVals[i].front());
+          curNode->compValTy = PUMDataGraphNode::CompValueE::ConstInt;
+          curNode->iVal = regVal;
+        } else {
+          float regVal = *reinterpret_cast<float *>(&regVals[i].at(0));
+          curNode->compValTy = PUMDataGraphNode::CompValueE::ConstFloat;
+          curNode->fVal = regVal;
+        }
+        [[fallthrough]];
+      case OpTypeE::Compute:
+        context.pumDataGraphNodes.push_back(curNode);
+        lastAddedNode = curNode;
+        curNode = nullptr;
+        break;
+      default:
+        break;
+      }
+    }
+
+    if (curNode) {
+      // Release the unused CurNode.
+      for (auto opNode : curNode->operands) {
+        opNode->eraseUser(curNode);
+      }
+      delete curNode;
       curNode = nullptr;
-      break;
-    default:
-      break;
     }
-  }
 
-  if (curNode) {
-    // Release the unused CurNode.
-    for (auto opNode : curNode->operands) {
-      opNode->eraseUser(curNode);
+    MLCSE_DPRINTF("Compute node(s) built!\n");
+
+    /**
+     * Update the LogicalStreamIdToNodeMap if we have generated compute node.
+     * Sometimes we may not generate any node, e.g. memcpy.
+     *
+     * Assume we have only one LogicalStreamId.
+     * Also mark the node as the final reduce node.
+     */
+    if (lastAddedNode) {
+      if (group.reduceConfig) {
+        lastAddedNode->isFinalReduceNode = true;
+      }
+      resultNodes.emplace(computeDynId.staticId, lastAddedNode);
     }
-    delete curNode;
-    curNode = nullptr;
-  }
+  } else {
+    // Build compute nodes as normal (don't decompose into individual compute
+    // instructions).
 
-  MLCSE_DPRINTF("Compute node(s) built!\n");
-
-#else  // EG_OPT
-
-  auto cmpNode = PUMDataGraphNode::newCmpNode(
-      patInfo.regionName, patInfo.pumTile, pattern, splitOutDim,
-      patInfo.scalarElemSize, func, &group);
-  for (const auto &entry : inputNodes) {
-    auto node = entry.second;
-    cmpNode->operands.push_back(node);
-    node->users.push_back(cmpNode);
-  }
-  context.pumDataGraphNodes.push_back(cmpNode);
-#endif // EG_OPT
-
-  /**
-   * Update the LogicalStreamIdToNodeMap if we have generated compute node.
-   * Sometimes we may not generate any node, e.g. memcpy.
-   *
-   * Assume we have only one LogicalStreamId.
-   * Also mark the node as the final reduce node.
-   */
-  if (lastAddedNode) {
-    if (group.reduceConfig) {
-      lastAddedNode->isFinalReduceNode = true;
+    auto cmpNode = PUMDataGraphNode::newCmpNode(
+        patInfo.regionName, patInfo.pumTile, pattern, splitOutDim,
+        patInfo.scalarElemSize, func, &group);
+    for (const auto &entry : resultNodes) {
+      auto node = entry.second;
+      cmpNode->operands.push_back(node);
+      node->users.push_back(cmpNode);
     }
-    resultNodes.emplace(computeDynId.staticId, lastAddedNode);
+    context.pumDataGraphNodes.push_back(cmpNode);
   }
 }
 
-#ifdef EG_OPT
-
-void MLCPUMManager::dumpTDFGToJson(const ::LLVM::TDG::TDFG &tdfg,
-                                   const std::string &prefix) {
-  static int dumpCount = 0;
-  static std::map<std::string, int> prefixDumpCountMap;
+void MLCPUMManager::dumpTDFG(const ::LLVM::TDG::TDFG &tdfg,
+                             const std::string &prefix) {
 
   auto &prefixDumpCount = prefixDumpCountMap.emplace(prefix, 0).first->second;
 
@@ -1517,7 +1567,7 @@ void MLCPUMManager::dumpTDFGToJson(const ::LLVM::TDG::TDFG &tdfg,
 
   // Dump to binary.
   {
-    std::string fn = "tdfg." + std::to_string(dumpCount) + ".bin";
+    std::string fn = prefix + "." + std::to_string(prefixDumpCount) + ".bin";
     auto log = directory->create(fn);
 
     tdfg.SerializeToOstream(log->stream());
@@ -1529,6 +1579,73 @@ void MLCPUMManager::dumpTDFGToJson(const ::LLVM::TDG::TDFG &tdfg,
   prefixDumpCount++;
 }
 
+// std::string MLCPUMManager::getOptimizerOutputDirectory() const {
+//   // Get output directory.
+//   // FIX: this is hardcoded.
+//   auto dirSimout = simout.directory();
+
+//   char *dirGFResult = std::getenv("GEM_FORGE_RESULT_PATH");
+//   if (dirGFResult == nullptr) {
+//     MLCSE_PANIC("Could not find environment variable
+//     GEM_FORGE_RESULT_PATH\n");
+//   }
+
+//   // Check the current output directory begins with GEM_FORGE_RESULT_PATH
+//   auto pos = dirSimout.find(dirGFResult);
+//   if (pos != 0) {
+//     // The output directory doesn't start with the current result path
+//     MLCSE_PANIC("The current output directory does not start with %s\n",
+//                 dirGFResult);
+//   }
+
+//   // Figure out subdirectory structure (should include leading '/').
+//   auto subdirSimout = dirSimout.substr(strlen(dirGFResult),
+//   std::string::npos);
+
+//   return std::string(dirGFResult) + "/optimizer" + subdirSimout + "/" +
+//          tdfg_folder;
+// }
+
+std::pair<bool, ::LLVM::TDG::TDFG>
+MLCPUMManager::tryLoadOptimizerTDFG(bool isOptimized,
+                                    const std::string &prefix) const {
+
+  assert(this->controller->myParams->stream_pum_enable_egraph);
+
+  // WARNING: Makes assupmtion that optimized tdfg will be read in the same
+  // WARNING: iteration as its been dumped.
+
+  auto actualDumpCount = prefixDumpCountMap[prefix] - 1;
+  auto fnameSuffix = (isOptimized) ? "_opt" : "_orig";
+  auto fname = "tdfg." + std::to_string(actualDumpCount) + fnameSuffix + ".bin";
+
+  auto pathTDFG =
+      this->controller->myParams->stream_pum_optimized_directory + "/" + fname;
+
+  MLCSE_DPRINTF("Path to %s is %s\n",
+                std::string(fnameSuffix).substr(1, std::string::npos),
+                pathTDFG);
+
+  // Try to load from file.
+  ::LLVM::TDG::TDFG tdfg;
+  std::ifstream ifs(pathTDFG, std::ifstream::in | std::ifstream::binary);
+  if (ifs.is_open()) {
+    // Try to read the binary if it exists.
+    if (!tdfg.ParseFromIstream(&ifs)) {
+      MLCSE_PANIC("Malformed optimized tdfg at %s\n", pathTDFG);
+    }
+    return std::make_pair(true, tdfg);
+  } else {
+    // Otherwise, tdfg hasn't been optimized yet.
+    return std::make_pair(false, tdfg);
+  }
+}
+
+// ::LLVM::TDG::TDFGSchedule MLCPUMManager::tryLoadSchedule(bool isOptSchedule)
+// {
+//   // TODO: Implement this
+// }
+
 void MLCPUMManager::buildTDFG(PUMContext &context, const std::string &prefix) {
   auto &tdfg = context.tdfg;
 
@@ -1537,9 +1654,9 @@ void MLCPUMManager::buildTDFG(PUMContext &context, const std::string &prefix) {
   tdfg.clear_edges();
 
   // Build all the nodes.
-  std::unordered_map<PUMDataGraphNode *, TDFGNodeID> nodeToId;
+  std::unordered_map<PUMDataGraphNode *, TDFGNodeId> nodeToId;
   for (const auto &node : context.pumDataGraphNodes) {
-    TDFGNodeID nid = tdfg.nodes().size();
+    TDFGNodeId nid = tdfg.nodes().size();
     nodeToId[node] = nid;
 
     (*tdfg.mutable_nodes())[nid] = ::LLVM::TDG::TDFG::Node();
@@ -1663,7 +1780,7 @@ void MLCPUMManager::buildTDFG(PUMContext &context, const std::string &prefix) {
       // Just ignore sync node.
       break;
     default:
-      MLCSE_PANIC("Unrecognized node type %d", node->type);
+      MLCSE_PANIC("Unrecognized node type %d\n", node->type);
       break;
     }
   }
@@ -1678,9 +1795,203 @@ void MLCPUMManager::buildTDFG(PUMContext &context, const std::string &prefix) {
   }
 
   // Dump to file.
-  this->dumpTDFGToJson(tdfg, prefix);
+  this->dumpTDFG(tdfg, prefix);
 }
-#endif // EG_OPT
+
+std::pair<bool, std::unordered_map<MLCPUMManager::TDFGNodeId,
+                                   MLCPUMManager::TDFGNodeId>>
+MLCPUMManager::mapOriginalToCurrentTDFG(
+    const PUMContext &context, const ::LLVM::TDG::TDFG &original) const {
+
+  assert(this->controller->myParams->stream_pum_enable_egraph);
+
+  // Helper function to get TDFG node type.
+  auto getNodeType =
+      [this](const ::LLVM::TDG::TDFG::Node &node) -> PUMDataGraphNode::TypeE {
+    auto nodeType = node.data_case();
+
+    switch (nodeType) {
+    case ::LLVM::TDG::TDFG::Node::DataCase::kValue:
+      return PUMDataGraphNode::TypeE::Value;
+    case ::LLVM::TDG::TDFG::Node::DataCase::kMove:
+      return PUMDataGraphNode::TypeE::Move;
+    case ::LLVM::TDG::TDFG::Node::DataCase::kLoad:
+      return PUMDataGraphNode::TypeE::Load;
+    case ::LLVM::TDG::TDFG::Node::DataCase::kCompute:
+      return PUMDataGraphNode::TypeE::Compute;
+    case ::LLVM::TDG::TDFG::Node::DataCase::kSync:
+      MLCSE_PANIC("Sync nodes should not be in a well formed TDFG\n");
+    default:
+      MLCSE_PANIC("Unrecognized node type %d\n", nodeType);
+    }
+  };
+
+  std::unordered_map<TDFGNodeId, TDFGNodeId> tentativeNodeMap;
+
+  // Node count should be the same.
+  auto &dgNodes = context.pumDataGraphNodes;
+  auto numNodes = dgNodes.size();
+  if (numNodes != original.nodes().size()) {
+    return std::make_pair(false, tentativeNodeMap);
+  }
+
+  // Original->Current node map
+  bool isSuccess = false;
+
+  // Try to compare node ordering of original and new TDFG.
+  // WARNING: Assume the node ordering is the same.
+  isSuccess = [&]() -> bool {
+    tentativeNodeMap.clear(); // Clear any previous results.
+
+    // Node types match?
+    // TODO: A more thorough check will make sure the compute nodes match
+    // TODO: correctly.
+    // TODO: Furthermore, the patterns could be checked too.
+    for (TDFGNodeId nid = 0; nid < numNodes; ++nid) {
+      auto originalNodeTy = getNodeType(original.nodes().at(nid));
+      if (originalNodeTy == dgNodes[nid]->type) {
+        tentativeNodeMap[nid] = nid;
+      } else {
+        MLCSE_DPRINTF("Node %d is not the same type: %d %d\n", nid,
+                      originalNodeTy, dgNodes[nid]->type);
+        return false;
+      }
+    }
+
+    //  Node children match?
+    for (const auto &edge : original.edges()) {
+      auto curSrc = dgNodes[tentativeNodeMap[edge.src()]];
+      auto curDst = dgNodes[tentativeNodeMap[edge.dst()]];
+
+      auto &operands = curSrc->operands;
+      auto isNotChild =
+          std::find(operands.begin(), operands.end(), curDst) == operands.end();
+      if (isNotChild) {
+        MLCSE_DPRINTF("Node %d does not have child %d\n", edge.src(),
+                      edge.dst());
+        return false;
+      }
+    }
+
+    return true;
+  }();
+
+  if (isSuccess) {
+    return std::make_pair(true, tentativeNodeMap);
+  }
+
+  return std::make_pair(false, tentativeNodeMap);
+}
+
+std::vector<MLCPUMManager::PUMDataGraphNode *> MLCPUMManager::rebuildTDFG(
+    const PUMContext &context, const ::LLVM::TDG::TDFG &optimized,
+    const std::unordered_map<TDFGNodeId, TDFGNodeId> &originalToCurNodeMap)
+    const {
+
+  assert(this->controller->myParams->stream_pum_enable_egraph);
+
+  auto copyFields = [](const PUMDataGraphNode *from, PUMDataGraphNode *to) {
+    to->regionName = from->regionName;
+    to->pattern = from->pattern;
+    to->splitOutDim = from->splitOutDim;
+    to->scalarElemSize = from->scalarElemSize;
+    to->startWordline = from->startWordline;
+    to->regionVAddr = from->regionVAddr;
+    to->sendPat = from->sendPat;
+    to->sendSplitOutDim = from->sendSplitOutDim;
+    to->sendConfig = from->sendConfig;
+    to->recvConfig = from->recvConfig;
+    to->group = from->group;
+    to->compValTy = from->compValTy;
+    to->insts = from->insts;
+    to->isFinalReduceNode = from->isFinalReduceNode;
+  };
+
+  std::vector<PUMDataGraphNode *> dgNodes;
+
+  // Build nodes first.
+  for (TDFGNodeId nid = 0; nid < optimized.nodes().size(); ++nid) {
+    const auto &optNode = optimized.nodes().at(nid);
+    PUMDataGraphNode *newNode = nullptr;
+
+    if (optNode.has_move()) {
+      // Since we don't have a mapping from optimized move node -> original move
+      // node, we can only generate a new move node based on the protobuf
+      // metadata.
+
+      auto pumTile = AffinePattern(optNode.pum_tile());
+      auto pattern = AffinePattern(optNode.pattern());
+      newNode = new PUMDataGraphNode(PUMDataGraphNode::TypeE::Move, pumTile);
+
+      newNode->regionName = optNode.region_name();
+      newNode->pattern = pattern;
+      newNode->splitOutDim = AffinePattern(optNode.split_out_dim());
+      newNode->scalarElemSize = optNode.scalar_elem_size();
+      newNode->startWordline = optNode.start_word_line();
+
+      newNode->sendPat = AffinePattern(optNode.move().send_pattern());
+      newNode->sendSplitOutDim =
+          AffinePattern(optNode.move().send_split_out_dim());
+
+      MLCSE_DPRINTF("Move: %s -> %s\n", newNode->pattern.to_string(),
+                    newNode->sendPat.to_string());
+    } else {
+      // All other nodes just needs to copy any runtime information.
+
+      // Copy all fields from curNode.
+      const auto &curNode =
+          context.pumDataGraphNodes.at(originalToCurNodeMap.at(optNode.id()));
+      newNode = new PUMDataGraphNode(curNode->type, curNode->pumTile);
+
+      copyFields(curNode, newNode);
+
+      // newNode->regionName = curNode->regionName;
+      // newNode->splitOutDim = curNode->splitOutDim;
+      // newNode->scalarElemSize = curNode->scalarElemSize;
+      // newNode->startWordline = curNode->startWordline;
+      // newNode->regionVAddr = curNode->regionVAddr;
+      // newNode->sendConfig = curNode->sendConfig;
+      // newNode->recvConfig = curNode->recvConfig;
+      // newNode->compValTy = curNode->compValTy;
+      // newNode->insts = curNode->insts;
+      // newNode->isFinalReduceNode = curNode->isFinalReduceNode;
+
+      // Update the pattern.
+      newNode->pattern = AffinePattern(optNode.pattern());
+
+      MLCSE_DPRINTF("Mapping oID %d to cID %d of type %d\n", optNode.id(),
+                    originalToCurNodeMap.at(optNode.id()), curNode->type);
+    }
+
+    dgNodes.push_back(newNode);
+  }
+
+  // Build edges next.
+  for (const auto &edge : optimized.edges()) {
+    auto *&userNode = dgNodes[edge.src()];
+    auto *operandNode = dgNodes[edge.dst()];
+
+    // Rebuild move node with correct configuration.
+    if (userNode->type == PUMDataGraphNode::TypeE::Move) {
+      assert(userNode->operands.size() == 0 &&
+             "Move node should only have one operand");
+
+      // pumTile could be new (different tiling)
+      auto *correctUserNode = new PUMDataGraphNode(
+          PUMDataGraphNode::TypeE::Move, operandNode->pumTile);
+      copyFields(userNode, correctUserNode);
+
+      // Update dgNodes
+      delete userNode;
+      userNode = correctUserNode;
+    }
+
+    userNode->operands.push_back(operandNode);
+    operandNode->users.push_back(userNode);
+  }
+
+  return dgNodes;
+}
 
 void MLCPUMManager::mergePUMDataGraphMoveNode(PUMContext &context) {
 
@@ -2234,8 +2545,7 @@ void MLCPUMManager::compileCompute(PUMContext &context,
 
   PUMCommandVecT commands;
 
-#ifdef EG_OPT
-  {
+  if (this->controller->myParams->stream_pum_enable_egraph) {
     assert(!node->insts.empty());
     const auto &inst = node->insts.back();
     commands.emplace_back();
@@ -2252,27 +2562,26 @@ void MLCPUMManager::compileCompute(PUMContext &context,
     MLCSE_DPRINTF("[PUM] Compile Inst %s to OpClass %s.\n",
                   inst->disassemble(0x0),
                   Enums::OpClassStrings[inst->opClass()]);
+  } else {
+    ExecFuncPtr func = node->func;
+
+    for (const auto &inst : func->getStaticInsts()) {
+
+      commands.emplace_back();
+      auto &command = commands.back();
+      command.type = "cmp";
+      command.opClass = inst->opClass();
+      // Default bitline_mask is for the entire tile.
+      command.bitline_mask = AffinePattern::constructSubRegion(
+          compiler.tile_sizes,
+          AffinePattern::IntVecT(compiler.tile_sizes.size(), 0) /* starts */,
+          compiler.tile_sizes);
+
+      MLCSE_DPRINTF("[PUM] Compile Inst %s to OpClass %s.\n",
+                    inst->disassemble(0x0),
+                    Enums::OpClassStrings[inst->opClass()]);
+    }
   }
-#else  // EG_OPT
-  ExecFuncPtr func = node->func;
-
-  for (const auto &inst : func->getStaticInsts()) {
-
-    commands.emplace_back();
-    auto &command = commands.back();
-    command.type = "cmp";
-    command.opClass = inst->opClass();
-    // Default bitline_mask is for the entire tile.
-    command.bitline_mask = AffinePattern::constructSubRegion(
-        compiler.tile_sizes,
-        AffinePattern::IntVecT(compiler.tile_sizes.size(), 0) /* starts */,
-        compiler.tile_sizes);
-
-    MLCSE_DPRINTF("[PUM] Compile Inst %s to OpClass %s.\n",
-                  inst->disassemble(0x0),
-                  Enums::OpClassStrings[inst->opClass()]);
-  }
-#endif // EG_OPT
 
   // Compile the final reduction instruction.
   if (node->isFinalReduceNode) {
@@ -2312,8 +2621,81 @@ void MLCPUMManager::compileCompute(PUMContext &context,
     }
   }
 
+  // Calculate the number of bits computed. Ignore reduction moves.
+  for (const auto &cmd : commands) {
+    if (cmd.type == "cmp") {
+      this->controller->m_statPUMComputeBits += this->estimateComputeBits(cmd);
+    }
+  }
+
   context.commands.insert(context.commands.end(), commands.begin(),
                           commands.end());
+}
+
+Cycles MLCPUMManager::estimateComputeBits(const PUMCommand &command) {
+  // FIX: This is duplicated code from the PUMEngine.
+  assert(command.type == "cmp");
+
+  bool forceInt = this->controller->myParams->stream_pum_force_integer;
+
+  auto wordlineBits = command.wordline_bits;
+  auto wordlineBitsSquare = wordlineBits * wordlineBits;
+  int computeLatency = wordlineBits;
+  switch (command.opClass) {
+  default:
+    panic("Unknown PUM OpClass %s.", Enums::OpClassStrings[command.opClass]);
+    break;
+
+  case No_OpClass:
+  case SimdMiscOp:
+    computeLatency = 1;
+    break;
+
+  case FloatMemReadOp:
+    // Assume one cycle to read 1 bit of constant value.
+    computeLatency = wordlineBits;
+    break;
+
+  case SimdCmpOp:
+  case IntAluOp:
+    computeLatency = wordlineBits;
+    break;
+
+  case IntMultOp:
+    computeLatency = wordlineBitsSquare / 2;
+    break;
+
+  case FloatAddOp:
+  case SimdFloatAddOp:
+    computeLatency = forceInt ? wordlineBits : wordlineBitsSquare;
+    break;
+
+  case FloatMultOp:
+  case SimdFloatMultOp:
+    computeLatency = forceInt ? wordlineBitsSquare / 2 : wordlineBitsSquare;
+    break;
+
+  case SimdFloatDivOp:
+    computeLatency = wordlineBitsSquare;
+    break;
+
+  case SimdMultAccOp:
+    computeLatency = wordlineBitsSquare / 2 + wordlineBits;
+    break;
+
+  case FloatMultAccOp:
+  case SimdFloatMultAccOp:
+    computeLatency = forceInt ? (wordlineBitsSquare / 2 + wordlineBits)
+                              : (2 * wordlineBitsSquare);
+    break;
+
+  case SimdFloatCmpOp:
+    computeLatency = forceInt ? wordlineBits : wordlineBitsSquare;
+    break;
+  }
+  MLCSE_DPRINTF("STAT: estimated compute latency: %d\n", computeLatency);
+
+  return Cycles(computeLatency);
 }
 
 void MLCPUMManager::compileReduction(PUMContext &context,

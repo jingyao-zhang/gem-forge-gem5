@@ -164,3 +164,7 @@ class RubyStreamAwareController(RubyController):
         Param.UInt32(100, "How many cycles charged to compile one cmd.")
     stream_pum_prefetch_level = \
         Param.String("llc", "Where should PUMPrefetchStreams be offloaded.")
+    stream_pum_enable_egraph =\
+        Param.Bool(False, "Whether e-graph optimizations are enabled.")
+    stream_pum_optimized_directory = \
+        Param.String("", "WHich directory the optimized tdfgs are in.")

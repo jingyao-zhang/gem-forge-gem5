@@ -268,6 +268,12 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_pum_compile_lat_per_cmd,
                 stream_pum_prefetch_level=\
                     options.gem_forge_stream_pum_prefetch_level,
+                stream_pum_force_integer=\
+                    options.gem_forge_stream_pum_force_integer,
+                stream_pum_enable_egraph =\
+                    options.gem_forge_stream_pum_optimized_directory != "",
+                stream_pum_optimized_directory=\
+                    options.gem_forge_stream_pum_optimized_directory,
                 )
 
             exec("ruby_system.l0_cntrl%d = l0_cntrl"
