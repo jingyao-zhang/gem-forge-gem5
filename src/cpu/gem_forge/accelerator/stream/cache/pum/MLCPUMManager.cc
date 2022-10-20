@@ -2279,6 +2279,32 @@ void MLCPUMManager::compileCompute(PUMContext &context,
     this->compileReduction(context, *node->group, commands);
   }
 
+  // Compute the number of bits required.
+  for (const auto &cmd : commands) {
+    if (cmd.type == "cmp") {
+      auto numBitOps = this->estimateComputeBitOps(cmd, node->scalarElemSize);
+      auto numWords = node->pattern.getTotalTrip(); // Optimistic estimate.
+      auto numBits = numBitOps * numWords;
+
+      switch (cmd.opClass) {
+      case SimdMultAccOp:
+      case FloatMultAccOp:
+      case SimdFloatMultAccOp:
+        // Three operands for fused mac.
+        // op_int := op0 * op1
+        // op_res := op_int + op_2
+        this->controller->m_statPUMComputeReadBits = 4 * numBits;
+        this->controller->m_statPUMComputeWriteBits = 2 * numBits;
+        break;
+      default:
+        // op_res := op0 . op1
+        this->controller->m_statPUMComputeReadBits = 2 * numBits;
+        this->controller->m_statPUMComputeWriteBits = 1 * numBits;
+        break;
+      }
+    }
+  }
+
   if (Debug::MLCStreamPUM) {
     for (const auto &command : commands) {
       MLCSE_DPRINTF("%s", command);
@@ -2314,6 +2340,71 @@ void MLCPUMManager::compileCompute(PUMContext &context,
 
   context.commands.insert(context.commands.end(), commands.begin(),
                           commands.end());
+}
+
+Cycles MLCPUMManager::estimateComputeBitOps(const PUMCommand &command,
+                                            const int scalarElemSize) const {
+
+  assert(command.type == "cmp");
+
+  bool forceInt = this->controller->myParams->stream_pum_force_integer;
+
+  auto wordlineBits = scalarElemSize * 8;
+  auto wordlineBitsSquare = wordlineBits * wordlineBits;
+  int computeLatency = wordlineBits;
+  switch (command.opClass) {
+  default:
+    panic("Unknown PUM OpClass %s.", Enums::OpClassStrings[command.opClass]);
+    break;
+
+  case No_OpClass:
+  case SimdMiscOp:
+    computeLatency = 1;
+    break;
+
+  case FloatMemReadOp:
+    // Assume one cycle to read 1 bit of constant value.
+    computeLatency = wordlineBits;
+    break;
+
+  case SimdCmpOp:
+  case IntAluOp:
+    computeLatency = wordlineBits;
+    break;
+
+  case IntMultOp:
+    computeLatency = wordlineBitsSquare / 2;
+    break;
+
+  case FloatAddOp:
+  case SimdFloatAddOp:
+    computeLatency = forceInt ? wordlineBits : wordlineBitsSquare;
+    break;
+
+  case FloatMultOp:
+  case SimdFloatMultOp:
+    computeLatency = forceInt ? wordlineBitsSquare / 2 : wordlineBitsSquare;
+    break;
+
+  case SimdFloatDivOp:
+    computeLatency = wordlineBitsSquare;
+    break;
+
+  case SimdMultAccOp:
+    computeLatency = wordlineBitsSquare / 2 + wordlineBits;
+    break;
+
+  case FloatMultAccOp:
+  case SimdFloatMultAccOp:
+    computeLatency = forceInt ? (wordlineBitsSquare / 2 + wordlineBits)
+                              : (2 * wordlineBitsSquare);
+    break;
+
+  case SimdFloatCmpOp:
+    computeLatency = forceInt ? wordlineBits : wordlineBitsSquare;
+    break;
+  }
+  return Cycles(computeLatency);
 }
 
 void MLCPUMManager::compileReduction(PUMContext &context,

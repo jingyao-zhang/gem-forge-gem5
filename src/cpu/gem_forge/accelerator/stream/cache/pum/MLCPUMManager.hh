@@ -588,6 +588,9 @@ private:
    */
   void compileCompute(PUMContext &context, PUMDataGraphNode *node);
 
+  Cycles estimateComputeBitOps(const PUMCommand &command,
+                               const int scalarElemSize) const;
+
   /**
    * Compile the final reduction instruction.
    */
