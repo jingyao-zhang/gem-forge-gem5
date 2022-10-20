@@ -1518,6 +1518,9 @@ void MLCPUMManager::buildPUMDataGraphCompute(
     auto cmpNode = PUMDataGraphNode::newCmpNode(
         patInfo.regionName, patInfo.pumTile, pattern, splitOutDim,
         patInfo.scalarElemSize, func, &group);
+    cmpNode->compValTy =
+        PUMDataGraphNode::CompValueE::None; // Will contain both compute & misc
+                                            // instructions.
     for (const auto &entry : resultNodes) {
       auto node = entry.second;
       cmpNode->operands.push_back(node);
@@ -2588,6 +2591,18 @@ void MLCPUMManager::compileCompute(PUMContext &context,
     this->compileReduction(context, *node->group, commands);
   }
 
+  // Calculate the number of bits computed. Ignore reduction moves.
+  for (const auto &cmd : commands) {
+    if (cmd.type == "cmp") {
+      MLCSE_DPRINTF("%s total trip count: %d\n", node->pattern.to_string(),
+                    node->pattern.getTotalTrip());
+      auto totalBits = this->estimateComputeBits(cmd, node->scalarElemSize) *
+                       node->pattern.getTotalTrip();
+      this->controller->m_statPUMComputeReadBits += 2 * totalBits;
+      this->controller->m_statPUMComputeWriteBits += totalBits;
+    }
+  }
+
   if (Debug::MLCStreamPUM) {
     for (const auto &command : commands) {
       MLCSE_DPRINTF("%s", command);
@@ -2621,24 +2636,18 @@ void MLCPUMManager::compileCompute(PUMContext &context,
     }
   }
 
-  // Calculate the number of bits computed. Ignore reduction moves.
-  for (const auto &cmd : commands) {
-    if (cmd.type == "cmp") {
-      this->controller->m_statPUMComputeBits += this->estimateComputeBits(cmd);
-    }
-  }
-
   context.commands.insert(context.commands.end(), commands.begin(),
                           commands.end());
 }
 
-Cycles MLCPUMManager::estimateComputeBits(const PUMCommand &command) {
+Cycles MLCPUMManager::estimateComputeBits(const PUMCommand &command,
+                                          const int scalarElemSize) {
   // FIX: This is duplicated code from the PUMEngine.
   assert(command.type == "cmp");
 
   bool forceInt = this->controller->myParams->stream_pum_force_integer;
 
-  auto wordlineBits = command.wordline_bits;
+  auto wordlineBits = scalarElemSize * 8;
   auto wordlineBitsSquare = wordlineBits * wordlineBits;
   int computeLatency = wordlineBits;
   switch (command.opClass) {

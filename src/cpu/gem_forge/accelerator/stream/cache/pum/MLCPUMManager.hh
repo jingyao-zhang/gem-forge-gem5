@@ -599,7 +599,8 @@ private:
    */
   void compileCompute(PUMContext &context, PUMDataGraphNode *node);
 
-  Cycles estimateComputeBits(const PUMCommand &command);
+  Cycles estimateComputeBits(const PUMCommand &command,
+                             const int scalarElemSize);
 
   /**
    * Compile the final reduction instruction.
