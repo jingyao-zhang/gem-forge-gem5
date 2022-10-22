@@ -2286,6 +2286,8 @@ void MLCPUMManager::compileCompute(PUMContext &context,
       auto numWords = node->pattern.getTotalTrip(); // Optimistic estimate.
       auto numBits = numBitOps * numWords;
 
+      MLCSE_DPRINTF("Compute Elems %ld BitOps %ld.\n", numBitOps, numWords);
+
       switch (cmd.opClass) {
       case SimdMultAccOp:
       case FloatMultAccOp:
@@ -2293,13 +2295,13 @@ void MLCPUMManager::compileCompute(PUMContext &context,
         // Three operands for fused mac.
         // op_int := op0 * op1
         // op_res := op_int + op_2
-        this->controller->m_statPUMComputeReadBits = 4 * numBits;
-        this->controller->m_statPUMComputeWriteBits = 2 * numBits;
+        this->controller->m_statPUMComputeReadBits += 4 * numBits;
+        this->controller->m_statPUMComputeWriteBits += 2 * numBits;
         break;
       default:
         // op_res := op0 . op1
-        this->controller->m_statPUMComputeReadBits = 2 * numBits;
-        this->controller->m_statPUMComputeWriteBits = 1 * numBits;
+        this->controller->m_statPUMComputeReadBits += 2 * numBits;
+        this->controller->m_statPUMComputeWriteBits += 1 * numBits;
         break;
       }
     }
@@ -2347,7 +2349,10 @@ Cycles MLCPUMManager::estimateComputeBitOps(const PUMCommand &command,
 
   assert(command.type == "cmp");
 
-  bool forceInt = this->controller->myParams->stream_pum_force_integer;
+  bool forceInt =
+      this->controller->myParams->stream_pum_force_data_type == "int";
+  bool forceFloat =
+      this->controller->myParams->stream_pum_force_data_type == "fp";
 
   auto wordlineBits = scalarElemSize * 8;
   auto wordlineBitsSquare = wordlineBits * wordlineBits;
@@ -2369,11 +2374,11 @@ Cycles MLCPUMManager::estimateComputeBitOps(const PUMCommand &command,
 
   case SimdCmpOp:
   case IntAluOp:
-    computeLatency = wordlineBits;
+    computeLatency = forceFloat ? wordlineBitsSquare : wordlineBits;
     break;
 
   case IntMultOp:
-    computeLatency = wordlineBitsSquare / 2;
+    computeLatency = forceFloat ? wordlineBitsSquare : wordlineBitsSquare / 2;
     break;
 
   case FloatAddOp:
@@ -2391,7 +2396,8 @@ Cycles MLCPUMManager::estimateComputeBitOps(const PUMCommand &command,
     break;
 
   case SimdMultAccOp:
-    computeLatency = wordlineBitsSquare / 2 + wordlineBits;
+    computeLatency = forceFloat ? (2 * wordlineBitsSquare)
+                                : (wordlineBitsSquare / 2 + wordlineBits);
     break;
 
   case FloatMultAccOp:
