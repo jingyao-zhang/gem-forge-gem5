@@ -2612,13 +2612,6 @@ void MLCPUMManager::compileCompute(PUMContext &context,
     }
   }
 
-  // Calculate the number of bits computed. Ignore reduction moves.
-  for (const auto &cmd : commands) {
-    if (cmd.type == "cmp") {
-      this->controller->m_statPUMComputeBits += this->estimateComputeBits(cmd);
-    }
-  }
-
   context.commands.insert(context.commands.end(), commands.begin(),
                           commands.end());
 }
