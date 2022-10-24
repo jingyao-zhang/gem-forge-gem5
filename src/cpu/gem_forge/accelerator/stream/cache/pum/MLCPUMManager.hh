@@ -599,7 +599,11 @@ private:
    */
   void compileCompute(PUMContext &context, PUMDataGraphNode *node);
 
-  Cycles estimateComputeBits(const PUMCommand &command);
+  /**
+   * Estimate the bits read and write by this compute command. Used for
+   * energy modelling.
+   */
+  Cycles estimateComputeBits(const PUMCommand &command) const;
 
   /**
    * Compile the final reduction instruction.

@@ -297,9 +297,9 @@ parser.add_option("--gem-forge-stream-pum-num-bitlines", type="int",
 parser.add_option("--gem-forge-stream-pum-num-wordlines", type="int",
                   action="store", default="256",
                   help="Number of wordlines per SRAM array.")
-parser.add_option("--gem-forge-stream-pum-force-integer", type="int",
-                  action="store", default="0",
-                  help="Whether force PUM compute to have integer data type.")
+parser.add_option("--gem-forge-stream-pum-force-data-type", type="choice",
+                  choices=['none', 'int', 'fp'], default='none',
+                  help="Whether force PUM compute to have certain data type.")
 parser.add_option("--gem-forge-stream-pum-enable-parallel-intra-array-shift", type="int",
                   action="store", default="0",
                   help="Whether intra-array shift can happen in parallel.")

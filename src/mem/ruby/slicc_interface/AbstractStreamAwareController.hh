@@ -336,6 +336,8 @@ public:
   Stats::Scalar m_statPUMTotalCycles;
   Stats::Scalar m_statPUMPrefetchCycles;
   Stats::Scalar m_statPUMCompileCycles;
+  Stats::Scalar m_statPUMComputeReadBits;
+  Stats::Scalar m_statPUMComputeWriteBits;
   Stats::Scalar m_statPUMComputeCycles;
   Stats::Scalar m_statPUMComputeBits;
   Stats::Scalar m_statPUMDataMoveCycles;

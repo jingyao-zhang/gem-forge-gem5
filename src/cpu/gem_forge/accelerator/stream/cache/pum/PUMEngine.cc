@@ -489,7 +489,10 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
 
   if (command.type == "cmp") {
 
-    bool forceInt = this->controller->myParams->stream_pum_force_integer;
+    bool forceInt =
+        this->controller->myParams->stream_pum_force_data_type == "int";
+    bool forceFloat =
+        this->controller->myParams->stream_pum_force_data_type == "fp";
 
     auto wordlineBits = command.wordline_bits;
     auto wordlineBitsSquare = wordlineBits * wordlineBits;
@@ -511,11 +514,11 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
 
     case SimdCmpOp:
     case IntAluOp:
-      computeLatency = wordlineBits;
+      computeLatency = forceFloat ? wordlineBitsSquare : wordlineBits;
       break;
 
     case IntMultOp:
-      computeLatency = wordlineBitsSquare / 2;
+      computeLatency = forceFloat ? wordlineBitsSquare : wordlineBitsSquare / 2;
       break;
 
     case FloatAddOp:
@@ -533,7 +536,8 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
       break;
 
     case SimdMultAccOp:
-      computeLatency = wordlineBitsSquare / 2 + wordlineBits;
+      computeLatency = forceFloat ? (2 * wordlineBitsSquare)
+                                  : (wordlineBitsSquare / 2 + wordlineBits);
       break;
 
     case FloatMultAccOp:
