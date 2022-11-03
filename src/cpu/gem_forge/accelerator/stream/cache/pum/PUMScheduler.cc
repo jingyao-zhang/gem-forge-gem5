@@ -50,7 +50,7 @@ PUMScheduler::PUMScheduler(MLCPUMManager *_manager)
 PUMScheduler::PUMDataGraphNodeVec
 PUMScheduler::schedulePUMDataGraph(PUMContext &context) {
   if (this->controller->myParams->stream_pum_schedule_type == "bfs") {
-    return this->schedulePUMDataGraphBFS(context);
+    return this->schedulePUMDataGraphBFS(context, true /* addSync */);
   } else if (this->controller->myParams->stream_pum_schedule_type == "unison") {
     return this->schedulePUMDataGraphUnison(context);
   } else if (this->controller->myParams->stream_pum_schedule_type == "linear") {
@@ -78,18 +78,18 @@ PUMScheduler::schedulePUMDataGraphLinear(PUMContext &context) {
     // Check if the previous node is Sync.
     if (!scheduledNodes.empty() &&
         scheduledNodes.back()->type != PUMDataGraphNode::TypeE::Sync) {
-      scheduledNodes.push_back(PUMDataGraphNode::newSyncNode());
+      appendSyncNode(context, scheduledNodes);
     }
     scheduledNodes.push_back(node);
     // Insert a sync after that.
-    scheduledNodes.push_back(PUMDataGraphNode::newSyncNode());
+    appendSyncNode(context, scheduledNodes);
   }
 
   return scheduledNodes;
 }
 
 PUMScheduler::PUMDataGraphNodeVec
-PUMScheduler::schedulePUMDataGraphBFS(PUMContext &context) {
+PUMScheduler::schedulePUMDataGraphBFS(PUMContext &context, bool addSync) {
 
   PUMDataGraphNodeVec scheduledNodes;
 
@@ -157,8 +157,8 @@ PUMScheduler::schedulePUMDataGraphBFS(PUMContext &context) {
       }
     }
     // Insert a sync node.
-    if (needSync) {
-      scheduledNodes.push_back(PUMDataGraphNode::newSyncNode());
+    if (needSync && addSync) {
+      appendSyncNode(context, scheduledNodes);
     }
     for (auto node : nextFrontier) {
       scheduledNodes.push_back(node);
@@ -167,12 +167,70 @@ PUMScheduler::schedulePUMDataGraphBFS(PUMContext &context) {
     frontier = nextFrontier;
   }
 
-  if (scheduledNodes.back()->type != PUMDataGraphNode::TypeE::Sync) {
+  if (scheduledNodes.back()->type != PUMDataGraphNode::TypeE::Sync && addSync) {
     // Make sure we always sync at the end.
-    scheduledNodes.push_back(PUMDataGraphNode::newSyncNode());
+    appendSyncNode(context, scheduledNodes);
   }
 
   return scheduledNodes;
+}
+
+void PUMScheduler::appendSyncNode(PUMContext &context,
+                                  PUMDataGraphNodeVec &nodes) {
+  nodes.push_back(PUMDataGraphNode::newSyncNode());
+  context.pumDataGraphNodes.push_back(nodes.back());
+}
+
+PUMScheduler::PUMDataGraphNodeVec
+PUMScheduler::insertSyncNodes(PUMContext &context,
+                              const PUMDataGraphNodeVec &nodes) {
+
+  PUMDataGraphNodeVec ret;
+
+  /**
+   * A state machine:
+   * Init.
+   * Move.
+   * Cmp.
+   * Ld.
+   */
+  const int Init = 0;
+  const int Move = 1;
+  const int Cmp = 2;
+  const int Ld = 3;
+  int state = Init;
+  for (auto node : nodes) {
+    if (node->type == PUMDataGraphNode::TypeE::Compute) {
+      switch (state) {
+      case Move: {
+        appendSyncNode(context, ret);
+        break;
+      }
+      }
+      state = Cmp;
+    } else if (node->type == PUMDataGraphNode::TypeE::Move) {
+      switch (state) {
+      case Cmp: {
+        appendSyncNode(context, ret);
+        break;
+      }
+      }
+      state = Move;
+    } else if (node->type == PUMDataGraphNode::TypeE::Value) {
+      state = Ld;
+    } else if (node->type == PUMDataGraphNode::TypeE::Load) {
+      state = Ld;
+    }
+
+    ret.push_back(node);
+  }
+
+  if (ret.back()->type != PUMDataGraphNode::TypeE::Sync) {
+    // Make sure we always sync at the end.
+    appendSyncNode(context, ret);
+  }
+
+  return ret;
 }
 
 PUMScheduler::PUMDataGraphNodeVec
@@ -180,7 +238,8 @@ PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
 
   auto directory = this->manager->getTDFGFolder();
 
-  auto initScheduledNodes = this->schedulePUMDataGraphBFS(context);
+  auto initScheduledNodes =
+      this->schedulePUMDataGraphBFS(context, false /* addSync */);
 
   auto dumpCount = this->manager->allocDumpCount("uni.");
 
@@ -258,8 +317,8 @@ PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
     }
 
     case MLCPUMManager::PUMDataGraphNode::TypeE::Sync: {
-      // Ignore Sync node in the initial scheduling.
-      break;
+      // There should be no Sync in the initial scheduling.
+      panic("Unsupported Node %s in Initial Scheduling.\n", *node);
     }
 
     case MLCPUMManager::PUMDataGraphNode::TypeE::Move: {
@@ -358,8 +417,52 @@ PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
   // Write to file.
   std::string outputMIRFn = "tdfg." + std::to_string(dumpCount) + ".uni.mir";
   auto outF = directory->create(outputMIRFn);
-  (*outF->stream()) << output;
-  directory->close(outF);
+  auto &outS = *outF->stream();
+  outS << output;
 
-  return initScheduledNodes;
+  /**
+   * Parse the scheduled tDFG with super adhoc parser.
+   */
+  MLCPUMManager::PUMDataGraphNodeVec scheduledNodes;
+  {
+
+    auto isInstLine = [](const std::string &line) -> bool {
+      return line.find(" = ") != std::string::npos;
+    };
+    auto getInstId = [](const std::string &line) -> int {
+      auto instPos = line.find("inf_");
+      auto spacePos = line.find(" ", instPos);
+      auto commaPos = line.find(",", spacePos);
+      if (commaPos == std::string::npos) {
+        commaPos = line.size();
+      }
+      auto instIdStr = line.substr(spacePos + 1, commaPos - spacePos - 1);
+      return std::stoi(instIdStr);
+    };
+
+    std::istringstream o(output);
+    std::string line;
+    while (std::getline(o, line)) {
+      if (!isInstLine(line)) {
+        continue;
+      }
+      auto instId = getInstId(line);
+      auto node = instIdToNodeMap.at(instId);
+      scheduledNodes.push_back(node);
+    }
+
+    // Add back sync nodes.
+    scheduledNodes = this->insertSyncNodes(context, scheduledNodes);
+
+    // Dump scheduled nodes.
+    outS << "--- Scheduled tDFG ---\n";
+    for (auto node : scheduledNodes) {
+      outS << *node << "\n";
+    }
+  }
+
+  directory->close(outF);
+  return scheduledNodes;
+
+  // return this->schedulePUMDataGraphBFS(context, true /* addSync */);
 }

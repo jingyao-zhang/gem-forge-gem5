@@ -29,8 +29,13 @@ private:
   MLCPUMManager *manager;
 
   PUMDataGraphNodeVec schedulePUMDataGraphLinear(PUMContext &context);
-  PUMDataGraphNodeVec schedulePUMDataGraphBFS(PUMContext &context);
+  PUMDataGraphNodeVec schedulePUMDataGraphBFS(PUMContext &context,
+                                              bool addSync);
   PUMDataGraphNodeVec schedulePUMDataGraphUnison(PUMContext &context);
+
+  PUMDataGraphNodeVec insertSyncNodes(PUMContext &context,
+                                      const PUMDataGraphNodeVec &nodes);
+  void appendSyncNode(PUMContext &context, PUMDataGraphNodeVec &nodes);
 };
 
 #endif
