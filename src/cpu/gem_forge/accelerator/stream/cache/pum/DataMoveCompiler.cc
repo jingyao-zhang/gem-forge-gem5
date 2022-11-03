@@ -1305,7 +1305,7 @@ void DataMoveCompiler::CmdToLLCMapper<D, T>::mapCmdToLLCImpl(
 
   auto numLLCBanks = llc_config.get_total_banks();
   // As an optimization, we fixed number of banks for Jitter.
-  assert(numLLCBanks == LLCTilePattern::NumBanks);
+  assert(numLLCBanks <= LLCTilePattern::NumBanks);
 
   auto fixedCmdTileMask = getAffinePatternImpl<D, T>(command.tile_mask);
 

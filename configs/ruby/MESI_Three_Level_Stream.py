@@ -264,6 +264,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_pum_optimize_dfg,
                 stream_pum_optimize_dfg_expand_tensor=\
                     options.gem_forge_stream_pum_optimize_dfg_expand_tensor,
+                stream_pum_schedule_type=\
+                    options.gem_forge_stream_pum_schedule_type,
                 stream_pum_compile_lat_per_cmd=\
                     options.gem_forge_stream_pum_compile_lat_per_cmd,
                 stream_pum_prefetch_level=\

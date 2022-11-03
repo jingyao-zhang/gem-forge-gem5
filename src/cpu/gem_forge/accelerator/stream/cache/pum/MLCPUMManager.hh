@@ -19,6 +19,8 @@
 
 #include "TDFG.pb.h"
 
+class PUMScheduler;
+
 class MLCPUMManager {
 public:
   MLCPUMManager(MLCStreamEngine *_mlcSE);
@@ -87,6 +89,9 @@ private:
   using ConfigPtr = CacheStreamConfigureDataPtr;
   MLCStreamEngine *mlcSE;
   AbstractStreamAwareController *controller;
+
+  friend class PUMScheduler;
+  std::unique_ptr<PUMScheduler> scheduler;
 
   /**
    * Number of in-flight prefetch streams.
@@ -543,6 +548,11 @@ private:
                                const AffinePattern &pat,
                                AffinePattern &splitOutDim);
 
+  // Folder holding all TDFG outputs.
+  static bool cleanedTDFGFolder;
+  static const std::string tdfgFolder;
+  OutputDirectory *getTDFGFolder();
+
   // E-Graph optimization specific.
   void buildTDFG(PUMContext &context, const std::string &prefix);
   void dumpTDFG(const ::LLVM::TDG::TDFG &tdfg, const std::string &prefix);
@@ -570,14 +580,6 @@ private:
    * Try to expand TDFG tensor to align with boundary.
    */
   void expandPUMDataGraphNode(PUMContext &context);
-
-  /**
-   * Schedule PUMDataGraph nodes and insert sync nodes.
-   * So far just BFS.
-   */
-  PUMDataGraphNodeVec schedulePUMDataGraph(PUMContext &context);
-  PUMDataGraphNodeVec schedulePUMDataGraphLinear(PUMContext &context);
-  PUMDataGraphNodeVec schedulePUMDataGraphBFS(PUMContext &context);
 
   /**
    * Compile scheduled PUMDataGraph into commands.

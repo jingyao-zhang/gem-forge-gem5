@@ -1,5 +1,6 @@
 #include "MLCPUMManager.hh"
 #include "PUMEngine.hh"
+#include "PUMScheduler.hh"
 
 #include <algorithm>
 #include <cstdlib>
@@ -47,7 +48,9 @@ int64_t MLCPUMManager::PUMContext::nextContextId = 0;
 
 static std::map<std::string, int> prefixDumpCountMap;
 static int dumpCount = 0;
-const std::string tdfg_folder = "stream_pum_tdfg";
+
+bool MLCPUMManager::cleanedTDFGFolder = false;
+const std::string MLCPUMManager::tdfgFolder = "stream_pum_tdfg";
 
 AffinePattern MLCPUMManager::PatternInfo::getPatternAdjustedByOuterIter(
     int64_t patternIdx, int64_t outerIter) const {
@@ -198,7 +201,9 @@ MLCPUMManager::PUMContext::~PUMContext() {
 }
 
 MLCPUMManager::MLCPUMManager(MLCStreamEngine *_mlcSE)
-    : mlcSE(_mlcSE), controller(_mlcSE->controller) {}
+    : mlcSE(_mlcSE), controller(_mlcSE->controller) {
+  this->scheduler = m5::make_unique<PUMScheduler>(this);
+}
 
 MLCPUMManager::~MLCPUMManager() {}
 
@@ -741,7 +746,7 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context) {
       this->expandPUMDataGraphNode(context);
     }
 
-    auto scheduledNodes = this->schedulePUMDataGraphBFS(context);
+    auto scheduledNodes = this->scheduler->schedulePUMDataGraph(context);
     context.pumDataGraphNodes = scheduledNodes;
 
     // Dump once more before lowering.
@@ -759,7 +764,7 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context) {
       }
     }
 
-    auto scheduledNodes = this->schedulePUMDataGraph(context);
+    auto scheduledNodes = this->scheduler->schedulePUMDataGraph(context);
     context.pumDataGraphNodes = scheduledNodes;
   }
 
@@ -1512,21 +1517,25 @@ void MLCPUMManager::buildPUMDataGraphCompute(
   }
 }
 
+OutputDirectory *MLCPUMManager::getTDFGFolder() {
+  if (!cleanedTDFGFolder) {
+    /**
+     * First time: Delete the possible old folder.
+     */
+    simout.remove(tdfgFolder, true /* recursive */);
+    cleanedTDFGFolder = true;
+  }
+
+  auto directory = simout.findOrCreateSubdirectory(tdfgFolder);
+  return directory;
+}
+
 void MLCPUMManager::dumpTDFG(const ::LLVM::TDG::TDFG &tdfg,
                              const std::string &prefix) {
 
   auto &prefixDumpCount = prefixDumpCountMap.emplace(prefix, 0).first->second;
 
-  const std::string &tdfg_folder = "stream_pum_tdfg";
-
-  if (dumpCount == 0) {
-    /**
-     * First time: Delete the possible old folder.
-     */
-    simout.remove(tdfg_folder, true /* recursive */);
-  }
-
-  auto directory = simout.findOrCreateSubdirectory(tdfg_folder);
+  auto directory = getTDFGFolder();
 
   // Dump to JSON.
   {
@@ -2275,130 +2284,6 @@ void MLCPUMManager::expandPUMDataGraphNode(PUMContext &context) {
     }
     }
   }
-}
-
-MLCPUMManager::PUMDataGraphNodeVec
-MLCPUMManager::schedulePUMDataGraph(PUMContext &context) {
-  if (this->controller->myParams->stream_pum_optimize_dfg) {
-    return this->schedulePUMDataGraphBFS(context);
-  } else {
-    return this->schedulePUMDataGraphLinear(context);
-  }
-}
-
-MLCPUMManager::PUMDataGraphNodeVec
-MLCPUMManager::schedulePUMDataGraphLinear(PUMContext &context) {
-
-  /**
-   * This is used when we don't optimize the DFG. Here we simply
-   * insert Sync node before and after CMP node.
-   */
-
-  PUMDataGraphNodeVec scheduledNodes;
-
-  for (auto node : context.pumDataGraphNodes) {
-    if (node->type != PUMDataGraphNode::TypeE::Compute) {
-      scheduledNodes.push_back(node);
-      continue;
-    }
-    // Check if the previous node is Sync.
-    if (!scheduledNodes.empty() &&
-        scheduledNodes.back()->type != PUMDataGraphNode::TypeE::Sync) {
-      scheduledNodes.push_back(PUMDataGraphNode::newSyncNode());
-    }
-    scheduledNodes.push_back(node);
-    // Insert a sync after that.
-    scheduledNodes.push_back(PUMDataGraphNode::newSyncNode());
-  }
-
-  return scheduledNodes;
-}
-
-MLCPUMManager::PUMDataGraphNodeVec
-MLCPUMManager::schedulePUMDataGraphBFS(PUMContext &context) {
-
-  PUMDataGraphNodeVec scheduledNodes;
-
-  std::set<PUMDataGraphNode *> scheduled;
-  std::set<PUMDataGraphNode *> frontier;
-  for (auto node : context.pumDataGraphNodes) {
-    if (node->operands.empty()) {
-      frontier.insert(node);
-      scheduled.insert(node);
-      scheduledNodes.push_back(node);
-    }
-  }
-
-  while (!frontier.empty()) {
-    std::set<PUMDataGraphNode *> nextFrontier;
-    for (auto node : frontier) {
-      for (auto user : node->users) {
-        bool allOperandsScheduled = true;
-        for (auto operand : user->operands) {
-          if (!scheduled.count(operand)) {
-            allOperandsScheduled = false;
-            break;
-          }
-        }
-        if (allOperandsScheduled) {
-          nextFrontier.insert(user);
-        }
-      }
-    }
-    /**
-     * No need to sync if both frontiers contain only ComputeNodes.
-     */
-    bool needSync = true;
-    {
-      auto areAllCmpNodes =
-          [](const std::set<PUMDataGraphNode *> &nodes) -> bool {
-        for (auto node : nodes) {
-          if (node->type != PUMDataGraphNode::TypeE::Compute) {
-            return false;
-          }
-        }
-        return true;
-      };
-      auto areAllValueOrConstNodes =
-          [](const std::set<PUMDataGraphNode *> &nodes) -> bool {
-        for (auto node : nodes) {
-          if (node->type == PUMDataGraphNode::TypeE::Value) {
-            // Value node.
-            continue;
-          }
-          if (node->type == PUMDataGraphNode::TypeE::Compute &&
-              node->compValTy != PUMDataGraphNode::CompValueE::None) {
-            // Const value node.
-            continue;
-          }
-          return false;
-        }
-        return true;
-      };
-      if (areAllCmpNodes(frontier) && areAllCmpNodes(nextFrontier)) {
-        needSync = false;
-      }
-      if (areAllValueOrConstNodes(frontier)) {
-        needSync = false;
-      }
-    }
-    // Insert a sync node.
-    if (needSync) {
-      scheduledNodes.push_back(PUMDataGraphNode::newSyncNode());
-    }
-    for (auto node : nextFrontier) {
-      scheduledNodes.push_back(node);
-      scheduled.insert(node);
-    }
-    frontier = nextFrontier;
-  }
-
-  if (scheduledNodes.back()->type != PUMDataGraphNode::TypeE::Sync) {
-    // Make sure we always sync at the end.
-    scheduledNodes.push_back(PUMDataGraphNode::newSyncNode());
-  }
-
-  return scheduledNodes;
 }
 
 void MLCPUMManager::compilePUMDataGraphToCommands(PUMContext &context) {

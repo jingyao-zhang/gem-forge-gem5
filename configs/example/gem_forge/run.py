@@ -315,6 +315,9 @@ parser.add_option("--gem-forge-stream-pum-optimize-dfg", type="int",
 parser.add_option("--gem-forge-stream-pum-optimize-dfg-expand-tensor", type="int",
                   action="store", default="0",
                   help="Enable tDFG optimization tensor expansion.")
+parser.add_option("--gem-forge-stream-pum-schedule-type", type="choice",
+                  choices=['linear', 'bfs', 'unison'], default='bfs',
+                  help="Which scheduler to use for tDFG.")
 parser.add_option("--gem-forge-stream-pum-compile-lat-per-cmd", type="int",
                   action="store", default="10",
                   help="Compiling latency per cmd.")

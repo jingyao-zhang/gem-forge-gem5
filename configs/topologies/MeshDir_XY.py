@@ -49,7 +49,6 @@ class MeshDir_XY(SimpleTopology):
     def makeDirCornerTopology(self, ExtLink, dir_nodes, routers, ext_links):
         # NUMA Node for each quadrant
         # With odd columns or rows, the nodes will be unequal
-        assert(len(dir_nodes) == 4)
         self.numa_nodes = [[], [], [], []]
         for i in range(self.num_routers):
             if i % self.num_columns < self.num_columns / 2  and \
@@ -63,6 +62,19 @@ class MeshDir_XY(SimpleTopology):
                 self.numa_nodes[2].append(i)
             else:
                 self.numa_nodes[3].append(i)
+        
+        if len(dir_nodes) == 2:
+            # Only two nodes. put on top left and right.
+            self.numa_nodes[0] += self.numa_nodes[2]
+            self.numa_nodes[1] += self.numa_nodes[3]
+            self.numa_nodes.pop()
+            self.numa_nodes.pop()
+        elif len(dir_nodes) == 4:
+            # Nothing to do.
+            pass
+        else:
+            # Invalid number of directors.
+            assert(False)
 
         # Connect the dir nodes to the corners.
         print(f'[MeshDirCorner] Dir 0 -> Router 0.')
@@ -77,18 +89,19 @@ class MeshDir_XY(SimpleTopology):
                                 int_node=routers[self.num_columns - 1],
                                 latency=self.link_latency))
         self.link_count += 1
-        print(f'[MeshDirCorner] Dir 2 -> Router {self.num_routers - self.num_columns}.')
-        dir_nodes[2].router_id = self.num_routers - self.num_columns
-        ext_links.append(ExtLink(link_id=self.link_count, ext_node=dir_nodes[2],
-                                int_node=routers[self.num_routers - self.num_columns],
-                                latency=self.link_latency))
-        self.link_count += 1
-        print(f'[MeshDirCorner] Dir 3 -> Router {self.num_routers - 1}.')
-        dir_nodes[3].router_id = self.num_routers - 1
-        ext_links.append(ExtLink(link_id=self.link_count, ext_node=dir_nodes[3],
-                                int_node=routers[self.num_routers - 1],
-                                latency=self.link_latency))
-        self.link_count += 1
+        if len(dir_nodes) == 4:
+            print(f'[MeshDirCorner] Dir 2 -> Router {self.num_routers - self.num_columns}.')
+            dir_nodes[2].router_id = self.num_routers - self.num_columns
+            ext_links.append(ExtLink(link_id=self.link_count, ext_node=dir_nodes[2],
+                                    int_node=routers[self.num_routers - self.num_columns],
+                                    latency=self.link_latency))
+            self.link_count += 1
+            print(f'[MeshDirCorner] Dir 3 -> Router {self.num_routers - 1}.')
+            dir_nodes[3].router_id = self.num_routers - 1
+            ext_links.append(ExtLink(link_id=self.link_count, ext_node=dir_nodes[3],
+                                    int_node=routers[self.num_routers - 1],
+                                    latency=self.link_latency))
+            self.link_count += 1
 
 
     def makeDirMiddleTopology(self, ExtLink, dir_nodes, routers, ext_links):

@@ -17,6 +17,7 @@ Source('PUMTransposeUnit.cc')
 data_move_compiler = Source('DataMoveCompiler.cc')
 Source('MLCPUMManager.cc')
 Source('PUMEngine.cc')
+Source('PUMScheduler.cc')
 
 tdfg = ProtoBuf('TDFG.proto')
 
