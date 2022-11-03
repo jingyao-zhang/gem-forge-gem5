@@ -1,5 +1,48 @@
 #include "PUMScheduler.hh"
 
+#include "../../stream_float_policy.hh"
+
+#include <array>
+#include <cstdio>
+#include <iostream>
+#include <memory>
+#include <sstream>
+#include <string>
+
+#include "debug/MLCStreamPUM.hh"
+
+#define DEBUG_TYPE MLCStreamPUM
+#include "../../stream_log.hh"
+
+#define MLCSE_DPRINTF(format, args...)                                         \
+  DPRINTF(MLCStreamPUM, "[MLC_SE%d]: [PUM] " format,                           \
+          this->controller->getMachineID().num, ##args)
+#define MLCSE_PANIC(format, args...)                                           \
+  panic("[MLC_SE%d]: [PUM] " format, this->controller->getMachineID().num,     \
+        ##args)
+
+#define PUM_LOG_(format, args...)                                              \
+  {                                                                            \
+    MLCSE_DPRINTF(format, ##args);                                             \
+    std::ostringstream __s;                                                    \
+    ccprintf(__s, format, ##args);                                             \
+    StreamFloatPolicy::getLog() << __s.str() << std::flush;                    \
+  }
+
+std::string exec(const char *cmd) {
+  std::array<char, 128> buffer;
+  std::string result;
+  std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd, "r"), pclose);
+  if (!pipe) {
+    panic("popen() failed!");
+  }
+  while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+    inform("%s", buffer.data());
+    result += buffer.data();
+  }
+  return result;
+}
+
 PUMScheduler::PUMScheduler(MLCPUMManager *_manager)
     : mlcSE(_manager->mlcSE), controller(_manager->controller),
       manager(_manager) {}
@@ -135,5 +178,188 @@ PUMScheduler::schedulePUMDataGraphBFS(PUMContext &context) {
 PUMScheduler::PUMDataGraphNodeVec
 PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
 
-  return this->schedulePUMDataGraphUnison(context);
+  auto directory = this->manager->getTDFGFolder();
+
+  auto initScheduledNodes = this->schedulePUMDataGraphBFS(context);
+
+  auto dumpCount = this->manager->allocDumpCount("uni.");
+
+  std::string inputMIRFn = "tdfg." + std::to_string(dumpCount) + ".raw.mir";
+  auto log = directory->create(inputMIRFn);
+
+  /**
+   * Generate the MIR function.
+   */
+  auto &s = *log->stream();
+
+  s << "--- |\n";
+  s << " (corresponding IR)\n";
+  s << "...\n";
+  s << "---\n";
+  s << "name: foo\n";
+  s << "body: |\n";
+  s << "  bb.0 (freq 20):\n";
+  s << "    liveouts: %r2\n";
+
+  std::map<MLCPUMManager::PUMDataGraphNode *, int> nodeToVRegMap;
+  int usedVReg = 0;
+  auto allocVReg = [&nodeToVRegMap,
+                    &usedVReg](MLCPUMManager::PUMDataGraphNode *node) -> int {
+    panic_if(nodeToVRegMap.count(node), "Realloc VReg for Node.");
+    auto vReg = usedVReg++;
+    nodeToVRegMap.emplace(node, vReg);
+    return vReg;
+  };
+  auto getVReg =
+      [&nodeToVRegMap](MLCPUMManager::PUMDataGraphNode *node) -> int {
+    panic_if(!nodeToVRegMap.count(node), "No VReg for Node.");
+    return nodeToVRegMap.at(node);
+  };
+
+  std::map<Addr, int> regionVAddrVRegMap;
+  auto getOrAllocVRegion = [&regionVAddrVRegMap,
+                            &usedVReg](Addr regionVAddr) -> int {
+    if (regionVAddrVRegMap.count(regionVAddr)) {
+      return regionVAddrVRegMap.at(regionVAddr);
+    }
+    auto vReg = usedVReg++;
+    regionVAddrVRegMap.emplace(regionVAddr, vReg);
+    return vReg;
+  };
+
+  std::map<int, MLCPUMManager::PUMDataGraphNode *> instIdToNodeMap;
+  auto allocInstId =
+      [&instIdToNodeMap](MLCPUMManager::PUMDataGraphNode *node) -> int {
+    auto nextInstId = instIdToNodeMap.size();
+    instIdToNodeMap.emplace(nextInstId, node);
+    return nextInstId;
+  };
+
+  const int instBufSize = 1024;
+  char instBuf[instBufSize];
+
+  for (auto node : initScheduledNodes) {
+    switch (node->type) {
+    case MLCPUMManager::PUMDataGraphNode::TypeE::Value: {
+
+      bool alreadyLoaded = regionVAddrVRegMap.count(node->regionVAddr);
+      auto regionVReg = getOrAllocVRegion(node->regionVAddr);
+      auto instId = allocInstId(node);
+      if (!alreadyLoaded) {
+        // There is the first time. Create inf_ld.
+        snprintf(instBuf, instBufSize, "    %%%d = inf_ld %d\n", regionVReg,
+                 instId);
+        s << instBuf;
+      }
+
+      // Map the node to the inf_ld.
+      nodeToVRegMap.emplace(node, regionVReg);
+      break;
+    }
+
+    case MLCPUMManager::PUMDataGraphNode::TypeE::Sync: {
+      // Ignore Sync node in the initial scheduling.
+      break;
+    }
+
+    case MLCPUMManager::PUMDataGraphNode::TypeE::Move: {
+      // Move should have only one operand.
+      assert(node->operands.size() == 1);
+      auto src = node->operands.front();
+
+      auto srcVReg = getVReg(src);
+      auto vReg = allocVReg(node);
+      auto instId = allocInstId(node);
+
+      snprintf(instBuf, instBufSize, "    %%%d = inf_mv %d, %%%d\n", vReg,
+               instId, srcVReg);
+      s << instBuf;
+      break;
+    }
+
+    case MLCPUMManager::PUMDataGraphNode::TypeE::Compute: {
+
+      // Ignore the immediate value.
+      if (node->isConstVal()) {
+        break;
+      }
+
+      PUMDataGraphNodeVec srcs;
+      const int maxNumSrcNodes = 3;
+      for (auto operand : node->operands) {
+        if (operand->isConstVal()) {
+          continue;
+        }
+        srcs.push_back(operand);
+        if (srcs.size() > maxNumSrcNodes) {
+          panic("Unsupported # operands for %s.\n", *node);
+        }
+      }
+
+      auto instId = allocInstId(node);
+
+      if (srcs.size() == 3) {
+
+        auto src1VReg = getVReg(srcs[0]);
+        auto src2VReg = getVReg(srcs[1]);
+        auto src3VReg = getVReg(srcs[2]);
+        auto vReg = allocVReg(node);
+
+        snprintf(instBuf, instBufSize,
+                 "    %%%d = inf_cmp3 %d, %%%d, %%%d, %%%d\n", vReg, instId,
+                 src1VReg, src2VReg, src3VReg);
+      } else if (srcs.size() == 2) {
+
+        auto src1VReg = getVReg(srcs[0]);
+        auto src2VReg = getVReg(srcs[1]);
+        auto vReg = allocVReg(node);
+
+        snprintf(instBuf, instBufSize, "    %%%d = inf_cmp2 %d, %%%d, %%%d\n",
+                 vReg, instId, src1VReg, src2VReg);
+      } else if (srcs.size() == 1) {
+
+        auto src1VReg = getVReg(srcs[0]);
+        auto vReg = allocVReg(node);
+
+        snprintf(instBuf, instBufSize, "    %%%d = inf_cmp1 %d, %%%d\n", vReg,
+                 instId, src1VReg);
+      }
+
+      s << instBuf;
+      break;
+    }
+
+    default: {
+      panic("Unsupported Node %s in MIR.\n", *node);
+    }
+    }
+  }
+
+  s << "    %r2 = COPY %" << (usedVReg - 1) << "\n";
+  s << "\n";
+  s << "...\n";
+  s << "\n";
+
+  directory->close(log);
+
+  // Invoke unison.
+
+  auto absoluteInputMIRFn = directory->resolve(inputMIRFn);
+  auto nRegs = 8;
+
+  snprintf(instBuf, instBufSize,
+           "uni run %s --goal=speed --target=InfStream --targetoption=regs:%d",
+           absoluteInputMIRFn.c_str(), nRegs);
+
+  PUM_LOG_("[UNI] Exec %s\n", instBuf);
+  auto output = exec(instBuf);
+  PUM_LOG_("%s\n", output);
+
+  // Write to file.
+  std::string outputMIRFn = "tdfg." + std::to_string(dumpCount) + ".uni.mir";
+  auto outF = directory->create(outputMIRFn);
+  (*outF->stream()) << output;
+  directory->close(outF);
+
+  return initScheduledNodes;
 }

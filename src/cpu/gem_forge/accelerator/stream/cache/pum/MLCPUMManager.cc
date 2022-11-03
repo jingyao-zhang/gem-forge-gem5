@@ -46,11 +46,16 @@
 
 int64_t MLCPUMManager::PUMContext::nextContextId = 0;
 
-static std::map<std::string, int> prefixDumpCountMap;
-static int dumpCount = 0;
-
 bool MLCPUMManager::cleanedTDFGFolder = false;
 const std::string MLCPUMManager::tdfgFolder = "stream_pum_tdfg";
+std::map<std::string, int> MLCPUMManager::tdfgFolderDumpCountMap;
+
+int MLCPUMManager::allocDumpCount(const std::string &prefix) {
+  auto &count = tdfgFolderDumpCountMap.emplace(prefix, 0).first->second;
+  auto ret = count;
+  count++;
+  return ret;
+}
 
 AffinePattern MLCPUMManager::PatternInfo::getPatternAdjustedByOuterIter(
     int64_t patternIdx, int64_t outerIter) const {
@@ -998,10 +1003,25 @@ void MLCPUMManager::buildPUMDataGraphMove(
                     "[PUM] NewSendValueNode SendPat %s SendSplitOutDim %s.\n",
                     sendPat, sendSplitOutDim);
 
-      valueNode = PUMDataGraphNode::newValueNode(
-          sendPatInfo.regionName, sendTile, sendPat, sendSplitOutDim,
-          sendPatInfo.scalarElemSize, sendPatInfo.regionVAddr);
-      context.pumDataGraphNodes.push_back(valueNode);
+      bool foundExistingValueNode = false;
+      for (auto node : context.pumDataGraphNodes) {
+        if (node->type != PUMDataGraphNode::TypeE::Value) {
+          continue;
+        }
+        if (node->regionVAddr == sendPatInfo.regionVAddr &&
+            node->sendPat == sendPat) {
+          foundExistingValueNode = true;
+          valueNode = node;
+          break;
+        }
+      }
+
+      if (!foundExistingValueNode) {
+        valueNode = PUMDataGraphNode::newValueNode(
+            sendPatInfo.regionName, sendTile, sendPat, sendSplitOutDim,
+            sendPatInfo.scalarElemSize, sendPatInfo.regionVAddr);
+        context.pumDataGraphNodes.push_back(valueNode);
+      }
 
       if (shouldExpandReuse) {
         AffinePattern expandedSendSplitOutDim;
@@ -1533,7 +1553,7 @@ OutputDirectory *MLCPUMManager::getTDFGFolder() {
 void MLCPUMManager::dumpTDFG(const ::LLVM::TDG::TDFG &tdfg,
                              const std::string &prefix) {
 
-  auto &prefixDumpCount = prefixDumpCountMap.emplace(prefix, 0).first->second;
+  auto prefixDumpCount = this->allocDumpCount(prefix);
 
   auto directory = getTDFGFolder();
 
@@ -1568,9 +1588,6 @@ void MLCPUMManager::dumpTDFG(const ::LLVM::TDG::TDFG &tdfg,
 
     directory->close(log);
   }
-
-  dumpCount++;
-  prefixDumpCount++;
 }
 
 // std::string MLCPUMManager::getOptimizerOutputDirectory() const {
@@ -1609,7 +1626,7 @@ MLCPUMManager::tryLoadOptimizerTDFG(bool isOptimized,
   // WARNING: Makes assupmtion that optimized tdfg will be read in the same
   // WARNING: iteration as its been dumped.
 
-  auto actualDumpCount = prefixDumpCountMap[prefix] - 1;
+  auto actualDumpCount = tdfgFolderDumpCountMap[prefix] - 1;
   auto fnameSuffix = (isOptimized) ? "_opt" : "_orig";
   auto fname = "tdfg." + std::to_string(actualDumpCount) + fnameSuffix + ".bin";
 

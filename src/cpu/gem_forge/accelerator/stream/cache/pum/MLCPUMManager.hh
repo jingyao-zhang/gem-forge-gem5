@@ -327,6 +327,11 @@ private:
                                         int _scalarElemSize, ExecFuncPtr _func,
                                         PUMComputeStreamGroup *_group);
 
+    bool isConstVal() const {
+      return this->type == Compute &&
+             (this->compValTy == ConstFloat || this->compValTy == ConstInt);
+    }
+
     /**
      * Fields for Sync node.
      */
@@ -551,7 +556,9 @@ private:
   // Folder holding all TDFG outputs.
   static bool cleanedTDFGFolder;
   static const std::string tdfgFolder;
+  static std::map<std::string, int> tdfgFolderDumpCountMap;
   OutputDirectory *getTDFGFolder();
+  int allocDumpCount(const std::string &prefix);
 
   // E-Graph optimization specific.
   void buildTDFG(PUMContext &context, const std::string &prefix);
