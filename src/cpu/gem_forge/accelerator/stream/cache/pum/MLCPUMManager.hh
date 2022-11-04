@@ -204,6 +204,13 @@ private:
       // A sync node represents the global barrier.
       Sync,
     };
+
+    bool isValue() const { return this->type == TypeE::Value; }
+    bool isMove() const { return this->type == TypeE::Move; }
+    bool isSync() const { return this->type == TypeE::Sync; }
+    bool isCompute() const { return this->type == TypeE::Compute; }
+    bool isLoad() const { return this->type == TypeE::Load; }
+
     // Common fields.
     std::string regionName;
     const TypeE type;
@@ -445,6 +452,8 @@ private:
     CacheStreamConfigureVec prefetchConfigs;
     // Saved pkt when waiting for prefetching.
     PacketPtr savedPkt = nullptr;
+    // MasterId used for creating streams.
+    MasterID masterId = 0;
 
     // TDFG for equality graph optimization.
     ::LLVM::TDG::TDFG tdfg;
@@ -461,6 +470,7 @@ private:
     int receivedAcks = 0;
     int totalSyncs = 0;
     int reachedSync = 0;
+    int reachedDataGraphNodes = 0;
     void clear();
     void clearPUMDataGraphNodes();
 
@@ -717,8 +727,14 @@ private:
   /**
    * Send out an kick message to PUMEngine to continue execution.
    */
+  void tryKickPUMEngine(PUMContext &context);
   void kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
                      bool isIdea);
+
+  /**
+   * Fetch data from DRAM before next sync.
+   */
+  void fetchPUMDataBeforeSync(PUMContext &context);
 
 public:
   void kickPUMEngineEventImpl(int64_t contextId);

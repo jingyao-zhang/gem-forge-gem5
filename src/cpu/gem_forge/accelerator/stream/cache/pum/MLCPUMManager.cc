@@ -2403,14 +2403,6 @@ void MLCPUMManager::compileDataMove(PUMContext &context,
 }
 
 void MLCPUMManager::compileSync(PUMContext &context, PUMDataGraphNode *node) {
-  /**
-   * Insert sync command after all data movement.
-   * This is default enabled for every LLC bank.
-   * NOTE: If there is no commands so far, we don't sync.
-   */
-  if (context.commands.empty()) {
-    return;
-  }
   context.commands.emplace_back();
   context.commands.back().type = "sync";
 }
@@ -2881,6 +2873,7 @@ MLCPUMManager::generatePrefetchStream(const ConfigPtr &config) {
 
   // Otherwise, generate and issue prefetch stream.
   auto prefetchConfig = std::make_shared<CacheStreamConfigureData>(*config);
+  prefetchConfig->dynamicId.streamInstance += 1000000;
   prefetchConfig->isPUMPrefetch = true;
 
   // Clear dependencies.
@@ -3034,8 +3027,7 @@ void MLCPUMManager::finishPrefetchStage() {
     auto &context = this->contexts.front();
 
     // Release all prefetch streams in the MLC SE.
-    assert(context.savedPkt);
-    auto masterId = context.savedPkt->req->masterId();
+    auto masterId = context.masterId;
     std::vector<DynStreamId> prefetchDynIds;
     for (const auto &prefetchConfig : context.prefetchConfigs) {
       prefetchDynIds.push_back(prefetchConfig->dynamicId);
@@ -3045,7 +3037,10 @@ void MLCPUMManager::finishPrefetchStage() {
     // Record the prefetch cycles.
     auto prefetchCycles = this->controller->curCycle() - context.initCycle;
     this->controller->m_statPUMPrefetchCycles += prefetchCycles;
-    runPUMExecutionStage(context);
+
+    // Try kick next round.
+    this->inFlightPUMPrefetch = false;
+    this->tryKickPUMEngine(context);
 
   } else {
     // We are in non-PUM prefetching stage.
@@ -3580,20 +3575,21 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
   }
 
   CacheStreamConfigureVec *prefetchConfigs = new CacheStreamConfigureVec;
-  for (auto &group : context.pumGroups) {
-    if (group.appliedPUM) {
-      // Prefetch necessary data.
-      auto pConfigs = this->generatePUMPrefetchStreams(group);
-      prefetchConfigs->insert(prefetchConfigs->end(), pConfigs.begin(),
-                              pConfigs.end());
-    }
-  }
+  // for (auto &group : context.pumGroups) {
+  //   if (group.appliedPUM) {
+  //     // Prefetch necessary data.
+  //     auto pConfigs = this->generatePUMPrefetchStreams(group);
+  //     prefetchConfigs->insert(prefetchConfigs->end(), pConfigs.begin(),
+  //                             pConfigs.end());
+  //   }
+  // }
   // Remember the prefetch configs.
   context.prefetchConfigs = *prefetchConfigs;
   MLCSE_DPRINTF("%d prefetch streams generated.\n", prefetchConfigs->size());
 
   assert(!context.savedPkt);
   context.savedPkt = pkt;
+  context.masterId = pkt->req->masterId();
 
   if (prefetchConfigs->empty()) {
     delete prefetchConfigs;
@@ -3715,10 +3711,87 @@ void MLCPUMManager::kickPUMEngineEventImpl(int64_t contextId) {
   // Sliently ignore the case when we do not find the context.
 }
 
+void 
+MLCPUMManager::fetchPUMDataBeforeSync(PUMContext &context) {
+
+  // Collect ValueNode before next sync.
+  std::set<std::string> fetchingRegions;
+  for (int nodeIdx = context.reachedDataGraphNodes,
+           numNodes = context.pumDataGraphNodes.size();
+       nodeIdx < numNodes; ++nodeIdx) {
+    auto node = context.pumDataGraphNodes.at(nodeIdx);
+    if (node->isSync()) {
+      break;
+    }
+    if (node->isValue()) {
+      fetchingRegions.insert(node->regionName);
+    }
+  }
+
+  CacheStreamConfigureVec *prefetchConfigs = new CacheStreamConfigureVec;
+
+  /**
+   * Search through StreamConfig for each fetching Addr.
+   */
+  for (const auto &regionName : fetchingRegions) {
+
+    bool foundConfig = false;
+    for (auto &config : context.configs) {
+      // Get NUCA region.
+      auto S = config->stream;
+      auto cpuDelegator = S->getCPUDelegator();
+      auto threadContext = cpuDelegator->getSingleThreadContext();
+      auto streamNUCAManager = threadContext->getStreamNUCAManager();
+
+      auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
+          config->addrGenCallback);
+      const auto &addrParams = config->addrGenFormalParams;
+      auto startVAddr = linearAddrGen->getStartAddr(addrParams);
+      const auto &streamNUCARegion =
+          streamNUCAManager->getContainingStreamRegion(startVAddr);
+
+      if (streamNUCARegion.name != regionName) {
+        continue;
+      }
+
+      foundConfig = true;
+
+      auto fetchConfig = this->generatePrefetchStream(config);
+      if (fetchConfig) {
+        prefetchConfigs->push_back(fetchConfig);
+      }
+
+      break;
+    }
+
+    if (!foundConfig) {
+      MLCSE_PANIC("[PUM] Failed to find FetchConfig for %s.", regionName);
+    }
+  }
+
+  context.prefetchConfigs = *prefetchConfigs;
+  MLCSE_DPRINTF("%d prefetch streams generated.\n", prefetchConfigs->size());
+
+  if (prefetchConfigs->empty()) {
+    delete prefetchConfigs;
+  } else {
+    this->inFlightPUMPrefetch = true;
+    this->savedNonPUMPkt = nullptr;
+    this->runPrefetchStage(prefetchConfigs, context.masterId);
+  }
+
+  return;
+}
+
 void MLCPUMManager::kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
                                   bool isIdea) {
 
   context.lastSyncCycle = this->controller->curCycle();
+
+  /**
+   * New implementation of PUMPrefetch: Fetch from DRAM for next Sync.
+   */
+  this->fetchPUMDataBeforeSync(context);
 
   /**
    * Broadcast the kick packet.
@@ -4135,51 +4208,73 @@ void MLCPUMManager::receivePacket(int recvPackets) {
   this->checkSync(context);
 }
 
-void MLCPUMManager::checkSync(PUMContext &context) {
-
-  assert(context.isActive() && "No Active PUM.");
+void MLCPUMManager::tryKickPUMEngine(PUMContext &context) {
 
   if (context.reachedSync == context.totalSyncs) {
     return;
   }
-
   auto expectedAcks = context.expectedAcksEverySync.at(context.reachedSync);
-  if (context.receivedAcks == expectedAcks &&
-      context.totalSentPackets == context.totalRecvPackets) {
+  if (context.receivedAcks != expectedAcks ||
+      context.totalSentPackets != context.totalRecvPackets) {
+    // Not received all acks yet.
+    return;
+  }
 
-    MLCSE_DPRINTF("Synced %d Total %d.\n", context.reachedSync + 1,
-                  context.totalSyncs);
-    context.reachedSync++;
-    context.receivedAcks = 0;
-    context.totalSentPackets = 0;
-    context.totalRecvPackets = 0;
+  if (this->inFlightPUMPrefetch) {
+    // Still waiting for PUMPrefetch.
+    return;
+  }
 
-    auto cyclesBetweenSync =
-        this->controller->curCycle() - context.lastSyncCycle;
-    for (const auto &group : context.pumGroups) {
-      if (group.appliedPUM) {
-        group.computeConfig->stream->statistic.samplePUMCyclesBetweenSync(
-            cyclesBetweenSync, context.reachedSync - 1);
-      }
+  context.reachedSync++;
+  while (context.reachedDataGraphNodes < context.pumDataGraphNodes.size()) {
+    const auto &node =
+        context.pumDataGraphNodes.at(context.reachedDataGraphNodes);
+    if (node->type == PUMDataGraphNode::TypeE::Sync) {
+      context.reachedDataGraphNodes++;
+      break;
     }
+    context.reachedDataGraphNodes++;
+  }
 
-    // We check if the current expected sync is more than number of LLC banks.
-    // If so, we record this cycles as MixCycles.
-    if (context.expectedAcksEverySync.at(context.reachedSync - 1) >
-        this->controller->getNumCols() * this->controller->getNumRows()) {
-      this->controller->m_statPUMMixCycles += cyclesBetweenSync;
-    }
+  context.receivedAcks = 0;
+  context.totalSentPackets = 0;
+  context.totalRecvPackets = 0;
 
-    if (context.reachedSync == context.totalSyncs) {
-      // This is the last Sync.
-      this->completeOneComputeRound(context);
-    } else {
-      // Notify the PUMEngine to continue.
-      this->kickPUMEngine(
-          context, MessageSizeType_Control,
-          this->controller->myParams->enable_stream_idea_ack /* isIdea */);
+  MLCSE_DPRINTF("Synced %d/%d Nodes %d/%d.\n", context.reachedSync,
+                context.totalSyncs, context.reachedDataGraphNodes,
+                context.pumDataGraphNodes.size());
+
+  auto cyclesBetweenSync = this->controller->curCycle() - context.lastSyncCycle;
+  for (const auto &group : context.pumGroups) {
+    if (group.appliedPUM) {
+      group.computeConfig->stream->statistic.samplePUMCyclesBetweenSync(
+          cyclesBetweenSync, context.reachedSync - 1);
     }
   }
+
+  // We check if the current expected sync is more than number of LLC banks.
+  // If so, we record this cycles as MixCycles.
+  if (context.expectedAcksEverySync.at(context.reachedSync - 1) >
+      this->controller->getNumCols() * this->controller->getNumRows()) {
+    this->controller->m_statPUMMixCycles += cyclesBetweenSync;
+  }
+
+  if (context.reachedSync == context.totalSyncs) {
+    // This is the last Sync.
+    this->completeOneComputeRound(context);
+  } else {
+    // Notify the PUMEngine to continue.
+    this->kickPUMEngine(
+        context, MessageSizeType_Control,
+        this->controller->myParams->enable_stream_idea_ack /* isIdea */);
+  }
+}
+
+void MLCPUMManager::checkSync(PUMContext &context) {
+
+  assert(context.isActive() && "No Active PUM.");
+
+  this->tryKickPUMEngine(context);
 }
 
 void MLCPUMManager::reportProgress(int64_t contextId) {

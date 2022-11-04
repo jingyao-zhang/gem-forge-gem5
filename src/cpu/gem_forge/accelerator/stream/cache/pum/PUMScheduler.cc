@@ -202,6 +202,7 @@ PUMScheduler::insertSyncNodes(PUMContext &context,
   for (auto node : nodes) {
     if (node->type == PUMDataGraphNode::TypeE::Compute) {
       switch (state) {
+      case Ld:
       case Move: {
         appendSyncNode(context, ret);
         break;
@@ -210,6 +211,7 @@ PUMScheduler::insertSyncNodes(PUMContext &context,
       state = Cmp;
     } else if (node->type == PUMDataGraphNode::TypeE::Move) {
       switch (state) {
+      case Ld:
       case Cmp: {
         appendSyncNode(context, ret);
         break;
@@ -217,8 +219,20 @@ PUMScheduler::insertSyncNodes(PUMContext &context,
       }
       state = Move;
     } else if (node->type == PUMDataGraphNode::TypeE::Value) {
+      switch (state) {
+      case Cmp: {
+        appendSyncNode(context, ret);
+        break;
+      }
+      }
       state = Ld;
     } else if (node->type == PUMDataGraphNode::TypeE::Load) {
+      switch (state) {
+      case Cmp: {
+        appendSyncNode(context, ret);
+        break;
+      }
+      }
       state = Ld;
     }
 
