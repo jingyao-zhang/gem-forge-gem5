@@ -94,17 +94,18 @@ PUMScheduler::schedulePUMDataGraphBFS(PUMContext &context, bool addSync) {
   PUMDataGraphNodeVec scheduledNodes;
 
   std::set<PUMDataGraphNode *> scheduled;
-  std::set<PUMDataGraphNode *> frontier;
+  PUMDataGraphNodeVec frontier;
   for (auto node : context.pumDataGraphNodes) {
     if (node->operands.empty()) {
-      frontier.insert(node);
+      frontier.push_back(node);
       scheduled.insert(node);
       scheduledNodes.push_back(node);
     }
   }
 
   while (!frontier.empty()) {
-    std::set<PUMDataGraphNode *> nextFrontier;
+    // Use vector to get a fixed order?
+    PUMDataGraphNodeVec nextFrontier;
     for (auto node : frontier) {
       for (auto user : node->users) {
         bool allOperandsScheduled = true;
@@ -114,8 +115,9 @@ PUMScheduler::schedulePUMDataGraphBFS(PUMContext &context, bool addSync) {
             break;
           }
         }
-        if (allOperandsScheduled) {
-          nextFrontier.insert(user);
+        if (allOperandsScheduled &&
+            !std::count(nextFrontier.begin(), nextFrontier.end(), user)) {
+          nextFrontier.push_back(user);
         }
       }
     }
@@ -124,8 +126,7 @@ PUMScheduler::schedulePUMDataGraphBFS(PUMContext &context, bool addSync) {
      */
     bool needSync = true;
     {
-      auto areAllCmpNodes =
-          [](const std::set<PUMDataGraphNode *> &nodes) -> bool {
+      auto areAllCmpNodes = [](const PUMDataGraphNodeVec &nodes) -> bool {
         for (auto node : nodes) {
           if (node->type != PUMDataGraphNode::TypeE::Compute) {
             return false;
@@ -134,7 +135,7 @@ PUMScheduler::schedulePUMDataGraphBFS(PUMContext &context, bool addSync) {
         return true;
       };
       auto areAllValueOrConstNodes =
-          [](const std::set<PUMDataGraphNode *> &nodes) -> bool {
+          [](const PUMDataGraphNodeVec &nodes) -> bool {
         for (auto node : nodes) {
           if (node->type == PUMDataGraphNode::TypeE::Value) {
             // Value node.
@@ -418,10 +419,19 @@ PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
   // Invoke unison.
 
   auto absoluteInputMIRFn = directory->resolve(inputMIRFn);
-  auto nRegs = 8;
+
+  // Approximate number of available registers.
+  const auto cacheWordlines = StreamNUCAMap::getCacheParams().wordlines;
+  const auto cacheBitlines = StreamNUCAMap::getCacheParams().bitlines;
+  const auto tileSize =
+      context.pumDataGraphNodes.front()->pumTile.getCanonicalTotalTileSize();
+  const auto tileRows = (tileSize + cacheBitlines - 1) / cacheBitlines;
+  const auto dataTypeBits =
+      context.pumDataGraphNodes.front()->scalarElemSize * 8;
+  auto nRegs = cacheWordlines / dataTypeBits / tileRows;
 
   snprintf(instBuf, instBufSize,
-           "uni run %s --goal=speed --target=InfStream --targetoption=regs:%d",
+           "uni run %s --goal=speed --target=InfStream --targetoption=regs:%ld",
            absoluteInputMIRFn.c_str(), nRegs);
 
   PUM_LOG_("[UNI] Exec %s\n", instBuf);
