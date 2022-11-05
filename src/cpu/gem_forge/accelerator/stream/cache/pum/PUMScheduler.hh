@@ -36,6 +36,20 @@ private:
   PUMDataGraphNodeVec insertSyncNodes(PUMContext &context,
                                       const PUMDataGraphNodeVec &nodes);
   void appendSyncNode(PUMContext &context, PUMDataGraphNodeVec &nodes);
+
+  /**
+   * A cache of found solution.
+   */
+  struct TriedUnisonSolution {
+    int numRegs = 0;
+    std::string raw;
+    std::string sol;
+  };
+  std::vector<TriedUnisonSolution> memorizedUnisonSolutions;
+  void memorizeUnisonSolution(int numRegs, const std::string &raw,
+                              const std::string &sol);
+  const TriedUnisonSolution *
+  searchPrevUnisonSolution(int numRegs, const std::string &raw) const;
 };
 
 #endif

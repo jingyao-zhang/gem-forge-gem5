@@ -251,20 +251,13 @@ PUMScheduler::insertSyncNodes(PUMContext &context,
 PUMScheduler::PUMDataGraphNodeVec
 PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
 
-  auto directory = this->manager->getTDFGFolder();
-
   auto initScheduledNodes =
       this->schedulePUMDataGraphBFS(context, false /* addSync */);
-
-  auto dumpCount = this->manager->allocDumpCount("uni.");
-
-  std::string inputMIRFn = "tdfg." + std::to_string(dumpCount) + ".raw.mir";
-  auto log = directory->create(inputMIRFn);
 
   /**
    * Generate the MIR function.
    */
-  auto &s = *log->stream();
+  std::ostringstream s;
 
   s << "--- |\n";
   s << " (corresponding IR)\n";
@@ -413,12 +406,15 @@ PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
   s << "\n";
   s << "...\n";
   s << "\n";
+  auto input = s.str();
 
+  auto directory = this->manager->getTDFGFolder();
+  auto dumpCount = this->manager->allocDumpCount("uni.");
+
+  std::string inputMIRFn = "tdfg." + std::to_string(dumpCount) + ".raw.mir";
+  auto log = directory->create(inputMIRFn);
+  (*log->stream()) << input;
   directory->close(log);
-
-  // Invoke unison.
-
-  auto absoluteInputMIRFn = directory->resolve(inputMIRFn);
 
   // Approximate number of available registers.
   const auto cacheWordlines = StreamNUCAMap::getCacheParams().wordlines;
@@ -430,12 +426,21 @@ PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
       context.pumDataGraphNodes.front()->scalarElemSize * 8;
   auto nRegs = cacheWordlines / dataTypeBits / tileRows;
 
+  // Invoke unison.
+  auto absoluteInputMIRFn = directory->resolve(inputMIRFn);
+
   snprintf(instBuf, instBufSize,
            "uni run %s --goal=speed --target=InfStream --targetoption=regs:%ld",
            absoluteInputMIRFn.c_str(), nRegs);
 
   PUM_LOG_("[UNI] Exec %s\n", instBuf);
-  auto output = exec(instBuf);
+  std::string output;
+  if (auto prevSol = this->searchPrevUnisonSolution(nRegs, input)) {
+    output = prevSol->sol;
+  } else {
+    output = exec(instBuf);
+    this->memorizeUnisonSolution(nRegs, input, output);
+  }
   PUM_LOG_("%s\n", output);
 
   // Write to file.
@@ -489,4 +494,26 @@ PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
   return scheduledNodes;
 
   // return this->schedulePUMDataGraphBFS(context, true /* addSync */);
+}
+
+void PUMScheduler::memorizeUnisonSolution(int numRegs, const std::string &raw,
+                                          const std::string &sol) {
+  this->memorizedUnisonSolutions.emplace_back();
+  auto &newSol = this->memorizedUnisonSolutions.back();
+  newSol.numRegs = numRegs;
+  newSol.raw = raw;
+  newSol.sol = sol;
+}
+
+const PUMScheduler::TriedUnisonSolution *
+PUMScheduler::searchPrevUnisonSolution(int numRegs,
+                                       const std::string &raw) const {
+
+  for (const auto &sol : this->memorizedUnisonSolutions) {
+    if (sol.numRegs == numRegs && sol.raw == raw) {
+      PUM_LOG_("[UNI] Reuse Prev Solution\n");
+      return &sol;
+    }
+  }
+  return nullptr;
 }
