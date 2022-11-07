@@ -274,7 +274,9 @@ PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
                     &usedVReg](MLCPUMManager::PUMDataGraphNode *node) -> int {
     panic_if(nodeToVRegMap.count(node), "Realloc VReg for Node.");
     auto vReg = usedVReg++;
-    nodeToVRegMap.emplace(node, vReg);
+    if (node) {
+      nodeToVRegMap.emplace(node, vReg);
+    }
     return vReg;
   };
   auto getVReg =
@@ -351,41 +353,64 @@ PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
         break;
       }
 
-      PUMDataGraphNodeVec srcs;
+      std::vector<int> srcVRegs;
       const int maxNumSrcNodes = 3;
       for (auto operand : node->operands) {
         if (operand->isConstVal()) {
           continue;
         }
-        srcs.push_back(operand);
-        if (srcs.size() > maxNumSrcNodes) {
+        srcVRegs.push_back(getVReg(operand));
+        if (srcVRegs.size() > maxNumSrcNodes) {
           panic("Unsupported # operands for %s.\n", *node);
         }
       }
 
+      /**
+       * For some computation, we need to use a 3 operands version to
+       * approximate the fact that we can't overwrite one of the operand.
+       * For example:
+       * 1. mul.
+       */
+      switch (node->insts.back()->opClass()) {
+      case OpClass::IntMult:
+      case OpClass::SimdMult:
+      case OpClass::SimdFloatMult:
+      case OpClass::FloatMult: {
+        auto liInstId = allocInstId(nullptr);
+        auto outVReg = allocVReg(nullptr);
+        srcVRegs.push_back(outVReg);
+        snprintf(instBuf, instBufSize, "    %%%d = inf_li %d\n", outVReg,
+                 liInstId);
+        s << instBuf;
+        break;
+      }
+      default:
+        break;
+      }
+
       auto instId = allocInstId(node);
 
-      if (srcs.size() == 3) {
+      if (srcVRegs.size() == 3) {
 
-        auto src1VReg = getVReg(srcs[0]);
-        auto src2VReg = getVReg(srcs[1]);
-        auto src3VReg = getVReg(srcs[2]);
+        auto src1VReg = srcVRegs[0];
+        auto src2VReg = srcVRegs[1];
+        auto src3VReg = srcVRegs[2];
         auto vReg = allocVReg(node);
 
         snprintf(instBuf, instBufSize,
                  "    %%%d = inf_cmp3 %d, %%%d, %%%d, %%%d\n", vReg, instId,
                  src1VReg, src2VReg, src3VReg);
-      } else if (srcs.size() == 2) {
+      } else if (srcVRegs.size() == 2) {
 
-        auto src1VReg = getVReg(srcs[0]);
-        auto src2VReg = getVReg(srcs[1]);
+        auto src1VReg = srcVRegs[0];
+        auto src2VReg = srcVRegs[1];
         auto vReg = allocVReg(node);
 
         snprintf(instBuf, instBufSize, "    %%%d = inf_cmp2 %d, %%%d, %%%d\n",
                  vReg, instId, src1VReg, src2VReg);
-      } else if (srcs.size() == 1) {
+      } else if (srcVRegs.size() == 1) {
 
-        auto src1VReg = getVReg(srcs[0]);
+        auto src1VReg = srcVRegs[0];
         auto vReg = allocVReg(node);
 
         snprintf(instBuf, instBufSize, "    %%%d = inf_cmp1 %d, %%%d\n", vReg,
@@ -476,8 +501,13 @@ PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
         continue;
       }
       auto instId = getInstId(line);
-      auto node = instIdToNodeMap.at(instId);
-      scheduledNodes.push_back(node);
+      /**
+       * Sometimes the InstId is not mapped to a node, e.g. inf_li to
+       * approximate that multiplication can not overwrite the operands.
+       */
+      if (auto node = instIdToNodeMap.at(instId)) {
+        scheduledNodes.push_back(node);
+      }
     }
 
     // Add back sync nodes.
