@@ -212,6 +212,10 @@ private:
     bool isLoad() const { return this->type == TypeE::Load; }
 
     // Common fields.
+    static int nextNodeId;
+    static int allocateNodeId() { return nextNodeId++; }
+    int nodeId = allocateNodeId();
+
     std::string regionName;
     const TypeE type;
     const AffinePattern pumTile;
@@ -730,6 +734,11 @@ private:
   void tryKickPUMEngine(PUMContext &context);
   void kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
                      bool isIdea);
+
+  /**
+   * Clear overwritten region since last sync.
+   */
+  void clearOverwrittenPUMDataSinceSync(PUMContext &context);
 
   /**
    * Fetch data from DRAM before next sync.

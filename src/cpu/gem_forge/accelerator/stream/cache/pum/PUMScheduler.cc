@@ -449,7 +449,8 @@ PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
   const auto tileRows = (tileSize + cacheBitlines - 1) / cacheBitlines;
   const auto dataTypeBits =
       context.pumDataGraphNodes.front()->scalarElemSize * 8;
-  auto nRegs = cacheWordlines / dataTypeBits / tileRows;
+  const auto wordlinesPerReg = dataTypeBits * tileRows;
+  auto nRegs = cacheWordlines / wordlinesPerReg;
 
   // Invoke unison.
   auto absoluteInputMIRFn = directory->resolve(inputMIRFn);
@@ -493,6 +494,12 @@ PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
       auto instIdStr = line.substr(spacePos + 1, commaPos - spacePos - 1);
       return std::stoi(instIdStr);
     };
+    auto getDstReg = [](const std::string &line) -> int {
+      auto rPos = line.find("%r");
+      auto equalPos = line.find(" = ");
+      auto dstRegStr = line.substr(rPos + 2, equalPos);
+      return std::stoi(dstRegStr);
+    };
 
     std::istringstream o(output);
     std::string line;
@@ -506,6 +513,9 @@ PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
        * approximate that multiplication can not overwrite the operands.
        */
       if (auto node = instIdToNodeMap.at(instId)) {
+        auto dstReg = getDstReg(line);
+        auto startWordline = dstReg * wordlinesPerReg;
+        node->startWordline = startWordline;
         scheduledNodes.push_back(node);
       }
     }

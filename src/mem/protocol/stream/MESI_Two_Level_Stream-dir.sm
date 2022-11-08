@@ -203,6 +203,28 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
     }
   }
 
+  void evictCleanLine(Addr paddrLine) {
+
+    TBE tbe := TBEs[paddrLine];
+    if (is_valid(tbe)) {
+      DPRINTF(RubySlicc, "EvictCleanLine on %#x but with TBE.\n", paddrLine);
+      error("EvictCleanLine with TBE.");
+    }
+
+    State state := getState(tbe, paddrLine);
+    if (state == State:I) {
+      // Not presented.
+    } else if (state == State:M) {
+      Entry dir_entry := getDirectoryEntry(paddrLine);
+      dir_entry.DirectoryState := State:I;
+    } else {
+      DPRINTF(RubySlicc, "EvictCleanLine on %#x but State %s.", paddrLine, state);
+        error("EvictCleanLine but Invalid State.");
+    }
+
+  }
+
+
   AccessPermission getAccessPermission(Addr addr) {
     TBE tbe := TBEs[addr];
     if(is_valid(tbe)) {

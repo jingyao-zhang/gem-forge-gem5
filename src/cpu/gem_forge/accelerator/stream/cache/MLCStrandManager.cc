@@ -46,7 +46,8 @@ void MLCStrandManager::receiveStreamConfigure(ConfigVec *configs,
 
   StrandSplitContext splitContext;
   // So far we always split into 64 strands.
-  splitContext.totalStrands = 64;
+  splitContext.totalStrands =
+      StreamNUCAMap::getNumRows() * StreamNUCAMap::getNumCols();
   if (this->canSplitIntoStrands(splitContext, *configs)) {
     this->splitIntoStrands(splitContext, *configs);
   }

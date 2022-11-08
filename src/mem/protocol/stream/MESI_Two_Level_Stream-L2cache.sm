@@ -278,6 +278,36 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     }
   }
 
+  bool isDirty(Entry cache_entry) {
+    assert(is_valid(cache_entry));
+    return cache_entry.Dirty;
+  }
+
+  void evictCleanLine(Addr paddrLine) {
+
+    TBE tbe := TBEs[paddrLine];
+    if (is_valid(tbe)) {
+      DPRINTF(RubySlicc, "EvictCleanLine on %#x but with TBE.\n", paddrLine);
+      error("EvictCleanLine with TBE.");
+    }
+
+    Entry cache_entry := getCacheEntry(paddrLine);
+    State state := getState(tbe, cache_entry, paddrLine);
+    if (state == State:NP) {
+      // Not presented.
+    } else if (state == State:M) {
+      if (isDirty(cache_entry)) {
+        DPRINTF(RubySlicc, "EvictCleanLine on %#x but Dirty.\n", paddrLine);
+        error("EvictCleanLine but Dirty.");
+      }
+      L2cache.deallocate(paddrLine);
+    } else {
+      DPRINTF(RubySlicc, "EvictCleanLine on %#x but State %s.", paddrLine, state);
+        error("EvictCleanLine but Invalid State.");
+    }
+
+  }
+
   AccessPermission getAccessPermission(Addr addr) {
     TBE tbe := TBEs[addr];
     if(is_valid(tbe)) {
@@ -366,11 +396,6 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   int getPendingAcks(TBE tbe) {
     return tbe.pendingAcks;
-  }
-
-  bool isDirty(Entry cache_entry) {
-    assert(is_valid(cache_entry));
-    return cache_entry.Dirty;
   }
 
   // ** OUT_PORTS **

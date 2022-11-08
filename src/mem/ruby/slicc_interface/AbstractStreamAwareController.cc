@@ -398,3 +398,7 @@ Cycles AbstractStreamAwareController::adjustResponseLat(Cycles responseLat,
                                                         Addr paddr) {
   return this->pumTransposUnit->access(paddr, responseLat);
 }
+
+void AbstractStreamAwareController::evictCleanLine(const Addr &paddrLine) {
+  panic("EvictCleanLine not implemented.");
+}

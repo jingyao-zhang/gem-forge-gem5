@@ -1,7 +1,10 @@
 #include "stream_nuca_map.hh"
 
+#include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
+
 #include "base/trace.hh"
 
+#include "debug/MLCStreamPUM.hh"
 #include "debug/StreamNUCAMap.hh"
 
 bool StreamNUCAMap::topologyInitialized = false;
@@ -11,6 +14,7 @@ bool StreamNUCAMap::cacheInitialized = false;
 StreamNUCAMap::CacheParams StreamNUCAMap::cacheParams;
 StreamNUCAMap::NonUniformNodeVec StreamNUCAMap::numaNodes;
 std::map<Addr, StreamNUCAMap::RangeMap> StreamNUCAMap::rangeMaps;
+std::map<int, Addr> StreamNUCAMap::pumWordlineToRangeMap;
 
 void StreamNUCAMap::initializeTopology(int numRows, int numCols) {
   if (topologyInitialized) {
@@ -325,4 +329,67 @@ PUMHWConfiguration StreamNUCAMap::getPUMHWConfig() {
                             p.arrayTreeDegree, p.arrayTreeLeafBandwidth,
                             p.assoc, p.wayTreeDegree, meshLayers, meshRows,
                             meshCols);
+}
+
+void StreamNUCAMap::setWordlineForRange(Addr startPAddr, int wordline) {
+  clearWordline(wordline, startPAddr);
+
+  auto &range = getRangeMapByStartPAddr(startPAddr);
+
+  auto prevWordline = range.startWordline;
+  if (prevWordline != RangeMap::InvalidWordline) {
+    // Release the previous mapping.
+    pumWordlineToRangeMap.erase(prevWordline);
+  }
+
+  DPRINTF(MLCStreamPUM, "[PUM] SetWL [%#x, %#x) WL %d Tile %s.\n",
+          range.startPAddr, range.endPAddr, wordline, range.pumTile);
+  range.startWordline = wordline;
+  pumWordlineToRangeMap.emplace(wordline, startPAddr);
+}
+
+void StreamNUCAMap::clearWordline(int wordline, Addr skipPAddr) {
+
+  if (!pumWordlineToRangeMap.count(wordline)) {
+    return;
+  }
+
+  // Release the previous mapped region as uncached.
+  auto prevStartPAddr = pumWordlineToRangeMap.at(wordline);
+  auto &prevRange = getRangeMapByStartPAddr(prevStartPAddr);
+  prevRange.startWordline = RangeMap::InvalidWordline;
+  if (prevStartPAddr != skipPAddr) {
+    evictRange(prevRange);
+    prevRange.isCached = false;
+  }
+  pumWordlineToRangeMap.erase(wordline);
+  DPRINTF(MLCStreamPUM, "[PUM] ClearWL [%#x, %#x) WL %d Cached? %d.\n",
+          prevRange.startPAddr, prevRange.endPAddr, wordline,
+          prevRange.isCached);
+}
+
+void StreamNUCAMap::evictRange(RangeMap &range) {
+
+  /**
+   * Evict all cache lines within this range.
+   */
+  const auto lineSize = getCacheBlockSize();
+  assert(range.startPAddr % lineSize == 0);
+  assert(range.endPAddr % lineSize == 0);
+  for (auto paddr = range.startPAddr; paddr < range.endPAddr;
+       paddr += lineSize) {
+
+    MachineID machineId(MachineType_L2Cache, 0);
+    auto controller = AbstractStreamAwareController::getController(machineId);
+
+    auto llcMachineId =
+        controller->mapAddressToLLCOrMem(paddr, MachineType_L2Cache);
+    auto llc = AbstractStreamAwareController::getController(llcMachineId);
+    llc->evictCleanLine(paddr);
+
+    auto dirMachineId =
+        controller->mapAddressToLLCOrMem(paddr, MachineType_Directory);
+    auto dir = AbstractStreamAwareController::getController(dirMachineId);
+    dir->evictCleanLine(paddr);
+  }
 }

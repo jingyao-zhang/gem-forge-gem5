@@ -7,6 +7,7 @@
 #include <cstring>
 #include <fstream>
 #include <google/protobuf/util/json_util.h>
+#include <iomanip>
 #include <utility>
 
 #include "../../stream_float_policy.hh"
@@ -45,6 +46,7 @@
   }
 
 int64_t MLCPUMManager::PUMContext::nextContextId = 0;
+int MLCPUMManager::PUMDataGraphNode::nextNodeId = 1;
 
 bool MLCPUMManager::cleanedTDFGFolder = false;
 const std::string MLCPUMManager::tdfgFolder = "stream_pum_tdfg";
@@ -73,8 +75,9 @@ AffinePattern MLCPUMManager::PatternInfo::getPatternAdjustedByOuterIter(
 
 std::ostream &operator<<(std::ostream &os,
                          const MLCPUMManager::PUMDataGraphNode &node) {
-  os << &node << " " << node.pumTile << " " << node.splitOutDim << " "
-     << node.pattern << " = ";
+  os << std::setw(2) << node.nodeId << " WL: " << std::setw(3)
+     << node.startWordline << "+" << node.scalarElemSize * 8 << " "
+     << node.pumTile << " " << node.splitOutDim << " " << node.pattern << " = ";
   switch (node.type) {
   case MLCPUMManager::PUMDataGraphNode::TypeE::Value: {
     os << "Value " << node.regionName;
@@ -110,7 +113,7 @@ std::ostream &operator<<(std::ostream &os,
     case MLCPUMManager::PUMDataGraphNode::CompValueE::None: {
       os << "Cmp";
       for (const auto &operand : node.operands) {
-        os << " " << operand;
+        os << " " << operand->nodeId;
       }
       for (const auto &inst : node.insts) {
         os << " " << inst->getName();
@@ -3574,31 +3577,11 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
     }
   }
 
-  CacheStreamConfigureVec *prefetchConfigs = new CacheStreamConfigureVec;
-  // for (auto &group : context.pumGroups) {
-  //   if (group.appliedPUM) {
-  //     // Prefetch necessary data.
-  //     auto pConfigs = this->generatePUMPrefetchStreams(group);
-  //     prefetchConfigs->insert(prefetchConfigs->end(), pConfigs.begin(),
-  //                             pConfigs.end());
-  //   }
-  // }
-  // Remember the prefetch configs.
-  context.prefetchConfigs = *prefetchConfigs;
-  MLCSE_DPRINTF("%d prefetch streams generated.\n", prefetchConfigs->size());
-
   assert(!context.savedPkt);
   context.savedPkt = pkt;
   context.masterId = pkt->req->masterId();
 
-  if (prefetchConfigs->empty()) {
-    delete prefetchConfigs;
-    this->runPUMExecutionStage(context);
-  } else {
-    this->inFlightPUMPrefetch = true;
-    this->savedNonPUMPkt = nullptr;
-    this->runPrefetchStage(prefetchConfigs, pkt->req->masterId());
-  }
+  this->runPUMExecutionStage(context);
 
   return;
 }
@@ -3711,11 +3694,30 @@ void MLCPUMManager::kickPUMEngineEventImpl(int64_t contextId) {
   // Sliently ignore the case when we do not find the context.
 }
 
-void 
-MLCPUMManager::fetchPUMDataBeforeSync(PUMContext &context) {
+void MLCPUMManager::clearOverwrittenPUMDataSinceSync(PUMContext &context) {
+
+  // Minus 1 to exclude the sync node.
+  for (int nodeIdx = context.reachedDataGraphNodes - 1; nodeIdx >= 0;
+       --nodeIdx) {
+    auto node = context.pumDataGraphNodes.at(nodeIdx);
+    if (node->isSync()) {
+      break;
+    }
+    if (node->isValue()) {
+      continue;
+    }
+    if (node->isMove() || (node->isCompute() && !node->isConstVal())) {
+      auto startWL = node->startWordline;
+      StreamNUCAMap::clearWordline(startWL);
+    }
+  }
+}
+
+void MLCPUMManager::fetchPUMDataBeforeSync(PUMContext &context) {
 
   // Collect ValueNode before next sync.
-  std::set<std::string> fetchingRegions;
+  std::vector<std::string> fetchingRegions;
+  PUMDataGraphNodeVec fetchingNodes;
   for (int nodeIdx = context.reachedDataGraphNodes,
            numNodes = context.pumDataGraphNodes.size();
        nodeIdx < numNodes; ++nodeIdx) {
@@ -3724,7 +3726,12 @@ MLCPUMManager::fetchPUMDataBeforeSync(PUMContext &context) {
       break;
     }
     if (node->isValue()) {
-      fetchingRegions.insert(node->regionName);
+      if (std::find(fetchingRegions.begin(), fetchingRegions.end(),
+                    node->regionName) != fetchingRegions.end()) {
+        continue;
+      }
+      fetchingRegions.push_back(node->regionName);
+      fetchingNodes.push_back(node);
     }
   }
 
@@ -3733,7 +3740,9 @@ MLCPUMManager::fetchPUMDataBeforeSync(PUMContext &context) {
   /**
    * Search through StreamConfig for each fetching Addr.
    */
-  for (const auto &regionName : fetchingRegions) {
+  for (int i = 0; i < fetchingRegions.size(); ++i) {
+    const auto &regionName = fetchingRegions.at(i);
+    auto node = fetchingNodes.at(i);
 
     bool foundConfig = false;
     for (auto &config : context.configs) {
@@ -3754,9 +3763,16 @@ MLCPUMManager::fetchPUMDataBeforeSync(PUMContext &context) {
         continue;
       }
 
+      Addr startPAddr;
+      panic_if(!cpuDelegator->translateVAddrOracle(streamNUCARegion.vaddr,
+                                                   startPAddr),
+               "Translation Fault on StartVAddr %s.", regionName);
+
       foundConfig = true;
 
       auto fetchConfig = this->generatePrefetchStream(config);
+      StreamNUCAMap::setWordlineForRange(startPAddr, node->startWordline);
+
       if (fetchConfig) {
         prefetchConfigs->push_back(fetchConfig);
       }
@@ -3789,8 +3805,11 @@ void MLCPUMManager::kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
   context.lastSyncCycle = this->controller->curCycle();
 
   /**
-   * New implementation of PUMPrefetch: Fetch from DRAM for next Sync.
+   * New implementation of PUMPrefetch:
+   * 1. Clear data structures overwritten due to register pressure.
+   * 2. Fetch from DRAM for next Sync.
    */
+  this->clearOverwrittenPUMDataSinceSync(context);
   this->fetchPUMDataBeforeSync(context);
 
   /**

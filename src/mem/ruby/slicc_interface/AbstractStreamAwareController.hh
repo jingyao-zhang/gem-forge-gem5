@@ -247,6 +247,12 @@ public:
     return this->llcSE;
   }
 
+  /**
+   * An AdHoc interface to evict a clean cache line.
+   * Used in PUM to override a line.
+   */
+  virtual void evictCleanLine(const Addr &paddrLine);
+
   const Params *myParams;
 
 private:

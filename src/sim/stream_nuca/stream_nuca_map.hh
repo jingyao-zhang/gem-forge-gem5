@@ -130,6 +130,7 @@ public:
     AffinePattern pumTile;
     AffinePattern pumTileRev;
     int elementBits;
+    static constexpr int InvalidWordline = -1;
     int startWordline;
     int vBitlines;
 
@@ -154,6 +155,15 @@ public:
 
   static RangeMap &getRangeMapByStartPAddr(Addr startPAddr);
   static RangeMap *getRangeMapContaining(Addr paddr);
+
+  /**
+   * Set the start wordline for the PUMRange. Notice that it will mark any
+   * previous region mapped to that wordline as uncached.
+   */
+  static void setWordlineForRange(Addr startPAddr, int wordline);
+  static void clearWordline(int wordline, Addr skipPAddr = 0);
+  static void evictRange(RangeMap &range);
+
   static int getBank(Addr paddr);
   static int getSet(Addr paddr);
 
@@ -182,6 +192,7 @@ private:
   static NonUniformNodeVec numaNodes;
 
   static std::map<Addr, RangeMap> rangeMaps;
+  static std::map<int, Addr> pumWordlineToRangeMap;
 
   static void checkOverlapRange(Addr startPAddr, Addr endPAddr);
 

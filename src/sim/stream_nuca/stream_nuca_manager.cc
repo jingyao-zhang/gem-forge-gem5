@@ -1539,7 +1539,7 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
 
   auto pumTile = AffinePattern::construct_canonical_tile(tileSizes, arraySizes);
   auto elemBits = region.elementSize * 8;
-  auto startWordline = 0;
+  auto startWordline = StreamNUCAMap::RangeMap::InvalidWordline;
 
   StreamNUCAMap::addRangeMap(startPAddr, endPAddr, pumTile, elemBits,
                              startWordline, vBitlines);
