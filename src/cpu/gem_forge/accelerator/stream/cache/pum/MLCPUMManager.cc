@@ -19,8 +19,6 @@
 #include "cpu/gem_forge/accelerator/stream/cache/CacheStreamConfigureData.hh"
 #include "cpu/gem_forge/accelerator/stream/cache/pum/PUMEngine.hh"
 #include "cpu/gem_forge/accelerator/stream/cache/pum/TDFG.pb.h"
-#include "sim/stream_nuca/stream_nuca_manager.hh"
-#include "sim/stream_nuca/stream_nuca_map.hh"
 
 #include "arch/x86/regs/float.hh"
 #include "arch/x86/regs/int.hh"
@@ -3694,6 +3692,24 @@ void MLCPUMManager::kickPUMEngineEventImpl(int64_t contextId) {
   // Sliently ignore the case when we do not find the context.
 }
 
+const StreamNUCAManager::StreamRegion &
+MLCPUMManager::getStreamRegion(const ConfigPtr &config) const {
+
+  auto S = config->stream;
+  auto cpuDelegator = S->getCPUDelegator();
+  auto threadContext = cpuDelegator->getSingleThreadContext();
+  auto streamNUCAManager = threadContext->getStreamNUCAManager();
+
+  auto linearAddrGen =
+      std::dynamic_pointer_cast<LinearAddrGenCallback>(config->addrGenCallback);
+  const auto &addrParams = config->addrGenFormalParams;
+  auto startVAddr = linearAddrGen->getStartAddr(addrParams);
+  const auto &streamNUCARegion =
+      streamNUCAManager->getContainingStreamRegion(startVAddr);
+
+  return streamNUCARegion;
+}
+
 void MLCPUMManager::clearOverwrittenPUMDataSinceSync(PUMContext &context) {
 
   // Minus 1 to exclude the sync node.
@@ -3709,6 +3725,35 @@ void MLCPUMManager::clearOverwrittenPUMDataSinceSync(PUMContext &context) {
     if (node->isMove() || (node->isCompute() && !node->isConstVal())) {
       auto startWL = node->startWordline;
       StreamNUCAMap::clearWordline(startWL);
+    }
+  }
+}
+
+void MLCPUMManager::markComputedRegionsCached(PUMContext &context) {
+
+  for (const auto &group : context.pumGroups) {
+    if (!group.appliedPUM) {
+      continue;
+    }
+
+    const auto &computeConfig = group.computeConfig;
+    auto S = computeConfig->stream;
+    if (S->isStoreComputeStream() || S->isUpdateStream()) {
+
+      const auto &region = this->getStreamRegion(computeConfig);
+
+      // Get the last compute node for wordlines storing the final result.
+      assert(context.pumDataGraphNodes.size() >= 2);
+      auto lastCmpNode =
+          context.pumDataGraphNodes.at(context.pumDataGraphNodes.size() - 2);
+      assert(lastCmpNode->isCompute() && !lastCmpNode->isConstVal());
+
+      auto cpuDelegator = S->getCPUDelegator();
+      Addr startPAddr;
+      panic_if(!cpuDelegator->translateVAddrOracle(region.vaddr, startPAddr),
+               "Translation Fault on Region %s.", region.name);
+      StreamNUCAMap::setWordlineForRange(startPAddr,
+                                         lastCmpNode->startWordline);
     }
   }
 }
@@ -3747,30 +3792,22 @@ void MLCPUMManager::fetchPUMDataBeforeSync(PUMContext &context) {
     bool foundConfig = false;
     for (auto &config : context.configs) {
       // Get NUCA region.
-      auto S = config->stream;
-      auto cpuDelegator = S->getCPUDelegator();
-      auto threadContext = cpuDelegator->getSingleThreadContext();
-      auto streamNUCAManager = threadContext->getStreamNUCAManager();
-
-      auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
-          config->addrGenCallback);
-      const auto &addrParams = config->addrGenFormalParams;
-      auto startVAddr = linearAddrGen->getStartAddr(addrParams);
-      const auto &streamNUCARegion =
-          streamNUCAManager->getContainingStreamRegion(startVAddr);
+      const auto &streamNUCARegion = this->getStreamRegion(config);
 
       if (streamNUCARegion.name != regionName) {
         continue;
       }
 
-      Addr startPAddr;
-      panic_if(!cpuDelegator->translateVAddrOracle(streamNUCARegion.vaddr,
-                                                   startPAddr),
-               "Translation Fault on StartVAddr %s.", regionName);
-
       foundConfig = true;
 
       auto fetchConfig = this->generatePrefetchStream(config);
+
+      auto S = config->stream;
+      auto cpuDelegator = S->getCPUDelegator();
+      Addr startPAddr;
+      panic_if(!cpuDelegator->translateVAddrOracle(streamNUCARegion.vaddr,
+                                                   startPAddr),
+               "Translation Fault on Region %s.", regionName);
       StreamNUCAMap::setWordlineForRange(startPAddr, node->startWordline);
 
       if (fetchConfig) {
@@ -4312,6 +4349,8 @@ void MLCPUMManager::reportProgress(int64_t contextId) {
 void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
 
   MLCSE_DPRINTF("[PUM] Complete One ComputeRound.\n");
+
+  this->markComputedRegionsCached(context);
 
   bool allGroupsDone = true;
   bool someGroupsDone = false;

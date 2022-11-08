@@ -345,6 +345,7 @@ void StreamNUCAMap::setWordlineForRange(Addr startPAddr, int wordline) {
   DPRINTF(MLCStreamPUM, "[PUM] SetWL [%#x, %#x) WL %d Tile %s.\n",
           range.startPAddr, range.endPAddr, wordline, range.pumTile);
   range.startWordline = wordline;
+  range.isCached = true;
   pumWordlineToRangeMap.emplace(wordline, startPAddr);
 }
 

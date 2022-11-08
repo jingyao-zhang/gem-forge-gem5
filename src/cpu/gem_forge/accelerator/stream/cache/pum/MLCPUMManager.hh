@@ -3,6 +3,8 @@
 
 // Temporary: Non-destructively add equality graph optimization code.
 #include "cpu/static_inst_fwd.hh"
+#include "sim/stream_nuca/stream_nuca_manager.hh"
+#include "sim/stream_nuca/stream_nuca_map.hh"
 
 #include "../MLCStreamEngine.hh"
 #include "proto/protoio.hh"
@@ -736,9 +738,20 @@ private:
                      bool isIdea);
 
   /**
-   * Clear overwritten region since last sync.
+   * Helper function to get the StreamNUCARegion and RangeMap.
+   */
+  const StreamNUCAManager::StreamRegion &
+  getStreamRegion(const ConfigPtr &config) const;
+
+  /**
+   * Clear overwritten region since previous sync.
    */
   void clearOverwrittenPUMDataSinceSync(PUMContext &context);
+
+  /**
+   * Mark computed region as cached.
+   */
+  void markComputedRegionsCached(PUMContext &context);
 
   /**
    * Fetch data from DRAM before next sync.
