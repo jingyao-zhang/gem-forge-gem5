@@ -907,8 +907,8 @@ StreamElement *DynStream::getPrevElement(StreamElement *element) {
   assert(false && "Failed to find the previous element.");
 }
 
-StreamElement *DynStream::getFirstElement() { return this->tail->next; }
-const StreamElement *DynStream::getFirstElement() const {
+StreamElement *DynStream::getFirstElem() { return this->tail->next; }
+const StreamElement *DynStream::getFirstElem() const {
   return this->tail->next;
 }
 
@@ -1067,7 +1067,7 @@ bool DynStream::isElemStepped(uint64_t elemIdx) const {
 }
 
 bool DynStream::isElemReleased(uint64_t elemIdx) const {
-  if (auto elem = this->getFirstElement()) {
+  if (auto elem = this->getFirstElem()) {
     return elemIdx < elem->FIFOIdx.entryIdx;
   } else {
     return elemIdx < this->FIFOIdx.entryIdx;

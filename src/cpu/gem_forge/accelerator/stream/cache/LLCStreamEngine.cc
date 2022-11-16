@@ -3340,16 +3340,15 @@ LLCStreamEngine::releaseSlice(SliceList::iterator sliceIter) {
   const auto &sliceId = slice->getSliceId();
   if (auto dynS = LLCDynStream::getLLCStream(sliceId.getDynStrandId())) {
     while (!dynS->idxToElementMap.empty()) {
-      auto elementIter = dynS->idxToElementMap.begin();
-      auto &element = elementIter->second;
+      auto elemIter = dynS->idxToElementMap.begin();
+      auto &elem = elemIter->second;
       // StoreComputeStream is never ready.
-      if ((element->isReady() || dynS->getStaticS()->isStoreComputeStream()) &&
-          element->areSlicesReleased()) {
-        if (!element->areBaseElemsReady()) {
+      if ((elem->isReady() || dynS->getStaticS()->isStoreComputeStream()) &&
+          elem->areSlicesReleased()) {
+        if (!elem->areBaseElemsReady()) {
           LLC_ELEMENT_PANIC(
-              element, "Released when Ready %d ValueBaseReady %d Slices %d.",
-              element->isReady(), element->areBaseElemsReady(),
-              element->getNumSlices());
+              elem, "Released when Ready %d ValueBaseReady %d Slices %d.",
+              elem->isReady(), elem->areBaseElemsReady(), elem->getNumSlices());
         }
         /**
          * We avoid releasing the element if it is the only two left
@@ -3362,8 +3361,8 @@ LLCStreamEngine::releaseSlice(SliceList::iterator sliceIter) {
          */
         if (dynS->idxToElementMap.size() > 2 ||
             (dynS->hasTotalTripCount() &&
-             element->idx + 2 >= dynS->getTotalTripCount())) {
-          dynS->eraseElem(elementIter);
+             elem->idx + 2 >= dynS->getTotalTripCount())) {
+          dynS->eraseElem(elemIter);
           continue;
         }
       }
@@ -3421,7 +3420,7 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
    * 2. LoadComputeStream.
    * This is where we schedule the computation for LoadComputeStream,
    * and send back the result to core if core needs the value. This
-   * does not need to wait for committment.
+   * does not need to wait for commitment.
    * 3. We also need to evaluate the LoopBound, specially when the slice
    * contains multiple elements.
    */
@@ -3453,9 +3452,14 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
    * sent back to core before releasing the slice.
    */
   if (S->isLoadComputeStream()) {
-    this->processLoadComputeSlice(dynS, slice);
-    if (!slice->isLoadComputeValueSent()) {
-      return ++sliceIter;
+    if (slice->isLoadComputeValueSent()) {
+      // We have computed and sent this slice. See if we can release it.
+    } else {
+      this->processLoadComputeSlice(dynS, slice);
+      if (!slice->isLoadComputeValueSent()) {
+        // We are not done with it. Move to next one.
+        return ++sliceIter;
+      }
     }
   }
   /**
@@ -3578,9 +3582,9 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
     coreNeedValue = true;
   }
 
-  Addr paddr = 0;
-  assert(dynS->translateToPAddr(sliceId.vaddr, paddr));
-  auto paddrLine = makeLineAddress(paddr);
+  auto sliceVAddrLine = makeLineAddress(sliceId.vaddr);
+  Addr paddrLine;
+  assert(dynS->translateToPAddr(sliceVAddrLine, paddrLine));
   DataBlock loadValueBlock;
   int payloadSize = 0;
   for (auto elemIdx = sliceId.getStartIdx(); elemIdx < sliceId.getEndIdx();
@@ -3591,7 +3595,7 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
     int sliceOffset;
     int elemOffset;
     int overlapSize = elem->computeLoadComputeOverlap(
-        sliceId.vaddr, RubySystem::getBlockSizeBytes(), sliceOffset,
+        sliceVAddrLine, RubySystem::getBlockSizeBytes(), sliceOffset,
         elemOffset);
     if (overlapSize == 0) {
       continue;
@@ -3638,8 +3642,7 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
    */
   for (const auto &edge : dynS->sendToEdges) {
     LLC_SLICE_DPRINTF(
-        sliceId,
-        "Send LoadComputeValue to RecevStream: %s Data %s PayloadSize %d.\n",
+        sliceId, "Send LoadComputeValue to RecvS: %s Data %s PayloadSize %d.\n",
         edge.data->dynamicId, loadValueBlock, payloadSize);
     this->issueStreamDataToLLC(dynS, sliceId, loadValueBlock, edge,
                                payloadSize);

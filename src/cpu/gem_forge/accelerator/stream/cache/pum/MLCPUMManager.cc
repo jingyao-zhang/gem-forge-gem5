@@ -2876,6 +2876,12 @@ MLCPUMManager::generatePrefetchStream(const ConfigPtr &config) {
   auto prefetchConfig = std::make_shared<CacheStreamConfigureData>(*config);
   prefetchConfig->dynamicId.streamInstance += 1000000;
   prefetchConfig->isPUMPrefetch = true;
+  // Clear all strand split information.
+  prefetchConfig->strandIdx = 0;
+  prefetchConfig->strandSplit = StrandSplitInfo();
+  prefetchConfig->totalStrands = 1;
+  prefetchConfig->streamConfig = nullptr;
+  prefetchConfig->broadcastStrands.clear();
 
   // Clear dependencies.
   prefetchConfig->clearEdges();

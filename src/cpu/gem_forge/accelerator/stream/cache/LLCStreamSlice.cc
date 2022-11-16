@@ -54,7 +54,9 @@ void LLCStreamSlice::released() {
 }
 
 void LLCStreamSlice::setLoadComputeValueSent() {
-  assert(!this->loadComputeValueSent && "LoadComputeValue already sent.");
+  if (this->loadComputeValueSent) {
+    panic("LoadComputeValue already sent %s.", this->getSliceId());
+  }
   this->loadComputeValueSent = true;
 }
 

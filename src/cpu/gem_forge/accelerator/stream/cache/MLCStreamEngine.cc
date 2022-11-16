@@ -139,7 +139,10 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
 void MLCStreamEngine::receiveStreamDataForSingleSlice(
     const DynStreamSliceId &sliceId, const DataBlock &dataBlock,
     Addr paddrLine) {
-  MLC_SLICE_DPRINTF(sliceId, "SE received data vaddr %#x.\n", sliceId.vaddr);
+  MLC_SLICE_DPRINTF(
+      sliceId, "Recv data vaddr %#x %s.\n", sliceId.vaddr,
+      GemForgeUtils::dataToString(dataBlock.getData(0, 1),
+                                  RubySystem::getBlockSizeBytes()));
   auto stream = this->getStreamFromStrandId(sliceId.getDynStrandId());
   if (stream) {
     // Found the stream.

@@ -17,7 +17,7 @@ void StreamDataTrafficAccumulator::commit(
 
   for (auto S : commitStreams) {
     const auto &dynS = S->getFirstDynStream();
-    auto element = dynS.getFirstElement();
+    auto element = dynS.getFirstElem();
     assert(element && "Missing FirstElement when commit.");
 
     if (this->floated) {

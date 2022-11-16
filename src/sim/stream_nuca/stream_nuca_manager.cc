@@ -158,6 +158,20 @@ void StreamNUCAManager::defineAlign(Addr A, Addr B, int64_t elementOffset) {
   }
 }
 
+const StreamNUCAManager::StreamRegion *
+StreamNUCAManager::tryGetContainingStreamRegion(Addr vaddr) const {
+  auto iter = this->startVAddrRegionMap.upper_bound(vaddr);
+  if (iter == this->startVAddrRegionMap.begin()) {
+    return nullptr;
+  }
+  iter--;
+  const auto &region = iter->second;
+  if (region.vaddr + region.elementSize * region.numElement <= vaddr) {
+    return nullptr;
+  }
+  return &region;
+}
+
 const StreamNUCAManager::StreamRegion &
 StreamNUCAManager::getContainingStreamRegion(Addr vaddr) const {
   auto iter = this->startVAddrRegionMap.upper_bound(vaddr);

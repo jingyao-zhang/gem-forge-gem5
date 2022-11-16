@@ -23,6 +23,28 @@ MLCDynIndirectStream::MLCDynIndirectStream(
       isOneIterationBehind(_configData->isOneIterationBehind),
       tailElementIdx(0) {}
 
+void MLCDynIndirectStream::setBaseStream(MLCDynStream *baseStream) {
+  assert(!this->baseStream && "Already has base stream.");
+  this->baseStream = baseStream;
+
+  for (const auto &edge : this->getConfig()->baseEdges) {
+    if (edge.isUsedBy) {
+      /**
+       * ! For two-level indirect streams, this is not true.
+       * ! They are connected to the DirectS as the BaseS.
+       */
+      // if (edge.dynStreamId != baseStream->getDynStreamId()) {
+      //   MLC_S_PANIC_NO_DUMP(this->getDynStrandId(),
+      //                       "Mismatch MLCBaseS %s != %s.", edge.dynStreamId,
+      //                       baseStream->getDynStrandId());
+      // }
+      assert(edge.skip == 0 && "IndirectS with Non-Zero skip.");
+      this->baseStreamReuse = edge.reuse;
+      break;
+    }
+  }
+}
+
 void MLCDynIndirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
                                              const DataBlock &dataBlock,
                                              Addr paddrLine) {
@@ -33,7 +55,7 @@ void MLCDynIndirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
   // beyond the tailElementIdx, so we adhoc to fix that.
   // ! This breaks the MaximumNumElement constraint.
 
-  MLC_SLICE_DPRINTF(sliceId, "Receive data vaddr %#x paddr %#x.\n",
+  MLC_SLICE_DPRINTF(sliceId, "Recv data vaddr %#x paddrLine %#x.\n",
                     sliceId.vaddr, paddrLine);
 
   // Intercept the reduction value.
@@ -518,8 +540,10 @@ bool MLCDynIndirectStream::receiveFinalReductionValue(
 
   auto dynCoreS = this->getCoreDynS();
   if (!dynCoreS) {
-    MLC_SLICE_PANIC(sliceId,
-                    "CoreDynS released before receiving FinalReductionValue.");
+    MLC_SLICE_DPRINTF_(
+        MLCRubyStreamReduce, sliceId,
+        "CoreDynS released before receiving FinalReductionValue.");
+    return true;
   }
   auto size = S->getCoreElementSize();
   StreamValue value;

@@ -1173,22 +1173,22 @@ void MLCStrandManager::tryMarkPUMRegionCached(const DynStreamId &dynId) {
     return;
   }
 
-  const auto &region = nucaManager->getContainingStreamRegion(initVAddr);
+  auto region = nucaManager->tryGetContainingStreamRegion(initVAddr);
   auto nucaMapEntry = StreamNUCAMap::getRangeMapContaining(initPAddr);
 
   /**
    * As some heuristic, check that initVAddr is the same as regionStartVAddr.
    * TODO: Really check that the stream accessed the whole region.
    */
-  if (!nucaMapEntry || !nucaMapEntry->isStreamPUM) {
+  if (!region || !nucaMapEntry || !nucaMapEntry->isStreamPUM) {
     // So far only enable this feature for PUM region.
     return;
   }
-  if (region.vaddr != initVAddr) {
+  if (region->vaddr != initVAddr) {
     return;
   }
-  MLC_S_DPRINTF(dynId, "Mark Cached PUMRegion %s.\n", region.name);
-  nucaManager->markRegionCached(region.vaddr);
+  MLC_S_DPRINTF(dynId, "Mark Cached PUMRegion %s.\n", region->name);
+  nucaManager->markRegionCached(region->vaddr);
 }
 
 void MLCStrandManager::endStream(const DynStreamId &endId, MasterID masterId) {

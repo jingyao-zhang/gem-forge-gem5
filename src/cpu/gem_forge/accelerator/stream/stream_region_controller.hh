@@ -19,6 +19,8 @@ public:
   void rewindStreamConfig(const ConfigArgs &args);
   void commitStreamEnd(const EndArgs &args);
 
+  void determineStepElemCount(const ConfigArgs &args);
+
   void tick();
 
   void takeOverBy(GemForgeCPUDelegator *newCPUDelegator);
@@ -209,7 +211,6 @@ private:
   void dispatchStreamConfigForStep(const ConfigArgs &args,
                                    DynRegion &dynRegion);
   void executeStreamConfigForStep(const ConfigArgs &args, DynRegion &dynRegion);
-  void determineStepElemCount(DynRegion &dynRegion);
   void stepStream(DynRegion &dynRegion);
 
   /**

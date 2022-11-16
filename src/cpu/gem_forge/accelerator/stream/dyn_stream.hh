@@ -357,8 +357,8 @@ public:
   /**
    * Get the first element of the dynamic stream.
    */
-  StreamElement *getFirstElement();
-  const StreamElement *getFirstElement() const;
+  StreamElement *getFirstElem();
+  const StreamElement *getFirstElem() const;
   /**
    * Get the first unstepped element of the dynamic stream.
    */

@@ -41,7 +41,7 @@ DynStream *StreamRangeSyncController::getNoRangeDynS() {
        * this by ignore CheckElementIdx >= TotalTripCount.
        */
       if (dynS->hasTotalTripCount() &&
-          this->getCheckElementIdx(dynS) >= dynS->getTotalTripCount()) {
+          this->getCheckElemIdx(dynS) >= dynS->getTotalTripCount()) {
         continue;
       }
       return dynS;
@@ -71,7 +71,7 @@ StreamRangeSyncController::getCurrentDynStreams() {
 void StreamRangeSyncController::updateCurrentWorkingRange(
     DynStreamVec &dynStreams) {
   for (auto &dynS : dynStreams) {
-    auto elementIdx = this->getCheckElementIdx(dynS);
+    auto elementIdx = this->getCheckElemIdx(dynS);
     // Release possible old range.
     if (auto currentWorkingRange = dynS->getCurrentWorkingRange()) {
       if (currentWorkingRange->elementRange.rhsElementIdx <= elementIdx) {
@@ -146,15 +146,14 @@ void StreamRangeSyncController::checkAliasBetweenRanges(
   }
 }
 
-uint64_t StreamRangeSyncController::getCheckElementIdx(DynStream *dynS) {
+uint64_t StreamRangeSyncController::getCheckElemIdx(DynStream *dynS) {
   // Get the first element.
-  auto element = dynS->getFirstElement();
-  if (!element) {
-    DYN_S_PANIC(dynS->dynStreamId,
-                "Missing FirstElement to perform range check.");
+  if (auto elem = dynS->getFirstElem()) {
+    // Since we are stepping the current one, we should check range for next
+    // element.
+    return elem->FIFOIdx.entryIdx + 1;
   }
-  // Since we are stepping the current one, we should check range for next
-  // element.
-  auto elementIdx = element->FIFOIdx.entryIdx + 1;
-  return elementIdx;
+
+  // There is no element allocated. Simply return the next one.
+  return dynS->FIFOIdx.entryIdx;
 }

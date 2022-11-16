@@ -416,6 +416,12 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
   this->floatController->floatStreams(args, streamRegion, configDynStreams);
 
   /**
+   * Then we determine the step count. This must be after floatStreams as it
+   * only applies to streams floated.
+   */
+  this->regionController->determineStepElemCount(args);
+
+  /**
    * We also try to enable fine-grained near-data computing.
    */
   if (this->myParams->enableFineGrainedNearDataComputing) {
@@ -576,17 +582,6 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
         return false;
       }
       if (stepNextElement->isElemFloatedToCache()) {
-        // // If offloaded, we avoid the core commit too fast, as that would
-        // // trigger our deadlock check.
-        // if (stepElement->FIFOIdx.entryIdx > 50) {
-        //   if (auto llcDynS =
-        //           LLCDynStream::getLLCStream(dynS.dynStreamId)) {
-        //     if (!llcDynS->isElementReleased(stepElement->FIFOIdx.entryIdx -
-        //                                     50)) {
-        //       return false;
-        //     }
-        //   }
-        // }
       } else {
         // If not offloaded, The next steped element should be ValueReady.
         if (!stepNextElement->isValueReady) {
@@ -640,7 +635,7 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
   if (auto noRangeDynS = this->rangeSyncController->getNoRangeDynS()) {
     SE_DPRINTF("[CanNotCommitStep] No Range for %s. CheckElementIdx %llu.\n",
                noRangeDynS->dynStreamId,
-               this->rangeSyncController->getCheckElementIdx(noRangeDynS));
+               this->rangeSyncController->getCheckElemIdx(noRangeDynS));
     return false;
   }
   return true;
@@ -2398,7 +2393,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
          */
         if (S->isAtomicStream() && !element->isElemFloatedToCache()) {
           if (element->FIFOIdx.entryIdx >
-              dynS.getFirstElement()->FIFOIdx.entryIdx +
+              dynS.getFirstElem()->FIFOIdx.entryIdx +
                   this->myParams->maxNumElementsPrefetchForAtomic) {
             break;
           }
@@ -2407,7 +2402,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         /**
          * Should not issue.
          */
-        if (element->isElemFloatedToCache() && !dynS.shouldCoreSEIssue()) {
+        if (!dynS.shouldCoreSEIssue()) {
           continue;
         }
         auto baseElementsValReady =
@@ -2486,45 +2481,6 @@ void StreamEngine::issueElements() {
        * ! This may greatly limit the prefetch distance. For now we disable
        * ! this check.
        */
-      // if (S->isUpdateStream() && S->isIndirectLoadStream() &&
-      //     !element->isElemFloatedToCache()) {
-      //   Addr addr = element->computeAddr();
-      //   int size = S->getMemElementSize();
-      //   if (this->hasAliasWithPendingWritebackElements(element, addr, size))
-      //   {
-      //     S_ELEMENT_DPRINTF_(
-      //         StreamAlias, element,
-      //         "Delayed issuing as aliased with PendingWritebackElement.\n");
-      //     element->flush(true);
-      //     continue;
-      //   }
-      //   auto prevE = dynS->getFirstElement();
-      //   assert(prevE && "Missing FirstElement.");
-      //   bool aliasedWithPrevElement = false;
-      //   while (prevE != element) {
-      //     if (!prevE->isAddrReady()) {
-      //       // If not ready, we consider it aliased.
-      //       aliasedWithPrevElement = true;
-      //       break;
-      //     }
-      //     if (prevE->addr >= addr + size || addr >= prevE->addr + size) {
-      //       prevE = prevE->next;
-      //       continue;
-      //     }
-      //     aliasedWithPrevElement = true;
-      //     break;
-      //   }
-      //   if (aliasedWithPrevElement) {
-      //     S_ELEMENT_DPRINTF_(StreamAlias, element,
-      //                        "Delayed issuing as aliased with previous
-      //                        element "
-      //                        "%llu. MyAddr %#x PrevAddr %#x Size %d.\n",
-      //                        prevE->FIFOIdx.entryIdx, addr, prevE->addr,
-      //                        size);
-      //     element->flush(true);
-      //     continue;
-      //   }
-      // }
       element->markAddrReady();
     }
 
@@ -2709,8 +2665,8 @@ void StreamEngine::issueElement(StreamElement *element) {
       if (S->isAtomicComputeStream() || S->isLoadComputeStream() ||
           S->isUpdateStream()) {
         if (element->flushed) {
-          S_ELEMENT_PANIC(element,
-                          "Flused Floating Atomic/LoadCompute/UpdateStream.\n");
+          S_ELEMENT_PANIC(
+              element, "Flushed Floating Atomic/LoadCompute/UpdateStream.\n");
         }
         flags.set(Request::NO_RUBY_BACK_STORE);
       }
@@ -2895,7 +2851,7 @@ void StreamEngine::prefetchElement(StreamElement *element) {
      * Skip prefetching if we found a previous element and it has the same
      * block.
      */
-    if (element != dynS->getFirstElement()) {
+    if (element != dynS->getFirstElem()) {
       auto prevElement = dynS->getPrevElement(element);
       bool prefetched = false;
       for (auto j = 0; j < prevElement->cacheBlocks; ++j) {

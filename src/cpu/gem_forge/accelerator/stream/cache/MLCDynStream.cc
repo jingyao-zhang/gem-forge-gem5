@@ -219,7 +219,7 @@ bool MLCDynStream::checkRecvDynSForPop(const DynStreamSliceId &sliceId) {
        */
       auto se = this->controller->getMLCStreamEngine();
       auto dynId = this->getDynStrandId();
-      auto elemInitCallback = [se, dynId](const DynStreamId &dynStreamId,
+      auto elemInitCallback = [se, dynId](const DynStrandId &dynStreamId,
                                           uint64_t elementIdx) -> void {
         if (auto dynS = se->getStreamFromStrandId(dynId)) {
           dynS->popBlocked = false;

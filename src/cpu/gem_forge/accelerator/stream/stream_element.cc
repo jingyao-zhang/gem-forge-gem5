@@ -849,7 +849,7 @@ void StreamElement::getValue(Addr vaddr, int size, uint8_t *val) const {
   // Copy the data.
   auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
   S_ELEMENT_DPRINTF(
-      this, "GetValue [%#x, +%d), initOffset %d, data 0x%s.\n", vaddr, size,
+      this, "GetValue [%#x, +%d), initOffset %d, data %s.\n", vaddr, size,
       initOffset,
       GemForgeUtils::dataToString(&this->value.at(initOffset), size));
   for (int i = 0; i < size; ++i) {

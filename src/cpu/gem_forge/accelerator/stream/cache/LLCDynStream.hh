@@ -414,7 +414,7 @@ public:
    */
   void initDirectStreamSlicesUntil(uint64_t lastSliceIdx);
 
-  using ElementCallback = std::function<void(const DynStreamId &, uint64_t)>;
+  using ElementCallback = std::function<void(const DynStrandId &, uint64_t)>;
 
   bool isElemInitialized(uint64_t elementIdx) const;
   void registerElementInitCallback(uint64_t elementIdx,

@@ -105,6 +105,7 @@ public:
   StreamRegion &getRegionFromStartVAddr(Addr vaddr);
   StreamRegion &getRegionFromName(const std::string &name);
   const StreamRegion &getContainingStreamRegion(Addr vaddr) const;
+  const StreamRegion *tryGetContainingStreamRegion(Addr vaddr) const;
   int getNumStreamRegions() const { return this->startVAddrRegionMap.size(); }
 
 private:

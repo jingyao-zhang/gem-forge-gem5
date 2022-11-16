@@ -54,20 +54,7 @@ public:
   void receiveBaseStreamData(uint64_t baseStrandElemIdx, uint64_t baseData,
                              bool tryAdvance);
 
-  void setBaseStream(MLCDynStream *baseStream) {
-    assert(!this->baseStream && "Already has base stream.");
-    this->baseStream = baseStream;
-
-    for (const auto &edge : this->getConfig()->baseEdges) {
-      if (edge.isUsedBy) {
-        assert(edge.dynStreamId == baseStream->getDynStreamId() &&
-               "Mismatch MLCBaseS.");
-        assert(edge.skip == 0 && "IndirectS with Non-Zero skip.");
-        this->baseStreamReuse = edge.reuse;
-        break;
-      }
-    }
-  }
+  void setBaseStream(MLCDynStream *baseStream);
 
   bool hasOverflowed() const override;
   /**

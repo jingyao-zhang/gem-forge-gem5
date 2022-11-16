@@ -215,8 +215,6 @@ void StreamRegionController::executeStreamConfigForStep(const ConfigArgs &args,
       }
     }
   }
-
-  this->determineStepElemCount(dynRegion);
 }
 
 void StreamRegionController::stepStream(DynRegion &dynRegion) {
@@ -394,7 +392,7 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
   }
 }
 
-void StreamRegionController::determineStepElemCount(DynRegion &dynRegion) {
+void StreamRegionController::determineStepElemCount(const ConfigArgs &args) {
 
   /**
    * By default we step the element one by one. But this may change when we want
@@ -402,6 +400,7 @@ void StreamRegionController::determineStepElemCount(DynRegion &dynRegion) {
    * 1. InnerReduction stream with LoopEliminated, and
    * 2. The computation is offloaded.
    */
+  auto &dynRegion = *this->activeDynRegionMap.at(args.seqNum);
 
   if (se->myParams->enableRangeSync) {
     return;
@@ -420,6 +419,17 @@ void StreamRegionController::determineStepElemCount(DynRegion &dynRegion) {
 
   const auto &staticGroups = staticRegion.step.stepGroups;
   auto &dynGroups = dynRegion.step.stepGroups;
+
+  for (auto &dynGroup : dynGroups) {
+    auto rootS = staticGroups[dynGroup.staticGroupIdx].stepRootS;
+    for (auto S : this->se->getStepStreamList(rootS)) {
+      auto &dynS = S->getDynStream(dynRegion.seqNum);
+      // There is unfloated memory stream.
+      if (S->isMemStream() && !dynS.isFloatedToCache()) {
+        return;
+      }
+    }
+  }
   for (auto &dynGroup : dynGroups) {
 
     auto S = staticGroups[dynGroup.staticGroupIdx].stepRootS;

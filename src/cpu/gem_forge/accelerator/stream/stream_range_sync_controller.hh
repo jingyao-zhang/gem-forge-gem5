@@ -17,7 +17,7 @@ public:
   /**
    * Helper function to get the element idx we should check range for.
    */
-  uint64_t getCheckElementIdx(DynStream *dynS);
+  uint64_t getCheckElemIdx(DynStream *dynS);
 
 private:
   StreamEngine *se;

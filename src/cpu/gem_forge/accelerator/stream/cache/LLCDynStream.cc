@@ -755,7 +755,7 @@ void LLCDynStream::initNextElem(Addr vaddr) {
   auto elemInitCbIter = this->elemInitCallbacks.find(strandElemIdx);
   if (elemInitCbIter != this->elemInitCallbacks.end()) {
     for (auto &callback : elemInitCbIter->second) {
-      callback(this->getDynStreamId(), strandElemIdx);
+      callback(this->getDynStrandId(), strandElemIdx);
     }
     this->elemInitCallbacks.erase(elemInitCbIter);
   }
@@ -876,7 +876,7 @@ void LLCDynStream::invokeElemPostReleaseCallback(uint64_t elemIdx) {
   auto iter = this->elemPostReleaseCallbacks.find(elemIdx);
   if (iter != this->elemPostReleaseCallbacks.end()) {
     for (auto &callback : iter->second) {
-      callback(this->getDynStreamId(), elemIdx);
+      callback(this->getDynStrandId(), elemIdx);
     }
     this->elemPostReleaseCallbacks.erase(iter);
   }
@@ -1166,7 +1166,8 @@ void LLCDynStream::allocateLLCStreams(
           .first->second;
 
   // Try to release old terminated groups.
-  if (mlcGroups.size() == 100) {
+  const auto mlcGroupThreshold = 100;
+  if (mlcGroups.size() == mlcGroupThreshold) {
     DPRINTF(LLCRubyStreamLife, "[MLCGroup] Overflow.\n");
     int i = 0;
     for (const auto &group : mlcGroups) {
@@ -1177,7 +1178,7 @@ void LLCDynStream::allocateLLCStreams(
       }
       ++i;
     }
-    assert(mlcGroups.size() < 100 &&
+    assert(mlcGroups.size() < mlcGroupThreshold &&
            "Too many MLCGroups, streams are not released?");
   }
 
