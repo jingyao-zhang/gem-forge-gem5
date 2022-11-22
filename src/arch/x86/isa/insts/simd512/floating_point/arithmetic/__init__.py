@@ -15,6 +15,7 @@ categories = [
     "vfmadd231ss",
     "vfnmadd213ps",
     "vfnmadd213ss",
+    "vfnmadd231ps",
     "vfnmadd231ss",
     "vsubss",
     "vsubsd",
