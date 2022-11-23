@@ -330,7 +330,7 @@ parser.add_option("--gem-forge-stream-pum-optimized-directory",
 # Stream in Mem Options.
 parser.add_option("--gem-forge-stream-engine-enable-float-mem", action="store_true", default=False,
                   help="Enable stream float in Mem Ctrl.")
-parser.add_option("--gem-forge-stream-engine-float-level-policy", type="choice", default="static",
+parser.add_option("--gem-forge-stream-engine-float-level-policy", type="choice", default="manual",
                   choices=['static', 'manual', 'manual2', 'smart'],
                   help="Policy to choose floating level for streams.")
 parser.add_option("--gem-forge-stream-engine-mc-stream-max-infly-request", action="store",

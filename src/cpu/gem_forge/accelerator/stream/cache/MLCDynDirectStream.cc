@@ -38,12 +38,14 @@ MLCDynDirectStream::MLCDynDirectStream(
 
   /**
    * Initialize the LLC bank.
-   * Be careful that for MidwayFloat, we reset the InitPAddr.
+   * 1. PtrChaseS need to fix the initial PAddr, as CoreSE does not set it.
+   * 2. Be careful that for MidwayFloat, we reset the InitPAddr.
    */
   if (!_configData->initPAddrValid) {
     MLC_S_PANIC_NO_DUMP(this->getDynStrandId(), "Invalid InitPAddr.");
   }
-  if (_configData->floatPlan.getFirstFloatElementIdx() > 0) {
+  if (_configData->isPointerChase ||
+      _configData->floatPlan.getFirstFloatElementIdx() > 0) {
     auto firstFloatElemIdx = _configData->floatPlan.getFirstFloatElementIdx();
     auto vaddr = this->slicedStream.getElementVAddr(firstFloatElemIdx);
     Addr paddr;
@@ -200,8 +202,9 @@ MLCDynDirectStream::MLCDynDirectStream(
   _configData->initCreditedIdx = 0;
   // _configData->initCreditedIdx = this->tailSliceIdx;
 
-  MLC_S_DPRINTF(this->strandId, "InitAllocatedSlice %d overflowed %d.\n",
-                this->tailSliceIdx, this->slicedStream.hasOverflowed());
+  MLC_S_DPRINTF(this->strandId, "InitPAddr %#x InitCredit %d overflowed %d.\n",
+                _configData->initPAddr, this->tailSliceIdx,
+                this->slicedStream.hasOverflowed());
 
   this->isInConstructor = false;
 

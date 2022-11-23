@@ -488,7 +488,7 @@ void InputUnit::duplicateMulticastMsgToNetworkInterface(
     auto localNodeId = localMachineId.getRawNodeID();
     auto localNI = m_router->get_net_ptr()->getNetworkInterface(localNodeId);
     // Inject the message.
-    localNI->injectMulticastDuplicateMsg(msg);
+    localNI->injectMsgToInput(msg);
 
     if (Debug::RubyMulticast) {
         std::stringstream ss;

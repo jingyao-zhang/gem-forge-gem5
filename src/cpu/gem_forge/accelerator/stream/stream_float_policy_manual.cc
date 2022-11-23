@@ -73,7 +73,7 @@ void StreamFloatPolicy::setFloatPlanManual(DynStream &dynS) {
     auto process = tc->getProcessPtr();
     auto streamNUCAManager = process->streamNUCAManager;
     const auto &region = streamNUCAManager->getRegionFromName(regionName);
-    if (region.cachedElements == 0) {
+    if (region.cachedElements == 0 && this->enabledFloatMem) {
       DYN_S_DPRINTF(dynS.dynStreamId,
                     "Directly float to Mem as zero cached elements.\n");
       floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
@@ -98,8 +98,9 @@ void StreamFloatPolicy::setFloatPlanManual(DynStream &dynS) {
   /**
    * Take log for binary tree.
    */
-  if (streamName.find("gfm.bin_tree.val.ld") == 0 ||
-      (streamName.find("(omp_binary_tree.c") == 0 && S->getLoopLevel() == 2)) {
+  if (streamName.find("gfm.bin_tree.val.ld") != std::string::npos ||
+      (streamName.find("(omp_binary_tree.c") != std::string::npos &&
+       S->getLoopLevel() == 2)) {
     this->setFloatPlanForBinTree(dynS);
     return;
   }
@@ -149,7 +150,7 @@ void StreamFloatPolicy::setFloatPlanForRodiniaSrad(DynStream &dynS) {
   auto llcEndVAddr = streamNUCARegion.vaddr + cachedBytes;
 
   DYN_S_DPRINTF(dynS.dynStreamId,
-                "TotalTripCount %d LLCEndVAddr %#x = %#x + %lu * %lu  "
+                "TripCount %d LLCEndVAddr %#x = %#x + %lu * %lu  "
                 "MyEndVAddr %#x = %#x + %d MyEnd %s LLCEnd.\n",
                 totalTripCount, llcEndVAddr, streamNUCARegion.vaddr,
                 streamNUCARegion.cachedElements, streamNUCARegion.elementSize,

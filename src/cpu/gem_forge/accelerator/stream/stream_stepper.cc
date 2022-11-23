@@ -148,11 +148,15 @@ void StreamRegionController::executeStreamConfigForStep(const ConfigArgs &args,
            * We don't support such cases, but when we are skipping to the
            * StreamEnd, we can ignore it.
            */
-          if (!this->canSkipToStreamEnd(dynRegion)) {
+          if (!this->canSkipToStreamEnd(dynRegion) &&
+              staticRegion.someStreamsLoopEliminated) {
             DYN_S_PANIC(dynS.dynStreamId,
                         "[Stepper] Mismatch TripCount in same LoopLevel %lld "
-                        "!= %lld.",
-                        prevDynGroup.totalTripCount, dynGroup.totalTripCount);
+                        "!= %lld %s.",
+                        prevDynGroup.totalTripCount, dynGroup.totalTripCount,
+                        staticGroups[prevDynGroup.staticGroupIdx]
+                            .stepRootS->getDynStream(dynRegion.seqNum)
+                            .dynStreamId);
           }
         }
       } else {
@@ -183,7 +187,8 @@ void StreamRegionController::executeStreamConfigForStep(const ConfigArgs &args,
           if (dynGroups[i].loopLevel != prevDynGroup.loopLevel) {
             break;
           }
-          dynGroups[i].levelTripCount = levelTripCount;
+          dynGroups[i].levelTripCount =
+              dynGroups[i].totalTripCount / dynGroup.totalTripCount;
         }
       }
     }
@@ -233,26 +238,32 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
    * for the next stepped iteration.
    */
   const auto &dynBound = dynRegion.loopBound;
+  auto stepRootS = staticGroup.stepRootS;
+  auto stepRootStreamId = stepRootS->staticId;
+  auto &stepRootDynS = stepRootS->getDynStream(dynRegion.seqNum);
   if (staticRegion.region.is_loop_bound()) {
     if (dynGroup.nextElemIdx >= dynBound.nextElemIdx) {
-      SE_DPRINTF("[Stepper] Wait For LoopBound: %llu >= %llu.\n",
-                 dynGroup.nextElemIdx, dynBound.nextElemIdx);
+      DYN_S_DPRINTF(stepRootDynS.dynStreamId,
+                    "[Stepper] Wait For LoopBound: %llu >= %llu.\n",
+                    dynGroup.nextElemIdx, dynBound.nextElemIdx);
       return;
     }
   } else {
     // We don't have StreamLoopBound.
     if (dynGroup.nextElemIdx >= dynGroup.totalTripCount) {
-      SE_DPRINTF("[Stepper] Wait For TotalTripCount: %llu >= %llu.\n",
-                 dynGroup.nextElemIdx, dynGroup.totalTripCount);
+      DYN_S_DPRINTF(stepRootDynS.dynStreamId,
+                    "[Stepper] Wait For TotalTripCount: %llu >= %llu.\n",
+                    dynGroup.nextElemIdx, dynGroup.totalTripCount);
       return;
     }
   }
 
   for (const auto &dynNestConfig : dynRegion.nestConfigs) {
     if (dynGroup.nextElemIdx >= dynNestConfig.nextElemIdx) {
-      SE_DPRINTF("[Stepper] Wait for NestRegion: %llu >= %llu Region %s.\n",
-                 dynGroup.nextElemIdx, dynNestConfig.nextElemIdx,
-                 dynNestConfig.staticRegion->region.region());
+      DYN_S_DPRINTF(stepRootDynS.dynStreamId,
+                    "[Stepper] Wait for NestRegion: %llu >= %llu Region %s.\n",
+                    dynGroup.nextElemIdx, dynNestConfig.nextElemIdx,
+                    dynNestConfig.staticRegion->region.region());
       return;
     }
   }
@@ -260,9 +271,6 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
   /**
    * Actually start to step.
    */
-  auto stepRootS = staticGroup.stepRootS;
-  auto stepRootStreamId = stepRootS->staticId;
-  auto &stepRootDynS = stepRootS->getDynStream(dynRegion.seqNum);
   if (dynGroup.nextElemIdx >= stepRootDynS.getTotalTripCount()) {
     DYN_S_PANIC(stepRootDynS.dynStreamId,
                 "[Stepper] Step Beyond TotalTripCount %lld >= %lld.",

@@ -72,6 +72,8 @@ class GarnetNetwork : public Network
     FaultModel* fault_model;
 
     bool isMulticastEnabled() const { return m_enable_multicast; }
+    bool isIdealNoCEnabled() const { return m_ideal_noc_hops != -1; }
+    int getIdealNoCHops() const { return m_ideal_noc_hops; }
 
     // Internal configuration
     bool isVNetOrdered(int vnet) const { return m_ordered[vnet]; }
@@ -161,6 +163,7 @@ class GarnetNetwork : public Network
     int m_routing_algorithm;
     bool m_enable_fault_model;
     bool m_enable_multicast;
+    int m_ideal_noc_hops;
 
     // Statistical variables
     Stats::Vector m_packets_received;

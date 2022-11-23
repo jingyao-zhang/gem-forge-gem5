@@ -537,10 +537,10 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
                     "[CanNotCommitStep] Config Not Executed.\n");
       return false;
     }
-    auto stepElement = dynS->tail->next;
+    auto stepElem = dynS->tail->next;
     if (dynS->hasTotalTripCount()) {
-      if (stepElement->isLastElement()) {
-        S_ELEMENT_PANIC(stepElement, "StreamStep for LastElement.");
+      if (stepElem->isLastElement()) {
+        S_ELEMENT_PANIC(stepElem, "StreamStep for LastElement.");
       }
     }
     /**
@@ -548,28 +548,27 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
      * However, if we have Range-Sync enabled, we should commit it directly.
      */
     if (S->getEnabledStoreFunc()) {
-      if (stepElement->isElemFloatedToCache() && !dynS->shouldCoreSEIssue() &&
+      if (stepElem->isElemFloatedToCache() && !dynS->shouldCoreSEIssue() &&
           !dynS->shouldRangeSync()) {
-        if (!dynS->cacheAckedElements.count(stepElement->FIFOIdx.entryIdx)) {
-          S_ELEMENT_DPRINTF(stepElement, "[CanNotCommitStep] No Ack.\n");
+        if (!dynS->cacheAckedElements.count(stepElem->FIFOIdx.entryIdx)) {
+          S_ELEMENT_DPRINTF(stepElem, "[CanNotCommitStep] No Ack.\n");
           return false;
         }
       }
       if (dynS->isFloatedAsNDC()) {
-        if (!dynS->cacheAckedElements.count(stepElement->FIFOIdx.entryIdx)) {
-          S_ELEMENT_DPRINTF(stepElement,
-                            "[CanNotCommitStep] No Ack from NDC.\n");
+        if (!dynS->cacheAckedElements.count(stepElem->FIFOIdx.entryIdx)) {
+          S_ELEMENT_DPRINTF(stepElem, "[CanNotCommitStep] No Ack from NDC.\n");
           return false;
         }
       }
     }
-    if (!dynS->areNextBackDepElementsReady(stepElement)) {
-      S_ELEMENT_DPRINTF(stepElement,
+    if (!dynS->areNextBackDepElementsReady(stepElem)) {
+      S_ELEMENT_DPRINTF(stepElem,
                         "[CanNotCommitStep] BackDepElement Unready.\n");
       return false;
     }
     if (S->isReduction() || S->isPointerChaseIndVar()) {
-      auto stepNextElement = stepElement->next;
+      auto stepNextElement = stepElem->next;
       if (!stepNextElement) {
         /**
          * Due to the allocation algorithm, the only case that StepNextElement
@@ -577,7 +576,7 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
          * StreamConfig to be executed.
          */
         S_ELEMENT_DPRINTF(
-            stepElement,
+            stepElem,
             "[CanNotCommitStep] No Reduction/PtrChaseIV NextElement.\n");
         return false;
       }
@@ -585,7 +584,7 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
       } else {
         // If not offloaded, The next steped element should be ValueReady.
         if (!stepNextElement->isValueReady) {
-          S_ELEMENT_DPRINTF(stepElement,
+          S_ELEMENT_DPRINTF(stepElem,
                             "[CanNotCommitStep] Reduction/PtrChaseIV "
                             "NextElement %llu not ValueReady.\n",
                             stepNextElement->FIFOIdx.entryIdx);
@@ -593,16 +592,16 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
         }
       }
     }
-    if (S->isLoadStream() && !stepElement->isElemFloatedToCache() &&
+    if (S->isLoadStream() && !stepElem->isElemFloatedToCache() &&
         !S->hasCoreUser() && S->hasBackDepReductionStream) {
       /**
        * S is a load stream that is not offloaded, with no core user and
        * reduction stream. We have to make sure the element is value ready so
        * that the reduction is correctly performed.
        */
-      if (!stepElement->isValueReady) {
+      if (!stepElem->isValueReady) {
         S_ELEMENT_DPRINTF(
-            stepElement,
+            stepElem,
             "[CanNotCommitStep] Value not Ready for BackDepReductionStream.\n");
         return false;
       }
@@ -615,17 +614,15 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
      */
     if (S->isDirectMemStream() && !S->isDelayIssueUntilFIFOHead() &&
         dynS->shouldCoreSEIssue() && !dynS->isFloatedAsNDC()) {
-      auto stepNextElement = stepElement->next;
-      if (!stepNextElement) {
+      auto stepNextElem = stepElem->next;
+      if (!stepNextElem) {
         S_ELEMENT_DPRINTF(
-            stepElement,
-            "[CanNotCommitStep] No NextElement CoreIssue DirectMemStream.\n");
+            stepElem, "[CanNotCommitStep] No NextElem CoreIssue DirectMemS.\n");
         return false;
       }
-      if (!stepNextElement->isAddrReady()) {
-        S_ELEMENT_DPRINTF(stepElement,
-                          "[CanNotCommitStep] NextElement not AddrReady "
-                          "CoreIssue DirectMemStream.\n");
+      if (!stepNextElem->isAddrReady() && stepNextElem->shouldIssue()) {
+        S_ELEMENT_DPRINTF(stepElem, "[CanNotCommitStep] NextElem not AddrReady "
+                                    "CoreIssue DirectMemS.\n");
         return false;
       }
     }
@@ -2269,7 +2266,7 @@ bool StreamEngine::releaseElementUnstepped(DynStream &dynS) {
 }
 
 std::vector<StreamElement *> StreamEngine::findReadyElements() {
-  std::vector<StreamElement *> readyElements;
+  std::vector<StreamElement *> readyElems;
 
   /**
    * We iterate through all configured streams' elements.
@@ -2287,12 +2284,11 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         // The NDC requires configuration to be committed.
         continue;
       }
-      for (auto element = dynS.tail->next; element != nullptr;
-           element = element->next) {
-        assert(element->stream == S && "Sanity check that streams match.");
+      for (auto elem = dynS.tail->next; elem != nullptr; elem = elem->next) {
+        assert(elem->stream == S && "Sanity check that streams match.");
 
-        if (element->isElemFloatedToCache() && dynS.isFloatConfigDelayed()) {
-          S_ELEMENT_DPRINTF(element, "NotReady as FloatConfigDelayed.\n");
+        if (elem->isElemFloatedToCache() && dynS.isFloatConfigDelayed()) {
+          S_ELEMENT_DPRINTF(elem, "NotReady as FloatConfigDelayed.\n");
           break;
         }
 
@@ -2309,43 +2305,41 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
          *  This applies to AtomicCompute streams.
          */
 
-        if (element->isAddrReady()) {
+        if (elem->isAddrReady()) {
           // Address already ready. Check if we have type 2 or 3 ready elements.
-          if (S->shouldComputeValue() && !element->scheduledComputation &&
-              !element->isComputeValueReady() &&
-              element->checkValueBaseElementsValueReady()) {
-            if (!element->isElemFloatedToCache()) {
-              S_ELEMENT_DPRINTF(element, "Found Ready for Compute.\n");
-              readyElements.emplace_back(element);
+          if (S->shouldComputeValue() && !elem->scheduledComputation &&
+              !elem->isComputeValueReady() &&
+              elem->checkValueBaseElementsValueReady()) {
+            if (!elem->isElemFloatedToCache()) {
+              S_ELEMENT_DPRINTF(elem, "Found Ready for Compute.\n");
+              readyElems.emplace_back(elem);
             } else {
               if (S->isReduction()) {
-                if (element->isInnerLastElem()) {
+                if (elem->isInnerLastElem()) {
                   // Specialize for the InnerLast ReductionStream element. They
                   // need to be computed even when offloaded (actually just copy
                   // from DynStream::innerFinalValueMap).
-                  S_ELEMENT_DPRINTF(element,
-                                    "Found Reduce Ready for Compute.\n");
-                  readyElements.emplace_back(element);
+                  S_ELEMENT_DPRINTF(elem, "Found Reduce Ready for Compute.\n");
+                  readyElems.emplace_back(elem);
                 }
               } else if (S->isPointerChaseIndVar()) {
                 /**
                  * Ideally if we don't need the value, we should not compute it.
                  */
-                S_ELEMENT_DPRINTF(element,
+                S_ELEMENT_DPRINTF(elem,
                                   "Found PtrChaseIV Ready for Compute.\n");
-                readyElements.emplace_back(element);
+                readyElems.emplace_back(elem);
               }
             }
           }
-          if (S->isAtomicComputeStream() && !element->isElemFloatedToCache() &&
-              !element->isReqIssued()) {
+          if (S->isAtomicComputeStream() && !elem->isElemFloatedToCache() &&
+              !elem->isReqIssued()) {
             // Check that StreamAtomic inst is non-speculative, i.e. it checks
             // if my value is ready.
-            if (element->firstValueCheckByCoreCycle != 0) {
+            if (elem->firstValueCheckByCoreCycle != 0) {
               S_ELEMENT_DPRINTF(
-                  element,
-                  "StreamAtomic is non-speculative, ready to issue.\n");
-              readyElements.emplace_back(element);
+                  elem, "StreamAtomic is non-speculative, ready to issue.\n");
+              readyElems.emplace_back(elem);
             }
           }
           continue;
@@ -2362,11 +2356,11 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
          * TODO: Record dependent element information to avoid this expensive
          * TODO: search.
          */
-        if (element->isAddrAliased && !element->isFirstUserDispatched()) {
+        if (elem->isAddrAliased && !elem->isFirstUserDispatched()) {
           bool hasIndirectUserDispatched = false;
           for (auto depS : S->addrDepStreams) {
             auto &dynDepS = depS->getDynStream(dynS.configSeqNum);
-            auto depElement = dynDepS.getElemByIdx(element->FIFOIdx.entryIdx);
+            auto depElement = dynDepS.getElemByIdx(elem->FIFOIdx.entryIdx);
             if (depElement && depElement->isFirstUserDispatched()) {
               hasIndirectUserDispatched = true;
             }
@@ -2377,8 +2371,8 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         }
 
         if (S->isDelayIssueUntilFIFOHead()) {
-          if (element != dynS.tail->next) {
-            S_ELEMENT_DPRINTF(element, "[NotReady] Not FIFO Head.\n");
+          if (elem != dynS.tail->next) {
+            S_ELEMENT_DPRINTF(elem, "[NotReady] Not FIFO Head.\n");
             break;
           }
         }
@@ -2391,8 +2385,8 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
          * NoC. Here I try to limit the prefetch distance for AtomicStream
          * without computation.
          */
-        if (S->isAtomicStream() && !element->isElemFloatedToCache()) {
-          if (element->FIFOIdx.entryIdx >
+        if (S->isAtomicStream() && !elem->isElemFloatedToCache()) {
+          if (elem->FIFOIdx.entryIdx >
               dynS.getFirstElem()->FIFOIdx.entryIdx +
                   this->myParams->maxNumElementsPrefetchForAtomic) {
             break;
@@ -2402,21 +2396,21 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         /**
          * Should not issue.
          */
-        if (!dynS.shouldCoreSEIssue()) {
+        if (!elem->shouldIssue()) {
           continue;
         }
-        auto baseElementsValReady =
-            element->checkAddrBaseElementsReady(false /* CheckByCore */);
-        auto canNDCIssue = this->ndcController->canIssueNDCPacket(element);
-        if (baseElementsValReady && canNDCIssue) {
-          S_ELEMENT_DPRINTF(element, "Found Addr Ready.\n");
-          readyElements.emplace_back(element);
+        auto baseElemsValReady =
+            elem->checkAddrBaseElementsReady(false /* CheckByCore */);
+        auto canNDCIssue = this->ndcController->canIssueNDCPacket(elem);
+        if (baseElemsValReady && canNDCIssue) {
+          S_ELEMENT_DPRINTF(elem, "Found Addr Ready.\n");
+          readyElems.emplace_back(elem);
         } else {
           // We should not check the next one as we should issue inorder.
-          if (!baseElementsValReady) {
-            S_ELEMENT_DPRINTF(element, "Not Addr Ready, break out.\n");
+          if (!baseElemsValReady) {
+            S_ELEMENT_DPRINTF(elem, "Not Addr Ready, break out.\n");
           } else {
-            S_ELEMENT_DPRINTF(element, "Not NDC Ready, break out.\n");
+            S_ELEMENT_DPRINTF(elem, "Not NDC Ready, break out.\n");
           }
           break;
         }
@@ -2424,7 +2418,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
     }
   }
 
-  return readyElements;
+  return readyElems;
 }
 
 void StreamEngine::issueElements() {

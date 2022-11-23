@@ -137,31 +137,6 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
   for (auto stepRootStream : stepRootStreams) {
 
     /**
-     * ! A hack here to delay the allocation if the back base stream has
-     * ! not caught up.
-     */
-    auto maxAllocSize = stepRootStream->maxSize;
-    if (!stepRootStream->backBaseStreams.empty()) {
-      for (auto backBaseS : stepRootStream->backBaseStreams) {
-        if (backBaseS->stepRootStream == stepRootStream) {
-          // ! This is acutally a pointer chasing pattern.
-          // ! No constraint should be enforced here.
-          continue;
-        }
-        if (backBaseS->stepRootStream == nullptr) {
-          // ! THis is actually a constant load.
-          // ! So far ignore this dependence.
-          continue;
-        }
-        if (backBaseS->getAllocSize() < maxAllocSize) {
-          // The back base stream is lagging behind.
-          // Reduce the maxAllocSize.
-          maxAllocSize = backBaseS->getAllocSize();
-        }
-      }
-    }
-
-    /**
      * With the new NestStream, we have to search for the correct dynamic stream
      * to allocate for. It is the first DynStream that:
      * 1. StreamEnd not dispatched.
@@ -190,6 +165,32 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
                 stepRootStream->getAllocSize(), stepRootStream->maxSize);
       continue;
     }
+
+    /**
+     * ! A hack here to delay the allocation if the back base stream has
+     * ! not caught up.
+     */
+    auto maxAllocSize = stepRootStream->maxSize;
+    if (!stepRootStream->backBaseStreams.empty()) {
+      for (auto backBaseS : stepRootStream->backBaseStreams) {
+        if (backBaseS->stepRootStream == stepRootStream) {
+          // ! This is acutally a pointer chasing pattern.
+          // ! No constraint should be enforced here.
+          continue;
+        }
+        if (backBaseS->stepRootStream == nullptr) {
+          // ! THis is actually a constant load.
+          // ! So far ignore this dependence.
+          continue;
+        }
+        if (backBaseS->getAllocSize() < maxAllocSize) {
+          // The back base stream is lagging behind.
+          // Reduce the maxAllocSize.
+          maxAllocSize = backBaseS->getAllocSize();
+        }
+      }
+    }
+
     /**
      * Limit the maxAllocSize with totalTripCount to avoid allocation beyond
      * StreamEnd. Condition: maxAllocSize > allocSize: originally we are trying
@@ -200,6 +201,38 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
      */
     {
       auto allocSize = allocatingStepRootDynS->allocSize;
+
+      if (maxAllocSize > allocSize) {
+        auto nextEntryIdx = allocatingStepRootDynS->FIFOIdx.entryIdx;
+        auto maxAllocElemIdx = nextEntryIdx + maxAllocSize - allocSize - 1;
+        if (maxAllocElemIdx > 0 &&
+            !allocatingStepRootDynS->isElemFloatedToCache(nextEntryIdx)) {
+          for (auto backBaseS : stepRootStream->backBaseStreams) {
+            if (backBaseS->stepRootStream == stepRootStream) {
+              // ! This is acutally a pointer chasing pattern.
+              // ! No constraint should be enforced here.
+              continue;
+            }
+            if (backBaseS->stepRootStream == nullptr) {
+              // ! THis is actually a constant load.
+              // ! So far ignore this dependence.
+              continue;
+            }
+            const auto &backBaseDynS =
+                backBaseS->getDynStream(allocatingStepRootDynS->configSeqNum);
+            auto backBaseLastElemIdx = backBaseDynS.FIFOIdx.entryIdx;
+            if (nextEntryIdx != 0 && backBaseLastElemIdx < nextEntryIdx - 1) {
+              DYN_S_PANIC(allocatingStepRootDynS->dynStreamId,
+                          "NextElemIdx %llu BackBaseLastElem %s.", nextEntryIdx,
+                          backBaseDynS.FIFOIdx);
+            }
+            if (backBaseLastElemIdx < maxAllocElemIdx) {
+              maxAllocSize -= (maxAllocElemIdx - backBaseLastElemIdx);
+            }
+          }
+        }
+      }
+
       if (allocatingStepRootDynS->hasTotalTripCount() &&
           maxAllocSize > allocSize) {
         auto nextEntryIdx = allocatingStepRootDynS->FIFOIdx.entryIdx;

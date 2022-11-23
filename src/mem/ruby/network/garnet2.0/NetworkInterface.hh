@@ -74,9 +74,12 @@ class NetworkInterface : public ClockedObject, public Consumer
     uint32_t functionalWrite(Packet *);
 
     /**
-     * Hacker function to inject a duplicate multicast message.
+     * Hacker function to inject a message into the input and
+     * output buffer. If input, it still go through the router,
+     * approximately one-hop delay.
      */
-    void injectMulticastDuplicateMsg(MsgPtr msg);
+    void injectMsgToInput(MsgPtr msg);
+    void injectMsgToOutput(MsgPtr msg);
 
   private:
     GarnetNetwork *m_net_ptr;

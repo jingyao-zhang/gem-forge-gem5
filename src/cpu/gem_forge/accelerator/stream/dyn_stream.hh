@@ -95,6 +95,11 @@ struct DynStream {
     }
   }
 
+  bool isElemFloatedToCache(uint64_t elemIdx) const {
+    return this->isFloatedToCache() &&
+           this->getAdjustedFirstFloatElemIdx() <= elemIdx;
+  }
+
   void setFloatConfigDelayed(bool val) { this->floatConfigDelayed = val; }
   void setFloatedToCacheAsRoot(bool val) { this->floatedToCacheAsRoot = val; }
   void setFloatedToCache(bool val) { this->floatedToCache = val; }

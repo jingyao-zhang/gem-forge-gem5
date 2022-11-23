@@ -534,19 +534,19 @@ bool DynStream::isNextValueBaseElementAllocated(
   return true;
 }
 
-void DynStream::addBaseElements(StreamElement *newElement) {
+void DynStream::addBaseElements(StreamElement *newElem) {
 
-  if (!this->shouldCoreSEIssue()) {
+  if (!this->shouldCoreSEIssue() && newElem->isFloatElem()) {
     return;
   }
 
   for (const auto &edge : this->baseEdges) {
     if (edge.type == StreamDepEdge::TypeE::Addr) {
-      this->addAddrBaseElementEdge(newElement, edge);
+      this->addAddrBaseElementEdge(newElem, edge);
     } else if (edge.type == StreamDepEdge::TypeE::Value) {
-      this->addValueBaseElementEdge(newElement, edge);
+      this->addValueBaseElementEdge(newElem, edge);
     } else if (edge.type == StreamDepEdge::TypeE::Back) {
-      this->addBackBaseElementEdge(newElement, edge);
+      this->addBackBaseElementEdge(newElem, edge);
     }
   }
 
@@ -555,15 +555,15 @@ void DynStream::addBaseElements(StreamElement *newElement) {
    */
   auto S = this->stream;
   if (S->isLoadComputeStream() || S->isUpdateStream()) {
-    S_ELEMENT_DPRINTF(newElement, "Add Self ValueBaseElement.\n");
-    newElement->valueBaseElements.emplace_back(newElement);
+    S_ELEMENT_DPRINTF(newElem, "Add Self ValueBaseElement.\n");
+    newElem->valueBaseElements.emplace_back(newElem);
   }
 
   /**
    * Remember the InnerLoopBaseElement will be initialized later.
    */
   if (!this->stream->innerLoopBaseEdges.empty()) {
-    newElement->hasUnInitInnerLoopAddrBaseElements = true;
+    newElem->hasUnInitInnerLoopAddrBaseElements = true;
   }
 }
 
@@ -607,11 +607,11 @@ void DynStream::addValueBaseElementEdge(StreamElement *newElement,
   newElement->valueBaseElements.emplace_back(baseElement);
 }
 
-void DynStream::addBackBaseElementEdge(StreamElement *newElement,
+void DynStream::addBackBaseElementEdge(StreamElement *newElem,
                                        const StreamDepEdge &edge) {
 
   auto S = this->stream;
-  auto newElementIdx = newElement->FIFOIdx.entryIdx;
+  auto newElementIdx = newElem->FIFOIdx.entryIdx;
   if (newElementIdx == 0) {
     // The first element has no BackBaseElement.
     return;
@@ -620,20 +620,19 @@ void DynStream::addBackBaseElementEdge(StreamElement *newElement,
   auto baseS = S->se->getStream(edge.baseStaticId);
   const auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
-  uint64_t baseElementIdx = edge.alignBaseElement;
+  uint64_t baseElemIdx = edge.alignBaseElement;
   assert(edge.baseElemReuseCnt == 1 && "BackEdge should have reuse 1.");
   assert(edge.baseElemSkipCnt == 0 && "BackEdge should have skip 0.");
-  baseElementIdx += newElementIdx - 1;
+  baseElemIdx += newElementIdx - 1;
   // Try to find this element.
-  auto baseElement = baseDynS.getElemByIdx(baseElementIdx);
-  if (!baseElement) {
-    S_ELEMENT_PANIC(newElement,
-                    "Failed to find back base element %llu from %s.",
-                    baseElementIdx, baseDynS.dynStreamId);
+  auto baseElem = baseDynS.getElemByIdx(baseElemIdx);
+  if (!baseElem) {
+    S_ELEMENT_PANIC(newElem, "Failed to find BackBaseElem %llu from %s.",
+                    baseElemIdx, baseDynS.dynStreamId);
   }
-  S_ELEMENT_DPRINTF(newElement, "Add Back ValueBaseElement: %s.\n",
-                    baseElement->FIFOIdx);
-  newElement->valueBaseElements.emplace_back(baseElement);
+  S_ELEMENT_DPRINTF(newElem, "Add Back ValueBaseElem: %s.\n",
+                    baseElem->FIFOIdx);
+  newElem->valueBaseElements.emplace_back(baseElem);
 }
 
 void DynStream::tryAddInnerLoopBaseElements(StreamElement *elem) {
@@ -1049,7 +1048,7 @@ bool DynStream::hasUnsteppedElem() const {
   if (!element) {
     // We don't have element for this used stream.
     DYN_S_DPRINTF(this->dynStreamId,
-                  "NoUnsteppedElement config executed %d alloc %d stepped %d "
+                  "NoUnsteppedElem config executed %d alloc %d stepped %d "
                   "total %d next %s.\n",
                   this->configExecuted, this->allocSize, this->stepSize,
                   this->getTotalTripCount(), this->FIFOIdx);

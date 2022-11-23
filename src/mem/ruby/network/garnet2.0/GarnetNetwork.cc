@@ -66,6 +66,7 @@ GarnetNetwork::GarnetNetwork(const Params *p)
     if (m_enable_fault_model)
         fault_model = p->fault_model;
     m_enable_multicast = p->enable_multicast;
+    m_ideal_noc_hops = p->ideal_noc_hops;
 
     m_vnet_type.resize(m_virtual_networks);
 

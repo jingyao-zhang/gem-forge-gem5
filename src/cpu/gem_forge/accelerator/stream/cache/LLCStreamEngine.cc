@@ -126,8 +126,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
       streamConfigureData->dynamicId, streamConfigureData->strandIdx,
       streamConfigureData->totalStrands));
   LLC_S_DPRINTF_(LLCRubyStreamLife, S->getDynStrandId(),
-                 "Configure DirectStream InitAllocatedSlice %d "
-                 "TotalTripCount %lld.\n",
+                 "Configured InitCredit %d TripCount %lld.\n",
                  streamConfigureData->initCreditedIdx, S->getTotalTripCount());
   S->remoteConfigured(this->controller);
 

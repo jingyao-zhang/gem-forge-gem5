@@ -970,8 +970,8 @@ void MLCStrandManager::configureStream(ConfigPtr config, MasterID masterId) {
   /**
    * Do not release the pkt and streamConfigureData as they should be
    * forwarded to the LLC bank and released there. However, we do need to fix
-   * up the initPAddr to our LLC bank if case it is not valid. ! This has to
-   * be done before initializing the MLCDynStream so that it ! knows the
+   * initPAddr to our LLC bank in case it is not valid. This has to
+   * be done before initializing the MLCDynStream so that it knows the
    * initial llc bank.
    */
   if (!config->initPAddrValid) {

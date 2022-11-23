@@ -162,8 +162,8 @@ NetworkInterface::incrementStats(flit *t_flit)
 void
 NetworkInterface::wakeup()
 {
-    DPRINTF(RubyNetwork, "Network Interface %d connected to router %d "
-            "woke up at time: %lld\n", m_id, m_router_id, curCycle());
+    DPRINTF(RubyNetwork, "NetInterface [%d][%d] woke up at time: %lld\n",
+        m_id, m_router_id, curCycle());
 
     MsgPtr msg_ptr;
     Tick curTime = clockEdge();
@@ -362,6 +362,21 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
             net_msg_ptr->getDestination().removeNetDest(unicastDest);
         }
 
+        // Check if we enabled ideal noc.
+        if (m_net_ptr->isIdealNoCEnabled() && destID != m_id) {
+            NetDest unicastDest;
+            unicastDest.add(destMachineID);
+            new_msg_ptr->getDestination() = unicastDest;
+            auto destNI = m_net_ptr->getNetworkInterface(destID);
+            new_msg_ptr->setVnet(vnet);
+            if (m_net_ptr->getIdealNoCHops() == 1) {
+                destNI->injectMsgToInput(new_msg_ptr);
+            } else {
+                destNI->injectMsgToOutput(new_msg_ptr);
+            }
+            continue;
+        }
+
         // Embed Route into the flits
         // NetDest format is used by the routing table
         // Custom routing algorithms just need destID
@@ -509,7 +524,7 @@ int NetworkInterface::getMessageStatsType(const MsgPtr &msg_ptr) {
     return msgCategory * GarnetNetwork::MAX_MSG_TYPES_PER_CATEGORY + msgType;
 }
 
-void NetworkInterface::injectMulticastDuplicateMsg(MsgPtr msg) {
+void NetworkInterface::injectMsgToInput(MsgPtr msg) {
     auto vnet = msg->getVnet();
     if (vnet > this->inNode_ptr.size()) {
         panic("Illegal VNet %d.\n", vnet);
@@ -517,6 +532,16 @@ void NetworkInterface::injectMulticastDuplicateMsg(MsgPtr msg) {
     auto buffer = this->inNode_ptr.at(vnet);
     assert(buffer);
     buffer->enqueue(msg, this->clockEdge(), this->cyclesToTicks(Cycles(1)));
+}
+
+void NetworkInterface::injectMsgToOutput(MsgPtr msg) {
+    Tick curTime = clockEdge();
+    auto vnet = msg->getVnet();
+    // We don't bother stalling?
+    assert(outNode_ptr[vnet]->areNSlotsAvailable(1, curTime));
+    // Space is available. Enqueue to protocol buffer.
+    outNode_ptr[vnet]->enqueue(msg, curTime,
+                               cyclesToTicks(Cycles(1)));
 }
 
 // Wakeup the NI in the next cycle if there are waiting

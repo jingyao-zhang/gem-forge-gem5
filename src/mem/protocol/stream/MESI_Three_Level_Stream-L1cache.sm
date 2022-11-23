@@ -319,6 +319,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   }
 
   int getPendingAcks(TBE tbe) {
+    if (!is_valid(tbe)) {
+      error("Invalid TBE to get PendingAck");
+    }
     return tbe.pendingAcks;
   }
 

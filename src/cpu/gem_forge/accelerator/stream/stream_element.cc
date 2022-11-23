@@ -1074,7 +1074,7 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
         }
       } else {
         if (!baseE->checkValueReady(false /* CheckedByCore */)) {
-          S_ELEMENT_DPRINTF(this, "ValueBaseElement not ValueReady: %s.\n",
+          S_ELEMENT_DPRINTF(this, "ValueBaseElem not ValueReady: %s.\n",
                             baseE->FIFOIdx);
           return false;
         }

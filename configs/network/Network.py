@@ -79,6 +79,15 @@ def define_options(parser):
     parser.add_option("--garnet-enable-multicast", action="store_true",
                       default=False,
                       help="""enable multicast""")
+    parser.add_option("--garnet-ideal-noc-hops", action="store",
+                      type="int", default=-1,
+                      help="""ideal NoC hops (-1 to disable)""")
+    parser.add_option("--garnet-ctrl-flit-buffer-size", action="store",
+                      type="int", default=1,
+                      help="""Flit buffer size for ctrl vnet""")
+    parser.add_option("--garnet-data-flit-buffer-size", action="store",
+                      type="int", default=4,
+                      help="""Flit buffer size for data vnet""")
 
 
 def create_network(options, ruby):
@@ -114,6 +123,9 @@ def init_network(options, network, InterfaceClass):
         network.routing_algorithm = options.routing_algorithm
         network.garnet_deadlock_threshold = options.garnet_deadlock_threshold
         network.enable_multicast = options.garnet_enable_multicast
+        network.ideal_noc_hops = options.garnet_ideal_noc_hops
+        network.buffers_per_data_vc = options.garnet_data_flit_buffer_size
+        network.buffers_per_ctrl_vc = options.garnet_ctrl_flit_buffer_size
 
     if options.network == "simple":
         network.setup_buffers()

@@ -73,6 +73,7 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
     this->nextInitStrandElemIdx = firstFloatElemIdx;
     this->nextIssueElementIdx = firstFloatElemIdx;
     this->nextLoopBoundElementIdx = firstFloatElemIdx;
+    this->nextTriggerIndElemIdx = firstFloatElemIdx;
   }
 
   if (this->getStaticS()->isReduction() ||

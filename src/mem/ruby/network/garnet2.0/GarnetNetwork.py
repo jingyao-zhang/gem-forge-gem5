@@ -49,6 +49,7 @@ class GarnetNetwork(RubyNetwork):
     garnet_deadlock_threshold = Param.UInt32(50000,
                               "network-level deadlock threshold")
     enable_multicast = Param.Bool(False, "enable multicast")
+    ideal_noc_hops = Param.Int(-1, "ideal NoC hops (-1 to disable)")
 
 class GarnetNetworkInterface(ClockedObject):
     type = 'GarnetNetworkInterface'
