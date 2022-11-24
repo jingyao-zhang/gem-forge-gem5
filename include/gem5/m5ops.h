@@ -86,9 +86,18 @@ void m5_stream_nuca_region(const char *regionName, void *buffer,
  * Then the indirect field offset is 0, with size 4.
  * We use eight bits for each, and the final alignment is:
  * - ((offset << 8) | size).
+ *
+ * Similar for pointer chase. It specifies how to find the next node.
+ * PtrChaseNode {
+ *   PtrChaseNode *next;
+ *   ...
+ * };
+ * -((1 << 16) | (offset << 8) | size).
  */
 #define m5_stream_nuca_encode_ind_align(offset, size)                          \
-  (-(int64_t)((offset) << 8 | (size)))
+  (-(int64_t)((0 << 16) | ((offset) << 8) | (size)))
+#define m5_stream_nuca_encode_ptr_align(offset, size)                          \
+  (-(int64_t)((1 << 16) | ((offset) << 8) | (size)))
 void m5_stream_nuca_align(void *A, void *B, int64_t elementOffset);
 
 /**

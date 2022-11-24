@@ -145,16 +145,20 @@ void StreamNUCAManager::setProperty(Addr start, uint64_t property,
   }
 }
 
-void StreamNUCAManager::defineAlign(Addr A, Addr B, int64_t elementOffset) {
+void StreamNUCAManager::defineAlign(Addr A, Addr B, int64_t elemOffset) {
   DPRINTF(StreamNUCAManager, "[StreamNUCA] Define Align %#x %#x Offset %ld.\n",
-          A, B, elementOffset);
+          A, B, elemOffset);
   auto &regionA = this->getRegionFromStartVAddr(A);
-  regionA.aligns.emplace_back(A, B, elementOffset);
-  if (elementOffset < 0) {
-    regionA.isIndirect = true;
-    IndirectAlignField indField = decodeIndirectAlign(elementOffset);
-    DPRINTF(StreamNUCAManager, "[StreamNUCA]     IndAlign Offset %d Size %d.\n",
-            indField.offset, indField.size);
+  regionA.aligns.emplace_back(A, B, elemOffset);
+  if (elemOffset < 0) {
+    regionA.isIrregular = true;
+    IrregularAlignField indField = decodeIrregularAlign(elemOffset);
+    if (indField.type == IrregularAlignField::TypeE::PtrChase) {
+      regionA.isPtrChase = true;
+    }
+    DPRINTF(StreamNUCAManager,
+            "[StreamNUCA]     IrregularAlign Type %d Offset %d Size %d.\n",
+            indField.type, indField.offset, indField.size);
   }
 }
 
@@ -308,19 +312,17 @@ void StreamNUCAManager::remapRegions(ThreadContext *tc,
   const int REMAP_INDIRECT = 0;
   const int REMAP_NUCA = 1;
   const int REMAP_PUM = 2;
+  const int REMAP_PTR_CHASE = 3;
   for (const auto &regionVAddr : regionVAddrs) {
 
     auto &region = this->getRegionFromStartVAddr(regionVAddr);
 
-    bool hasIndirectAlign = false;
-    for (const auto &align : region.aligns) {
-      if (align.elementOffset < 0) {
-        hasIndirectAlign = true;
-        break;
+    if (region.isIrregular) {
+      if (region.isPtrChase) {
+        remapDecisions.push_back(REMAP_PTR_CHASE);
+      } else {
+        remapDecisions.push_back(REMAP_INDIRECT);
       }
-    }
-    if (hasIndirectAlign) {
-      remapDecisions.push_back(REMAP_INDIRECT);
     } else {
       if (this->enablePUM && this->canRemapDirectRegionPUM(region)) {
         remapDecisions.push_back(REMAP_PUM);
@@ -343,6 +345,10 @@ void StreamNUCAManager::remapRegions(ThreadContext *tc,
       panic("Invalid Remap Decision %d.", decision);
     case REMAP_INDIRECT: {
       this->remapIndirectRegion(tc, region);
+      break;
+    }
+    case REMAP_PTR_CHASE: {
+      this->remapPtrChaseRegion(tc, region);
       break;
     }
     case REMAP_NUCA: {
@@ -376,6 +382,85 @@ void StreamNUCAManager::remapDirectRegionNUCA(const StreamRegion &region) {
   DPRINTF(StreamNUCAManager,
           "[StreamNUCA] Map Region %s %#x PAddr %#x Interleave %lu Bank %d.\n",
           region.name, startVAddr, startPAddr, interleave, startBank);
+}
+
+void StreamNUCAManager::remapPtrChaseRegion(ThreadContext *tc,
+                                            StreamRegion &region) {
+
+  /**
+   * The aligned to array should be the head array.
+   */
+  assert(region.aligns.size() == 1);
+  const auto &align = region.aligns.front();
+  auto alignToRegionVAddr = align.vaddrB;
+  const auto &alignToRegion = this->getRegionFromStartVAddr(alignToRegionVAddr);
+
+  auto alignInfo = decodeIrregularAlign(align.elemOffset);
+  assert(alignInfo.type == IrregularAlignField::TypeE::PtrChase);
+
+  DPRINTF(
+      StreamNUCAManager,
+      "[StreamNUCA] Remap PtrCahse %s Head %s Offset %d Size %d ElemSize %d.\n",
+      region.name, alignToRegion.name, alignInfo.offset, alignInfo.size,
+      region.elementSize);
+
+  const auto llcBlockSize = StreamNUCAMap::getCacheBlockSize();
+  const auto nodeSize = region.elementSize;
+
+  assert(nodeSize % llcBlockSize == 0);
+  assert(nodeSize >= llcBlockSize);
+  assert(alignToRegion.elementSize == 8);
+
+  std::unordered_map<Addr, int> paddrLineToBankMap;
+  const auto numLists = alignToRegion.numElement;
+
+  auto &virtProxy = tc->getVirtProxy();
+  auto totalNodes = 0;
+  auto totalBanks = StreamNUCAMap::getNumRows() * StreamNUCAMap::getNumCols();
+  auto currentBank = 0;
+  for (int i = 0; i < numLists; ++i) {
+    auto listVAddr = alignToRegion.vaddr + i * alignToRegion.elementSize;
+    Addr headVAddr;
+    virtProxy.readBlob(listVAddr, &headVAddr, alignToRegion.elementSize);
+    assert(headVAddr != 0);
+
+    Addr headPAddr;
+
+    int count = 0;
+
+    while (headVAddr != 0) {
+
+      // Assume one node will not span across multiple pages.
+      assert(tc->getProcessPtr()->pTable->translate(headVAddr, headPAddr));
+      for (Addr paddr = headPAddr; paddr < headPAddr + nodeSize; ++paddr) {
+        paddrLineToBankMap.emplace(paddr, currentBank);
+      }
+
+      Addr nextPtr = headVAddr + alignInfo.offset;
+      Addr nextVAddr;
+      virtProxy.readBlob(nextPtr, &nextVAddr, alignInfo.size);
+
+      headVAddr = nextVAddr;
+
+      count++;
+    }
+
+    totalNodes += count;
+
+    // Round robin assign to bank.
+    currentBank = (currentBank + 1) % totalBanks;
+  }
+
+  DPRINTF(StreamNUCAManager, "[StreamNUCA] Remapped %d PtrChase Nodes.\n",
+          totalNodes);
+
+  Addr startPAddr;
+  assert(tc->getProcessPtr()->pTable->translate(region.vaddr, startPAddr));
+
+  // For now add the default mapping.
+  StreamNUCAMap::addRangeMap(startPAddr, startPAddr + region.numElement *
+                                                          region.elementSize);
+  StreamNUCAMap::overridePAddrToBank(paddrLineToBankMap);
 }
 
 void StreamNUCAManager::remapIndirectRegion(ThreadContext *tc,
@@ -428,7 +513,7 @@ StreamNUCAManager::computeIndirectRegionHops(ThreadContext *tc,
   auto numMemNodes = memNodes.size();
   IndirectRegionHops regionHops(region, numMemNodes);
 
-  IndirectAlignField indField = decodeIndirectAlign(align.elementOffset);
+  IrregularAlignField indField = decodeIrregularAlign(align.elemOffset);
 
   const auto &alignToRegion = this->getRegionFromStartVAddr(align.vaddrB);
   for (Addr vaddr = region.vaddr; vaddr < endVAddr; vaddr += pageSize) {
@@ -443,7 +528,7 @@ StreamNUCAManager::computeIndirectRegionHops(ThreadContext *tc,
 
 StreamNUCAManager::IndirectPageHops StreamNUCAManager::computeIndirectPageHops(
     ThreadContext *tc, const StreamRegion &region,
-    const StreamRegion &alignToRegion, const IndirectAlignField &indField,
+    const StreamRegion &alignToRegion, const IrregularAlignField &indField,
     Addr pageVAddr) {
 
   auto pTable = this->process->pTable;
@@ -763,10 +848,10 @@ void StreamNUCAManager::groupDirectRegionsByAlign() {
 
   for (const auto &entry : unionFindParent) {
     /**
-     * Ignore all indirect regions when contructing groups.
+     * Ignore all irregular regions when contructing groups.
      */
     const auto &region = this->getRegionFromStartVAddr(entry.first);
-    if (region.isIndirect) {
+    if (region.isIrregular) {
       continue;
     }
     auto root = find(entry.first);
@@ -826,12 +911,12 @@ void StreamNUCAManager::computeCachedElements() {
     auto getExtraSize = [](const StreamRegion &region) -> uint64_t {
       auto extraSize = 0ul;
       for (const auto &align : region.aligns) {
-        if (align.vaddrA != align.vaddrB && align.elementOffset > 0) {
-          if (extraSize != 0 && align.elementOffset != extraSize) {
+        if (align.vaddrA != align.vaddrB && align.elemOffset > 0) {
+          if (extraSize != 0 && align.elemOffset != extraSize) {
             panic("Region %s Multi-ExtraSize %lu %lu.", region.name, extraSize,
-                  align.elementOffset);
+                  align.elemOffset);
           }
-          extraSize = align.elementOffset;
+          extraSize = align.elemOffset;
         }
       }
       return extraSize;
@@ -1067,7 +1152,7 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
   for (const auto &align : region.aligns) {
     const auto &alignToRegion = this->getRegionFromStartVAddr(align.vaddrB);
 
-    auto elementOffset = align.elementOffset;
+    auto elementOffset = align.elemOffset;
     auto bytesOffset = elementOffset * alignToRegion.elementSize;
     DPRINTF(StreamNUCAManager,
             "Range %s %#x AlignTo %#x Offset Element %ld Bytes %lu.\n",
@@ -1111,13 +1196,13 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
         if (interleave != 128 && interleave != 256 && interleave != 512) {
           panic("Weird Interleave Found: Range %s %#x SelfAlign ElemOffset %lu "
                 "BytesOffset %lu Intrlv %llu.\n",
-                region.name, region.vaddr, align.elementOffset, bytesOffset,
+                region.name, region.vaddr, align.elemOffset, bytesOffset,
                 interleave);
         }
       } else {
         panic("Not Support Yet: Range %s %#x Self Align ElemOffset %lu "
               "ByteOffset %lu.\n",
-              region.name, region.vaddr, align.elementOffset, bytesOffset);
+              region.name, region.vaddr, align.elemOffset, bytesOffset);
       }
     } else {
       // Other alignment.
@@ -1195,18 +1280,25 @@ void StreamNUCAManager::markRegionCached(Addr regionVAddr) {
           region.name);
 }
 
-StreamNUCAManager::IndirectAlignField
-StreamNUCAManager::decodeIndirectAlign(int64_t indirectAlign) {
-  assert(indirectAlign < 0 && "This is not IndirectAlign.");
+StreamNUCAManager::IrregularAlignField
+StreamNUCAManager::decodeIrregularAlign(int64_t irregularAlign) {
+  assert(irregularAlign < 0 && "This is not IrregularAlign.");
 
   const int SIZE_BITWIDTH = 8;
   const int SIZE_MASK = (1 << SIZE_BITWIDTH) - 1;
   const int OFFSET_BITWIDTH = 8;
   const int OFFSET_MASK = (1 << OFFSET_BITWIDTH) - 1;
 
-  int32_t offset = ((-indirectAlign) >> SIZE_BITWIDTH) & OFFSET_MASK;
-  int32_t size = (-indirectAlign) & SIZE_MASK;
-  return IndirectAlignField(offset, size);
+  int64_t raw = -irregularAlign;
+
+  int typeRaw = raw >> 16;
+  IrregularAlignField::TypeE type = IrregularAlignField::TypeE::Indirect;
+  if (typeRaw == 1) {
+    type = IrregularAlignField::PtrChase;
+  }
+  int32_t offset = (raw >> SIZE_BITWIDTH) & OFFSET_MASK;
+  int32_t size = raw & SIZE_MASK;
+  return IrregularAlignField(type, offset, size);
 }
 
 bool StreamNUCAManager::canRemapDirectRegionPUM(const StreamRegion &region) {
@@ -1596,7 +1688,7 @@ StreamNUCAManager::getAlignDimsForDirectRegion(const StreamRegion &region) {
   for (const auto &align : region.aligns) {
     if (align.vaddrB == region.vaddr) {
       // Found a self align.
-      auto elemOffset = align.elementOffset;
+      auto elemOffset = align.elemOffset;
       auto arrayDimSize = 1;
       auto foundDim = false;
       for (auto dim = 0; dim < dimensions; ++dim) {
@@ -1610,7 +1702,7 @@ StreamNUCAManager::getAlignDimsForDirectRegion(const StreamRegion &region) {
       }
       if (!foundDim) {
         panic("[StreamNUCA] Region %s SelfAlign %ld Not Align to Dim.",
-              region.name, align.elementOffset);
+              region.name, align.elemOffset);
       }
     } else {
       // This array aligns to some other array.

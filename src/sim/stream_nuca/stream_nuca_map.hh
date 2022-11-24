@@ -147,8 +147,12 @@ public:
           vBitlines(_vBitlines) {}
   };
 
+  // Default (no remap).
+  static void addRangeMap(Addr startPAddr, Addr endPAddr);
+  // Remap a region with customized interleave.
   static void addRangeMap(Addr startPAddr, Addr endPAddr, uint64_t interleave,
                           int startBank, int startSet);
+  // Remap a region with PUM
   static void addRangeMap(Addr startPAddr, Addr endPAddr,
                           const AffinePattern &pumTile, int elementBits,
                           int startWordline, int vBitlines);
@@ -182,6 +186,9 @@ public:
 
   static PUMHWConfiguration getPUMHWConfig();
 
+  static void
+  overridePAddrToBank(const std::unordered_map<Addr, int> &overrideMap);
+
 private:
   static bool topologyInitialized;
   static int numRows;
@@ -193,6 +200,8 @@ private:
 
   static std::map<Addr, RangeMap> rangeMaps;
   static std::map<int, Addr> pumWordlineToRangeMap;
+
+  static std::unordered_map<Addr, int> paddrLineToBankMap;
 
   static void checkOverlapRange(Addr startPAddr, Addr endPAddr);
 

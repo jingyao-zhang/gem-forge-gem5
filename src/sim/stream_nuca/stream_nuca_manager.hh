@@ -55,13 +55,18 @@ public:
    * We use eight bits for each, and the final alignment is:
    * - ((offset << 8) | size).
    */
-  struct IndirectAlignField {
+  struct IrregularAlignField {
+    enum TypeE {
+      Indirect,
+      PtrChase,
+    };
+    const TypeE type;
     const int32_t offset;
     const int32_t size;
-    IndirectAlignField(int32_t _offset, int32_t _size)
-        : offset(_offset), size(_size) {}
+    IrregularAlignField(TypeE _type, int32_t _offset, int32_t _size)
+        : type(_type), offset(_offset), size(_size) {}
   };
-  static IndirectAlignField decodeIndirectAlign(int64_t indirectAlign);
+  static IrregularAlignField decodeIrregularAlign(int64_t irregularAlign);
   void defineAlign(Addr A, Addr B, int64_t elementOffset);
   void remap(ThreadContext *tc);
   uint64_t getCachedBytes(Addr start);
@@ -70,9 +75,9 @@ public:
   struct StreamAlign {
     Addr vaddrA;
     Addr vaddrB;
-    int64_t elementOffset;
+    int64_t elemOffset;
     StreamAlign(Addr _vaddrA, Addr _vaddrB, int64_t _elementOffset)
-        : vaddrA(_vaddrA), vaddrB(_vaddrB), elementOffset(_elementOffset) {}
+        : vaddrA(_vaddrA), vaddrB(_vaddrB), elemOffset(_elementOffset) {}
   };
 
   struct StreamRegion {
@@ -81,7 +86,8 @@ public:
     uint64_t elementSize;
     uint64_t numElement;
     std::vector<int64_t> arraySizes;
-    bool isIndirect;
+    bool isIrregular = false;
+    bool isPtrChase = false;
     /**
      * Some user-defined properties.
      */
@@ -90,7 +96,7 @@ public:
     StreamRegion(const std::string &_name, Addr _vaddr, uint64_t _elementSize,
                  int64_t _numElement, const std::vector<int64_t> &_arraySizes)
         : name(_name), vaddr(_vaddr), elementSize(_elementSize),
-          numElement(_numElement), arraySizes(_arraySizes), isIndirect(false),
+          numElement(_numElement), arraySizes(_arraySizes),
           cachedElements(_numElement) {}
 
     std::vector<StreamAlign> aligns;
@@ -140,6 +146,7 @@ private:
   uint64_t determineInterleave(const StreamRegion &region);
   int determineStartBank(const StreamRegion &region, uint64_t interleave);
 
+  void remapPtrChaseRegion(ThreadContext *tc, StreamRegion &region);
   void remapIndirectRegion(ThreadContext *tc, StreamRegion &region);
 
   void computeCachedElements();
@@ -197,7 +204,7 @@ private:
   IndirectPageHops computeIndirectPageHops(ThreadContext *tc,
                                            const StreamRegion &region,
                                            const StreamRegion &alignToRegion,
-                                           const IndirectAlignField &indField,
+                                           const IrregularAlignField &indField,
                                            Addr pageVAddr);
 
   /**

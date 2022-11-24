@@ -15,6 +15,7 @@ StreamNUCAMap::CacheParams StreamNUCAMap::cacheParams;
 StreamNUCAMap::NonUniformNodeVec StreamNUCAMap::numaNodes;
 std::map<Addr, StreamNUCAMap::RangeMap> StreamNUCAMap::rangeMaps;
 std::map<int, Addr> StreamNUCAMap::pumWordlineToRangeMap;
+std::unordered_map<Addr, int> StreamNUCAMap::paddrLineToBankMap;
 
 void StreamNUCAMap::initializeTopology(int numRows, int numCols) {
   if (topologyInitialized) {
@@ -100,6 +101,10 @@ void StreamNUCAMap::checkOverlapRange(Addr startPAddr, Addr endPAddr) {
   }
 }
 
+void StreamNUCAMap::addRangeMap(Addr startPAddr, Addr endPAddr) {
+  addRangeMap(startPAddr, endPAddr, 0, -1, -1);
+}
+
 void StreamNUCAMap::addRangeMap(Addr startPAddr, Addr endPAddr,
                                 uint64_t interleave, int startBank,
                                 int startSet) {
@@ -149,6 +154,7 @@ StreamNUCAMap::RangeMap *StreamNUCAMap::getRangeMapContaining(Addr paddr) {
 
 int StreamNUCAMap::getNUCABank(Addr paddr, const RangeMap &range) {
   assert(!range.isStreamPUM);
+  assert(range.startBank != -1);
   auto interleave = range.interleave;
   auto startPAddr = range.startPAddr;
   auto endPAddr = range.endPAddr;
@@ -218,15 +224,21 @@ int StreamNUCAMap::getBank(Addr paddr) {
   if (auto *range = getRangeMapContaining(paddr)) {
     if (range->isStreamPUM) {
       return getPUMLocation(paddr, *range).bank;
-    } else {
+    } else if (range->startBank != -1) {
       return getNUCABank(paddr, *range);
     }
+  }
+  const auto lineSize = getCacheBlockSize();
+  auto paddrLine = paddr - (paddr % lineSize);
+  if (paddrLineToBankMap.count(paddrLine)) {
+    return paddrLineToBankMap.at(paddrLine);
   }
   return -1;
 }
 
 int StreamNUCAMap::getNUCASet(Addr paddr, const RangeMap &range) {
   assert(!range.isStreamPUM);
+  assert(range.startBank != -1);
 
   auto interleave = range.interleave;
   auto startPAddr = range.startPAddr;
@@ -311,7 +323,7 @@ int StreamNUCAMap::getSet(Addr paddr) {
   if (auto *range = getRangeMapContaining(paddr)) {
     if (range->isStreamPUM) {
       return getPUMSet(paddr, *range);
-    } else {
+    } else if (range->startSet != -1) {
       return getNUCASet(paddr, *range);
     }
   }
@@ -393,4 +405,9 @@ void StreamNUCAMap::evictRange(RangeMap &range) {
     auto dir = AbstractStreamAwareController::getController(dirMachineId);
     dir->evictCleanLine(paddr);
   }
+}
+
+void StreamNUCAMap::overridePAddrToBank(
+    const std::unordered_map<Addr, int> &overrideMap) {
+  paddrLineToBankMap.insert(overrideMap.begin(), overrideMap.end());
 }
