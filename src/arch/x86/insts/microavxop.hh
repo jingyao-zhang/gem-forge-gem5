@@ -29,18 +29,20 @@ protected:
   const uint8_t srcVL;
   const uint8_t imm8;
   const uint8_t ext;
+  const RegIndex mask;
 
   // Constructor
   AVXOpBase(ExtMachInst _machInst, const char *_mnem, const char *_instMnem,
             uint64_t _setFlags, OpClass _opClass, SrcType _srcType,
             InstRegIndex _dest, InstRegIndex _src1, InstRegIndex _src2,
             InstRegIndex _src3, uint8_t _destSize, uint8_t _destVL,
-            uint8_t _srcSize, uint8_t _srcVL, uint8_t _imm8, uint8_t _ext)
+            uint8_t _srcSize, uint8_t _srcVL, uint8_t _imm8, uint8_t _ext,
+            InstRegIndex _mask)
       : X86MicroopBase(_machInst, _mnem, _instMnem, _setFlags, _opClass),
         srcType(_srcType), dest(_dest.index()), src1(_src1.index()),
         src2(_src2.index()), src3(_src3.index()), destSize(_destSize),
         destVL(_destVL), srcSize(_srcSize), srcVL(_srcVL), imm8(_imm8),
-        ext(_ext) {
+        ext(_ext), mask(_mask.index()) {
     assert((destVL % sizeof(uint64_t) == 0) && "Invalid destVL.\n");
     assert((srcVL % sizeof(uint64_t) == 0) && "Invalid srcVL.\n");
   }
@@ -150,6 +152,18 @@ protected:
     for (int i = 0; i < vDestRegs; i++) {
       _destRegIdx[i] = RegId(FloatRegClass, dest + i);
     }
+  }
+
+  // A helper function to add dest regs as src regs.
+  inline void addAVXDestAsSrcRegs() {
+    auto vDestRegs = destVL / sizeof(uint64_t);
+    assert(vDestRegs <= NumXMMSubRegs && "DestVL overflow.");
+    assert(_numSrcRegs + vDestRegs <= MaxInstSrcRegs &&
+           "DestAsSrcRegs overflow.");
+    for (int i = 0; i < vDestRegs; i++) {
+      _srcRegIdx[i + _numSrcRegs] = RegId(FloatRegClass, dest + i);
+    }
+    _numSrcRegs += vDestRegs;
   }
 };
 

@@ -44,6 +44,11 @@ AVXOpBase::generateDisassembly(Addr pc,
   default:
     break;
   }
+  if (this->mask != MASKREG_K0) {
+    response << " {";
+    printSrcReg(response, this->numSrcRegs() - 1, 8);
+    response << "}";
+  }
   return response.str();
 }
 
@@ -216,6 +221,14 @@ void AVXOpBase::doPackedBinaryOp(ExecContext *xc, BinaryOp op) const {
   auto vRegs = destVL / sizeof(uint64_t);
   FloatInt src1;
   FloatInt src2;
+  FloatInt maskValue;
+  FloatInt originalValue;
+  if (this->mask == MASKREG_K0) {
+    // All active.
+    maskValue.ul = 0xFFFFFFFFFFFFFFFF;
+  } else {
+    maskValue.ul = xc->readIntRegOperand(this, this->numSrcRegs() - 1);
+  }
   for (int i = 0; i < vRegs; i++) {
     src1.ul = xc->readFloatRegOperandBits(this, i * 2 + 0);
     src2.ul = xc->readFloatRegOperandBits(this, i * 2 + 1);
@@ -224,6 +237,32 @@ void AVXOpBase::doPackedBinaryOp(ExecContext *xc, BinaryOp op) const {
     //   hack("vpaddq %d %lu + %lu = %lu. pc = %#x.\n", i, src1.ul, src2.ul,
     //        dest.ul, xc->pcState().pc());
     // }
+
+    // Read the original value.
+    if (this->mask != MASKREG_K0) {
+      // We need to apply the mask.
+      originalValue.ul = xc->readFloatRegOperandBits(this, vRegs * 2 + i);
+      if (this->srcSize == 4) {
+        // 2 float.
+        if (!((maskValue.ul >> (i * 2 + 0)) & 1)) {
+          // Unchanged.
+          dest.ui.i1 = originalValue.ui.i1;
+        }
+        if (!((maskValue.ul >> (i * 2 + 1)) & 1)) {
+          // Unchanged.
+          dest.ui.i2 = originalValue.ui.i2;
+        }
+      } else if (this->srcSize == 8) {
+        // 1 double.
+        if (!((maskValue.ul >> (i)) & 1)) {
+          // Unchanged.
+          dest.ul = originalValue.ul;
+        }
+      } else {
+        panic("Unsupported Mask Datatype %d.", this->srcSize);
+      }
+    }
+
     xc->setFloatRegOperandBits(this, i, dest.ul);
   }
 }

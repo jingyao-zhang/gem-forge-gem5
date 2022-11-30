@@ -52,6 +52,7 @@ def macroop VFMADD231PS_ZMM_P {
 };
 
 def macroop VFMADD231PSBROADCAST_ZMM_ZMM {
+    vbroadcast srcSize=4, dest=xmm0m, src=xmm0m, destVL=64
     vfmaddf dest=xmm0, src1=xmm0v, src2=xmm0m, src3=xmm0, size=4, VL=64
 };
 

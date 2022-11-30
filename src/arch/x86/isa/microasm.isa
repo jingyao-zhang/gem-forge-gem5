@@ -120,6 +120,7 @@ let {{
         "mmxm"   : regIdx("FLOATREG_MMX(env.regm)"),
         "maskk"  : regIdx("MASKREG_K(env.reg)"),
         "maskkm" : regIdx("MASKREG_K(env.regm)"),
+        "maskka" : regIdx("MASKREG_K(machInst.evex.a)"),
         "imm"    : "adjustedImm",
         "disp"   : "adjustedDisp",
         "seg"    : regIdx("env.seg"),
