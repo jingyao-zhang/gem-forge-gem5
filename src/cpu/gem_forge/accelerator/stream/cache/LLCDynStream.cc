@@ -1391,10 +1391,10 @@ StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &element) {
     if (Debug::LLCRubyStreamReduce) {
       std::stringstream ss;
       for (const auto &baseElement : element->baseElements) {
-        ss << "\n  " << baseElement->strandId << '-' << baseElement->idx << ": "
+        ss << "\n  " << baseElement->strandId << baseElement->idx << ": "
            << baseElement->getValue(0, baseElement->size);
       }
-      ss << "\n  -> " << element->strandId << '-' << element->idx << ": "
+      ss << "\n  -> " << element->strandId << element->idx << ": "
          << newReductionValue;
       LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, element,
                            "[Latency %llu] Do reduction %s.\n", latency,
@@ -1772,8 +1772,7 @@ void LLCDynStream::markElemReadyToIssue(uint64_t elemIdx) {
 
 void LLCDynStream::markElemIssued(uint64_t elemIdx) {
   if (elemIdx != this->nextIssueElementIdx) {
-    LLC_S_PANIC(this->getDynStrandId(),
-                "IndirectElement should be issued in order.");
+    LLC_S_PANIC(this->getDynStrandId(), "IndElem should be issued in order.");
   }
   auto elem = this->getElemPanic(elemIdx, "Mark IndirectElement issued.");
   if (elem->getState() != LLCStreamElement::State::READY_TO_ISSUE) {
@@ -1805,7 +1804,7 @@ void LLCDynStream::markElemIssued(uint64_t elemIdx) {
   }
 }
 
-LLCStreamElementPtr LLCDynStream::getFirstReadyToIssueElement() const {
+LLCStreamElementPtr LLCDynStream::getFirstReadyToIssueElem() const {
   if (this->numElementsReadyToIssue == 0) {
     return nullptr;
   }

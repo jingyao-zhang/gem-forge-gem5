@@ -82,6 +82,9 @@ def define_options(parser):
     parser.add_option("--garnet-ideal-noc-hops", action="store",
                       type="int", default=-1,
                       help="""ideal NoC hops (-1 to disable)""")
+    parser.add_option("--garnet-ideal-noc-msg", action="store",
+                      type="string", default="all",
+                      help="""apply ideal NoC hops to which message type.""")
     parser.add_option("--garnet-ctrl-flit-buffer-size", action="store",
                       type="int", default=1,
                       help="""Flit buffer size for ctrl vnet""")
@@ -124,6 +127,7 @@ def init_network(options, network, InterfaceClass):
         network.garnet_deadlock_threshold = options.garnet_deadlock_threshold
         network.enable_multicast = options.garnet_enable_multicast
         network.ideal_noc_hops = options.garnet_ideal_noc_hops
+        network.ideal_noc_msg = options.garnet_ideal_noc_msg
         network.buffers_per_data_vc = options.garnet_data_flit_buffer_size
         network.buffers_per_ctrl_vc = options.garnet_ctrl_flit_buffer_size
 

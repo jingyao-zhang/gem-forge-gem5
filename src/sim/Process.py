@@ -77,8 +77,10 @@ class Process(SimObject):
     enableStreamNUCA = Param.Bool(False, "Enable Stream NUCA.")
     streamNUCADirectRegionFitPolicy = Param.String('crop',
         "What to do when direct regions overflow LLC.")
-    streamNUCAEnableIndPageRemap = Param.Bool(False,
-        "Enable remap indirect page.")
+    streamNUCAIndRemapBoxBytes = Param.Int64(0,
+        "Indirect remap box size (bytes, 0 to disable).")
+    streamNUCAIndRebalanceThreshold = Param.Float(0.0,
+        "Indirect rebalance threshold (bytes, 0 to disable).")
     enableStreamPUMMapping = Param.Bool(False, "Enable StreamPUM Mapping.")
     enableStreamPUMTiling = Param.Bool(False, "Enable StreamPUM Tiling.")
     forceStreamPUMTilingDim = Param.String('none',

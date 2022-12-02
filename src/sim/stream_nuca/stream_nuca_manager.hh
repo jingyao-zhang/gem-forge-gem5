@@ -127,7 +127,12 @@ private:
     DROP,
   };
   DirectRegionFitPolicy directRegionFitPolicy;
-  const bool enableIndirectPageRemap;
+  /**
+   * Indirect regions are remapped at specified granularity (called box).
+   * 0 to disable indirect region remap.
+   */
+  const int indirectRemapBoxBytes = 0;
+  const float indirectRebalanceThreshold = 0.0f;
 
   std::map<Addr, StreamRegion> startVAddrRegionMap;
 
@@ -154,46 +159,45 @@ private:
   void computeCacheSetNUCA();
   void computeCacheSetPUM();
 
-  struct IndirectPageHops {
-    const Addr pageVAddr;
-    const Addr defaultPagePAddr;
-    const int defaultNUMANodeId;
+  struct IndirectBoxHops {
+    const Addr vaddr;
+    const Addr paddr;
+    const int defaultBankIdx;
     std::vector<int64_t> hops;
     std::vector<int64_t> bankFreq;
     int64_t maxHops = -1;
     int64_t minHops = -1;
-    int maxHopsNUMANodeId = -1;
-    int minHopsNUMANodeId = -1;
+    int maxHopsBankIdx = -1;
+    int minHopsBankIdx = -1;
     int64_t totalElements = 0;
     /**
      * Remap decisions.
      */
-    int remapNUMANodeId;
-    IndirectPageHops(Addr _pageVAddr, Addr _defaultPagePAddr,
-                     int _defaultNUMANodeId, int _numMemNodes, int _numBanks)
-        : pageVAddr(_pageVAddr), defaultPagePAddr(_defaultPagePAddr),
-          defaultNUMANodeId(_defaultNUMANodeId) {
-      this->hops.resize(_numMemNodes, 0);
+    int remapBankIdx;
+    IndirectBoxHops(Addr _vaddr, Addr _paddr, int _defaultBankIdx,
+                    int _numBanks)
+        : vaddr(_vaddr), paddr(_paddr), defaultBankIdx(_defaultBankIdx) {
+      this->hops.resize(_numBanks, 0);
       this->bankFreq.resize(_numBanks, 0);
     }
   };
 
   struct IndirectRegionHops {
     const StreamRegion &region;
-    const int numMemNodes;
-    std::vector<IndirectPageHops> pageHops;
+    const int numBanks;
+    std::vector<IndirectBoxHops> boxHops;
     /**
      * Remap decisions.
      * They are sorted by their bias ratio.
      */
-    using RemapPageIdsPerNUMANodeT = std::vector<uint64_t>;
-    using RemapPageIdsT = std::vector<RemapPageIdsPerNUMANodeT>;
-    RemapPageIdsT remapPageIds;
-    IndirectRegionHops(const StreamRegion &_region, int _numMemNodes)
-        : region(_region), numMemNodes(_numMemNodes) {
-      this->remapPageIds.resize(this->numMemNodes);
+    using RemapBoxIdsPerBankT = std::vector<uint64_t>;
+    using RemapBoxIdsT = std::vector<RemapBoxIdsPerBankT>;
+    RemapBoxIdsT remapBoxIds;
+    IndirectRegionHops(const StreamRegion &_region, int _numBanks)
+        : region(_region), numBanks(_numBanks) {
+      this->remapBoxIds.resize(this->numBanks);
     }
-    void addRemapPageId(uint64_t pageId, int NUMANodeId);
+    void addRemapBoxId(uint64_t boxIdx, int bankIdx);
   };
 
   /**
@@ -201,27 +205,38 @@ private:
    */
   IndirectRegionHops computeIndirectRegionHops(ThreadContext *tc,
                                                const StreamRegion &region);
-  IndirectPageHops computeIndirectPageHops(ThreadContext *tc,
-                                           const StreamRegion &region,
-                                           const StreamRegion &alignToRegion,
-                                           const IrregularAlignField &indField,
-                                           Addr pageVAddr);
+  IndirectBoxHops computeIndirectBoxHops(ThreadContext *tc,
+                                         const StreamRegion &region,
+                                         const StreamRegion &alignToRegion,
+                                         const IrregularAlignField &indField,
+                                         Addr pageVAddr);
 
   /**
    * Just greedily assign pages to the NUMA node Id with the lowest traffic.
    */
-  void greedyAssignIndirectPages(IndirectRegionHops &regionHops);
+  void greedyAssignIndirectBoxes(IndirectRegionHops &regionHops);
 
   /**
    * Try to rebalance page remap.
    */
-  void rebalanceIndirectPages(IndirectRegionHops &regionHops);
+  void rebalanceIndirectBoxes(IndirectRegionHops &regionHops);
 
   /**
    * Relocate pages according to the remap decision.
    */
-  void relocateIndirectPages(ThreadContext *tc,
+  void relocateIndirectBoxes(ThreadContext *tc,
                              const IndirectRegionHops &regionHops);
+  /**
+   * Helper function to relocate a continuous range of physical lines.
+   */
+  void relocateCacheLines(ThreadContext *tc, Addr vaddrLine, Addr paddrLine,
+                          int size, int bankIdx);
+  /**
+   * Helper function to remap a page via reallocation.
+   *
+   */
+  void reallocatePageAt(ThreadContext *tc, Addr pageVAddr, Addr pagePAddr,
+                        int numaNode);
 
   /**
    * Group direct regions by their alignment requirement.
@@ -250,7 +265,7 @@ public:
 
 private:
   bool statsRegisterd = false;
-  Stats::ScalarNoReset indRegionPages;
+  Stats::ScalarNoReset indRegionBoxes;
   Stats::ScalarNoReset indRegionElements;
   Stats::ScalarNoReset indRegionAllocPages;
   Stats::ScalarNoReset indRegionRemapPages;

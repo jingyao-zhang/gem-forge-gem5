@@ -274,9 +274,12 @@ parser.add_option("--gem-forge-enable-stream-vectorize", type="int",
 parser.add_option("--gem-forge-stream-nuca-direct-region-fit-policy", type="choice",
                   choices=['crop', 'drop'], default='crop',
                   help="What to do when direct regions overflow LLC.")
-parser.add_option("--gem-forge-stream-nuca-enable-ind-page-remap", type="int",
+parser.add_option("--gem-forge-stream-nuca-ind-remap-box-bytes", type="int",
                   action="store", default="0",
-                  help="Enable remapping indirect page.")
+                  help="Indirect remap box size (0 to disable).")
+parser.add_option("--gem-forge-stream-nuca-ind-rebalance-threshold", type="float",
+                  action="store", default="0.0",
+                  help="Indirect rebalance threshold (0 to disable).")
 
 # Stream PUM Options.
 parser.add_option("--gem-forge-stream-pum-mode", type="int",

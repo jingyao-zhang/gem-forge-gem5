@@ -492,19 +492,20 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
   dynS->evaluateLoopBound(this);
 
   if (!dynS->getIndStreams().empty()) {
-    for (auto &idxElement : dynS->idxToElementMap) {
-      auto &element = idxElement.second;
+    for (auto &idxElem : dynS->idxToElementMap) {
+      auto &elem = idxElem.second;
       LLC_SLICE_DPRINTF(sliceId, "Process for elem %llu, Ready %d.\n",
-                        element->idx, element->isReady());
-      if (element->idx < dynS->getNextTriggerIndElemIdx()) {
+                        elem->idx, elem->isReady());
+      if (elem->idx < dynS->getNextTriggerIndElemIdx()) {
         continue;
       }
-      if (!element->isReady()) {
+      if (!elem->isReady()) {
         // Not ready yet. Break.
         break;
       }
-      this->triggerIndElems(dynS, element);
-      dynS->markElemTriggeredIndirect(element->idx);
+      // Make sure we are triggering IndElem at correct bank.
+      this->triggerIndElems(dynS, elem);
+      dynS->markElemTriggeredIndirect(elem->idx);
     }
   }
 
@@ -1490,8 +1491,8 @@ LLCStreamEngine::findIndirectStreamReadyToIssue(LLCDynStreamPtr dynS) {
       continue;
     }
 
-    if (auto element = dynIS->getFirstReadyToIssueElement()) {
-      auto elementIdx = element->idx;
+    if (auto elem = dynIS->getFirstReadyToIssueElem()) {
+      auto elemIdx = elem->idx;
 
       /**
        * Hack: We enforce ordering of alised IndirectUpdateStream
@@ -1505,13 +1506,13 @@ LLCStreamEngine::findIndirectStreamReadyToIssue(LLCDynStreamPtr dynS) {
       if (IS->isUpdateStream()) {
         bool hasAliasedWithPreviousElement = false;
         for (const auto &idxElement : dynIS->idxToElementMap) {
-          if (idxElement.first >= elementIdx) {
+          if (idxElement.first >= elemIdx) {
             break;
           }
           const auto &prevElement = idxElement.second;
-          if (prevElement->vaddr == element->vaddr &&
+          if (prevElement->vaddr == elem->vaddr &&
               !prevElement->isComputedValueReady()) {
-            LLC_ELEMENT_DPRINTF(element,
+            LLC_ELEMENT_DPRINTF(elem,
                                 "[NotIssue] Aliased Indirect "
                                 "UpdateElement %llu %#x.\n",
                                 prevElement->idx, prevElement->vaddr);
@@ -1527,9 +1528,9 @@ LLCStreamEngine::findIndirectStreamReadyToIssue(LLCDynStreamPtr dynS) {
         }
       }
 
-      if (!readyS || readyElementIdx > elementIdx) {
+      if (!readyS || readyElementIdx > elemIdx) {
         readyS = dynIS;
-        readyElementIdx = elementIdx;
+        readyElementIdx = elemIdx;
       }
     }
   }
@@ -1702,20 +1703,29 @@ LLCStreamEngine::getDirectStreamReqType(LLCDynStream *stream) const {
 
 void LLCStreamEngine::issueStreamIndirect(LLCDynStream *dynIS) {
 
-  auto element = dynIS->getFirstReadyToIssueElement();
-  if (!element) {
+  auto elem = dynIS->getFirstReadyToIssueElem();
+  if (!elem) {
     LLC_S_PANIC(dynIS->getDynStrandId(), "Try to issue, but no ready element.");
   }
-  auto elementIdx = element->idx;
+  if (auto llcSE = elem->getLLCSE()) {
+    if (llcSE != this) {
+      // Make sure the IndS is issued from the correct bank.
+      llcSE->issueStreamIndirect(dynIS);
+      // Also try to wake it up.
+      llcSE->scheduleEvent(Cycles(1));
+      return;
+    }
+  }
+  auto elemIdx = elem->idx;
   if (dynIS->shouldIssueBeforeCommit()) {
-    this->generateIndirectStreamRequest(dynIS, element);
+    this->generateIndirectStreamRequest(dynIS, elem);
   } else {
     // We delay issuing this after committed.
     LLC_S_DPRINTF(dynIS->getDynStrandId(),
-                  "Delay Issuing for AfterCommit element %llu\n.", elementIdx);
+                  "Delay Issuing for AfterCommit element %llu\n.", elemIdx);
   }
   // Don't forget to the element issued.
-  dynIS->markElemIssued(elementIdx);
+  dynIS->markElemIssued(elemIdx);
 }
 
 void LLCStreamEngine::generateIndirectStreamRequest(
@@ -2148,10 +2158,13 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
     msg->m_sliceIds.add(multicastSliceId);
   }
 
-  if (req.requestType == CoherenceRequestType_STREAM_FORWARD) {
+  if (req.requestType == CoherenceRequestType_STREAM_FORWARD ||
+      req.requestType == CoherenceRequestType_STREAM_STORE) {
     /**
      * Due to broadcast strand, we may not have the DynS.
      * Always find the first strand for recording this statistic.
+     *
+     * We also record StreamStore to inverstigate indirect traffic.
      */
     auto sendStrandId = sliceId.getDynStrandId();
     sendStrandId.strandIdx = DynStrandId::DefaultFirstStrandIdx;
@@ -3101,6 +3114,7 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
       }
     } else {
       IS->markElemReadyToIssue(indElemIdx);
+      indElem->setLLCSE(this);
     }
   } else {
     for (const auto &baseE : indElem->baseElements) {

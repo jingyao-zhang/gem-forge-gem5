@@ -68,8 +68,10 @@ def get_processes(options):
             options.gem_forge_enable_stream_nuca
         process.streamNUCADirectRegionFitPolicy = \
             options.gem_forge_stream_nuca_direct_region_fit_policy
-        process.streamNUCAEnableIndPageRemap = \
-            options.gem_forge_stream_nuca_enable_ind_page_remap
+        process.streamNUCAIndRemapBoxBytes = \
+            options.gem_forge_stream_nuca_ind_remap_box_bytes
+        process.streamNUCAIndRebalanceThreshold = \
+            options.gem_forge_stream_nuca_ind_rebalance_threshold
         process.enableStreamPUMMapping = \
             options.gem_forge_stream_pum_mode != 0
         process.enableStreamPUMTiling = \

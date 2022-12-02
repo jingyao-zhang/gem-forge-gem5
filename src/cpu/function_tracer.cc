@@ -145,7 +145,7 @@ void FunctionTracer::dumpFuncAccumulateTick() {
     }
     float percentage =
         static_cast<float>(tick) / static_cast<float>(sumTicks) * 100.f;
-    ccprintf(*this->functionAccumulateTickStream, "%2.2f %20llu %15llu : %s\n",
+    ccprintf(*this->functionAccumulateTickStream, "%5.2f %20llu %15llu : %s\n",
              percentage, tick, microOps, symbol);
   }
 }

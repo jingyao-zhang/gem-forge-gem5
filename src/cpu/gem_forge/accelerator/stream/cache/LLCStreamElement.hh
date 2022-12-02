@@ -13,6 +13,8 @@ struct LLCStreamElement;
 using LLCStreamElementPtr = std::shared_ptr<LLCStreamElement>;
 using ConstLLCStreamElementPtr = std::shared_ptr<const LLCStreamElement>;
 
+class LLCStreamEngine;
+
 class LLCStreamElement {
 public:
   /**
@@ -167,6 +169,8 @@ public:
 
   State getState() const { return this->state; }
   void setState(State state) { this->state = state; }
+  void setLLCSE(LLCStreamEngine *llcSE) { this->llcSE = llcSE; }
+  LLCStreamEngine *getLLCSE() const { return this->llcSE; }
 
   void setCoreCommitted() { this->coreCommitted = true; }
   bool hasCoreCommitted() const { return this->coreCommitted; }
@@ -225,6 +229,15 @@ private:
   int numSlices = 0;
 
   State state = State::INITIALIZED;
+
+  /**
+   * Set the LLCStreamEngine handling the element.
+   * NOTE: This is used to ensure that IndS elements are triggered
+   * at the correct bank of the DirectS element, as now we try to
+   * ensure that IndS elements are triggered in-order and may be
+   * triggered at next bank if DirectS has migrated.
+   */
+  LLCStreamEngine *llcSE = nullptr;
 
   /**
    * We have received the StreamCommit from the core.

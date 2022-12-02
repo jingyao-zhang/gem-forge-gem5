@@ -512,7 +512,7 @@ public:
   /**
    * @return nullptr if no such element.
    */
-  LLCStreamElementPtr getFirstReadyToIssueElement() const;
+  LLCStreamElementPtr getFirstReadyToIssueElem() const;
 
   /**
    * With range-sync, there are two issue point:

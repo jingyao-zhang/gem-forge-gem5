@@ -30,7 +30,8 @@ StreamNUCAManager::StreamNUCAManager(Process *_process, ProcessParams *_params)
       enablePUMTiling(_params->enableStreamPUMTiling),
       forcePUMTilingDim(_params->forceStreamPUMTilingDim),
       forcePUMTilingSize(_params->forceStreamPUMTilingSize),
-      enableIndirectPageRemap(_params->streamNUCAEnableIndPageRemap) {
+      indirectRemapBoxBytes(_params->streamNUCAIndRemapBoxBytes),
+      indirectRebalanceThreshold(_params->streamNUCAIndRebalanceThreshold) {
   const auto &directRegionFitPolicy = _params->streamNUCADirectRegionFitPolicy;
   if (directRegionFitPolicy == "crop") {
     this->directRegionFitPolicy = DirectRegionFitPolicy::CROP;
@@ -47,7 +48,7 @@ StreamNUCAManager::StreamNUCAManager(const StreamNUCAManager &other)
       enablePUMTiling(other.enablePUMTiling),
       forcePUMTilingSize(other.forcePUMTilingSize),
       directRegionFitPolicy(other.directRegionFitPolicy),
-      enableIndirectPageRemap(other.enableIndirectPageRemap) {
+      indirectRemapBoxBytes(other.indirectRemapBoxBytes) {
   panic("StreamNUCAManager does not have copy constructor.");
 }
 
@@ -77,7 +78,7 @@ void StreamNUCAManager::regStats() {
       .desc(describe)                                                          \
       .flags(Stats::pdf)
 
-  scalar(indRegionPages, "Pages in indirect region.");
+  scalar(indRegionBoxes, "Pages in indirect region.");
   scalar(indRegionElements, "Elements in indirect region.");
   scalar(indRegionAllocPages,
          "Pages allocated (including fragments) to optimize indirect region.");
@@ -89,10 +90,10 @@ void StreamNUCAManager::regStats() {
   scalar(indRegionMemToLLCRemappedHops,
          "Remapped hops from Mem to LLC in indirect region.");
 
-  auto numMemNodes = StreamNUCAMap::getNUMANodes().size();
-  distribution(indRegionMemMinBanks, 0, numMemNodes - 1, 1,
+  auto numBanks = StreamNUCAMap::getNumRows() * StreamNUCAMap::getNumCols();
+  distribution(indRegionMemMinBanks, 0, numBanks - 1, 1,
                "Distribution of minimal IndRegion banks.");
-  distribution(indRegionMemRemappedBanks, 0, numMemNodes - 1, 1,
+  distribution(indRegionMemRemappedBanks, 0, numBanks - 1, 1,
                "Distribution of remapped IndRegion banks.");
 
 #undef distribution
@@ -289,10 +290,10 @@ void StreamNUCAManager::remap(ThreadContext *tc) {
   this->computeCacheSet();
 
   DPRINTF(StreamNUCAManager,
-          "[StreamNUCA] Remap Done. IndRegion: Pages %lu Elements %lu "
-          "AllocPages %lu RemapPages %lu DefaultHops %lu MinHops %lu RemapHops "
+          "[StreamNUCA] Remap Done. IndRegion: Boxes %lu Elems %lu "
+          "AllocBoxes %lu RemapBoxes %lu DefaultHops %lu MinHops %lu RemapHops "
           "%lu.\n",
-          static_cast<uint64_t>(indRegionPages.value()),
+          static_cast<uint64_t>(indRegionBoxes.value()),
           static_cast<uint64_t>(indRegionElements.value()),
           static_cast<uint64_t>(indRegionAllocPages.value()),
           static_cast<uint64_t>(indRegionRemapPages.value()),
@@ -479,14 +480,28 @@ void StreamNUCAManager::remapIndirectRegion(ThreadContext *tc,
   if (this->enablePUM) {
     panic("[StreamNUCA] IndirectRegion with PUM.");
   }
-  region.cachedElements = 0;
+
+  // Register a default region.
+  Addr startPAddr;
+  assert(tc->getProcessPtr()->pTable->translate(region.vaddr, startPAddr));
+  StreamNUCAMap::addRangeMap(startPAddr, startPAddr + region.numElement *
+                                                          region.elementSize);
+
+  region.cachedElements = region.numElement;
+  if (this->indirectRemapBoxBytes == 0) {
+    // Indirect remap is disabled.
+    return;
+  }
 
   auto regionHops = this->computeIndirectRegionHops(tc, region);
 
-  this->greedyAssignIndirectPages(regionHops);
-  this->rebalanceIndirectPages(regionHops);
+  this->greedyAssignIndirectBoxes(regionHops);
+  if (this->indirectRebalanceThreshold > 0.0f) {
+    this->rebalanceIndirectBoxes(regionHops);
+  }
 
-  this->relocateIndirectPages(tc, regionHops);
+  // Register a fake region.
+  this->relocateIndirectBoxes(tc, regionHops);
 }
 
 StreamNUCAManager::IndirectRegionHops
@@ -501,7 +516,7 @@ StreamNUCAManager::computeIndirectRegionHops(ThreadContext *tc,
    * Scan through the indirect regions and collect hops.
    */
   auto pTable = this->process->pTable;
-  auto pageSize = pTable->getPageSize();
+  auto boxSize = this->indirectRemapBoxBytes;
   auto totalSize = region.elementSize * region.numElement;
   auto endVAddr = region.vaddr + totalSize;
   if (pTable->pageOffset(region.vaddr) != 0) {
@@ -509,57 +524,52 @@ StreamNUCAManager::computeIndirectRegionHops(ThreadContext *tc,
           region.name, region.vaddr);
   }
 
-  const auto &memNodes = StreamNUCAMap::getNUMANodes();
-  auto numMemNodes = memNodes.size();
-  IndirectRegionHops regionHops(region, numMemNodes);
+  IndirectRegionHops regionHops(region, StreamNUCAMap::getNumCols() *
+                                            StreamNUCAMap::getNumRows());
 
   IrregularAlignField indField = decodeIrregularAlign(align.elemOffset);
 
   const auto &alignToRegion = this->getRegionFromStartVAddr(align.vaddrB);
-  for (Addr vaddr = region.vaddr; vaddr < endVAddr; vaddr += pageSize) {
-    auto pageVAddr = pTable->pageAlign(vaddr);
-    auto pageHops = this->computeIndirectPageHops(tc, region, alignToRegion,
-                                                  indField, pageVAddr);
-    regionHops.pageHops.emplace_back(std::move(pageHops));
+  for (Addr vaddr = region.vaddr; vaddr < endVAddr; vaddr += boxSize) {
+    auto boxHops = this->computeIndirectBoxHops(tc, region, alignToRegion,
+                                                indField, vaddr);
+    regionHops.boxHops.emplace_back(std::move(boxHops));
   }
 
   return regionHops;
 }
 
-StreamNUCAManager::IndirectPageHops StreamNUCAManager::computeIndirectPageHops(
+StreamNUCAManager::IndirectBoxHops StreamNUCAManager::computeIndirectBoxHops(
     ThreadContext *tc, const StreamRegion &region,
     const StreamRegion &alignToRegion, const IrregularAlignField &indField,
-    Addr pageVAddr) {
+    Addr boxVAddr) {
 
-  auto pTable = this->process->pTable;
-  auto pageSize = pTable->getPageSize();
+  auto boxSize = this->indirectRemapBoxBytes;
   auto totalSize = region.elementSize * region.numElement;
-  auto endVAddr = std::min(region.vaddr + totalSize, pageVAddr + pageSize);
-  auto numBytes = endVAddr - pageVAddr;
-  auto pageIndex = (pageVAddr - region.vaddr) / pageSize;
-  auto pagePAddr = this->translate(pageVAddr);
-  auto defaultNodeId = StreamNUCAMap::mapPAddrToNUMAId(pagePAddr);
+  auto endVAddr = std::min(region.vaddr + totalSize, boxVAddr + boxSize);
+  auto numBytes = endVAddr - boxVAddr;
+  auto boxIdx = (boxVAddr - region.vaddr) / boxSize;
+  auto boxPAddr = this->translate(boxVAddr);
+  auto defaultNodeId = StreamNUCAMap::mapPAddrToNUMAId(boxPAddr);
 
-  const auto &memNodes = StreamNUCAMap::getNUMANodes();
-  auto numMemNodes = memNodes.size();
   auto numRows = StreamNUCAMap::getNumRows();
   auto numCols = StreamNUCAMap::getNumCols();
+  auto numBanks = numRows * numCols;
 
-  char *pageData = reinterpret_cast<char *>(malloc(pageSize));
-  tc->getVirtProxy().readBlob(pageVAddr, pageData, pageSize);
+  char *boxData = reinterpret_cast<char *>(malloc(boxSize));
+  tc->getVirtProxy().readBlob(boxVAddr, boxData, boxSize);
 
-  indRegionPages++;
+  indRegionBoxes++;
   indRegionElements += numBytes / region.elementSize;
 
-  IndirectPageHops pageHops(pageVAddr, pagePAddr, defaultNodeId, numMemNodes,
-                            numRows * numCols);
+  IndirectBoxHops boxHops(boxVAddr, boxPAddr, defaultNodeId, numBanks);
 
   for (int i = 0; i < numBytes; i += region.elementSize) {
     int64_t index = 0;
     if (indField.size == 4) {
-      index = *reinterpret_cast<int32_t *>(pageData + i + indField.offset);
+      index = *reinterpret_cast<int32_t *>(boxData + i + indField.offset);
     } else if (indField.size == 8) {
-      index = *reinterpret_cast<int64_t *>(pageData + i + indField.offset);
+      index = *reinterpret_cast<int64_t *>(boxData + i + indField.offset);
     } else {
       panic("[StreamNUCA] Invalid IndAlign %s ElementSize %d Field Offset %d "
             "Size %d.",
@@ -577,76 +587,74 @@ StreamNUCAManager::IndirectPageHops StreamNUCAManager::computeIndirectPageHops(
     //         "  Index %ld AlignToVAddr %#x AlignToPAddr %#x AlignToBank
     //         %d.\n", index, alignToVAddr, alignToPAddr, alignToBank);
 
-    if (alignToBank < 0 || alignToBank >= pageHops.bankFreq.size()) {
-      panic("[StreamNUCA] IndirectAlign %s -> %s Page %lu Index %ld Invalid "
+    if (alignToBank < 0 || alignToBank >= boxHops.bankFreq.size()) {
+      panic("[StreamNUCA] IndirectAlign %s -> %s Box %lu Index %ld Invalid "
             "AlignToBank %d.",
-            region.name, alignToRegion.name, pageIndex, index, alignToBank);
+            region.name, alignToRegion.name, boxIdx, index, alignToBank);
     }
-    pageHops.bankFreq.at(alignToBank)++;
-    pageHops.totalElements++;
+    boxHops.bankFreq.at(alignToBank)++;
+    boxHops.totalElements++;
 
     // Accumulate the traffic hops for all NUMA nodes.
-    for (int NUMAId = 0; NUMAId < numMemNodes; ++NUMAId) {
-      const auto &memNode = memNodes.at(NUMAId);
-      auto hops = StreamNUCAMap::computeHops(alignToBank, memNode.routerId);
-      pageHops.hops.at(NUMAId) += hops;
+    for (int bankIdx = 0; bankIdx < numBanks; ++bankIdx) {
+      auto hops = StreamNUCAMap::computeHops(alignToBank, bankIdx);
+      boxHops.hops.at(bankIdx) += hops;
     }
   }
 
-  pageHops.maxHops = pageHops.hops.front();
-  pageHops.minHops = pageHops.hops.front();
-  pageHops.maxHopsNUMANodeId = 0;
-  pageHops.minHopsNUMANodeId = 0;
-  for (int NUMAId = 1; NUMAId < numMemNodes; ++NUMAId) {
-    auto hops = pageHops.hops.at(NUMAId);
-    if (hops > pageHops.maxHops) {
-      pageHops.maxHops = hops;
-      pageHops.maxHopsNUMANodeId = NUMAId;
+  boxHops.maxHops = boxHops.hops.front();
+  boxHops.minHops = boxHops.hops.front();
+  boxHops.maxHopsBankIdx = 0;
+  boxHops.minHopsBankIdx = 0;
+  for (int bankIdx = 1; bankIdx < numBanks; ++bankIdx) {
+    auto hops = boxHops.hops.at(bankIdx);
+    if (hops > boxHops.maxHops) {
+      boxHops.maxHops = hops;
+      boxHops.maxHopsBankIdx = bankIdx;
     }
-    if (hops < pageHops.minHops) {
-      pageHops.minHops = hops;
-      pageHops.minHopsNUMANodeId = NUMAId;
+    if (hops < boxHops.minHops) {
+      boxHops.minHops = hops;
+      boxHops.minHopsBankIdx = bankIdx;
     }
   }
 
-  return pageHops;
+  return boxHops;
 }
 
-void StreamNUCAManager::greedyAssignIndirectPages(
+void StreamNUCAManager::greedyAssignIndirectBoxes(
     IndirectRegionHops &regionHops) {
 
   const auto numRows = StreamNUCAMap::getNumRows();
   const auto numCols = StreamNUCAMap::getNumCols();
 
-  for (uint64_t pageIdx = 0; pageIdx < regionHops.pageHops.size(); ++pageIdx) {
-    auto &pageHops = regionHops.pageHops.at(pageIdx);
+  for (uint64_t boxIdx = 0; boxIdx < regionHops.boxHops.size(); ++boxIdx) {
+    auto &boxHops = regionHops.boxHops.at(boxIdx);
 
-    auto minHops = pageHops.minHops;
-    auto minHopsNUMAId = pageHops.minHopsNUMANodeId;
+    auto minHops = boxHops.minHops;
+    auto minHopsBankIdx = boxHops.minHopsBankIdx;
 
     /**
      * Sort by their difference between MaxHops and MinHops.
      */
-    regionHops.addRemapPageId(pageIdx, minHopsNUMAId);
+    regionHops.addRemapBoxId(boxIdx, minHopsBankIdx);
 
     indRegionMemToLLCMinHops += minHops;
-    indRegionMemMinBanks.sample(minHopsNUMAId, 1);
+    indRegionMemMinBanks.sample(minHopsBankIdx, 1);
 
     if (Debug::StreamNUCAManager) {
-      int32_t avgBankFreq = pageHops.totalElements / pageHops.bankFreq.size();
+      int32_t avgBankFreq = boxHops.totalElements / boxHops.bankFreq.size();
       std::stringstream freqMatrixStr;
       for (int row = 0; row < numRows; ++row) {
         for (int col = 0; col < numCols; ++col) {
           auto bank = row * numCols + col;
           freqMatrixStr << std::setw(6)
-                        << (pageHops.bankFreq[bank] - avgBankFreq);
+                        << (boxHops.bankFreq[bank] - avgBankFreq);
         }
         freqMatrixStr << '\n';
       }
       DPRINTF(StreamNUCAManager,
-              "[StreamNUCA] IndRegion %s PageIdx %lu AvgBankFreq %d Diff:\n%s.",
-              regionHops.region.name, pageIdx, avgBankFreq,
-              freqMatrixStr.str());
+              "[StreamNUCA] IndRegion %s BoxIdx %lu AvgBankFreq %d Diff:\n%s.",
+              regionHops.region.name, boxIdx, avgBankFreq, freqMatrixStr.str());
     }
   }
 
@@ -655,76 +663,75 @@ void StreamNUCAManager::greedyAssignIndirectPages(
     DPRINTF(StreamNUCAManager,
             "[StreamNUCA] IndirectRegion %s Finish Greedy Assign:\n",
             region.name);
-    for (int i = 0; i < regionHops.numMemNodes; ++i) {
-      auto pages = regionHops.remapPageIds.at(i).size();
-      auto totalPages = regionHops.pageHops.size();
-      auto ratio = static_cast<float>(pages) / static_cast<float>(totalPages);
-      DPRINTF(StreamNUCAManager,
-              "[StreamNUCA]     NUMANode %5d Pages %8lu %3.2f\n", i, pages,
-              ratio * 100);
+    for (int i = 0; i < regionHops.numBanks; ++i) {
+      auto pages = regionHops.remapBoxIds.at(i).size();
+      auto totalBoxes = regionHops.boxHops.size();
+      auto ratio = static_cast<float>(pages) / static_cast<float>(totalBoxes);
+      DPRINTF(StreamNUCAManager, "[StreamNUCA]     Bank %5d Boxes %8lu %3.2f\n",
+              i, pages, ratio * 100);
     }
   }
 }
 
-void StreamNUCAManager::IndirectRegionHops::addRemapPageId(uint64_t pageId,
-                                                           int NUMANodeId) {
+void StreamNUCAManager::IndirectRegionHops::addRemapBoxId(uint64_t boxIdx,
+                                                          int bankIdx) {
   /**
    * Sorted by their difference between MaxHops and MinHops.
    */
-  auto &remapPageIds = this->remapPageIds.at(NUMANodeId);
-  auto &remapPageHops = this->pageHops.at(pageId);
-  remapPageHops.remapNUMANodeId = NUMANodeId;
+  auto &remapBoxIds = this->remapBoxIds.at(bankIdx);
+  auto &remapBoxHops = this->boxHops.at(boxIdx);
+  remapBoxHops.remapBankIdx = bankIdx;
 
-  auto remapDiffHops = remapPageHops.maxHops - remapPageHops.minHops;
-  auto iter = remapPageIds.begin();
-  while (iter != remapPageIds.end()) {
+  auto remapDiffHops = remapBoxHops.maxHops - remapBoxHops.minHops;
+  auto iter = remapBoxIds.begin();
+  while (iter != remapBoxIds.end()) {
     auto pageId = *iter;
-    const auto &pageHops = this->pageHops.at(pageId);
-    auto diffHops = pageHops.maxHops - pageHops.minHops;
+    const auto &boxHops = this->boxHops.at(pageId);
+    auto diffHops = boxHops.maxHops - boxHops.minHops;
     if (diffHops < remapDiffHops) {
       break;
     }
     ++iter;
   }
-  remapPageIds.insert(iter, pageId);
+  remapBoxIds.insert(iter, boxIdx);
 }
 
-void StreamNUCAManager::rebalanceIndirectPages(IndirectRegionHops &regionHops) {
+void StreamNUCAManager::rebalanceIndirectBoxes(IndirectRegionHops &regionHops) {
 
-  auto remapPageIdsCmp =
-      [](const IndirectRegionHops::RemapPageIdsPerNUMANodeT &A,
-         const IndirectRegionHops::RemapPageIdsPerNUMANodeT &B) -> bool {
+  auto remapBoxIdsCmp =
+      [](const IndirectRegionHops::RemapBoxIdsPerBankT &A,
+         const IndirectRegionHops::RemapBoxIdsPerBankT &B) -> bool {
     return A.size() < B.size();
   };
 
-  auto isBalanced = [&regionHops, &remapPageIdsCmp]() -> bool {
+  auto isBalanced = [&regionHops, &remapBoxIdsCmp, this]() -> bool {
     auto minMaxPair =
-        std::minmax_element(regionHops.remapPageIds.begin(),
-                            regionHops.remapPageIds.end(), remapPageIdsCmp);
+        std::minmax_element(regionHops.remapBoxIds.begin(),
+                            regionHops.remapBoxIds.end(), remapBoxIdsCmp);
     auto diff = minMaxPair.second->size() - minMaxPair.first->size();
     auto ratio = static_cast<float>(diff) /
-                 static_cast<float>(regionHops.pageHops.size());
-    const float threshold = 0.02f;
+                 static_cast<float>(regionHops.boxHops.size());
+    const float threshold = this->indirectRebalanceThreshold;
     return ratio <= threshold;
   };
 
   auto selectPopNUMAIter =
       [&regionHops,
-       &remapPageIdsCmp]() -> IndirectRegionHops::RemapPageIdsT::iterator {
+       &remapBoxIdsCmp]() -> IndirectRegionHops::RemapBoxIdsT::iterator {
     // For now always select the NUMAId with most pages.
     auto maxIter =
-        std::max_element(regionHops.remapPageIds.begin(),
-                         regionHops.remapPageIds.end(), remapPageIdsCmp);
+        std::max_element(regionHops.remapBoxIds.begin(),
+                         regionHops.remapBoxIds.end(), remapBoxIdsCmp);
     return maxIter;
   };
 
   auto selectPushNUMAIter =
       [&regionHops,
-       &remapPageIdsCmp]() -> IndirectRegionHops::RemapPageIdsT::iterator {
+       &remapBoxIdsCmp]() -> IndirectRegionHops::RemapBoxIdsT::iterator {
     // For now always select the NUMAId with least pages.
     auto minIter =
-        std::min_element(regionHops.remapPageIds.begin(),
-                         regionHops.remapPageIds.end(), remapPageIdsCmp);
+        std::min_element(regionHops.remapBoxIds.begin(),
+                         regionHops.remapBoxIds.end(), remapBoxIdsCmp);
     return minIter;
   };
 
@@ -732,82 +739,129 @@ void StreamNUCAManager::rebalanceIndirectPages(IndirectRegionHops &regionHops) {
     auto popIter = selectPopNUMAIter();
     auto pushIter = selectPushNUMAIter();
 
-    auto pageIdx = popIter->back();
+    auto boxIdx = popIter->back();
     popIter->pop_back();
 
-    auto pushNUMANodeId = pushIter - regionHops.remapPageIds.begin();
-    regionHops.addRemapPageId(pageIdx, pushNUMANodeId);
+    auto pushNUMANodeId = pushIter - regionHops.remapBoxIds.begin();
+    regionHops.addRemapBoxId(boxIdx, pushNUMANodeId);
   }
 
   if (Debug::StreamNUCAManager) {
     const auto &region = regionHops.region;
     DPRINTF(StreamNUCAManager,
             "[StreamNUCA] IndirectRegion %s Finish Rebalance:\n", region.name);
-    for (int i = 0; i < regionHops.numMemNodes; ++i) {
-      auto pages = regionHops.remapPageIds.at(i).size();
-      auto totalPages = regionHops.pageHops.size();
-      auto ratio = static_cast<float>(pages) / static_cast<float>(totalPages);
+    for (int i = 0; i < regionHops.numBanks; ++i) {
+      auto boxes = regionHops.remapBoxIds.at(i).size();
+      auto totalBoxes = regionHops.boxHops.size();
+      auto ratio = static_cast<float>(boxes) / static_cast<float>(totalBoxes);
       DPRINTF(StreamNUCAManager,
-              "[StreamNUCA]     NUMANode %5d Pages %8lu %3.2f\n", i, pages,
+              "[StreamNUCA]     NUMANode %5d Pages %8lu %3.2f\n", i, boxes,
               ratio * 100);
     }
   }
 }
 
-void StreamNUCAManager::relocateIndirectPages(
+void StreamNUCAManager::relocateIndirectBoxes(
     ThreadContext *tc, const IndirectRegionHops &regionHops) {
+
+  std::map<int, std::vector<int>> forwardFreq;
+
+  for (uint64_t boxIdx = 0; boxIdx < regionHops.boxHops.size(); ++boxIdx) {
+
+    const auto &boxHops = regionHops.boxHops.at(boxIdx);
+    auto remapBankIdx = boxHops.remapBankIdx;
+    auto defaultBankIdx = boxHops.defaultBankIdx;
+
+    if (this->indirectRemapBoxBytes == 0) {
+      /**
+       * IndirectRemap is disabled, we just set remapNUMA = defaultNUMA.
+       */
+      remapBankIdx = defaultBankIdx;
+    }
+
+    this->indRegionMemToLLCDefaultHops += boxHops.hops.at(defaultBankIdx);
+    this->indRegionMemToLLCRemappedHops += boxHops.hops.at(remapBankIdx);
+    this->indRegionMemRemappedBanks.sample(remapBankIdx, 1);
+
+    if (!forwardFreq.count(remapBankIdx)) {
+      forwardFreq
+          .emplace(std::piecewise_construct,
+                   std::forward_as_tuple(remapBankIdx), std::forward_as_tuple())
+          .first->second.resize(boxHops.bankFreq.size(), 0);
+    }
+    auto &freq = forwardFreq.at(remapBankIdx);
+    for (auto i = 0; i < boxHops.bankFreq.size(); ++i) {
+      freq[i] += boxHops.bankFreq[i];
+    }
+
+    if (remapBankIdx == defaultBankIdx) {
+      continue;
+    }
+
+    this->relocateCacheLines(tc, boxHops.vaddr, boxHops.paddr,
+                             this->indirectRemapBoxBytes, remapBankIdx);
+
+    // this->reallocatePageAt(tc, boxHops.vaddr, boxHops.paddr,
+    // remapNUMANodeId);
+  }
+
+  for (const auto &bankFreq : forwardFreq) {
+    std::ostringstream os;
+    os << std::setw(3) << bankFreq.first << " -> ";
+    for (int i = 0; i < bankFreq.second.size(); ++i) {
+      if (bankFreq.second.at(i) == 0) {
+        continue;
+      }
+      os << std::setw(3) << i << std::setw(6) << bankFreq.second.at(i) << ' ';
+    }
+    DPRINTF(StreamNUCAManager, "[IndFwd]  %s\n", os.str());
+  }
+}
+
+void StreamNUCAManager::relocateCacheLines(ThreadContext *tc, Addr vaddrLine,
+                                           Addr paddrLine, int size,
+                                           int bankIdx) {
+
+  std::unordered_map<Addr, int> paddrLineRemap;
+  for (auto offset = 0; offset < size; ++offset) {
+    Addr paddr = paddrLine + offset;
+    paddrLineRemap.emplace(paddr, bankIdx);
+  }
+  StreamNUCAMap::overridePAddrToBank(paddrLineRemap);
+}
+
+void StreamNUCAManager::reallocatePageAt(ThreadContext *tc, Addr pageVAddr,
+                                         Addr pagePAddr, int numaNode) {
 
   auto pTable = this->process->pTable;
   auto pageSize = pTable->getPageSize();
 
   char *pageData = reinterpret_cast<char *>(malloc(pageSize));
 
-  for (uint64_t pageIdx = 0; pageIdx < regionHops.pageHops.size(); ++pageIdx) {
+  tc->getVirtProxy().readBlob(pageVAddr, pageData, pageSize);
 
-    const auto &pageHops = regionHops.pageHops.at(pageIdx);
-    auto remapNUMANodeId = pageHops.remapNUMANodeId;
-    auto defaultNUMANodeId = pageHops.defaultNUMANodeId;
+  auto oldNUMANode = StreamNUCAMap::mapPAddrToNUMAId(pagePAddr);
+  /**
+   * Try to allocate a page at selected bank. Remap the vaddr to the new paddr
+   * by setting clobber flag (which will destroy the old mapping). Then copy
+   * the data.
+   */
+  int allocPages = 0;
+  int allocNUMANodeId = 0;
+  auto newPagePAddr = NUMAPageAllocator::allocatePageAt(
+      tc->getProcessPtr()->system, numaNode, allocPages, allocNUMANodeId);
 
-    if (!this->enableIndirectPageRemap) {
-      /**
-       * IndirectRemap is disabled, we just set remapNUMA = defaultNUMA.
-       */
-      remapNUMANodeId = defaultNUMANodeId;
-    }
+  indRegionRemapPages++;
+  indRegionAllocPages += allocPages;
 
-    this->indRegionMemToLLCDefaultHops += pageHops.hops.at(defaultNUMANodeId);
-    this->indRegionMemToLLCRemappedHops += pageHops.hops.at(remapNUMANodeId);
-    this->indRegionMemRemappedBanks.sample(remapNUMANodeId, 1);
+  bool clobber = true;
+  pTable->map(pageVAddr, newPagePAddr, pageSize, clobber);
+  tc->getVirtProxy().writeBlob(pageVAddr, pageData, pageSize);
 
-    if (remapNUMANodeId == defaultNUMANodeId) {
-      continue;
-    }
+  // Return the old page to the allocator.
+  NUMAPageAllocator::returnPage(pagePAddr, oldNUMANode);
 
-    auto pageVAddr = pageHops.pageVAddr;
-    auto defaultPagePAddr = pageHops.defaultPagePAddr;
-    tc->getVirtProxy().readBlob(pageVAddr, pageData, pageSize);
-
-    /**
-     * Try to allocate a page at selected bank. Remap the vaddr to the new paddr
-     * by setting clobber flag (which will destroy the old mapping). Then copy
-     * the data.
-     */
-    int allocPages = 0;
-    int allocNUMANodeId = 0;
-    auto newPagePAddr = NUMAPageAllocator::allocatePageAt(
-        tc->getProcessPtr()->system, remapNUMANodeId, allocPages,
-        allocNUMANodeId);
-
-    indRegionRemapPages++;
-    indRegionAllocPages += allocPages;
-
-    bool clobber = true;
-    pTable->map(pageVAddr, newPagePAddr, pageSize, clobber);
-    tc->getVirtProxy().writeBlob(pageVAddr, pageData, pageSize);
-
-    // Return the old page to the allocator.
-    NUMAPageAllocator::returnPage(defaultPagePAddr, defaultNUMANodeId);
-  }
+  free(pageData);
 }
 
 void StreamNUCAManager::groupDirectRegionsByAlign() {
@@ -1213,6 +1267,15 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
               alignToRegion.elementSize, region.elementSize);
       interleave =
           otherInterleave / alignToRegion.elementSize * region.elementSize;
+    }
+  }
+
+  if (region.name == "gap.pr_push.next_score") {
+    // Try to split graph into 64 banks.
+    if (region.numElement >= numBanks * 1024) {
+      interleave = region.numElement * region.elementSize / numBanks;
+      DPRINTF(StreamNUCAManager, "Range %s %#x Graph Intrlv = %lu.\n",
+              region.name, region.vaddr, interleave);
     }
   }
   return interleave;

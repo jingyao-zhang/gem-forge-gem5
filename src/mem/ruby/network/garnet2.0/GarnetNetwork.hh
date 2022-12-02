@@ -73,6 +73,7 @@ class GarnetNetwork : public Network
 
     bool isMulticastEnabled() const { return m_enable_multicast; }
     bool isIdealNoCEnabled() const { return m_ideal_noc_hops != -1; }
+    bool isIdealNoCMsg(const MsgPtr &msg) const;
     int getIdealNoCHops() const { return m_ideal_noc_hops; }
 
     // Internal configuration
@@ -164,6 +165,9 @@ class GarnetNetwork : public Network
     bool m_enable_fault_model;
     bool m_enable_multicast;
     int m_ideal_noc_hops;
+    std::string m_ideal_noc_msg = "none";
+    bool m_ideal_noc_msg_all = false;
+    std::vector<std::pair<int, int>> m_ideal_noc_msg_types;
 
     // Statistical variables
     Stats::Vector m_packets_received;

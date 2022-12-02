@@ -1490,8 +1490,8 @@ cloneFunc(SyscallDesc *desc, ThreadContext *tc, RegVal flags, RegVal newStack,
     pp->enableStreamNUCA = p->myParams->enableStreamNUCA;
     pp->streamNUCADirectRegionFitPolicy =
         p->myParams->streamNUCADirectRegionFitPolicy;
-    pp->streamNUCAEnableIndPageRemap =
-        p->myParams->streamNUCAEnableIndPageRemap;
+    pp->streamNUCAIndRemapBoxBytes =
+        p->myParams->streamNUCAIndRemapBoxBytes;
 
     /* Find the first free PID that's less than the maximum */
     std::set<int> const& pids = p->system->PIDs;

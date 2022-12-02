@@ -67,6 +67,38 @@ GarnetNetwork::GarnetNetwork(const Params *p)
         fault_model = p->fault_model;
     m_enable_multicast = p->enable_multicast;
     m_ideal_noc_hops = p->ideal_noc_hops;
+    m_ideal_noc_msg = p->ideal_noc_msg;
+    m_ideal_noc_msg_all = m_ideal_noc_msg == "all";
+    /**
+     * Record the message stats category and types
+     */
+    if (m_ideal_noc_msg.find("STREAM_FLOW") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(0, 13);
+    }
+    if (m_ideal_noc_msg.find("STREAM_END") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(0, 14);
+    }
+    if (m_ideal_noc_msg.find("STREAM_STORE") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(0, 15);
+    }
+    if (m_ideal_noc_msg.find("STREAM_UNLOCK") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(0, 16);
+    }
+    if (m_ideal_noc_msg.find("STREAM_MIGRATE") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(0, 17);
+    }
+    if (m_ideal_noc_msg.find("STREAM_ACK") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(1, 9);
+    }
+    if (m_ideal_noc_msg.find("STREAM_RANGE") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(1, 10);
+    }
+    if (m_ideal_noc_msg.find("STREAM_DONE") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(1, 11);
+    }
+    if (m_ideal_noc_msg.find("STREAM_NDC") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(1, 12);
+    }
 
     m_vnet_type.resize(m_virtual_networks);
 
@@ -480,4 +512,19 @@ GarnetNetwork::functionalWrite(Packet *pkt)
     }
 
     return num_functional_writes;
+}
+
+bool
+GarnetNetwork::isIdealNoCMsg(const MsgPtr &msg) const {
+    if (this->m_ideal_noc_msg_all) {
+        return true;
+    }
+    auto category = msg->getStatsCategory();
+    auto type = msg->getStatsType();
+    for (const auto &e : this->m_ideal_noc_msg_types) {
+        if (e.first == category && e.second == type) {
+            return true;
+        }
+    }
+    return false;
 }

@@ -363,7 +363,8 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
         }
 
         // Check if we enabled ideal noc.
-        if (m_net_ptr->isIdealNoCEnabled() && destID != m_id) {
+        if (m_net_ptr->isIdealNoCEnabled() && destID != m_id
+            && m_net_ptr->isIdealNoCMsg(new_msg_ptr)) {
             NetDest unicastDest;
             unicastDest.add(destMachineID);
             new_msg_ptr->getDestination() = unicastDest;
