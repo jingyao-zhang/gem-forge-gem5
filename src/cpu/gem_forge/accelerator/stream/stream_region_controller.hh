@@ -12,11 +12,21 @@ public:
   void initializeRegion(const ::LLVM::TDG::StreamRegion &region);
 
   using ConfigArgs = StreamEngine::StreamConfigArgs;
-  using EndArgs = StreamEngine::StreamEndArgs;
   void dispatchStreamConfig(const ConfigArgs &args);
   void executeStreamConfig(const ConfigArgs &args);
   void commitStreamConfig(const ConfigArgs &args);
   void rewindStreamConfig(const ConfigArgs &args);
+
+  /**
+   * Move the logic to handle StreamEnd from StreamEngine to here.
+   * This helps to make the O3NestStreamEnd implementation more clear.
+   */
+  using EndArgs = StreamEngine::StreamEndArgs;
+  bool canDispatchStreamEnd(const EndArgs &args);
+  void dispatchStreamEnd(const EndArgs &args);
+  bool canExecuteStreamEnd(const EndArgs &args);
+  bool canCommitStreamEnd(const EndArgs &args);
+  void rewindStreamEnd(const EndArgs &args);
   void commitStreamEnd(const EndArgs &args);
 
   void determineStepElemCount(const ConfigArgs &args);
@@ -32,6 +42,14 @@ public:
     bool configExecuted = false;
     bool configCommitted = false;
     bool canSkipToEnd = false;
+
+    bool endDispatched = false;
+    uint64_t endSeqNum = 0;
+    void dispatchStreamEnd(uint64_t endSeqNum) {
+      assert(!this->endDispatched);
+      this->endDispatched = true;
+      this->endSeqNum = endSeqNum;
+    }
 
     DynRegion(StaticRegion *_staticRegion, uint64_t _seqNum)
         : staticRegion(_staticRegion), seqNum(_seqNum) {}
@@ -247,6 +265,12 @@ private:
         : elements(_elements), error(_error) {}
     StreamValue operator()(uint64_t streamId) const;
   };
+
+  /**
+   * Helper function to manage StreamEnd and enable out-of-order StreamEnd for
+   * eliminated loop.
+   */
+  DynRegion *tryGetFirstAliveDynRegion(StaticRegion &staticRegion);
 };
 
 #endif

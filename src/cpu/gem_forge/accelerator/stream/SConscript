@@ -9,6 +9,7 @@ DebugFlag('CoreStreamAlloc')
 DebugFlag('StreamNest')
 DebugFlag('StreamLoopBound')
 DebugFlag('StreamRegion')
+DebugFlag('StreamEnd')
 DebugFlag('StreamFloatPolicy')
 DebugFlag('CoalescedStream')
 DebugFlag('SingleStream')
@@ -26,6 +27,7 @@ CompoundFlag('StreamEngine', [
     'StreamLoopBound',
     'StreamNest',
     'StreamFloatController',
+    'StreamEnd',
 ])
 
 ProtoBuf('StreamMessage.proto')
@@ -54,6 +56,7 @@ Source('stream_atomic_op.cc')
 Source('stream_data_traffic_accumulator.cc')
 Source('stream_loop_bound_controller.cc')
 Source('stream_stepper.cc')
+Source('stream_ender.cc')
 Source('stream_allocator.cc')
 Source('stream_region_controller.cc')
 Source('nest_stream_controller.cc')

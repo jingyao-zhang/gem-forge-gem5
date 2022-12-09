@@ -135,34 +135,6 @@ void StreamRegionController::rewindStreamConfig(const ConfigArgs &args) {
   staticRegion.dynRegions.pop_back();
 }
 
-void StreamRegionController::commitStreamEnd(const EndArgs &args) {
-  const auto &infoRelativePath = args.infoRelativePath;
-  const auto &streamRegion = this->se->getStreamRegion(infoRelativePath);
-
-  auto &staticRegion = this->getStaticRegion(streamRegion.region());
-  assert(!staticRegion.dynRegions.empty() && "Missing DynRegion.");
-
-  const auto &dynRegion = staticRegion.dynRegions.front();
-  if (dynRegion.seqNum > args.seqNum) {
-    /**
-     * We allow the == case because in nested stream, it is still
-     * possible that InnerStreamEnd comes right after OuterStreamConfig,
-     * leaving there no space to insert the InnerStreamConfig.
-     */
-    SE_PANIC("[Region] %s End (%lu) before Configure (%lu).\n",
-             streamRegion.region(), args.seqNum, dynRegion.seqNum);
-  }
-
-  SE_DPRINTF(
-      "[Region] Release DynRegion SeqNum %llu for region %s, remaining %llu.\n",
-      dynRegion.seqNum, streamRegion.region(),
-      staticRegion.dynRegions.size() - 1);
-  this->checkRemainingNestRegions(dynRegion);
-
-  this->activeDynRegionMap.erase(dynRegion.seqNum);
-  staticRegion.dynRegions.pop_front();
-}
-
 void StreamRegionController::tick() {
   for (auto &entry : this->activeDynRegionMap) {
     auto &dynRegion = *entry.second;
@@ -291,8 +263,7 @@ bool StreamRegionController::canSkipToStreamEnd(
    * 3. Float enabled.
    * 4. No NestRegion.
    * For all streams:
-   * 1. Only has affine streams (no reduction/pointer-chase/indirect), or all
-   * indirect streams has no core user and no final value needed.
+   * 1. No core user.
    * 2. No last/second-last element user.
    * 3. Has known TripCount.
    */
@@ -313,11 +284,6 @@ bool StreamRegionController::canSkipToStreamEnd(
   }
   for (auto S : staticRegion->streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
-    // if (S->isMemStream() && !S->isDirectMemStream()) {
-    //   // Indirect Mem stream.
-    //   DYN_S_DPRINTF(dynS.dynStreamId, "[Region] NoSkipToEnd:
-    //   IndirectMemS.\n"); return false;
-    // }
     if (S->isInnerFinalValueUsedByCore() ||
         S->isInnerSecondFinalValueUsedByCore() || S->hasCoreUser()) {
       DYN_S_DPRINTF(dynS.dynStreamId,
@@ -352,4 +318,14 @@ void StreamRegionController::trySkipToStreamEnd(DynRegion &dynRegion) {
     SE_DPRINTF("[Region] Skip Group to End %llu.\n", group.totalTripCount);
     group.nextElemIdx = group.totalTripCount;
   }
+}
+
+StreamRegionController::DynRegion *
+StreamRegionController::tryGetFirstAliveDynRegion(StaticRegion &staticRegion) {
+  for (auto &dynRegion : staticRegion.dynRegions) {
+    if (!dynRegion.endDispatched) {
+      return &dynRegion;
+    }
+  }
+  return nullptr;
 }

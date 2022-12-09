@@ -119,6 +119,9 @@ parser.add_option("--gem-forge-stream-engine-throttling", action="store", type="
                   help="""Throttling tenchique used by stream engine.""", default="static")
 parser.add_option("--gem-forge-stream-engine-enable-lsq", action="store_true",
                   help="""Enable stream lsq in the stream engine.""", default=False)
+parser.add_option("--gem-forge-stream-engine-enable-o3-elim-stream-end", action="store_true",
+                  help="""Enable out-of-order StreamEnd for eliminated stream.""",
+                  default=False)
 parser.add_option("--gem-forge-stream-engine-force-no-flush-peb", action="store_true",
                   help="""Disable flush PEB in the stream engine.""", default=False)
 parser.add_option("--gem-forge-stream-engine-enable-coalesce", action="store_true",

@@ -54,6 +54,8 @@ class StreamEngine(GemForgeAccelerator):
         "Static", "Which throttling technique to use.")
     maxNumElementsPrefetchForAtomic = Param.Unsigned(
         1024, "How many elements to prefetch for atomic stream (default 1024 = no limit).")
+    enableO3ElimStreamEnd = Param.Bool(
+        False, "Enable out-of-order StreamEnd for eliminated streams.")
     streamEngineEnableLSQ = Param.Bool(
         False, "Whether the stream engine model inserting into the LSQ.")
     streamEngineForceNoFlushPEB = Param.Bool(
