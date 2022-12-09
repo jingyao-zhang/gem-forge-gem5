@@ -1270,14 +1270,6 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
     }
   }
 
-  if (region.name == "gap.pr_push.next_score") {
-    // Try to split graph into 64 banks.
-    if (region.numElement >= numBanks * 1024) {
-      interleave = region.numElement * region.elementSize / numBanks;
-      DPRINTF(StreamNUCAManager, "Range %s %#x Graph Intrlv = %lu.\n",
-              region.name, region.vaddr, interleave);
-    }
-  }
   return interleave;
 }
 

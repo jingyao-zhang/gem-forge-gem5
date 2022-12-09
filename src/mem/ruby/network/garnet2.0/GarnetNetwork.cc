@@ -72,6 +72,9 @@ GarnetNetwork::GarnetNetwork(const Params *p)
     /**
      * Record the message stats category and types
      */
+    if (m_ideal_noc_msg.find("GETH") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(0, 4);
+    }
     if (m_ideal_noc_msg.find("STREAM_FLOW") != std::string::npos) {
         m_ideal_noc_msg_types.emplace_back(0, 13);
     }
@@ -86,6 +89,31 @@ GarnetNetwork::GarnetNetwork(const Params *p)
     }
     if (m_ideal_noc_msg.find("STREAM_MIGRATE") != std::string::npos) {
         m_ideal_noc_msg_types.emplace_back(0, 17);
+    }
+    if (m_ideal_noc_msg.find("DATA_EX_1B") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(1, 2);
+        m_ideal_noc_msg_types.back().sizeType =
+            MessageSizeType_Response_Data_1B;
+    }
+    if (m_ideal_noc_msg.find("DATA_EX_2B") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(1, 2);
+        m_ideal_noc_msg_types.back().sizeType =
+            MessageSizeType_Response_Data_2B;
+    }
+    if (m_ideal_noc_msg.find("DATA_EX_4B") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(1, 2);
+        m_ideal_noc_msg_types.back().sizeType =
+            MessageSizeType_Response_Data_4B;
+    }
+    if (m_ideal_noc_msg.find("DATA_EX_8B") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(1, 2);
+        m_ideal_noc_msg_types.back().sizeType =
+            MessageSizeType_Response_Data_8B;
+    }
+    if (m_ideal_noc_msg.find("DATA_EX_16B") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(1, 2);
+        m_ideal_noc_msg_types.back().sizeType =
+            MessageSizeType_Response_Data_16B;
     }
     if (m_ideal_noc_msg.find("STREAM_ACK") != std::string::npos) {
         m_ideal_noc_msg_types.emplace_back(1, 9);
@@ -522,8 +550,16 @@ GarnetNetwork::isIdealNoCMsg(const MsgPtr &msg) const {
     auto category = msg->getStatsCategory();
     auto type = msg->getStatsType();
     for (const auto &e : this->m_ideal_noc_msg_types) {
-        if (e.first == category && e.second == type) {
-            return true;
+        if (e.statsCategory == category && e.statsType == type) {
+            if (e.sizeType == MessageSizeType_NUM) {
+                // Match all MessageSize.
+                return true;
+            } else {
+                // Check the MessageSize.
+                if (e.sizeType == msg->getMessageSize()) {
+                    return true;
+                }
+            }
         }
     }
     return false;

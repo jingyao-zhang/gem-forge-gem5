@@ -127,6 +127,8 @@ parser.add_option("--gem-forge-stream-engine-enable-merge", action="store_true",
                   help="""Enable stream merge in the stream engine.""", default=False)
 parser.add_option("--gem-forge-stream-engine-placement",
                   type="string", default="original")
+parser.add_option("--gem-forge-stream-engine-elim-nest-stream-instances", action="store",
+                  default="8", type="int", help="""number of elim nested stream instances""")
 
 # Stream Float options.
 parser.add_option("--gem-forge-stream-engine-enable-float", action="store_true", default=False,

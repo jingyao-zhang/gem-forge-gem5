@@ -199,7 +199,7 @@ void StreamRegionController::configureNestStream(
   for (auto S : staticNestRegion.streams) {
     if (S->getAllocSize() + 1 >= S->maxSize) {
       S_DPRINTF(S,
-                "[Nest] No Free Element to allocate NestConfig, AllocSize %d, "
+                "[Nest] No Free Elem to allocate NestConfig, AllocSize %d, "
                 "MaxSize %d.\n",
                 S->getAllocSize(), S->maxSize);
       return;
@@ -207,14 +207,14 @@ void StreamRegionController::configureNestStream(
   }
 
   auto nextElementIdx = dynNestConfig.nextElemIdx;
-  std::unordered_set<StreamElement *> baseElements;
+  std::unordered_set<StreamElement *> baseElems;
   for (auto baseS : staticNestConfig.baseStreams) {
     auto &baseDynS = baseS->getDynStream(dynRegion.seqNum);
-    auto baseElement = baseDynS.getElemByIdx(nextElementIdx);
-    if (!baseElement) {
+    auto baseE = baseDynS.getElemByIdx(nextElementIdx);
+    if (!baseE) {
       if (baseDynS.FIFOIdx.entryIdx > nextElementIdx) {
         DYN_S_DPRINTF(baseDynS.dynStreamId,
-                      "Failed to get element %llu for NestConfig. The "
+                      "Failed to get elem %llu for NestConfig. The "
                       "TotalTripCount must be 0. Skip.\n",
                       dynNestConfig.nextElemIdx);
         dynNestConfig.nextElemIdx++;
@@ -222,20 +222,20 @@ void StreamRegionController::configureNestStream(
       } else {
         // The base element is not allocated yet.
         S_DPRINTF(baseS,
-                  "[Nest] BaseElement %llu not allocated yet for NestConfig. "
+                  "[Nest] BaseElem %llu not allocated yet for NestConfig. "
                   "Current NestRegions %d.\n",
                   nextElementIdx, staticNestRegion.dynRegions.size());
         return;
       }
     }
-    if (!baseElement->isValueReady) {
+    if (!baseE->isValueReady) {
       // S_ELEMENT_DPRINTF(baseElement,
       //                   "[Nest] Value not ready for NestConfig.\n");
       return;
     }
-    baseElements.insert(baseElement);
+    baseElems.insert(baseE);
   }
-  for (auto baseE : baseElements) {
+  for (auto baseE : baseElems) {
     if (baseE->isLastElement()) {
       S_ELEMENT_DPRINTF(baseE, "[Nest] Reached TripCount.\n");
       return;
@@ -243,7 +243,7 @@ void StreamRegionController::configureNestStream(
   }
 
   // All base elements are value ready.
-  auto getStreamValue = GetStreamValueFromElementSet(baseElements, "[Nest]");
+  auto getStreamValue = GetStreamValueFromElementSet(baseElems, "[Nest]");
 
   /**
    * If we have predication, evaluate the predication function first.

@@ -167,7 +167,14 @@ class GarnetNetwork : public Network
     int m_ideal_noc_hops;
     std::string m_ideal_noc_msg = "none";
     bool m_ideal_noc_msg_all = false;
-    std::vector<std::pair<int, int>> m_ideal_noc_msg_types;
+    struct IdealizedMsg {
+        int statsCategory;
+        int statsType;
+        MessageSizeType sizeType = MessageSizeType_NUM;
+        IdealizedMsg(int _statsCategory, int _statsType)
+            : statsCategory(_statsCategory), statsType(_statsType) {}
+    };
+    std::vector<IdealizedMsg> m_ideal_noc_msg_types;
 
     // Statistical variables
     Stats::Vector m_packets_received;

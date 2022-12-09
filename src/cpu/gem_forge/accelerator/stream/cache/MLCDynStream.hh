@@ -64,8 +64,8 @@ public:
   virtual void receiveStreamData(const DynStreamSliceId &sliceId,
                                  const DataBlock &dataBlock,
                                  Addr paddrLine) = 0;
-  void receiveStreamRequest(const DynStreamSliceId &sliceId);
-  void receiveStreamRequestHit(const DynStreamSliceId &sliceId);
+  void recvCoreReq(const DynStreamSliceId &sliceId);
+  void recvCoreReqHit(const DynStreamSliceId &sliceId);
 
   /**
    * Before end the stream, we have make dummy response to the request
@@ -181,7 +181,7 @@ protected:
 
   /**
    * Find the correct slice for a core request.
-   * Used in receiveStreamRequest() and receiveStreamRequestHit().
+   * Used in receiveStreamRequest() and recvCoreReqHit().
    */
   virtual SliceIter
   findSliceForCoreRequest(const DynStreamSliceId &sliceId) = 0;

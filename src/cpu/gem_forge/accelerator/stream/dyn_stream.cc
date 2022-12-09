@@ -1408,9 +1408,11 @@ void DynStream::popReceivedRange() {
 
 std::string DynStream::dumpString() const {
   std::stringstream ss;
-  ss << "===== " << this->dynStreamId << " total " << this->totalTripCount
-     << " step " << this->stepSize << " alloc " << this->allocSize << " max "
-     << this->stream->maxSize << " ========\n";
+  ss << "===== " << this->dynStreamId.staticId << '-'
+     << this->dynStreamId.streamInstance << " total " << this->totalTripCount
+     << " ack " << this->cacheAckedElements.size() << " step " << this->stepSize
+     << " alloc " << this->allocSize << " max " << this->stream->maxSize
+     << " ========\n";
   auto element = this->tail;
   while (element != this->head) {
     element = element->next;

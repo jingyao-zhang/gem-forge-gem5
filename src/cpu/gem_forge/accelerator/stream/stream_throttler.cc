@@ -1,4 +1,5 @@
 #include "stream_throttler.hh"
+#include "stream_region_controller.hh"
 
 #include "debug/StreamThrottle.hh"
 
@@ -49,48 +50,50 @@ void StreamThrottler::throttleStream(StreamElement *element) {
   // This is a late fetch, increase the counter.
   S->lateFetchCount++;
   S_ELEMENT_DPRINTF(element, "[Throttle] LateCount %d.\n", S->lateFetchCount);
-  if (S->lateFetchCount == 10) {
-    // We have reached the threshold to allow the stream to run further
-    // ahead.
-    auto oldRunAheadSize = S->maxSize;
-    /**
-     * Get the step root stream.
-     * Sometimes, it is possible that stepRootStream is nullptr,
-     * which means that this is a constant stream.
-     * We do not throttle in this case.
-     */
-    auto stepRootStream = S->stepRootStream;
-    if (stepRootStream != nullptr) {
-      const auto &streamList = this->se->getStepStreamList(stepRootStream);
-      if (this->strategy == StrategyE::DYNAMIC) {
-        // All streams with the same stepRootStream must have the same run
-        // ahead length.
-        auto totalRunAheadLength = this->se->getTotalRunAheadLength();
-        // Only increase the run ahead length if the totalRunAheadLength is
-        // within the 90% of the total FIFO entries. Need better solution
-        // here.
-        const auto incrementStep = 2;
-        if (static_cast<float>(totalRunAheadLength) <
-            0.9f * static_cast<float>(this->se->FIFOArray.size())) {
-          for (auto stepS : streamList) {
-            // Increase the run ahead length by step.
-            stepS->maxSize += incrementStep;
-          }
-          assert(S->maxSize == oldRunAheadSize + 2 &&
-                 "RunAheadLength is not increased.");
+  if (S->lateFetchCount < 10) {
+    return;
+  }
+
+  // We have reached the threshold to allow the stream to run further
+  // ahead.
+  auto oldRunAheadSize = S->maxSize;
+  /**
+   * Get the step root stream.
+   * Sometimes, it is possible that stepRootStream is nullptr,
+   * which means that this is a constant stream.
+   * We do not throttle in this case.
+   */
+  auto stepRootStream = S->stepRootStream;
+  if (stepRootStream != nullptr) {
+    const auto &streamList = this->se->getStepStreamList(stepRootStream);
+    if (this->strategy == StrategyE::DYNAMIC) {
+      // All streams with the same stepRootStream must have the same run
+      // ahead length.
+      auto totalRunAheadLength = this->se->getTotalRunAheadLength();
+      // Only increase the run ahead length if the totalRunAheadLength is
+      // within the 90% of the total FIFO entries. Need better solution
+      // here.
+      const auto incrementStep = 2;
+      if (static_cast<float>(totalRunAheadLength) <
+          0.9f * static_cast<float>(this->se->FIFOArray.size())) {
+        for (auto stepS : streamList) {
+          // Increase the run ahead length by step.
+          stepS->maxSize += incrementStep;
         }
-      } else if (this->strategy == StrategyE::GLOBAL) {
-        this->tryGlobalThrottle(element->stream);
+        assert(S->maxSize == oldRunAheadSize + 2 &&
+               "RunAheadLength is not increased.");
       }
-      // No matter what, just clear the lateFetchCount in the whole step
-      // group.
-      for (auto stepS : streamList) {
-        stepS->lateFetchCount = 0;
-      }
-    } else {
-      // Otherwise, just clear my self.
-      S->lateFetchCount = 0;
+    } else if (this->strategy == StrategyE::GLOBAL) {
+      this->tryGlobalThrottle(element->stream);
     }
+    // No matter what, just clear the lateFetchCount in the whole step
+    // group.
+    for (auto stepS : streamList) {
+      stepS->lateFetchCount = 0;
+    }
+  } else {
+    // Otherwise, just clear my self.
+    S->lateFetchCount = 0;
   }
 }
 
@@ -161,12 +164,70 @@ bool StreamThrottler::tryGlobalThrottle(Stream *S) {
       return false;
     }
   }
-  int MaxSizeForOuterLoopStream = 8;
-  if (!S->getIsInnerMostLoop() && S->maxSize >= MaxSizeForOuterLoopStream) {
-    S_DPRINTF(S,
-              "[Not Throttle] MyMaxSize %d >= %d MaxSizeForOuterLoopStream.\n",
-              S->maxSize, MaxSizeForOuterLoopStream);
-    return false;
+
+  const int MaxSizeForOuterLoopStream = 8;
+  if (!S->getIsInnerMostLoop()) {
+    /**
+     * For OuterS, there are two cases:
+     * 1. If it controls some eliminated nested streams, it is limited by
+     * elimNestStreamInstances.
+     * 2. Otherwise, we take some heuristic MaxSizeForOuterLoopStream.
+     */
+    bool isElimNestOuterS = false;
+    const auto &staticRegion = this->se->regionController->getStaticRegion(S);
+    if (!staticRegion.dynRegions.empty()) {
+      const auto &dynRegion = staticRegion.dynRegions.back();
+      if (!dynRegion.nestConfigs.empty()) {
+        const auto &staticNestRegion =
+            dynRegion.nestConfigs.back().staticRegion;
+        if (staticNestRegion->allStreamsLoopEliminated) {
+          isElimNestOuterS = true;
+          if (S->maxSize >= this->se->myParams->elimNestStreamInstances) {
+            S_DPRINTF(
+                S,
+                "[Not Throttle] MyMaxSize %d >= %d ElimNestStreamInstances.\n",
+                S->maxSize, this->se->myParams->elimNestStreamInstances);
+            return false;
+          }
+        }
+      }
+    }
+    if (!isElimNestOuterS && S->maxSize >= MaxSizeForOuterLoopStream) {
+      S_DPRINTF(
+          S, "[Not Throttle] MyMaxSize %d >= %d MaxSizeForOuterLoopStream.\n",
+          S->maxSize, MaxSizeForOuterLoopStream);
+      return false;
+    }
+  } else {
+    /**
+     * For InnerS, we do not allocate too much if it's:
+     * 1. Nested.
+     * 2. Eliminated.
+     * 3. Can skip to end.
+     */
+    bool isElimNestInnerS = false;
+    const auto &staticRegion = this->se->regionController->getStaticRegion(S);
+    if (staticRegion.nestConfig.configFunc &&
+        staticRegion.allStreamsLoopEliminated) {
+      bool canSkipToEnd = true;
+      for (const auto &dynRegion : staticRegion.dynRegions) {
+        if (!dynRegion.canSkipToEnd) {
+          canSkipToEnd = false;
+          break;
+        }
+      }
+      if (canSkipToEnd) {
+        isElimNestInnerS = true;
+      }
+    }
+    if (isElimNestInnerS &&
+        S->maxSize >= this->se->myParams->elimNestStreamInstances + 1) {
+      S_DPRINTF(
+          S,
+          "[Not Throttle] InnerS MyMaxSize %d >= %d ElimNestStreamInstances.\n",
+          S->maxSize, this->se->myParams->elimNestStreamInstances);
+      return false;
+    }
   }
 
   // * AssignedEntries.
@@ -175,7 +236,7 @@ bool StreamThrottler::tryGlobalThrottle(Stream *S) {
   auto assignedBytes = 0;
   for (const auto &IdStream : this->se->streamMap) {
     auto S = IdStream.second;
-    if (!S->isConfigured()) {
+    if (!S->hasDynStream()) {
       continue;
     }
     currentAliveStreams++;

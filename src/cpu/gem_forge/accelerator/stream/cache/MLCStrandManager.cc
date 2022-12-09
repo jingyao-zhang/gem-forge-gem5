@@ -48,6 +48,16 @@ void MLCStrandManager::receiveStreamConfigure(ConfigVec *configs,
   // So far we always split into 64 strands.
   splitContext.totalStrands =
       StreamNUCAMap::getNumRows() * StreamNUCAMap::getNumCols();
+  for (const auto &config : *configs) {
+    if (config->stream->getStreamName().find("gap.pr_push.atomic.out_v.ld") !=
+        std::string::npos) {
+      splitContext.totalStrands = 8;
+    }
+    if (config->stream->getStreamName().find("gap.bfs_push.out_v.ld") !=
+        std::string::npos) {
+      splitContext.totalStrands = 8;
+    }
+  }
   if (this->canSplitIntoStrands(splitContext, *configs)) {
     this->splitIntoStrands(splitContext, *configs);
   }
@@ -113,6 +123,36 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
                                            const ConfigVec &configs) const {
   if (!this->controller->myParams->enable_stream_strand) {
     return false;
+  }
+
+  /**
+   * Some hack for graph workloads.
+   */
+  for (const auto &config : configs) {
+    if (config->stream->getStreamName().find(
+            "gap.pr_push.atomic.out_begin.ld") != std::string::npos) {
+      return false;
+    }
+    if (config->stream->getStreamName().find("gap.pr_push.update.score.ld") !=
+        std::string::npos) {
+      return false;
+    }
+    if (config->stream->getStreamName().find("gap.pr_push.atomic.out_v.ld") !=
+        std::string::npos) {
+      if (config->hasTotalTripCount() && config->getTotalTripCount() < 128) {
+        return false;
+      }
+    }
+    if (config->stream->getStreamName().find("gap.bfs_push.u.ld") !=
+        std::string::npos) {
+      return false;
+    }
+    if (config->stream->getStreamName().find("gap.bfs_push.out_v.ld") !=
+        std::string::npos) {
+      if (config->hasTotalTripCount() && config->getTotalTripCount() < 128) {
+        return false;
+      }
+    }
   }
 
   if (!this->chooseNoSplitOuterTrip(context, configs)) {
@@ -477,7 +517,7 @@ bool MLCStrandManager::chooseSplitDimIntrlv(StrandSplitContext &context,
 
   assert(config->initPAddrValid && "InitPAddr is not valid.");
   auto region = StreamNUCAMap::getRangeMapContaining(config->initPAddr);
-  if (region) {
+  if (region && region->interleave != 0) {
     if (!region->isStreamPUM) {
       const auto llcBankIntrlv = region->interleave;
       this->tryAvoidStartStrandsAtSameBank(

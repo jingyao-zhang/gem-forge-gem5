@@ -225,7 +225,7 @@ bool MLCStreamEngine::receiveOffloadStreamRequest(
   assert(this->isStreamOffloaded(sliceId) &&
          "Should be an offloaded stream request.");
   auto stream = this->strandManager->getStreamFromCoreSliceId(sliceId);
-  stream->receiveStreamRequest(sliceId);
+  stream->recvCoreReq(sliceId);
   return true;
 }
 
@@ -235,7 +235,7 @@ void MLCStreamEngine::receiveOffloadStreamRequestHit(
     panic(MLC_SLICE_MSG(sliceId, "Receive hit request, but not floated."));
   }
   auto stream = this->strandManager->getStreamFromCoreSliceId(sliceId);
-  stream->receiveStreamRequestHit(sliceId);
+  stream->recvCoreReqHit(sliceId);
 }
 
 void MLCStreamEngine::computeReuseInformation(

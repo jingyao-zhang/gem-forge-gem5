@@ -93,11 +93,17 @@ void StreamRegionController::executeStreamConfig(const ConfigArgs &args) {
   /**
    * Try to boost the streams if this is a Eliminated InnerMost Loop.
    * This enables simultaneous multiple inner loop dynamic streams.
+   * Also try to boost the corresponding outer loop streams.
    */
   auto &staticRegion = *dynRegion.staticRegion;
   if (staticRegion.region.loop_eliminated() &&
       staticRegion.streams.front()->getIsInnerMostLoop()) {
     se->throttler->boostStreams(staticRegion.step.stepRootStreams);
+    if (!staticRegion.nestConfig.baseStreams.empty()) {
+      auto &outerStaticRegion =
+          this->getStaticRegion(*staticRegion.nestConfig.baseStreams.begin());
+      se->throttler->boostStreams(outerStaticRegion.step.stepRootStreams);
+    }
   }
 }
 
@@ -209,9 +215,21 @@ StreamRegionController::StaticRegion &
 StreamRegionController::getStaticRegion(const std::string &regionName) {
   auto iter = this->staticRegionMap.find(regionName);
   if (iter == this->staticRegionMap.end()) {
-    SE_PANIC("Failed to find StaticRegion %s.\n", regionName);
+    SE_PANIC("Failed to find StaticRegion %s.", regionName);
   }
   return iter->second;
+}
+
+StreamRegionController::StaticRegion &
+StreamRegionController::getStaticRegion(Stream *S) {
+  for (auto &entry : this->staticRegionMap) {
+    for (auto stream : entry.second.streams) {
+      if (stream == S) {
+        return entry.second;
+      }
+    }
+  }
+  S_PANIC(S, "Failed to find StaticRegion.");
 }
 
 StreamRegionController::DynRegion &
@@ -318,7 +336,8 @@ bool StreamRegionController::canSkipToStreamEnd(
 }
 
 void StreamRegionController::trySkipToStreamEnd(DynRegion &dynRegion) {
-  if (!this->canSkipToStreamEnd(dynRegion)) {
+  dynRegion.canSkipToEnd = this->canSkipToStreamEnd(dynRegion);
+  if (!dynRegion.canSkipToEnd) {
     return;
   }
   auto staticRegion = dynRegion.staticRegion;

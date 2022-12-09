@@ -142,7 +142,7 @@ void MLCDynStream::endStream() {
   }
 }
 
-void MLCDynStream::receiveStreamRequest(const DynStreamSliceId &sliceId) {
+void MLCDynStream::recvCoreReq(const DynStreamSliceId &sliceId) {
   MLC_SLICE_DPRINTF(sliceId, "Receive request to %#x. Tail %lu.\n",
                     sliceId.vaddr, this->tailSliceIdx);
 
@@ -165,7 +165,7 @@ void MLCDynStream::receiveStreamRequest(const DynStreamSliceId &sliceId) {
   this->advanceStream();
 }
 
-void MLCDynStream::receiveStreamRequestHit(const DynStreamSliceId &sliceId) {
+void MLCDynStream::recvCoreReqHit(const DynStreamSliceId &sliceId) {
   MLC_SLICE_DPRINTF(sliceId, "Receive request hit to %#x.\n", sliceId.vaddr);
 
   auto slice = this->findSliceForCoreRequest(sliceId);

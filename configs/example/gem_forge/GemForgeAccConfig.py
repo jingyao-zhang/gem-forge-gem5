@@ -39,6 +39,8 @@ def initializeStreamEngine(options):
     se.streamEngineForceNoFlushPEB = options.gem_forge_stream_engine_force_no_flush_peb
     se.streamEngineEnableCoalesce = options.gem_forge_stream_engine_enable_coalesce
     se.streamEngineEnableMerge = options.gem_forge_stream_engine_enable_merge
+    se.elimNestStreamInstances = \
+        options.gem_forge_stream_engine_elim_nest_stream_instances
 
     se.streamEngineEnableFloat = options.gem_forge_stream_engine_enable_float
     se.streamEngineFloatPolicy = options.gem_forge_stream_engine_float_policy

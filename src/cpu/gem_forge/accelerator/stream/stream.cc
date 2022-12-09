@@ -1267,8 +1267,8 @@ void Stream::incrementOffloadedStepped() {
 }
 
 void Stream::dump() const {
-  inform("Stream %50s =============================\n",
-         this->getStreamName().c_str());
+  inform("Stream %50s DynS %d ==========================\n",
+         this->getStreamName().c_str(), this->dynamicStreams.size());
   for (const auto &dynS : this->dynamicStreams) {
     dynS.dump();
   }

@@ -31,6 +31,7 @@ public:
     const uint64_t seqNum;
     bool configExecuted = false;
     bool configCommitted = false;
+    bool canSkipToEnd = false;
 
     DynRegion(StaticRegion *_staticRegion, uint64_t _seqNum)
         : staticRegion(_staticRegion), seqNum(_seqNum) {}
@@ -163,6 +164,7 @@ public:
    * Util APIs.
    ******************************************************************/
   StaticRegion &getStaticRegion(const std::string &regionName);
+  StaticRegion &getStaticRegion(Stream *S);
   DynRegion &getDynRegion(const std::string &msg, InstSeqNum seqNum);
 
   void receiveOffloadedLoopBoundRet(const DynStreamId &dynStreamId,
