@@ -119,6 +119,10 @@ struct DynStream {
   StreamFloatPlan &getFloatPlan() { return this->floatPlan; }
   const StreamFloatPlan &getFloatPlan() const { return this->floatPlan; }
 
+  void dispatchStreamEnd(uint64_t seqNum);
+  void rewindStreamEnd(uint64_t seqNum);
+  void commitStreamEnd(uint64_t endSeqNum);
+
 private:
   // Whether the floating config is delayed until config committed.
   bool floatConfigDelayed = false;

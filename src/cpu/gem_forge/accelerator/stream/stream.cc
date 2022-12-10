@@ -370,72 +370,17 @@ bool Stream::isStreamConfigureExecuted(uint64_t seqNum) {
   return dynStream.configExecuted;
 }
 
-void Stream::dispatchStreamEnd(uint64_t seqNum) {
-  assert(this->isConfigured() && "Stream should be configured.");
-  for (auto &dynS : this->dynamicStreams) {
-    if (!dynS.endDispatched) {
-      dynS.endDispatched = true;
-      dynS.endSeqNum = seqNum;
+void Stream::releaseDynStream(uint64_t endSeqNum) {
+  for (auto iter = this->dynamicStreams.begin();
+       iter != this->dynamicStreams.end(); ++iter) {
+    auto &dynS = *iter;
+    if (dynS.endDispatched && dynS.endSeqNum == endSeqNum) {
+      this->dynamicStreams.erase(iter);
       return;
     }
   }
-  S_PANIC(this, "Failed to find ended DynStream.");
-}
 
-void Stream::rewindStreamEnd(uint64_t seqNum) {
-  // Searching backwards to rewind StreamEnd.
-  for (auto dynS = this->dynamicStreams.rbegin(),
-            end = this->dynamicStreams.rend();
-       dynS != end; ++dynS) {
-    if (dynS->endDispatched && dynS->endSeqNum == seqNum) {
-      dynS->endDispatched = false;
-      dynS->endSeqNum = 0;
-      return;
-    }
-  }
-  S_PANIC(this, "Failed to find ended DynStream to rewind.");
-}
-
-void Stream::commitStreamEnd(uint64_t seqNum) {
-  assert(!this->dynamicStreams.empty() &&
-         "Empty dynamicStreams for StreamEnd.");
-  auto &dynS = this->dynamicStreams.front();
-  assert(dynS.configExecuted && "End before config executed.");
-  assert(dynS.endDispatched && "End before end dispatched.");
-  assert(dynS.endSeqNum == seqNum && "Mismatch EndSeqNum.");
-
-  /**
-   * We need to release all unstepped elements.
-   */
-  if (dynS.stepSize != 0) {
-    DYN_S_PANIC(dynS.dynStreamId, "Commit StreamEnd with StepSize %d.",
-                dynS.stepSize);
-  }
-  if (dynS.allocSize != 0) {
-    DYN_S_PANIC(dynS.dynStreamId, "Commit StreamEnd with AllocSize %d.",
-                dynS.allocSize);
-  }
-
-  // Update stats of cycles.
-  auto endCycle = this->getCPUDelegator()->curCycle();
-  this->statistic.numCycle += endCycle - dynS.configCycle;
-
-  // Update float stats.
-  if (dynS.isFloatedToCache()) {
-    this->statistic.numFloated++;
-    this->se->numFloated++;
-    if (dynS.getFloatPlan().isFloatedToMem()) {
-      this->statistic.numFloatMem++;
-    }
-    if (dynS.isPseudoFloatedToCache()) {
-      this->statistic.numPseudoFloated++;
-    }
-  }
-
-  // Remember the formal params history.
-  this->recordAggregateHistory(dynS);
-
-  this->dynamicStreams.pop_front();
+  S_PANIC(this, "No DynS to release.");
 }
 
 void Stream::recordAggregateHistory(const DynStream &dynS) {

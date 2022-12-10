@@ -50,6 +50,11 @@ public:
       this->endDispatched = true;
       this->endSeqNum = endSeqNum;
     }
+    void rewindStreamEnd() {
+      assert(this->endDispatched);
+      this->endDispatched = false;
+      this->endSeqNum = 0;
+    }
 
     DynRegion(StaticRegion *_staticRegion, uint64_t _seqNum)
         : staticRegion(_staticRegion), seqNum(_seqNum) {}
@@ -271,6 +276,9 @@ private:
    * eliminated loop.
    */
   DynRegion *tryGetFirstAliveDynRegion(StaticRegion &staticRegion);
+  DynRegion &getFirstAliveDynRegion(StaticRegion &staticRegion);
+  DynRegion &getDynRegionByEndSeqNum(StaticRegion &staticRegion,
+                                     uint64_t endSeqNum);
 };
 
 #endif

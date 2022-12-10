@@ -65,59 +65,42 @@ bool StreamRegionController::canDispatchStreamEnd(const EndArgs &args) {
 }
 
 void StreamRegionController::dispatchStreamEnd(const EndArgs &args) {
+
   const auto &streamRegion = this->se->getStreamRegion(args.infoRelativePath);
-  const auto &endStreamInfos = streamRegion.streams();
 
   SE_DPRINTF("Dispatch StreamEnd for %s.\n", streamRegion.region());
   assert(this->canDispatchStreamEnd(args) &&
          "StreamEnd without unstepped elements.");
 
-  /**
-   * Dedup the coalesced stream ids.
-   */
-  std::unordered_set<Stream *> endedStreams;
-  for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
-       iter != end; ++iter) {
-    // Release in reverse order.
-    auto streamId = iter->id();
-    auto S = this->se->getStream(streamId);
-    if (endedStreams.count(S) != 0) {
-      continue;
-    }
-    endedStreams.insert(S);
+  auto &staticRegion = this->getStaticRegion(streamRegion.region());
+  auto &dynRegion = this->getFirstAliveDynRegion(staticRegion);
+
+  dynRegion.dispatchStreamEnd(args.seqNum);
+
+  for (auto S : staticRegion.streams) {
+    auto &dynS = S->getDynStream(dynRegion.seqNum);
 
     // 1. Step one element.
-    auto &dynS = S->getFirstAliveDynStream();
     if (!dynS.hasZeroTripCount()) {
       // Streams with 0 TripCount will not allocate the last element.
       dynS.stepElement(true /* isEnd */);
     }
 
     // 2. Mark the dynamicStream as ended.
-    S->dispatchStreamEnd(args.seqNum);
+    dynS.dispatchStreamEnd(args.seqNum);
   }
 }
 
 bool StreamRegionController::canExecuteStreamEnd(const EndArgs &args) {
   const auto &streamRegion = this->se->getStreamRegion(args.infoRelativePath);
-  const auto &endStreamInfos = streamRegion.streams();
 
   SE_DPRINTF("CanExecute StreamEnd for %s.\n", streamRegion.region());
-  /**
-   * Dedup the coalesced stream ids.
-   */
-  std::unordered_set<Stream *> endedStreams;
-  for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
-       iter != end; ++iter) {
-    // Release in reverse order.
-    auto streamId = iter->id();
-    auto S = this->se->getStream(streamId);
-    if (endedStreams.count(S) != 0) {
-      continue;
-    }
-    endedStreams.insert(S);
-    // Check for StreamAck. So far that's only floating store stream.
-    const auto &dynS = S->getDynStreamByEndSeqNum(args.seqNum);
+
+  auto &staticRegion = this->getStaticRegion(streamRegion.region());
+  auto &dynRegion = this->getDynRegionByEndSeqNum(staticRegion, args.seqNum);
+
+  for (auto S : staticRegion.streams) {
+    auto &dynS = S->getDynStream(dynRegion.seqNum);
     if (S->isStoreStream()) {
       if (!dynS.configExecuted || dynS.configSeqNum >= args.seqNum) {
         return false;
@@ -139,29 +122,21 @@ bool StreamRegionController::canExecuteStreamEnd(const EndArgs &args) {
 
 void StreamRegionController::rewindStreamEnd(const EndArgs &args) {
   const auto &streamRegion = this->se->getStreamRegion(args.infoRelativePath);
-  const auto &endStreamInfos = streamRegion.streams();
+
+  auto &staticRegion = this->getStaticRegion(streamRegion.region());
+  auto &dynRegion = this->getDynRegionByEndSeqNum(staticRegion, args.seqNum);
+
+  dynRegion.rewindStreamEnd();
 
   SE_DPRINTF("Rewind StreamEnd for %s.\n", streamRegion.region());
 
-  /**
-   * Dedup the coalesced stream ids.
-   */
-  std::unordered_set<Stream *> endedStreams;
-  for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
-       iter != end; ++iter) {
-    // Rewind in reverse order.
-    auto streamId = iter->id();
-    auto S = this->se->getStream(streamId);
-    if (endedStreams.count(S) != 0) {
-      continue;
-    }
-    endedStreams.insert(S);
+  for (auto S : staticRegion.streams) {
+    auto &dynS = S->getDynStream(dynRegion.seqNum);
 
     // 1. Restart the last dynamic stream.
-    S->rewindStreamEnd(args.seqNum);
+    dynS.rewindStreamEnd(args.seqNum);
 
     // 2. Unstep one element.
-    auto &dynS = S->getFirstAliveDynStream();
     if (!dynS.hasZeroTripCount()) {
       dynS.unstepElement();
     }
@@ -170,14 +145,12 @@ void StreamRegionController::rewindStreamEnd(const EndArgs &args) {
 
 bool StreamRegionController::canCommitStreamEnd(const EndArgs &args) {
   const auto &streamRegion = this->se->getStreamRegion(args.infoRelativePath);
-  const auto &endStreamInfos = streamRegion.streams();
-  const auto &staticStreamRegion = this->getStaticRegion(streamRegion.region());
+  auto &staticRegion = this->getStaticRegion(streamRegion.region());
 
-  for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
-       iter != end; ++iter) {
-    auto streamId = iter->id();
-    auto S = this->se->getStream(streamId);
-    const auto &dynS = S->getDynStreamByEndSeqNum(args.seqNum);
+  auto &dynRegion = this->getDynRegionByEndSeqNum(staticRegion, args.seqNum);
+
+  for (auto S : staticRegion.streams) {
+    auto &dynS = S->getDynStream(dynRegion.seqNum);
 
     if (dynS.hasZeroTripCount()) {
       // Streams with 0 TripCount does not have last element.
@@ -191,8 +164,7 @@ bool StreamRegionController::canCommitStreamEnd(const EndArgs &args) {
      */
     if (S->isLoopEliminated() && dynS.hasTotalTripCount()) {
       uint64_t endElemOffset =
-          staticStreamRegion.step.skipStepSecondLastElemStreams.count(S) ? 1
-                                                                         : 0;
+          staticRegion.step.skipStepSecondLastElemStreams.count(S) ? 1 : 0;
       if (endElementIdx + endElemOffset < dynS.getTotalTripCount()) {
         S_ELEMENT_DPRINTF(
             endElement,
@@ -270,9 +242,7 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
 
   SE_DPRINTF("Commit StreamEnd for %s.\n", streamRegion.region());
 
-  assert(!staticRegion.dynRegions.empty() && "Missing DynRegion.");
-
-  const auto &dynRegion = staticRegion.dynRegions.front();
+  auto &dynRegion = this->getDynRegionByEndSeqNum(staticRegion, args.seqNum);
   if (dynRegion.seqNum > args.seqNum) {
     /**
      * We allow the == case because in nested stream, it is still
@@ -289,9 +259,6 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
       staticRegion.dynRegions.size() - 1);
   this->checkRemainingNestRegions(dynRegion);
 
-  this->activeDynRegionMap.erase(dynRegion.seqNum);
-  staticRegion.dynRegions.pop_front();
-
   /**
    * Deduplicate the streams due to coalescing.
    * Releasing is again in two phases:
@@ -299,72 +266,63 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
    * 2. Release all dynamic streams.
    * This is to ensure that all dynamic streams are released at the same time.
    */
-  const auto &endStreamInfos = streamRegion.streams();
-  std::unordered_set<Stream *> endedStreams;
-  for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
-       iter != end; ++iter) {
-    // Release in reverse order.
-    auto streamId = iter->id();
-    auto S = this->se->getStream(streamId);
-    if (endedStreams.count(S) != 0) {
-      continue;
-    }
-    endedStreams.insert(S);
+  for (auto S : staticRegion.streams) {
+    auto &dynS = S->getDynStream(dynRegion.seqNum);
 
-    assert(!S->dynamicStreams.empty() &&
-           "Failed to find ended DynamicInstanceState.");
-    auto &endedDynS = S->dynamicStreams.front();
-    if (endedDynS.hasZeroTripCount()) {
+    // Release in reverse order.
+    if (dynS.hasZeroTripCount()) {
       // Streams with 0 TripCount does not have last element.
       continue;
     }
     /**
      * Release all unstepped element until there is none.
      */
-    while (this->se->releaseElementUnstepped(endedDynS)) {
+    while (this->se->releaseElementUnstepped(dynS)) {
     }
 
     /**
      * Release the last element we stepped at dispatch.
      */
-    this->se->releaseElementStepped(&endedDynS, true /* isEnd */,
+    this->se->releaseElementStepped(&dynS, true /* isEnd */,
                                     false /* doThrottle */);
   }
   std::vector<DynStream *> endedDynStreams;
-  for (auto S : endedStreams) {
-    assert(!S->dynamicStreams.empty() &&
-           "Failed to find ended DynamicInstanceState.");
-    auto &endedDynS = S->dynamicStreams.front();
-    endedDynStreams.push_back(&endedDynS);
+  for (auto S : staticRegion.streams) {
+    auto &dynS = S->getDynStream(dynRegion.seqNum);
+    endedDynStreams.push_back(&dynS);
 
     /**
      * Sanity check that we allocated the correct total number of elements.
      */
-    if (endedDynS.hasTotalTripCount()) {
+    if (dynS.hasTotalTripCount()) {
       uint64_t endElemOffset =
           staticRegion.step.skipStepSecondLastElemStreams.count(S) ? 1 : 0;
-      if (endedDynS.hasZeroTripCount()) {
-        if (endedDynS.FIFOIdx.entryIdx + endElemOffset != 0) {
+      if (dynS.hasZeroTripCount()) {
+        if (dynS.FIFOIdx.entryIdx + endElemOffset != 0) {
           DYN_S_PANIC(
-              endedDynS.dynStreamId,
+              dynS.dynStreamId,
               "ZeroTripCount should never allocate. NextElemIdx %llu + %llu.\n",
-              endedDynS.FIFOIdx.entryIdx, endElemOffset);
+              dynS.FIFOIdx.entryIdx, endElemOffset);
         }
       } else {
-        if (endedDynS.getTotalTripCount() + endedDynS.stepElemCount !=
-            endedDynS.FIFOIdx.entryIdx + endElemOffset) {
+        if (dynS.getTotalTripCount() + dynS.stepElemCount !=
+            dynS.FIFOIdx.entryIdx + endElemOffset) {
           DYN_S_PANIC(
-              endedDynS.dynStreamId,
-              "Commit End with TripCount %llu != NextElementIdx %llu + %llu.\n",
-              endedDynS.getTotalTripCount(), endedDynS.FIFOIdx.entryIdx,
-              endElemOffset);
+              dynS.dynStreamId,
+              "Commit End with TripCount %llu != NextElemIdx %llu + %llu.\n",
+              dynS.getTotalTripCount(), dynS.FIFOIdx.entryIdx, endElemOffset);
         }
       }
     }
   }
   this->se->floatController->endFloatStreams(endedDynStreams);
-  for (auto S : endedStreams) {
+  for (auto S : staticRegion.streams) {
     // Notify the stream.
-    S->commitStreamEnd(args.seqNum);
+    auto &dynS = S->getDynStream(dynRegion.seqNum);
+    dynS.commitStreamEnd(args.seqNum);
+    S->releaseDynStream(args.seqNum);
   }
+
+  this->activeDynRegionMap.erase(dynRegion.seqNum);
+  staticRegion.dynRegions.pop_front();
 }

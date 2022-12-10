@@ -329,3 +329,24 @@ StreamRegionController::tryGetFirstAliveDynRegion(StaticRegion &staticRegion) {
   }
   return nullptr;
 }
+
+StreamRegionController::DynRegion &
+StreamRegionController::getFirstAliveDynRegion(StaticRegion &staticRegion) {
+  for (auto &dynRegion : staticRegion.dynRegions) {
+    if (!dynRegion.endDispatched) {
+      return dynRegion;
+    }
+  }
+  SE_PANIC("No Alive DynRegion.");
+}
+
+StreamRegionController::DynRegion &
+StreamRegionController::getDynRegionByEndSeqNum(StaticRegion &staticRegion,
+                                                uint64_t endSeqNum) {
+  for (auto &dynRegion : staticRegion.dynRegions) {
+    if (dynRegion.endDispatched && dynRegion.endSeqNum == endSeqNum) {
+      return dynRegion;
+    }
+  }
+  SE_PANIC("No Ended DynRegion.");
+}

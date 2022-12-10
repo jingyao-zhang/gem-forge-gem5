@@ -75,6 +75,58 @@ DynStream::~DynStream() {
   this->stepped = nullptr;
 }
 
+void DynStream::dispatchStreamEnd(uint64_t seqNum) {
+  assert(!this->endDispatched && "DynS already ended.");
+  this->endDispatched = true;
+  this->endSeqNum = seqNum;
+}
+
+void DynStream::rewindStreamEnd(uint64_t seqNum) {
+  // Searching backwards to rewind StreamEnd.
+  assert(this->endDispatched && this->endSeqNum == seqNum &&
+         "Incorrect Ended DynS");
+  this->endDispatched = false;
+  this->endSeqNum = 0;
+}
+
+void DynStream::commitStreamEnd(uint64_t endSeqNum) {
+  assert(this->configExecuted && "End before config executed.");
+  assert(this->endDispatched && "End before end dispatched.");
+  assert(this->endSeqNum == endSeqNum && "Mismatch EndSeqNum.");
+
+  /**
+   * We need to release all unstepped elements.
+   */
+  if (this->stepSize != 0) {
+    DYN_S_PANIC(this->dynStreamId, "Commit StreamEnd with StepSize %d.",
+                this->stepSize);
+  }
+  if (this->allocSize != 0) {
+    DYN_S_PANIC(this->dynStreamId, "Commit StreamEnd with AllocSize %d.",
+                this->allocSize);
+  }
+
+  // Update stats of cycles.
+  auto endCycle = this->stream->getCPUDelegator()->curCycle();
+  auto &statistic = this->stream->statistic;
+  statistic.numCycle += endCycle - this->configCycle;
+
+  // Update float stats.
+  if (this->isFloatedToCache()) {
+    statistic.numFloated++;
+    this->se->numFloated++;
+    if (this->getFloatPlan().isFloatedToMem()) {
+      statistic.numFloatMem++;
+    }
+    if (this->isPseudoFloatedToCache()) {
+      statistic.numPseudoFloated++;
+    }
+  }
+
+  // Remember the formal params history.
+  this->stream->recordAggregateHistory(*this);
+}
+
 void DynStream::addBaseDynStreams() {
 
   for (const auto &edge : this->stream->baseEdges) {
