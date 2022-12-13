@@ -249,20 +249,30 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
       RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM6_0),
       RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM7_0),
   };
-  EXEC_FUNC_DPRINTF("Set up calling convention.\n");
+  EXEC_FUNC_DPRINTF("Set up calling convention. Params %d.\n", params.size());
   int intParamIdx = 0;
   int floatParamIdx = 0;
+
+  /**
+   * Set up the stack parameters.
+   */
+  Addr curFakeStackVAddr = ExecFuncContext::FAKE_STACK_TOP_VADDR;
+
   for (auto idx = 0; idx < params.size(); ++idx) {
     auto param = params.at(idx);
     auto type = this->func.args(idx).type();
     if (type == ::LLVM::TDG::DataType::INTEGER) {
-      if (intParamIdx == 6) {
-        panic("Too many IntArgs on ExecFunc %s.", this->func.name());
+      if (intParamIdx < 6) {
+        const auto &reg = intRegParams[intParamIdx];
+        execFuncXC.setIntRegOperand(reg, param.front());
+        EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
+      } else {
+        curFakeStackVAddr -= 8;
+        execFuncXC.storeFakeStack(curFakeStackVAddr, param.front());
+        EXEC_FUNC_DPRINTF("Arg %d Stack %#x %s.\n", idx, curFakeStackVAddr,
+                          param.print(type));
       }
-      const auto &reg = intRegParams[intParamIdx];
       intParamIdx++;
-      execFuncXC.setIntRegOperand(reg, param.front());
-      EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
     } else {
       if (floatParamIdx == 8) {
         panic("Too many FloatArgs on ExecFunc %s.", this->func.name());
@@ -277,6 +287,12 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
       }
     }
   }
+
+  // Subtract the final fake return address from rsp.
+  curFakeStackVAddr -= 8;
+
+  RegId RSP(RegClass::IntRegClass, IntRegIndex::INTREG_RSP);
+  execFuncXC.setIntRegOperand(RSP, curFakeStackVAddr);
 
   // Set up the virt proxy.
   execFuncXC.setVirtProxy(&this->tc->getVirtProxy());

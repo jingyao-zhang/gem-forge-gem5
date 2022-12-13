@@ -254,6 +254,45 @@ public:
    * @{
    * @name Memory Interface
    */
+
+  /**
+   * Special case for the stack. We maintain a fake stack and
+   * intercept all accesses to the stack addresses here.
+   * For now just keep a extremly small stack.
+   */
+  static constexpr int FAKE_STACK_SIZE = 1024;
+  static constexpr int FAKE_STACK_RED_ZONE_SIZE = 1024;
+  static constexpr Addr FAKE_STACK_TOP_VADDR = 0x7fffffffff00;
+  static constexpr Addr FAKE_STACK_BASE_VADDR =
+      FAKE_STACK_TOP_VADDR - FAKE_STACK_SIZE;
+  static constexpr Addr FAKE_STACK_BOTTOM_VADDR =
+      FAKE_STACK_BASE_VADDR - FAKE_STACK_RED_ZONE_SIZE;
+  char fakeStack[FAKE_STACK_SIZE];
+  bool isFakeStackVAddr(Addr vaddr) {
+    return vaddr < FAKE_STACK_TOP_VADDR && vaddr >= FAKE_STACK_BOTTOM_VADDR;
+  }
+  bool isValidFakeStackVAddr(Addr vaddr) {
+    return vaddr < FAKE_STACK_TOP_VADDR && vaddr >= FAKE_STACK_BASE_VADDR;
+  }
+  template <typename T> T *getFakeStackPtr(Addr vaddr) {
+    assert(isValidFakeStackVAddr(vaddr) && "Invalid FakeStackVAddr.");
+    char *ret = &fakeStack[vaddr - FAKE_STACK_BASE_VADDR];
+    return reinterpret_cast<T *>(ret);
+  }
+  template <typename T> void storeFakeStack(Addr vaddr, T value) {
+    auto ptr = getFakeStackPtr<T>(vaddr);
+    *ptr = value;
+  }
+  template <typename T> T readFakeStack(Addr vaddr) {
+    return *getFakeStackPtr<T>(vaddr);
+  }
+  void readFakeStack(Addr vaddr, uint8_t *data, unsigned int size) {
+    auto ptr = getFakeStackPtr<uint8_t>(vaddr);
+    for (int i = 0; i < size; ++i) {
+      data[i] = ptr[i];
+    }
+  }
+
   /**
    * Perform an atomic memory read operation.  Must be overridden
    * for exec contexts that support atomic memory mode.  Not pure
@@ -265,6 +304,10 @@ public:
                 Request::Flags flags,
                 const std::vector<bool> &byteEnable = std::vector<bool>()) {
     assert(this->virtProxy && "No virt port proxy.");
+    if (this->isFakeStackVAddr(addr)) {
+      this->readFakeStack(addr, data, size);
+      return NoFault;
+    }
     if (!this->virtProxy->tryReadBlob(addr, data, size)) {
       panic("ExecContext::readMem() failed.\n");
     }
