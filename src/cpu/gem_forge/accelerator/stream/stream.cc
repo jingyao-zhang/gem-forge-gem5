@@ -370,11 +370,11 @@ bool Stream::isStreamConfigureExecuted(uint64_t seqNum) {
   return dynStream.configExecuted;
 }
 
-void Stream::releaseDynStream(uint64_t endSeqNum) {
+void Stream::releaseDynStream(uint64_t configSeqNum) {
   for (auto iter = this->dynamicStreams.begin();
        iter != this->dynamicStreams.end(); ++iter) {
     auto &dynS = *iter;
-    if (dynS.endDispatched && dynS.endSeqNum == endSeqNum) {
+    if (dynS.endDispatched && dynS.configSeqNum == configSeqNum) {
       this->dynamicStreams.erase(iter);
       return;
     }

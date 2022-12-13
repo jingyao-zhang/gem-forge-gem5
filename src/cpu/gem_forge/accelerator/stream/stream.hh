@@ -358,7 +358,7 @@ public:
   void rewindStreamConfig(uint64_t seqNum);
   bool isStreamConfigureExecuted(uint64_t seqNum);
 
-  void releaseDynStream(uint64_t endSeqNum);
+  void releaseDynStream(uint64_t configSeqNum);
 
   /***********************************************************************
    * API to manage the elements of this stream.

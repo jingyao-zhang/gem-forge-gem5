@@ -18,14 +18,19 @@ bool StreamRegionController::canDispatchStreamEnd(const EndArgs &args) {
   const auto &streamRegion = this->se->getStreamRegion(args.infoRelativePath);
   auto &staticRegion = this->getStaticRegion(streamRegion.region());
 
-  auto dynRegion = this->tryGetFirstAliveDynRegion(staticRegion);
+  auto dynRegion = this->tryGetNextEndDynRegion(staticRegion);
   if (!dynRegion) {
     // It's possible that the Stream has not configured yet (e.g., Nest).
     return false;
   }
+  return this->canDispatchStreamEndImpl(staticRegion, *dynRegion);
+}
+
+bool StreamRegionController::canDispatchStreamEndImpl(
+    StaticRegion &staticRegion, DynRegion &dynRegion) {
 
   for (auto S : staticRegion.streams) {
-    auto &dynS = S->getDynStream(dynRegion->seqNum);
+    auto &dynS = S->getDynStream(dynRegion.seqNum);
 
     if (dynS.hasZeroTripCount()) {
       // Streams with 0 TripCount will not allocate the last element.
@@ -73,9 +78,16 @@ void StreamRegionController::dispatchStreamEnd(const EndArgs &args) {
          "StreamEnd without unstepped elements.");
 
   auto &staticRegion = this->getStaticRegion(streamRegion.region());
-  auto &dynRegion = this->getFirstAliveDynRegion(staticRegion);
+  auto &dynRegion = this->getNextEndDynRegion(staticRegion);
 
-  dynRegion.dispatchStreamEnd(args.seqNum);
+  auto regionEndSeqNum = args.seqNum;
+  if (this->se->myParams->enableO3ElimStreamEnd) {
+    // Introduce one level of indirection between InstEndSeqNum <->
+    // RegionEndSeqNum.
+    regionEndSeqNum = dynRegion.seqNum + 1;
+  }
+  this->recordEndRegionSeqNum(args.seqNum, regionEndSeqNum);
+  dynRegion.dispatchStreamEnd(regionEndSeqNum);
 
   for (auto S : staticRegion.streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
@@ -87,7 +99,7 @@ void StreamRegionController::dispatchStreamEnd(const EndArgs &args) {
     }
 
     // 2. Mark the dynamicStream as ended.
-    dynS.dispatchStreamEnd(args.seqNum);
+    dynS.dispatchStreamEnd(regionEndSeqNum);
   }
 }
 
@@ -99,10 +111,15 @@ bool StreamRegionController::canExecuteStreamEnd(const EndArgs &args) {
   auto &staticRegion = this->getStaticRegion(streamRegion.region());
   auto &dynRegion = this->getDynRegionByEndSeqNum(staticRegion, args.seqNum);
 
+  return this->canExecuteStreamEndImpl(staticRegion, dynRegion);
+}
+
+bool StreamRegionController::canExecuteStreamEndImpl(StaticRegion &staticRegion,
+                                                     DynRegion &dynRegion) {
   for (auto S : staticRegion.streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
     if (S->isStoreStream()) {
-      if (!dynS.configExecuted || dynS.configSeqNum >= args.seqNum) {
+      if (!dynS.configExecuted) {
         return false;
       }
       if (dynS.isFloatedToCache() &&
@@ -126,6 +143,7 @@ void StreamRegionController::rewindStreamEnd(const EndArgs &args) {
   auto &staticRegion = this->getStaticRegion(streamRegion.region());
   auto &dynRegion = this->getDynRegionByEndSeqNum(staticRegion, args.seqNum);
 
+  this->eraseEndRegionSeqNum(args.seqNum);
   dynRegion.rewindStreamEnd();
 
   SE_DPRINTF("Rewind StreamEnd for %s.\n", streamRegion.region());
@@ -134,7 +152,7 @@ void StreamRegionController::rewindStreamEnd(const EndArgs &args) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
 
     // 1. Restart the last dynamic stream.
-    dynS.rewindStreamEnd(args.seqNum);
+    dynS.rewindStreamEnd();
 
     // 2. Unstep one element.
     if (!dynS.hasZeroTripCount()) {
@@ -149,6 +167,11 @@ bool StreamRegionController::canCommitStreamEnd(const EndArgs &args) {
 
   auto &dynRegion = this->getDynRegionByEndSeqNum(staticRegion, args.seqNum);
 
+  return this->canCommitStreamEndImpl(staticRegion, dynRegion);
+}
+
+bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
+                                                    DynRegion &dynRegion) {
   for (auto S : staticRegion.streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
 
@@ -243,14 +266,14 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
   SE_DPRINTF("Commit StreamEnd for %s.\n", streamRegion.region());
 
   auto &dynRegion = this->getDynRegionByEndSeqNum(staticRegion, args.seqNum);
-  if (dynRegion.seqNum > args.seqNum) {
+  if (dynRegion.seqNum > dynRegion.endSeqNum) {
     /**
      * We allow the == case because in nested stream, it is still
      * possible that InnerStreamEnd comes right after OuterStreamConfig,
      * leaving there no space to insert the InnerStreamConfig.
      */
     SE_PANIC("[Region] %s End (%lu) before Configure (%lu).\n",
-             streamRegion.region(), args.seqNum, dynRegion.seqNum);
+             streamRegion.region(), dynRegion.endSeqNum, dynRegion.seqNum);
   }
 
   SE_DPRINTF(
@@ -319,10 +342,96 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
   for (auto S : staticRegion.streams) {
     // Notify the stream.
     auto &dynS = S->getDynStream(dynRegion.seqNum);
-    dynS.commitStreamEnd(args.seqNum);
-    S->releaseDynStream(args.seqNum);
+    dynS.commitStreamEnd();
+    S->releaseDynStream(dynS.configSeqNum);
   }
 
   this->activeDynRegionMap.erase(dynRegion.seqNum);
-  staticRegion.dynRegions.pop_front();
+  bool erasedDynRegion = false;
+  for (auto iter = staticRegion.dynRegions.begin();
+       iter != staticRegion.dynRegions.end(); ++iter) {
+    if (iter->seqNum == dynRegion.seqNum) {
+      erasedDynRegion = true;
+      staticRegion.dynRegions.erase(iter);
+      break;
+    }
+  }
+  assert(erasedDynRegion && "Failed to erase DynRegion.");
+}
+
+void StreamRegionController::recordEndRegionSeqNum(uint64_t instEndSeqNum,
+                                                   uint64_t regionEndSeqNum) {
+  assert(this->instToRegionEndSeqNumMap.emplace(instEndSeqNum, regionEndSeqNum)
+             .second &&
+         "Already Inserted InstEndSeqNum.");
+}
+
+void StreamRegionController::eraseEndRegionSeqNum(uint64_t instEndSeqNum) {
+  assert(this->instToRegionEndSeqNumMap.count(instEndSeqNum) &&
+         "Missing InstEndSeqNum");
+  this->instToRegionEndSeqNumMap.erase(instEndSeqNum);
+}
+
+StreamRegionController::DynRegion *
+StreamRegionController::tryGetFirstAliveDynRegion(StaticRegion &staticRegion) {
+  for (auto &dynRegion : staticRegion.dynRegions) {
+    if (!dynRegion.endDispatched) {
+      return &dynRegion;
+    }
+  }
+  return nullptr;
+}
+
+StreamRegionController::DynRegion &
+StreamRegionController::getFirstAliveDynRegion(StaticRegion &staticRegion) {
+  for (auto &dynRegion : staticRegion.dynRegions) {
+    if (!dynRegion.endDispatched) {
+      return dynRegion;
+    }
+  }
+  SE_PANIC("No Alive DynRegion.");
+}
+
+StreamRegionController::DynRegion *
+StreamRegionController::tryGetNextEndDynRegion(StaticRegion &staticRegion) {
+  if (!this->se->myParams->enableO3ElimStreamEnd) {
+    // Default in-order StreamEnd.
+    return this->tryGetFirstAliveDynRegion(staticRegion);
+  }
+  /**
+   * For out-of-order StreamEnd, we try to find one that can
+   * dispatch/execute/commit.
+   */
+  for (auto &dynRegion : staticRegion.dynRegions) {
+    if (dynRegion.endDispatched) {
+      continue;
+    }
+    if (!this->canDispatchStreamEndImpl(staticRegion, dynRegion) ||
+        !this->canExecuteStreamEndImpl(staticRegion, dynRegion) ||
+        !this->canCommitStreamEndImpl(staticRegion, dynRegion)) {
+      continue;
+    }
+    return &dynRegion;
+  }
+  return nullptr;
+}
+
+StreamRegionController::DynRegion &
+StreamRegionController::getNextEndDynRegion(StaticRegion &staticRegion) {
+  if (auto dynRegion = this->tryGetNextEndDynRegion(staticRegion)) {
+    return *dynRegion;
+  }
+  SE_PANIC("No EndDynRegion.");
+}
+
+StreamRegionController::DynRegion &
+StreamRegionController::getDynRegionByEndSeqNum(StaticRegion &staticRegion,
+                                                uint64_t instEndSeqNum) {
+  auto regionEndSeqNum = this->instToRegionEndSeqNumMap.at(instEndSeqNum);
+  for (auto &dynRegion : staticRegion.dynRegions) {
+    if (dynRegion.endDispatched && dynRegion.endSeqNum == regionEndSeqNum) {
+      return dynRegion;
+    }
+  }
+  SE_PANIC("No Ended DynRegion.");
 }

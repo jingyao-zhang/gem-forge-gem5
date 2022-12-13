@@ -81,18 +81,14 @@ void DynStream::dispatchStreamEnd(uint64_t seqNum) {
   this->endSeqNum = seqNum;
 }
 
-void DynStream::rewindStreamEnd(uint64_t seqNum) {
-  // Searching backwards to rewind StreamEnd.
-  assert(this->endDispatched && this->endSeqNum == seqNum &&
-         "Incorrect Ended DynS");
+void DynStream::rewindStreamEnd() {
   this->endDispatched = false;
   this->endSeqNum = 0;
 }
 
-void DynStream::commitStreamEnd(uint64_t endSeqNum) {
+void DynStream::commitStreamEnd() {
   assert(this->configExecuted && "End before config executed.");
   assert(this->endDispatched && "End before end dispatched.");
-  assert(this->endSeqNum == endSeqNum && "Mismatch EndSeqNum.");
 
   /**
    * We need to release all unstepped elements.

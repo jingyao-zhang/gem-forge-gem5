@@ -272,13 +272,31 @@ private:
   };
 
   /**
+   * Record the mapping from StreamEnd's SeqNum to DynRegion's EndSeqNum.
+   * When OOO StreamEnd is enabled, they may not be matched.
+   */
+  std::map<uint64_t, uint64_t> instToRegionEndSeqNumMap;
+  void recordEndRegionSeqNum(uint64_t instEndSeqNum, uint64_t regionEndSeqNum);
+  void eraseEndRegionSeqNum(uint64_t instEndSeqNum);
+
+  /**
    * Helper function to manage StreamEnd and enable out-of-order StreamEnd for
    * eliminated loop.
    */
   DynRegion *tryGetFirstAliveDynRegion(StaticRegion &staticRegion);
   DynRegion &getFirstAliveDynRegion(StaticRegion &staticRegion);
+
+  DynRegion *tryGetNextEndDynRegion(StaticRegion &staticRegion);
+  DynRegion &getNextEndDynRegion(StaticRegion &staticRegion);
+
   DynRegion &getDynRegionByEndSeqNum(StaticRegion &staticRegion,
-                                     uint64_t endSeqNum);
+                                     uint64_t instEndSeqNum);
+
+  bool canDispatchStreamEndImpl(StaticRegion &staticRegion,
+                                DynRegion &dynRegion);
+  bool canExecuteStreamEndImpl(StaticRegion &staticRegion,
+                               DynRegion &dynRegion);
+  bool canCommitStreamEndImpl(StaticRegion &staticRegion, DynRegion &dynRegion);
 };
 
 #endif

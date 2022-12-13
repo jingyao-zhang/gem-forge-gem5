@@ -120,8 +120,8 @@ struct DynStream {
   const StreamFloatPlan &getFloatPlan() const { return this->floatPlan; }
 
   void dispatchStreamEnd(uint64_t seqNum);
-  void rewindStreamEnd(uint64_t seqNum);
-  void commitStreamEnd(uint64_t endSeqNum);
+  void rewindStreamEnd();
+  void commitStreamEnd();
 
 private:
   // Whether the floating config is delayed until config committed.
