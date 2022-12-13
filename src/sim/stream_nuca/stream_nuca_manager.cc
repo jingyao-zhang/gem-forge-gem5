@@ -576,8 +576,10 @@ StreamNUCAManager::IndirectBoxHops StreamNUCAManager::computeIndirectBoxHops(
             region.name, region.elementSize, indField.offset, indField.size);
     }
     if (index < 0 || index >= alignToRegion.numElement) {
-      panic("[StreamNUCA] %s InvalidIndex %d not in %s NumElement %d.",
-            region.name, index, alignToRegion.name, alignToRegion.numElement);
+      panic("[StreamNUCA] %s InvalidIndex Box %d-%d Addr %#x/%#x %d not in %s "
+            "NumElement %d.",
+            region.name, boxIdx, i, boxVAddr, boxPAddr, index,
+            alignToRegion.name, alignToRegion.numElement);
     }
     auto alignToVAddr = alignToRegion.vaddr + index * alignToRegion.elementSize;
     auto alignToPAddr = this->translate(alignToVAddr);
