@@ -256,7 +256,7 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
   /**
    * Set up the stack parameters.
    */
-  Addr curFakeStackVAddr = ExecFuncContext::FAKE_STACK_TOP_VADDR;
+  std::vector<RegVal> stackArgs;
 
   for (auto idx = 0; idx < params.size(); ++idx) {
     auto param = params.at(idx);
@@ -267,10 +267,8 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
         execFuncXC.setIntRegOperand(reg, param.front());
         EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
       } else {
-        curFakeStackVAddr -= 8;
-        execFuncXC.storeFakeStack(curFakeStackVAddr, param.front());
-        EXEC_FUNC_DPRINTF("Arg %d Stack %#x %s.\n", idx, curFakeStackVAddr,
-                          param.print(type));
+        stackArgs.push_back(param.front());
+        EXEC_FUNC_DPRINTF("Arg %d Stack %s.\n", idx, param.print(type));
       }
       intParamIdx++;
     } else {
@@ -286,6 +284,14 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
         EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
       }
     }
+  }
+
+  // We need to push arguments reversely.
+  Addr curFakeStackVAddr = ExecFuncContext::FAKE_STACK_TOP_VADDR;
+  for (int i = 0; i < stackArgs.size(); ++i) {
+    const auto &arg = stackArgs[stackArgs.size() - 1 - i];
+    curFakeStackVAddr -= 8;
+    execFuncXC.storeFakeStack(curFakeStackVAddr, arg);
   }
 
   // Subtract the final fake return address from rsp.
