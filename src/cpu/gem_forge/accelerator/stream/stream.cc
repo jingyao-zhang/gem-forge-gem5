@@ -163,8 +163,23 @@ void Stream::addBaseStream(StreamDepEdge::TypeE type, bool isInnerLoop,
       baseS->hasBackDepReductionStream = true;
     }
   } else {
-    STREAM_PANIC("Unkown StreamEdgeType %d.", type);
+    STREAM_PANIC("Unkown StreamEdgeType %s.", type);
   }
+}
+
+void Stream::addPredBaseStream(bool predValue, bool isInnerLoop,
+                               StaticId baseId, StaticId depId, Stream *baseS) {
+  const auto type = StreamDepEdge::TypeE::Pred;
+  if (isInnerLoop) {
+    this->innerLoopBaseEdges.emplace_back(type, depId, baseId, baseS,
+                                          predValue);
+    baseS->innerLoopDepEdges.emplace_back(type, baseId, depId, this, predValue);
+  } else {
+    this->baseEdges.emplace_back(type, depId, baseId, baseS, predValue);
+    baseS->depEdges.emplace_back(type, baseId, depId, this, predValue);
+  }
+  this->predBaseStreams.insert(baseS);
+  baseS->predDepStreams.insert(this);
 }
 
 void Stream::addBaseStepStream(Stream *baseStepStream) {

@@ -278,14 +278,18 @@ public:
     const StaticId fromStaticId = DynStreamId::InvalidStaticStreamId;
     const StaticId toStaticId = DynStreamId::InvalidStaticStreamId;
     Stream *const toStream = nullptr;
+    // Only used for PredEdge.
+    const bool predValue = false;
     StreamDepEdge(TypeE _type, StaticId _fromId, StaticId _toId,
-                  Stream *_toStream)
+                  Stream *_toStream, bool _predValue = false)
         : type(_type), fromStaticId(_fromId), toStaticId(_toId),
-          toStream(_toStream) {}
+          toStream(_toStream), predValue(_predValue) {}
   };
   using StreamEdges = std::vector<StreamDepEdge>;
   void addBaseStream(StreamDepEdge::TypeE type, bool isInnerLoop,
                      StaticId baseId, StaticId depId, Stream *baseS);
+  void addPredBaseStream(bool predValue, bool isInnerLoop, StaticId baseId,
+                         StaticId depId, Stream *baseS);
 
   StreamEdges baseEdges;
   StreamEdges depEdges;
@@ -295,6 +299,9 @@ public:
 
   StreamSet valueBaseStreams;
   StreamSet valueDepStreams;
+
+  StreamSet predBaseStreams;
+  StreamSet predDepStreams;
 
   /**
    * Back edge dependence on previous iteration.

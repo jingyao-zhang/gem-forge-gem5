@@ -261,6 +261,15 @@ void Stream::initializeBaseStreams() {
                           baseId.id(), info.id(), baseS);
     }
 
+    // Update the predicate information.
+    for (int i = 0; i < info.static_info().predicated_streams_size(); ++i) {
+      const auto &predInfo = info.static_info().predicated_streams(i);
+      auto predS = this->se->getStream(predInfo.id().id());
+      assert(predS && "Missing PredS.");
+      predS->addPredBaseStream(predInfo.pred_true(), false /* isInnerLoop */,
+                               info.id(), predInfo.id().id(), this);
+    }
+
     // Reduction stream always has myself as the back base stream.
     if (this->isReduction()) {
       this->addBaseStream(StreamDepEdge::TypeE::Back, false /* isInnerLoop */,

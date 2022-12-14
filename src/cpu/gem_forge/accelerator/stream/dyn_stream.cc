@@ -18,6 +18,7 @@ const char *DynStream::StreamDepEdge::typeToString(const TypeE &type) {
     Case(Addr);
     Case(Value);
     Case(Back);
+    Case(Pred);
 #undef Case
   default:
     assert(false && "Invalid StreamDepEdgeType.");
@@ -142,7 +143,8 @@ void DynStream::addBaseDynStreams() {
 
     switch (edge.type) {
     case StreamDepEdge::TypeE::Addr:
-    case StreamDepEdge::TypeE::Value: {
+    case StreamDepEdge::TypeE::Value:
+    case StreamDepEdge::TypeE::Pred: {
       /**
        * The reuse count is delayed as StreamConfig has not executed,
        * and we don't know the trip count yet.
@@ -170,7 +172,7 @@ void DynStream::addBaseDynStreams() {
       break;
     }
     default: {
-      DYN_S_PANIC(this->dynStreamId, "Illegal EdgeType %d.", edge.type);
+      DYN_S_PANIC(this->dynStreamId, "Illegal EdgeType %s.", edge.type);
     }
     }
   }

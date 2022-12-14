@@ -235,7 +235,7 @@ public:
    * 3. Reuse count of the base element.
    */
   struct StreamDepEdge {
-    enum TypeE { Addr, Value, Back };
+    enum TypeE { Addr, Value, Back, Pred };
     static const char *typeToString(const TypeE &type);
     const TypeE type = Addr;
     const StaticId baseStaticId = DynStreamId::InvalidStaticStreamId;
@@ -254,6 +254,7 @@ public:
     bool isAddrEdge() const { return this->type == TypeE::Addr; }
     bool isValueEdge() const { return this->type == TypeE::Value; }
     bool isBackEdge() const { return this->type == TypeE::Back; }
+    bool isPredEdge() const { return this->type == TypeE::Pred; }
     uint64_t getBaseElemIdx(uint64_t elemIdx) const;
   };
   using StreamEdges = std::vector<StreamDepEdge>;

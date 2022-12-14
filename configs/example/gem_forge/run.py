@@ -246,9 +246,9 @@ parser.add_option("--gem-forge-stream-atomic-lock-type", type="choice", default=
 parser.add_option("--gem-forge-enable-stream-float-indirect-reduction", action="store_true",
                   default="False",
                   help="Enable floating indirect reduction stream.")
-parser.add_option("--gem-forge-enable-stream-float-two-level-indirect-store-compute",
+parser.add_option("--gem-forge-enable-stream-float-multi-level-indirect-store-compute",
                   action="store_true", default="False",
-                  help="Enable floating two-level indirect store compute stream.")
+                  help="Enable floating multi-level indirect store compute stream.")
 parser.add_option("--gem-forge-stream-engine-llc-neighbor-stream-threshold", action="store",
                   type="int", default="0",
                   help="# of streams threshold to delay migration to neighbor LLC SE. 0 to disable.")
