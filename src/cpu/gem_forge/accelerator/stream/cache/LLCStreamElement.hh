@@ -274,9 +274,24 @@ private:
   LLCStreamElementPtr prevReduceElem = nullptr;
 
 public:
+  bool predValue = false;
+  bool predValueReady = false;
+  bool isPredValueReady() const { return this->predValueReady; }
+  bool getPredValue() const {
+    assert(this->isPredValueReady());
+    return this->predValue;
+  }
+  void setPredValue(bool predValue) {
+    assert(!this->isPredValueReady());
+    this->predValueReady = true;
+    this->predValue = predValue;
+  }
+
+public:
   /**
    * Used to remember the IndirectAtomicCompute slice id.
-   * TODO: This is a pure hack. We can easily reconstruct the slice id from the
+   * TODO: This is a pure hack. We can easily reconstruct the slice id from
+   * the
    * TODO: indirect element.
    */
   DynStreamSliceId indirectAtomicSliceId;

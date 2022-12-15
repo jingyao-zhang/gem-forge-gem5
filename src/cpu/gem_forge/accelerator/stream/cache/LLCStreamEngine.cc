@@ -28,6 +28,7 @@
 #include "debug/LLCRubyStreamReduce.hh"
 #include "debug/LLCRubyStreamStore.hh"
 #include "debug/LLCStreamPUM.hh"
+#include "debug/LLCStreamPredicate.hh"
 #include "debug/StreamRangeSync.hh"
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
@@ -398,14 +399,13 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
     this->reuseBuffer->addLine(sliceId, paddrLine, dataBlock);
   }
 
-  bool needIndirect =
-      !(dynS->getIndStreams().empty() && dynS->predicatedStreams.empty());
+  bool needIndirect = !dynS->getIndStreams().empty();
   bool needUpdate = S->isUpdateStream() || S->isAtomicStream();
   bool needSendTo = !(dynS->sendToEdges.empty());
 
   LLC_SLICE_DPRINTF(sliceId,
-                    "Received StreamData, InflyRequests %d, NeedIndirect %d, "
-                    "NeedUpdate %d NeedSendTo %d StoreBlock %s.\n",
+                    "Recv Data, InflyReqs %d, NeedIndirect %d, NeedUpdate %d "
+                    "NeedSendTo %d StoreBlock %s.\n",
                     dynS->inflyRequests, needIndirect, needUpdate, needSendTo,
                     storeValueBlock);
 
@@ -418,17 +418,15 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
     return;
   }
 
-  // Construct all the element data (except for StoreStream).
-  if (!S->isStoreComputeStream()) {
+  /**
+   * Construct the ElementValue except for Store/AtomicComputeS.
+   * AtomicComputeS's value will be set in triggerAtomic.
+   */
+  if (!S->isStoreComputeStream() && !S->isAtomicComputeStream()) {
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
       auto elem = dynS->getElemPanic(idx, "RecvElementData");
-      if (elem->hasFirstIndirectAtomicReqSeen()) {
-        // This is just the second request for IndirectAtomic.
-        // No need to extract data.
-        continue;
-      }
       if (elem->isReady()) {
-        LLC_SLICE_PANIC(sliceId, "Elements already ready.");
+        LLC_SLICE_PANIC(sliceId, "Elem already ready.");
       }
       elem->extractElementDataFromSlice(dynS->getStaticS()->getCPUDelegator(),
                                         sliceId, dataBlock);
@@ -490,6 +488,11 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
 
   // Evaluate LoopBound.
   dynS->evaluateLoopBound(this);
+
+  // Evaluate Predicate.
+  for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
+    dynS->evaluatePredication(this, idx);
+  }
 
   if (!dynS->getIndStreams().empty()) {
     for (auto &idxElem : dynS->idxToElementMap) {
@@ -728,13 +731,10 @@ bool LLCStreamEngine::canMigrateStream(LLCDynStream *dynS) const {
       return false;
     }
     /**
-     * ! A hack to delay migrate if there is waitingPredicatedElements for any
+     * ! A hack to delay migrate if there is reduction/ptr-chase for any
      * ! indirect stream.
      */
     for (auto IS : dynS->getIndStreams()) {
-      if (!IS->waitingPredicatedElements.empty()) {
-        return false;
-      }
       if (IS->getStaticS()->isReduction() ||
           IS->getStaticS()->isPointerChaseIndVar()) {
         // We wait for the reduction element to be done.
@@ -3089,19 +3089,31 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
 
   /**
    * Check if the stream has predication.
+   * TODO: For now we always assume predicated on.
    */
-  assert(!IS->isPredicated() && "Disable predication for now.");
-  // Not predicated, add to readyElements.
-  if (IS->baseStream->baseStream) {
-    // The only type of two-level indirection is
-    // Reduction/StoreCompute.
-    auto ISS = IS->getStaticS();
-    if (!ISS->isReduction() && !ISS->isStoreComputeStream()) {
-      LLC_S_PANIC(IS->getDynStrandId(),
-                  "Does not support Two-Level Indirection other than "
-                  "Reduction/StoreCompute.");
+  if (IS->isPredicated()) {
+    // The PredBaseElem should be in our base elem.
+    bool predOn = false;
+    for (const auto &baseElem : indElem->baseElements) {
+      if (baseElem->strandId.dynStreamId != IS->getPredBaseStreamId()) {
+        continue;
+      }
+      if (!baseElem->isPredValueReady()) {
+        LLC_ELEMENT_PANIC(indElem, "[LLCPred] PredValue not ready.");
+      }
+      LLC_ELEMENT_DPRINTF_(LLCStreamPredicate, indElem,
+                           "[LLCPred] Got %d Expected %d.\n",
+                           baseElem->getPredValue(), IS->getPredValue());
+      predOn = (baseElem->getPredValue() == IS->getPredValue());
+      break;
+    }
+    if (!predOn) {
+      LLC_ELEMENT_PANIC(indElem,
+                        "[LLCPred] Predicated off is not supported yet.");
     }
   }
+
+  // Not predicated, add to readyElements.
   LLC_ELEMENT_DPRINTF(indElem, "Check if BaseElemReady %d.\n",
                       indElem->areBaseElemsReady());
   if (indElem->areBaseElemsReady()) {
@@ -3118,7 +3130,7 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
     }
   } else {
     for (const auto &baseE : indElem->baseElements) {
-      LLC_ELEMENT_DPRINTF(indElem, "BaseElements Ready %d %s %llu.\n",
+      LLC_ELEMENT_DPRINTF(indElem, "BaseElems Ready %d %s %llu.\n",
                           baseE->isReady(), baseE->strandId, baseE->idx);
     }
   }
@@ -3126,7 +3138,7 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
 
 void LLCStreamEngine::triggerIndElems(LLCDynStreamPtr stream,
                                       LLCStreamElementPtr elem) {
-  if (stream->getIndStreams().empty() && stream->predicatedStreams.empty()) {
+  if (stream->getIndStreams().empty()) {
     // There is no stream dependent on my data.
     return;
   }
@@ -3165,10 +3177,6 @@ void LLCStreamEngine::triggerIndElems(LLCDynStreamPtr stream,
       this->triggerIndElem(IS, indElemIdx);
     }
   }
-
-  assert(!stream->configData->predCallback && "Disable predication for now.");
-  assert(stream->waitingPredicatedElements.empty() &&
-         "No predCallback for predicated elements.");
 }
 
 void LLCStreamEngine::triggerUpdate(LLCDynStreamPtr dynS,
@@ -3255,7 +3263,7 @@ void LLCStreamEngine::triggerUpdate(LLCDynStreamPtr dynS,
 }
 
 void LLCStreamEngine::triggerAtomic(LLCDynStreamPtr dynS,
-                                    LLCStreamElementPtr element,
+                                    LLCStreamElementPtr elem,
                                     const DynStreamSliceId &sliceId,
                                     DataBlock &loadValueBlock,
                                     uint32_t &payloadSize) {
@@ -3263,46 +3271,58 @@ void LLCStreamEngine::triggerAtomic(LLCDynStreamPtr dynS,
   auto S = dynS->getStaticS();
 
   // Perform the operation.
-  auto elementMemSize = S->getMemElementSize();
-  auto elementCoreSize = S->getCoreElementSize();
-  assert(elementCoreSize <= elementMemSize &&
-         "CoreElementSize should not exceed MemElementSize.");
-  auto elementVAddr = element->vaddr;
+  auto elemMemSize = S->getMemElementSize();
+  auto elemCoreSize = S->getCoreElementSize();
+  assert(elemCoreSize <= elemMemSize &&
+         "CoreElemSize should not exceed MemElemSize.");
+  auto elemVAddr = elem->vaddr;
 
   // Create a single slice for this element.
-  DynStreamSliceId elementSliceId;
-  elementSliceId.getDynStrandId() = dynS->getDynStrandId();
-  elementSliceId.getStartIdx() = element->idx;
-  elementSliceId.getEndIdx() = element->idx + 1;
+  DynStreamSliceId elemSliceId;
+  elemSliceId.getDynStrandId() = dynS->getDynStrandId();
+  elemSliceId.getStartIdx() = elem->idx;
+  elemSliceId.getEndIdx() = elem->idx + 1;
 
-  Addr elementPAddr;
-  assert(dynS->translateToPAddr(elementVAddr, elementPAddr) &&
+  Addr elemPAddr;
+  assert(dynS->translateToPAddr(elemVAddr, elemPAddr) &&
          "Fault on vaddr of LLCStore/Atomic/UpdateStream.");
-  auto lineOffset = elementVAddr % RubySystem::getBlockSizeBytes();
-  if (lineOffset + elementMemSize > RubySystem::getBlockSizeBytes()) {
-    LLC_ELEMENT_PANIC(element, "Multi-Line AtomicElement.");
+  auto lineOffset = elemVAddr % RubySystem::getBlockSizeBytes();
+  if (lineOffset + elemMemSize > RubySystem::getBlockSizeBytes()) {
+    LLC_ELEMENT_PANIC(elem, "Multi-Line AtomicElement.");
   }
 
   // Very limited AtomicRMW support.
   auto atomicRet =
-      this->performStreamAtomicOp(dynS, element, elementPAddr, elementSliceId);
+      this->performStreamAtomicOp(dynS, elem, elemPAddr, elemSliceId);
   auto loadedValue = atomicRet.first;
   bool memoryModified = atomicRet.second;
   LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
                      "Perform StreamAtomic, RetValue %llu.\n", loadedValue);
   loadValueBlock.setData(reinterpret_cast<uint8_t *>(&loadedValue), lineOffset,
-                         elementCoreSize);
-  payloadSize = elementCoreSize;
-  if (element->hasFirstIndirectAtomicReqSeen()) {
-    LLC_ELEMENT_PANIC(element, "Perform atomic operation more than once.");
+                         elemCoreSize);
+  payloadSize = elemCoreSize;
+
+  /**
+   * At this point the value of AtomicS is ready, we have to:
+   * 1. Set the element value.
+   * 2. Evaluate predication.
+   * 3. Trigger indirect elements.
+   */
+  elem->extractElementDataFromSlice(dynS->getStaticS()->getCPUDelegator(),
+                                    sliceId, loadValueBlock);
+  dynS->evaluatePredication(this, elem->idx);
+  this->triggerIndElems(dynS, elem);
+
+  if (elem->hasFirstIndirectAtomicReqSeen()) {
+    LLC_ELEMENT_PANIC(elem, "Perform atomic operation more than once.");
   }
-  element->setFirstIndirectAtomicReqSeen();
-  this->atomicLockManager->enqueue(elementPAddr, elementMemSize, element,
+  elem->setFirstIndirectAtomicReqSeen();
+  this->atomicLockManager->enqueue(elemPAddr, elemMemSize, elem,
                                    memoryModified);
   if (!(dynS->shouldIssueBeforeCommit() && dynS->shouldIssueAfterCommit())) {
     // This AtomicStream just takes one request, we can immediately
     // commit it.
-    this->atomicLockManager->commit(elementPAddr, elementMemSize, element);
+    this->atomicLockManager->commit(elemPAddr, elemMemSize, elem);
   }
 }
 
@@ -3764,13 +3784,15 @@ void LLCStreamEngine::processIndirectAtomicSlice(
   LLC_SLICE_DPRINTF(sliceId,
                     "[IndirectAtomic] Schedule computation for vaddr %#x.\n",
                     elem->vaddr);
-  if (!elem->isReady()) {
-    // Not ready yet. Break.
-    LLC_SLICE_PANIC(sliceId, "Element not ready while triggering atomic.");
-  }
+  /**
+   * We are still waiting for BaseElements. However, the element itself is not
+   * ready, and will be ready once atomic op completed.
+   */
   if (!elem->areBaseElemsReady()) {
-    // We are still waiting for base elements.
-    LLC_SLICE_PANIC(sliceId, "Base element not ready when process atomic.");
+    LLC_SLICE_PANIC(sliceId, "BaseElem not ready when process atomic.");
+  }
+  if (elem->isReady()) {
+    LLC_SLICE_PANIC(sliceId, "Elem ready before atomic op.");
   }
 
   /**
@@ -3781,9 +3803,9 @@ void LLCStreamEngine::processIndirectAtomicSlice(
 }
 
 void LLCStreamEngine::postProcessIndirectAtomicSlice(
-    LLCDynStreamPtr dynS, const LLCStreamElementPtr &element) {
+    LLCDynStreamPtr dynS, const LLCStreamElementPtr &elem) {
 
-  const auto &sliceId = element->indirectAtomicSliceId;
+  const auto &sliceId = elem->indirectAtomicSliceId;
   assert(sliceId.isValid() && "Invalid IndirectAtomic slice id.");
 
   // The final value return to the core.
@@ -3791,7 +3813,7 @@ void LLCStreamEngine::postProcessIndirectAtomicSlice(
   uint32_t totalPayloadSize = 0;
 
   uint32_t payloadSize = 0;
-  this->triggerAtomic(dynS, element, sliceId, loadValueBlock, payloadSize);
+  this->triggerAtomic(dynS, elem, sliceId, loadValueBlock, payloadSize);
   totalPayloadSize += payloadSize;
 
   bool coreNeedValue = false;
@@ -4065,19 +4087,20 @@ LLCStreamEngine::createAtomicPacket(Addr vaddr, Addr paddr, int size,
   return pkt;
 }
 
-std::pair<uint64_t, bool> LLCStreamEngine::performStreamAtomicOp(
-    LLCDynStreamPtr dynS, LLCStreamElementPtr element, Addr elementPAddr,
-    const DynStreamSliceId &sliceId) {
+std::pair<uint64_t, bool>
+LLCStreamEngine::performStreamAtomicOp(LLCDynStreamPtr dynS,
+                                       LLCStreamElementPtr elem, Addr elemPAddr,
+                                       const DynStreamSliceId &sliceId) {
   assert(sliceId.getNumElements() == 1 &&
          "Can not support multi-element atomic op.");
   auto S = dynS->getStaticS();
-  auto elementSize = S->getMemElementSize();
+  auto elemSize = S->getMemElementSize();
 
   auto rubySystem = this->controller->params()->ruby_system;
   assert(rubySystem->getAccessBackingStore() &&
          "Do not support atomicrmw stream without BackingStore.");
-  assert(elementSize <= 8 && "At most 8 byte data.");
-  assert((elementPAddr % RubySystem::getBlockSizeBytes()) + elementSize <=
+  assert(elemSize <= 8 && "At most 8 byte data.");
+  assert((elemPAddr % RubySystem::getBlockSizeBytes()) + elemSize <=
              RubySystem::getBlockSizeBytes() &&
          "Can not atomicrmw to multi-line elements.");
 
@@ -4089,16 +4112,16 @@ std::pair<uint64_t, bool> LLCStreamEngine::performStreamAtomicOp(
       sliceId.getDynStreamId(),
       LLVMDynamicInst::INVALID_SEQ_NUM /* Fake ConfigSeqNum */);
   entryIdx.entryIdx = sliceId.getStartIdx();
-  auto getBaseStreamValue = [element](uint64_t baseStreamId) -> StreamValue {
-    return element->getBaseStreamValue(baseStreamId);
+  auto getBaseStreamValue = [elem](uint64_t baseStreamId) -> StreamValue {
+    return elem->getBaseStreamValue(baseStreamId);
   };
   auto atomicOp =
-      S->setupAtomicOp(entryIdx, elementSize, formalParams, getBaseStreamValue);
+      S->setupAtomicOp(entryIdx, elemSize, formalParams, getBaseStreamValue);
 
   /**
    * Create the packet.
    */
-  auto pkt = this->createAtomicPacket(element->vaddr, elementPAddr, elementSize,
+  auto pkt = this->createAtomicPacket(elem->vaddr, elemPAddr, elemSize,
                                       std::move(atomicOp));
   /**
    * Send to backing store to perform atomic op.

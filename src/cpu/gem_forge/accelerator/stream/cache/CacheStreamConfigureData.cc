@@ -36,11 +36,16 @@ CacheStreamConfigureDataPtr CacheStreamConfigureData::getUsedByBaseConfig() {
 }
 
 void CacheStreamConfigureData::addUsedBy(CacheStreamConfigureDataPtr &data,
-                                         int reuse) {
+                                         int reuse, bool predBy,
+                                         bool predValue) {
   int skip = 0;
   this->depEdges.emplace_back(DepEdge::Type::UsedBy, data, reuse, skip);
   data->baseEdges.emplace_back(BaseEdge::Type::BaseOn, this->shared_from_this(),
                                reuse, skip, true /* isUsedBy */);
+  if (predBy) {
+    data->baseEdges.back().isPredBy = true;
+    data->baseEdges.back().predValue = predValue;
+  }
 }
 
 void CacheStreamConfigureData::addSendTo(CacheStreamConfigureDataPtr &data,
@@ -83,6 +88,15 @@ void CacheStreamConfigureData::addBaseAffineIV(
           skip, this->dynamicId, data->dynamicId);
   }
   this->baseEdges.emplace_back(data, reuse, skip);
+}
+
+void CacheStreamConfigureData::addPredBy(CacheStreamConfigureDataPtr &data,
+                                         int reuse, int skip, bool predValue) {
+  if (reuse <= 0 || skip < 0) {
+    panic("Illegal PredBy Reuse %d Skip %d This %s -> Base %s.", reuse, skip,
+          this->dynamicId, data->dynamicId);
+  }
+  this->baseEdges.emplace_back(data, reuse, skip, predValue);
 }
 
 uint64_t CacheStreamConfigureData::convertBaseToDepElemIdx(uint64_t baseElemIdx,

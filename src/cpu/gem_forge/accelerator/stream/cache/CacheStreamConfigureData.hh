@@ -110,10 +110,6 @@ public:
    */
   bool hasBeenCuttedByMLC = false;
 
-  bool isPredicated = false;
-  bool isPredicatedTrue = false;
-  DynStreamId predicateStreamId;
-
   // For StoreFunc and LoadFunc.
   DynStreamFormalParamV storeFormalParams;
   ExecFuncPtr storeCallback;
@@ -235,7 +231,7 @@ public:
      * Whether this is the BaseS we offloaded with.
      * Used to quickly find the associated BaseS when offloaded.
      */
-    bool isUsedBy;
+    bool isUsedBy = false;
     /**
      * Whether this BaseS is an IV stream.
      * The usedAffineIV is the same as data.
@@ -243,6 +239,12 @@ public:
      */
     bool isUsedAffineIV = false;
     CacheStreamConfigureDataPtr usedAffineIV = nullptr;
+    /**
+     * Whether this is a PredBaseS. If so, what is the PredValue.
+     */
+    bool isPredBy = false;
+    bool predValue = false;
+
     BaseEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse,
              int _skip, bool _isUsedBy = false)
         : type(_type), dynStreamId(_data->dynamicId), data(_data),
@@ -253,8 +255,16 @@ public:
      */
     BaseEdge(const CacheStreamConfigureDataPtr &_data, int _reuse, int _skip)
         : type(Type::BaseOn), dynStreamId(_data->dynamicId), data(_data),
-          reuse(_reuse), skip(_skip), isUsedBy(false), isUsedAffineIV(true),
+          reuse(_reuse), skip(_skip), isUsedAffineIV(true),
           usedAffineIV(_data) {}
+
+    /**
+     * Used to construct a PredBy edge.
+     */
+    BaseEdge(const CacheStreamConfigureDataPtr &_data, int _reuse, int _skip,
+             bool _predValue)
+        : type(Type::BaseOn), dynStreamId(_data->dynamicId), data(_data),
+          reuse(_reuse), skip(_skip), isPredBy(true), predValue(_predValue) {}
   };
   std::vector<DepEdge> depEdges;
   std::vector<BaseEdge> baseEdges;
@@ -263,7 +273,8 @@ public:
     this->depEdges.clear();
   }
   CacheStreamConfigureDataPtr getUsedByBaseConfig();
-  void addUsedBy(CacheStreamConfigureDataPtr &data, int reuse = 1);
+  void addUsedBy(CacheStreamConfigureDataPtr &data, int reuse = 1,
+                 bool predBy = false, bool predValue = false);
   void addSendTo(CacheStreamConfigureDataPtr &data, int reuse, int skip);
   void addPUMSendTo(const CacheStreamConfigureDataPtr &data,
                     const AffinePattern &broadcastPat,
@@ -271,6 +282,8 @@ public:
                     const AffinePattern &recvTile);
   void addBaseOn(CacheStreamConfigureDataPtr &data, int reuse, int skip);
   void addBaseAffineIV(CacheStreamConfigureDataPtr &data, int reuse, int skip);
+  void addPredBy(CacheStreamConfigureDataPtr &data, int reuse, int skip,
+                 bool predValue);
   static uint64_t convertBaseToDepElemIdx(uint64_t baseElemIdx, int reuse,
                                           int skip);
   static uint64_t convertDepToBaseElemIdx(uint64_t depElemIdx, int reuse,

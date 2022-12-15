@@ -236,7 +236,7 @@ bool MLCDynStream::checkRecvDynSForPop(const DynStreamSliceId &sliceId) {
           config->strandIdx, strandElemIdx, streamElemIdx, recvStrandId,
           recvStrandElemIdx, recvStreamElemIdx, recvInitStrandElemIdx,
           recvStrandElemIdx);
-      remoteRecvS->registerElementInitCallback(recvStrandElemIdx,
+      remoteRecvS->registerElemInitCallback(recvStrandElemIdx,
                                                elemInitCallback);
       return false;
     }

@@ -87,14 +87,28 @@ public:
            this->getStaticS()->isReduction();
   }
   bool shouldRangeSync() const { return this->configData->rangeSync; }
-  bool isPredicated() const { return this->configData->isPredicated; }
-  bool isPredicatedTrue() const {
+
+  /**
+   * Predicate information.
+   */
+private:
+  bool isPredBy = false;
+  bool predValue = false;
+  DynStreamId predBaseStreamId;
+
+public:
+  bool isPredicated() const { return this->isPredBy; }
+  bool getPredValue() const {
     assert(this->isPredicated());
-    return this->configData->isPredicatedTrue;
+    return this->predValue;
   }
-  const DynStreamId &getPredicateStreamId() const {
+  const DynStreamId &getPredBaseStreamId() const {
     assert(this->isPredicated());
-    return this->configData->predicateStreamId;
+    return this->predBaseStreamId;
+  }
+  void evaluatePredication(LLCStreamEngine *se, uint64_t elemIdx);
+  bool hasPredication() const {
+    return this->configData->predCallback != nullptr;
   }
 
   /**
@@ -339,12 +353,6 @@ public:
   // Root stream.
   LLCDynStream *rootStream = nullptr;
 
-  // Dependent predicated streams.
-  std::unordered_set<LLCDynStream *> predicatedStreams;
-
-  // Base predicate stream.
-  LLCDynStream *predicateStream = nullptr;
-
   Cycles issueClearCycle = Cycles(4);
   // Initialize cycle at MLC SE.
   const Cycles initializedCycle;
@@ -391,13 +399,6 @@ public:
   using IdxToElementMapT = std::map<uint64_t, LLCStreamElementPtr>;
   IdxToElementMapT idxToElementMap;
 
-  /**
-   * The elements that is predicated by this stream.
-   */
-  std::map<uint64_t,
-           std::list<std::pair<LLCDynStream *, ConstLLCStreamElementPtr>>>
-      waitingPredicatedElements;
-
   void updateIssueClearCycle();
   bool shouldUpdateIssueClearCycleMemorized = true;
   bool shouldUpdateIssueClearCycleInitialized = false;
@@ -417,8 +418,7 @@ public:
   using ElementCallback = std::function<void(const DynStrandId &, uint64_t)>;
 
   bool isElemInitialized(uint64_t elementIdx) const;
-  void registerElementInitCallback(uint64_t elementIdx,
-                                   ElementCallback callback);
+  void registerElemInitCallback(uint64_t elementIdx, ElementCallback callback);
 
   bool isElemReleased(uint64_t elementIdx) const;
   void registerElemPostReleaseCallback(uint64_t elementIdx,

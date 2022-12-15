@@ -94,6 +94,9 @@ public:
   int32_t getCoreElementSize() const {
     return this->info.static_info().core_element_size();
   }
+  const PredicatedStreamIdList &getPredicatedStreams() const {
+    return this->info.static_info().predicated_streams();
+  }
   const PredicatedStreamIdList &getMergedPredicatedStreams() const {
     return this->info.static_info().merged_predicated_streams();
   }
@@ -290,6 +293,7 @@ public:
                      StaticId baseId, StaticId depId, Stream *baseS);
   void addPredBaseStream(bool predValue, bool isInnerLoop, StaticId baseId,
                          StaticId depId, Stream *baseS);
+  bool getPredValue(StaticId depId);
 
   StreamEdges baseEdges;
   StreamEdges depEdges;
@@ -631,6 +635,7 @@ public:
   Get(bool, IsInnerMostLoop);
   Get(bool, IsConditional);
   Get(bool, FloatManual);
+  Get(const PredicatedStreamIdList &, PredicatedStreams);
   Get(const PredicatedStreamIdList &, MergedPredicatedStreams);
   Get(const ExecFuncInfo &, PredicateFuncInfo);
   Get(const StreamIdList &, MergedLoadStoreDepStreams);

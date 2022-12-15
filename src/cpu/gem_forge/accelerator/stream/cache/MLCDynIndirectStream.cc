@@ -174,9 +174,9 @@ void MLCDynIndirectStream::fillElemVAddr(uint64_t strandElemIdx,
     this->allocateSlice();
   }
 
-  if (this->isWaitingNothing()) {
+  if (this->isWaitingNothing() || this->isWaitingAck()) {
     // If we are waiting for nothing, this is the only place we advance.
-    MLC_S_DPRINTF(this->strandId, "WaitNothing. Skip BaseElement.\n");
+    MLC_S_DPRINTF(this->strandId, "WaitNothing/Ack. Skip FillElemVAddr.\n");
     return;
   }
 
@@ -194,8 +194,8 @@ void MLCDynIndirectStream::fillElemVAddr(uint64_t strandElemIdx,
     }
   }
 
-  auto elementVAddr = this->genElemVAddr(strandElemIdx, baseData);
-  auto elementSize = this->elementSize;
+  auto elemVAddr = this->genElemVAddr(strandElemIdx, baseData);
+  auto elemSize = this->elementSize;
 
   DynStreamSliceId sliceId;
   sliceId.getDynStrandId() = this->strandId;
@@ -209,12 +209,12 @@ void MLCDynIndirectStream::fillElemVAddr(uint64_t strandElemIdx,
 
   // Iterate through elementSlices.
   auto totalSliceSize = 0;
-  while (totalSliceSize < elementSize) {
-    Addr curSliceVAddr = elementVAddr + totalSliceSize;
+  while (totalSliceSize < elemSize) {
+    Addr curSliceVAddr = elemVAddr + totalSliceSize;
     // Make sure the slice is contained within one line.
     int lineOffset = curSliceVAddr % RubySystem::getBlockSizeBytes();
     auto curSliceSize = std::min(
-        elementSize - totalSliceSize,
+        elemSize - totalSliceSize,
         static_cast<int>(RubySystem::getBlockSizeBytes()) - lineOffset);
     // Here we set the slice vaddr and size.
     sliceId.vaddr = curSliceVAddr;
@@ -225,7 +225,7 @@ void MLCDynIndirectStream::fillElemVAddr(uint64_t strandElemIdx,
 
     MLC_SLICE_DPRINTF(sliceId,
                       "Processing totalSize %d elementSize %d vaddr %#x.\n",
-                      totalSliceSize, elementSize, curSliceVAddr);
+                      totalSliceSize, elemSize, curSliceVAddr);
 
     /**
      * The reason we do this is to check if the indirect stream faulted,

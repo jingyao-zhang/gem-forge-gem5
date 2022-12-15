@@ -483,7 +483,7 @@ void MLCDynDirectStream::trySendCreditToLLC() {
       auto waitForRecvS = LLCDynStream::getLLCStreamPanic(waitForRecvStrandId,
                                                           "WaitForLLCRecvS");
 
-      waitForRecvS->registerElementInitCallback(waitForRecvStrandElemIdx,
+      waitForRecvS->registerElemInitCallback(waitForRecvStrandElemIdx,
                                                 elementInitCallback);
       return;
     }

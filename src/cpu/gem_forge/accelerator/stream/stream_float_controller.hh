@@ -72,6 +72,23 @@ private:
                                                  DynStream *dynS);
 
   /**
+   * Calculate the float chain depth (of UsedBy dependence).
+   */
+  int getFloatChainDepth(const CacheStreamConfigureData &config) const;
+
+  /**
+   * Get the FloatChainRoot stream (with depth 0).
+   */
+  CacheStreamConfigureDataPtr
+  getFloatRootConfig(CacheStreamConfigureDataPtr config) const;
+
+  /**
+   * Check if a Config is on our FloatChain.
+   */
+  bool isOnFloatChain(CacheStreamConfigureDataPtr chainEndConfig,
+                      const CacheStreamConfigureDataPtr &config) const;
+
+  /**
    * If the loop is eliminated, we mark some addition fields in the
    * configuration.
    */

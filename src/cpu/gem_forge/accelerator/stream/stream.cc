@@ -182,6 +182,19 @@ void Stream::addPredBaseStream(bool predValue, bool isInnerLoop,
   baseS->predDepStreams.insert(this);
 }
 
+bool Stream::getPredValue(StaticId depId) {
+  for (const auto &edge : this->depEdges) {
+    if (edge.type != StreamDepEdge::TypeE::Pred) {
+      continue;
+    }
+    if (edge.toStaticId != depId) {
+      continue;
+    }
+    return edge.predValue;
+  }
+  STREAM_PANIC("Miss PredValue for DepS %d.", depId);
+}
+
 void Stream::addBaseStepStream(Stream *baseStepStream) {
   if (baseStepStream == this) {
     STREAM_PANIC("Base stream should not be self.");
@@ -640,11 +653,11 @@ void Stream::extractExtraInputValues(DynStream &dynS,
    * any inputs for the predication function.
    */
   assert(inputVec && "Missing InputVec.");
-  const auto &mergedPredicatedStreams = this->getMergedPredicatedStreams();
+  const auto &predicatedStreams = this->getPredicatedStreams();
 
   int inputIdx = 0;
 
-  if (mergedPredicatedStreams.size() > 0) {
+  if (predicatedStreams.size() > 0) {
     const auto &predFuncInfo = this->getPredicateFuncInfo();
     if (!this->predCallback) {
       this->predCallback =

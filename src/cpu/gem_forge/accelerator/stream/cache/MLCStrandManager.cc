@@ -1029,44 +1029,30 @@ void MLCStrandManager::configureStream(ConfigPtr config, MasterID masterId) {
   }
 
   /**
-   * ! We initialize the indirect stream first so that
-   * ! the direct stream's constructor can start notify it about base stream
-   * data.
+   * ! We initialize the indirect stream first so that the direct stream's
+   * ! constructor can start notify it about base stream data.
+   * Use DFS to initialize all IndStreams.
    */
   std::vector<MLCDynIndirectStream *> indirectStreams;
-  for (const auto &edge : config->depEdges) {
-    if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
-      const auto &indirectStreamConfig = edge.data;
-      // Let's create an indirect stream.
-      auto indirectStream = new MLCDynIndirectStream(
-          indirectStreamConfig, this->controller,
-          mlcSE->responseToUpperMsgBuffer, mlcSE->requestToLLCMsgBuffer,
-          config->dynamicId /* Root dynamic stream id. */);
-      this->strandMap.emplace(indirectStream->getDynStrandId(), indirectStream);
-      indirectStreams.push_back(indirectStream);
-
-      for (const auto &ISDepEdge : indirectStreamConfig->depEdges) {
-        if (ISDepEdge.type != CacheStreamConfigureData::DepEdge::UsedBy) {
+  {
+    std::vector<CacheStreamConfigureDataPtr> configStack;
+    configStack.push_back(config);
+    while (!configStack.empty()) {
+      auto curConfig = configStack.back();
+      configStack.pop_back();
+      for (const auto &edge : curConfig->depEdges) {
+        if (edge.type != CacheStreamConfigureData::DepEdge::UsedBy) {
           continue;
         }
-        /**
-         * So far we don't support Two-Level Indirect LLCStream, except:
-         * 1. IndirectRedcutionStream.
-         * 2. Two-Level IndirectStoreComputeStream.
-         */
-        auto ISDepS = ISDepEdge.data->stream;
-        if (ISDepS->isReduction() || ISDepS->isStoreComputeStream()) {
-          auto IIS = new MLCDynIndirectStream(
-              ISDepEdge.data, this->controller, mlcSE->responseToUpperMsgBuffer,
-              mlcSE->requestToLLCMsgBuffer,
-              config->dynamicId /* Root dynamic stream id. */);
-          this->strandMap.emplace(IIS->getDynStrandId(), IIS);
-
-          indirectStreams.push_back(IIS);
-          continue;
-        }
-        panic("Two-Level Indirect LLCStream is not supported: %s.",
-              ISDepEdge.data->dynamicId);
+        const auto &indConfig = edge.data;
+        // Let's create an indirect stream.
+        auto indS = new MLCDynIndirectStream(
+            indConfig, this->controller, mlcSE->responseToUpperMsgBuffer,
+            mlcSE->requestToLLCMsgBuffer,
+            config->dynamicId /* Root dynamic stream id. */);
+        this->strandMap.emplace(indS->getDynStrandId(), indS);
+        indirectStreams.push_back(indS);
+        configStack.push_back(indConfig);
       }
     }
   }

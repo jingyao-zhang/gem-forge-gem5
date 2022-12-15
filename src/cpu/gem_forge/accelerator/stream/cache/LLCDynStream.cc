@@ -15,6 +15,7 @@
 #include "debug/LLCRubyStreamReduce.hh"
 #include "debug/LLCRubyStreamStore.hh"
 #include "debug/LLCStreamLoopBound.hh"
+#include "debug/LLCStreamPredicate.hh"
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
 
@@ -74,6 +75,18 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
     this->nextIssueElementIdx = firstFloatElemIdx;
     this->nextLoopBoundElementIdx = firstFloatElemIdx;
     this->nextTriggerIndElemIdx = firstFloatElemIdx;
+  }
+
+  // Extract predicated stream information.
+  for (const auto &edge : _configData->baseEdges) {
+    LLC_S_DPRINTF_(LLCStreamPredicate, this->getDynStrandId(),
+                   "[LLCPred] Pred? %d %s.\n", edge.isPredBy, edge.dynStreamId);
+    if (edge.isPredBy) {
+      assert(!this->isPredBy && "Multi PredBy.");
+      this->isPredBy = true;
+      this->predValue = edge.predValue;
+      this->predBaseStreamId = edge.dynStreamId;
+    }
   }
 
   if (this->getStaticS()->isReduction() ||
@@ -607,11 +620,22 @@ void LLCDynStream::initNextElem(Addr vaddr) {
                         baseEdge.skip, baseStreamElemIdx);
     const auto &baseDynStreamId = baseConfig->dynamicId;
     auto baseS = baseConfig->stream;
-    if (this->baseStream &&
-        this->baseStream->getDynStreamId() == baseDynStreamId) {
+    // Search through the FloatChain.
+    LLCDynStreamPtr onFloatChainBaseDynS = nullptr;
+    {
+      auto curBaseDynS = this->baseStream;
+      while (curBaseDynS) {
+        if (curBaseDynS->getDynStreamId() == baseDynStreamId) {
+          onFloatChainBaseDynS = curBaseDynS;
+          break;
+        }
+        curBaseDynS = curBaseDynS->baseStream;
+      }
+    }
+    if (onFloatChainBaseDynS) {
       /**
-       * This is from base stream. Check that the mapping is homogeneous if
-       * splitted.
+       * This is from a base stream on the FloatChain. Check that the mapping is
+       * homogeneous if splitted.
        */
       if (this->configData->isSplitIntoStrands()) {
         if (baseStrandId.strandIdx != this->getDynStrandId().strandIdx) {
@@ -627,12 +651,12 @@ void LLCDynStream::initNextElem(Addr vaddr) {
               baseStrandId, baseStrandElemIdx, baseStrandElemIdxOffset);
         }
       }
-      if (!this->baseStream->idxToElementMap.count(baseStrandElemIdx)) {
-        LLC_ELEMENT_PANIC(elem, "Missing base element from %s.",
-                          this->baseStream->getDynStrandId());
+      if (!onFloatChainBaseDynS->idxToElementMap.count(baseStrandElemIdx)) {
+        LLC_ELEMENT_PANIC(elem, "Missing base elem from %s.",
+                          onFloatChainBaseDynS->getDynStrandId());
       }
       elem->baseElements.emplace_back(
-          this->baseStream->idxToElementMap.at(baseStrandElemIdx));
+          onFloatChainBaseDynS->idxToElementMap.at(baseStrandElemIdx));
     } else {
       /**
        * This is not from our AddrBaseS, and we need to create the element here.
@@ -777,8 +801,8 @@ bool LLCDynStream::isElemInitialized(uint64_t elemIdx) const {
   return elemIdx < this->nextInitStrandElemIdx;
 }
 
-void LLCDynStream::registerElementInitCallback(uint64_t elementIdx,
-                                               ElementCallback callback) {
+void LLCDynStream::registerElemInitCallback(uint64_t elementIdx,
+                                            ElementCallback callback) {
   if (this->isElemInitialized(elementIdx)) {
     LLC_S_PANIC(this->getDynStrandId(),
                 "Register ElementInitCallback for InitializedElement %llu.",
@@ -1246,49 +1270,29 @@ LLCDynStream::allocateLLCStream(AbstractStreamAwareController *mlcController,
   // Create the stream.
   auto S = new LLCDynStream(mlcController, llcController, config);
 
-  // Check if we have indirect streams.
-  for (const auto &edge : config->depEdges) {
-    if (edge.type != CacheStreamConfigureData::DepEdge::Type::UsedBy) {
-      continue;
-    }
-    auto &ISConfig = edge.data;
-    // Let's create an indirect stream.
-    ISConfig->initCreditedIdx = config->initCreditedIdx;
-    auto IS = new LLCDynStream(mlcController, llcController, ISConfig);
-    IS->setBaseStream(S, edge.reuse);
-    for (const auto &ISDepEdge : ISConfig->depEdges) {
-      if (ISDepEdge.type != CacheStreamConfigureData::DepEdge::UsedBy) {
-        continue;
-      }
-      /**
-       * So far we don't support Two-Level Indirect LLCStream, except:
-       * 1. IndirectRedcutionStream.
-       * 2. Two-Level IndirectStoreComputeStream.
-       */
-      auto ISDepS = ISDepEdge.data->stream;
-      if (ISDepS->isReduction() || ISDepS->isStoreComputeStream()) {
-        auto IIS =
-            new LLCDynStream(mlcController, llcController, ISDepEdge.data);
-        IIS->setBaseStream(IS, ISDepEdge.reuse);
-        continue;
-      }
-      panic("Two-Level Indirect LLCStream is not supported: %s.",
-            IS->getDynStreamId());
-    }
-  }
+  // DFS to allocate indirect streams.
+  {
+    std::vector<CacheStreamConfigureDataPtr> configStack;
+    configStack.push_back(config);
+    while (!configStack.empty()) {
+      auto curConfig = configStack.back();
+      auto curS = LLCDynStream::getLLCStreamPanic(
+          DynStrandId(curConfig->dynamicId, curConfig->strandIdx),
+          "Miss BaseS.");
+      configStack.pop_back();
+      for (const auto &edge : curConfig->depEdges) {
+        if (edge.type != CacheStreamConfigureData::DepEdge::Type::UsedBy) {
+          continue;
+        }
 
-  // Create predicated stream information.
-  assert(!config->isPredicated && "Base stream should never be predicated.");
-  for (auto IS : S->getIndStreams()) {
-    assert(!IS->isPredicated() && "Deprecated for now.");
-    // if (IS->isPredicated()) {
-    //   const auto &predSId = IS->getPredicateStreamId();
-    //   auto predS = LLCDynStream::getLLCStream(predSId);
-    //   assert(predS && "Failed to find predicate stream.");
-    //   assert(predS != IS && "Self predication.");
-    //   predS->predicatedStreams.insert(IS);
-    //   IS->predicateStream = predS;
-    // }
+        auto &ISConfig = edge.data;
+        // Let's create an indirect stream.
+        ISConfig->initCreditedIdx = config->initCreditedIdx;
+        auto IS = new LLCDynStream(mlcController, llcController, ISConfig);
+        IS->setBaseStream(curS, edge.reuse);
+        configStack.push_back(ISConfig);
+      }
+    }
   }
 
   // Initialize the first slices.
@@ -1867,6 +1871,43 @@ bool LLCDynStream::shouldIssueAfterCommit() const {
   return false;
 }
 
+void LLCDynStream::evaluatePredication(LLCStreamEngine *se, uint64_t elemIdx) {
+
+  /**
+   * For now, predication is evaluated ideally.
+   * TODO: Push into ComputeEngine.
+   */
+  if (!this->hasPredication()) {
+    return;
+  }
+
+  auto elem = this->getElem(elemIdx);
+  if (!elem) {
+    LLC_S_PANIC(this->getDynStrandId(), "[LLCPred] No Elem %llu.", elemIdx);
+  }
+  if (!elem->isReady()) {
+    LLC_ELEMENT_DPRINTF_(LLCStreamPredicate, elem, "[LLCPred] Not ready.\n");
+    return;
+  }
+  if (elem->isPredValueReady()) {
+    LLC_ELEMENT_DPRINTF_(LLCStreamPredicate, elem,
+                         "[LLCPred] Already evaluated.\n");
+    return;
+  }
+
+  auto getStreamValue = [&elem](uint64_t streamId) -> StreamValue {
+    return elem->getValueByStreamId(streamId);
+  };
+  auto predActualParams = convertFormalParamToParam(
+      this->configData->predFormalParams, getStreamValue);
+  auto predRet =
+      this->configData->predCallback->invoke(predActualParams).front();
+
+  LLC_ELEMENT_DPRINTF_(LLCStreamPredicate, elem, "[LLCPred] Pred %d.\n",
+                       predRet);
+  elem->setPredValue(predRet);
+}
+
 void LLCDynStream::evaluateLoopBound(LLCStreamEngine *se) {
   if (!this->hasLoopBound()) {
     return;
@@ -1875,8 +1916,8 @@ void LLCDynStream::evaluateLoopBound(LLCStreamEngine *se) {
     return;
   }
 
-  auto element = this->getElem(this->nextLoopBoundElementIdx);
-  if (!element) {
+  auto elem = this->getElem(this->nextLoopBoundElementIdx);
+  if (!elem) {
     if (this->isElemReleased(this->nextLoopBoundElementIdx)) {
       LLC_S_PANIC(this->getDynStrandId(),
                   "[LLCLoopBound] NextLoopBoundElement %llu released.",
@@ -1886,15 +1927,15 @@ void LLCDynStream::evaluateLoopBound(LLCStreamEngine *se) {
       return;
     }
   }
-  if (!element->isReady()) {
+  if (!elem->isReady()) {
     LLC_S_DPRINTF_(LLCStreamLoopBound, this->getDynStrandId(),
                    "[LLCLoopBound] NextLoopBoundElement %llu not ready.\n",
                    this->nextLoopBoundElementIdx);
     return;
   }
 
-  auto getStreamValue = [&element](uint64_t streamId) -> StreamValue {
-    return element->getValueByStreamId(streamId);
+  auto getStreamValue = [&elem](uint64_t streamId) -> StreamValue {
+    return elem->getValueByStreamId(streamId);
   };
   auto loopBoundActualParams = convertFormalParamToParam(
       this->configData->loopBoundFormalParams, getStreamValue);
@@ -1915,10 +1956,10 @@ void LLCDynStream::evaluateLoopBound(LLCStreamEngine *se) {
                    this->nextLoopBoundElementIdx);
 
     Addr loopBoundBrokenPAddr;
-    if (!this->translateToPAddr(element->vaddr, loopBoundBrokenPAddr)) {
+    if (!this->translateToPAddr(elem->vaddr, loopBoundBrokenPAddr)) {
       LLC_S_PANIC(this->getDynStrandId(),
                   "[LLCLoopBound] BrokenOut Element VAddr %#x Faulted.",
-                  element->vaddr);
+                  elem->vaddr);
     }
 
     this->setTotalTripCount(this->nextLoopBoundElementIdx);

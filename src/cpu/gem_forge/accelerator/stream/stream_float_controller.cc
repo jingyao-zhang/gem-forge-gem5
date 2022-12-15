@@ -479,6 +479,56 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
   }
 }
 
+int StreamFloatController::getFloatChainDepth(
+    const CacheStreamConfigureData &config) const {
+  for (const auto &baseEdge : config.baseEdges) {
+    if (baseEdge.isUsedBy) {
+      auto baseConfig = baseEdge.data.lock();
+      if (!baseConfig) {
+        DYN_S_PANIC(config.dynamicId, "Missing BaseConfig.");
+      }
+      return this->getFloatChainDepth(*baseConfig) + 1;
+    }
+  }
+  return 0;
+}
+
+CacheStreamConfigureDataPtr StreamFloatController::getFloatRootConfig(
+    CacheStreamConfigureDataPtr config) const {
+  for (const auto &baseEdge : config->baseEdges) {
+    if (baseEdge.isUsedBy) {
+      auto baseConfig = baseEdge.data.lock();
+      if (!baseConfig) {
+        DYN_S_PANIC(config->dynamicId, "Missing BaseConfig.");
+      }
+      return this->getFloatRootConfig(baseConfig);
+    }
+  }
+  // This is the root.
+  return config;
+}
+
+bool StreamFloatController::isOnFloatChain(
+    CacheStreamConfigureDataPtr chainEndConfig,
+    const CacheStreamConfigureDataPtr &config) const {
+  if (!chainEndConfig) {
+    return false;
+  }
+  if (chainEndConfig == config) {
+    return true;
+  }
+  for (const auto &baseEdge : chainEndConfig->baseEdges) {
+    if (baseEdge.isUsedBy) {
+      auto baseConfig = baseEdge.data.lock();
+      if (!baseConfig) {
+        DYN_S_PANIC(chainEndConfig->dynamicId, "Missing BaseConfig.");
+      }
+      return this->isOnFloatChain(baseConfig, config);
+    }
+  }
+  return false;
+}
+
 bool StreamFloatController::floatIndirectStream(const Args &args,
                                                 DynStream *dynS) {
   auto S = dynS->stream;
@@ -489,58 +539,72 @@ bool StreamFloatController::floatIndirectStream(const Args &args,
   if (S->isDirectMemStream() || S->isPointerChase()) {
     return false;
   }
-  if (!S->isLoadStream() && !S->isAtomicComputeStream()) {
+  if (!S->isLoadStream() && !S->isAtomicComputeStream() &&
+      !S->isStoreComputeStream()) {
     return false;
   }
+  StreamFloatPolicy::logS(*dynS) << "[FloatIndirect] >>>>>>>>> \n"
+                                 << std::flush;
   const auto &addrBaseStreams = S->addrBaseStreams;
   /**
    * We assume:
-   * 1. Only one AddrBaseMemS.
+   * 1. May have multiple AddrBaseMemS.
    * 2. All other AddrBaseS are IndVar streams with AffinePattern.
+   *
+   * To float:
+   * 1. Float with the AddrBaseMemS with the max FloatChainDepth.
+   * 2. Other AddrBaseMemS sends to our FloatRootS.
+   * 3. UsedAffineIVS is recorded as special BaseEdge.
+   *
    */
-  Stream *addrBaseMemS = nullptr;
-  {
-    bool canFloat = true;
-    for (auto addrBaseS : addrBaseStreams) {
-      if (addrBaseS->isMemStream()) {
-        if (addrBaseMemS) {
-          StreamFloatPolicy::logS(*dynS) << "[Not Float] multi AddrBaseMemS.\n"
-                                         << std::flush;
-          canFloat = false;
-          break;
-        }
-        addrBaseMemS = addrBaseS;
-      } else if (addrBaseS->isPointerChaseIndVar()) {
-        StreamFloatPolicy::logS(*dynS) << "[Not Float] AddrBasePtrChaseS.\n"
-                                       << std::flush;
-        canFloat = false;
-        break;
-      } else if (addrBaseS->isReduction()) {
-        StreamFloatPolicy::logS(*dynS) << "[Not Float] AddrBaseReduceS.\n"
-                                       << std::flush;
-        canFloat = false;
-        break;
-      }
-    }
-    if (!canFloat) {
+  std::vector<Stream *> addrBaseMemStreams;
+  std::vector<Stream *> addrBaseIVAffineStreams;
+  for (auto addrBaseS : addrBaseStreams) {
+    if (addrBaseS->isPointerChaseIndVar()) {
+      StreamFloatPolicy::logS(*dynS) << "[Not Float] AddrBasePtrChaseS "
+                                     << addrBaseS->getStreamName() << ".\n"
+                                     << std::flush;
       return false;
     }
+    if (addrBaseS->isReduction()) {
+      StreamFloatPolicy::logS(*dynS) << "[Not Float] AddrBaseReduceS "
+                                     << addrBaseS->getStreamName() << ".\n"
+                                     << std::flush;
+      return false;
+    }
+    if (addrBaseS->isMemStream()) {
+      if (!floatedMap.count(addrBaseS)) {
+        StreamFloatPolicy::logS(*dynS) << "[Not Float] Unfloat AddrBaseMemS "
+                                       << addrBaseS->getStreamName() << ".\n"
+                                       << std::flush;
+        return false;
+      }
+      addrBaseMemStreams.push_back(addrBaseS);
+    } else {
+      addrBaseIVAffineStreams.push_back(addrBaseS);
+    }
   }
-  if (!floatedMap.count(addrBaseMemS)) {
-    // AddrBaseStream is not floated.
-    StreamFloatPolicy::logS(*dynS) << "[Not Float] Unfloat AddrBaseMemS.\n"
-                                   << std::flush;
-    return false;
-  }
-  // Check if all ValueBaseStreams are floated.
-  for (auto valueBaseS : S->valueBaseStreams) {
-    if (!floatedMap.count(valueBaseS)) {
-      // ValueBaseStream is not floated.
-      StreamFloatPolicy::logS(*dynS) << "[Not Float] Unfloat ValueBaseS.\n"
+
+  // Check if all PredBaseStreams are floated.
+  for (auto predBaseS : S->predBaseStreams) {
+    if (!floatedMap.count(predBaseS)) {
+      StreamFloatPolicy::logS(*dynS) << "[Not Float] Unfloat PredBaseS "
+                                     << predBaseS->getStreamName() << ".\n"
                                      << std::flush;
       return false;
     }
   }
+
+  // Check if all ValueBaseStreams are floated.
+  for (auto valueBaseS : S->valueBaseStreams) {
+    if (!floatedMap.count(valueBaseS)) {
+      StreamFloatPolicy::logS(*dynS) << "[Not Float] Unfloat ValueBaseS "
+                                     << valueBaseS->getStreamName() << ".\n"
+                                     << std::flush;
+      return false;
+    }
+  }
+
   /**
    * Check if there is an aliased StoreStream for this LoadStream, but
    * is not promoted into an UpdateStream.
@@ -556,32 +620,93 @@ bool StreamFloatController::floatIndirectStream(const Args &args,
                                    << std::flush;
     return false;
   }
-  auto baseConfig = floatedMap.at(addrBaseMemS);
+
+  /**
+   * Float with the Addr/PredBaseS with maximal float chain depth.
+   */
+  Stream *floatBaseS = nullptr;
+  int floatBaseChainDepth = -1;
+  bool floatBasePredBy = false;
+  bool floatBasePredValue = false;
+  for (auto baseS : addrBaseMemStreams) {
+    const auto &config = *floatedMap.at(baseS);
+    auto depth = this->getFloatChainDepth(config);
+    if (depth > floatBaseChainDepth) {
+      floatBaseChainDepth = depth;
+      floatBaseS = baseS;
+    }
+  }
+  for (auto baseS : S->predBaseStreams) {
+    const auto &config = *floatedMap.at(baseS);
+    auto depth = this->getFloatChainDepth(config);
+    if (depth > floatBaseChainDepth) {
+      floatBaseChainDepth = depth;
+      floatBaseS = baseS;
+      floatBasePredBy = true;
+      floatBasePredValue = baseS->getPredValue(S->staticId);
+    }
+  }
+
+  if (!floatBaseS) {
+    StreamFloatPolicy::logS(*dynS) << "[Not Float] no FloatBaseS.\n"
+                                   << std::flush;
+    return false;
+  }
+
+  if (floatBaseChainDepth >= 1) {
+    if (!this->se->myParams->enableFloatMultiLevelIndirectStoreCompute) {
+      StreamFloatPolicy::logS(*dynS)
+          << "[Not Float] Disable Multi-Level Indirect.\n"
+          << std::flush;
+      return false;
+    }
+  }
+
+  auto floatBaseConfig = floatedMap.at(floatBaseS);
   // Only dependent on this direct stream.
   auto config =
       S->allocateCacheConfigureData(dynS->configSeqNum, true /* isIndirect */);
-  auto addrBaseMemSReuse = dynS->getBaseElemReuseCount(addrBaseMemS);
-  baseConfig->addUsedBy(config, addrBaseMemSReuse);
+  auto floatBaseReuse = dynS->getBaseElemReuseCount(floatBaseS);
+  floatBaseConfig->addUsedBy(config, floatBaseReuse, floatBasePredBy,
+                             floatBasePredValue);
+
+  // Get the FloatRootConfig.
+  auto floatRootConfig = this->getFloatRootConfig(floatBaseConfig);
+  auto floatRootS = floatRootConfig->stream;
 
   /**
    * Add UsedAffineIVS.
    */
-  for (auto addrBaseS : S->addrBaseStreams) {
-    if (addrBaseS == addrBaseMemS) {
-      continue;
-    }
-    this->allocateAddUsedAffineIV(config, dynS, addrBaseS);
+  for (auto addrBaseIVAffineS : addrBaseIVAffineStreams) {
+    this->allocateAddUsedAffineIV(config, dynS, addrBaseIVAffineS);
   }
 
-  // Add SendTo edges if the ValueBaseS is not my AddrBaseMemS.
-  for (auto valueBaseS : S->valueBaseStreams) {
-    if (valueBaseS == addrBaseMemS) {
-      continue;
+  /**
+   * For all the dependence other than FloatBaseS, we check:
+   * 1. If it is from the same FloatChain, then we just add a BaseOn
+   * edge, and assume LLC SE will automaically propagate the value
+   * along the chain.
+   * 2. Otherwise, we have to add a real SendTo edge to the FloatRootS.
+   */
+
+  auto addBaseS = [&](Stream *baseS, bool isPredBy) -> void {
+    if (baseS == floatBaseS) {
+      return;
     }
-    auto &valueBaseConfig = floatedMap.at(valueBaseS);
-    auto reuse = dynS->getBaseElemReuseCount(valueBaseS);
-    auto skip = dynS->getBaseElemSkipCount(valueBaseS);
-    config->addBaseOn(valueBaseConfig, reuse, skip);
+    auto &baseConfig = floatedMap.at(baseS);
+    auto reuse = dynS->getBaseElemReuseCount(baseS);
+    auto skip = dynS->getBaseElemSkipCount(baseS);
+    if (isPredBy) {
+      auto predValue = baseS->getPredValue(S->staticId);
+      config->addPredBy(baseConfig, reuse, skip, predValue);
+    } else {
+      config->addBaseOn(baseConfig, reuse, skip);
+    }
+
+    if (this->isOnFloatChain(floatBaseConfig, baseConfig)) {
+      // No need to add the SendTo edge.
+      return;
+    }
 
     /**
      * ValueBaseS will send to my AddrBaseS.
@@ -589,18 +714,30 @@ bool StreamFloatController::floatIndirectStream(const Args &args,
      */
     auto sendReuse = reuse;
     auto sendSkip = skip;
-    if (addrBaseMemSReuse > 1) {
+    if (floatBaseReuse > 1) {
       assert(reuse == 1 && skip == 0 &&
              "Cannot have two reuses for IndS with ValueBaseS.");
-      sendSkip = addrBaseMemSReuse;
+      sendSkip = floatBaseReuse;
     }
-    valueBaseConfig->addSendTo(baseConfig, sendReuse, sendSkip);
+    baseConfig->addSendTo(floatRootConfig, sendReuse, sendSkip);
+  };
+
+  for (auto valueBaseS : S->valueBaseStreams) {
+    addBaseS(valueBaseS, false /* isPredBy */);
   }
+  for (auto addrBaseMemS : addrBaseMemStreams) {
+    addBaseS(addrBaseMemS, false /* isPredBy */);
+  }
+  for (auto predBaseS : S->predBaseStreams) {
+    addBaseS(predBaseS, true /* isPredBy */);
+  }
+
   DYN_S_DPRINTF(dynS->dynStreamId, "Offload as indirect Reuse %d.\n",
-                addrBaseMemSReuse);
+                floatBaseReuse);
   StreamFloatPolicy::logS(*dynS)
-      << "[Float] IndS with " << addrBaseMemS->streamName << " Reuse "
-      << addrBaseMemSReuse << ".\n"
+      << "[Float] IndS with Root " << floatRootS->getStreamName() << " Base "
+      << floatBaseS->getStreamName() << " Depth " << floatBaseChainDepth
+      << " Reuse " << floatBaseReuse << ".\n"
       << std::flush;
   floatedMap.emplace(S, config);
   if (S->getEnabledStoreFunc()) {
