@@ -564,28 +564,27 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
   if (!dynS->shouldIssueAfterCommit() && !S->isLoadComputeStream() &&
       !S->isAtomicComputeStream()) {
     while (!dynS->idxToElementMap.empty()) {
-      auto elementIter = dynS->idxToElementMap.begin();
-      const auto &element = elementIter->second;
-      if (!element->areBaseElemsReady()) {
-        LLC_ELEMENT_DPRINTF(element,
-                            "Cannot release AreBaseElementsReady %d.\n",
-                            element->areBaseElemsReady());
+      auto elemIter = dynS->idxToElementMap.begin();
+      const auto &elem = elemIter->second;
+      if (!elem->areBaseElemsReady()) {
+        LLC_ELEMENT_DPRINTF(elem, "Cannot release AreBaseElementsReady %d.\n",
+                            elem->areBaseElemsReady());
         break;
       }
       if (S->isStoreComputeStream()) {
-        if (!element->isIndirectStoreAcked()) {
-          LLC_ELEMENT_DPRINTF(element,
+        if (!elem->isIndirectStoreAcked()) {
+          LLC_ELEMENT_DPRINTF(elem,
                               "Cannot release IndirectStore not acked.\n");
           break;
         }
       } else {
-        if (!element->isReady()) {
-          LLC_ELEMENT_DPRINTF(element, "Cannot release IsReady %d.\n",
-                              element->isReady());
+        if (!elem->isReady()) {
+          LLC_ELEMENT_DPRINTF(elem, "Cannot release IsReady %d.\n",
+                              elem->isReady());
           break;
         }
       }
-      dynS->eraseElem(elementIter);
+      dynS->eraseElem(elemIter);
     }
   }
 
@@ -610,6 +609,8 @@ void LLCStreamEngine::receiveStoreStreamData(LLCDynStreamPtr dynS,
    *
    * NOTE: We have to construct the overlap instead of storing the
    * whole line.
+   * NOTE: Also be careful that storeValueBlock is a CacheLine! While SliceVAddr
+   * may be the element vaddr for indirect stream.
    */
   Addr paddr;
   if (!dynS->translateToPAddr(sliceId.vaddr, paddr)) {
@@ -617,6 +618,9 @@ void LLCStreamEngine::receiveStoreStreamData(LLCDynStreamPtr dynS,
                     "Failed to translate StoreStream slice vaddr %#x to paddr.",
                     sliceId.vaddr);
   }
+  auto sliceLineVAddr = makeLineAddress(sliceId.vaddr);
+  auto sliceLinePAddr = makeLineAddress(paddr);
+  auto blockSize = RubySystem::getBlockSizeBytes();
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     assert(dynS->idxToElementMap.count(idx) &&
            "Missing element for StoreStream.");
@@ -625,17 +629,15 @@ void LLCStreamEngine::receiveStoreStreamData(LLCDynStreamPtr dynS,
     // Compute the overlap and set the data.
     int elementOffset;
     int sliceOffset;
-    int overlapSize = element->computeOverlap(sliceId.vaddr, sliceId.getSize(),
+    int overlapSize = element->computeOverlap(sliceLineVAddr, blockSize,
                                               sliceOffset, elementOffset);
     auto storeValue = storeValueBlock.getData(sliceOffset, overlapSize);
-    LLC_SLICE_DPRINTF_(
-        LLCRubyStreamStore, sliceId,
-        "StreamStore done with Element %llu, Slice vaddr %#x paddr "
-        "%#x, "
-        "SliceOffset %d OverlapSize %d Value %s.\n",
-        idx, sliceId.vaddr, paddr, sliceOffset, overlapSize,
-        GemForgeUtils::dataToString(storeValue, overlapSize));
-    this->performStore(paddr + sliceOffset, overlapSize, storeValue);
+    LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
+                       "StreamStore done with Elem %llu, Slice vaddr %#x paddr "
+                       "%#x, SliceOffset %d OverlapSize %d Value %s.\n",
+                       idx, sliceId.vaddr, paddr, sliceOffset, overlapSize,
+                       GemForgeUtils::dataToString(storeValue, overlapSize));
+    this->performStore(sliceLinePAddr + sliceOffset, overlapSize, storeValue);
   }
   if (!dynS->shouldRangeSync() || dynS->isIndirect()) {
     LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
@@ -1271,20 +1273,21 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
     return readyS;
   }
 
+  if (dynS->isNextSliceOverflown() || dynS->isNextElemOverflown()) {
+    // Do not try to issue this slice if it is overflown.
+    LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynS->getDynStrandId(),
+                   "[Not Issue] NextSliceOverflown %lld.\n",
+                   dynS->getTotalTripCount());
+    statistic.sampleLLCStreamEngineIssueReason(
+        StreamStatistic::LLCStreamEngineIssueReason::NextSliceOverTripCount);
+    return nullptr;
+  }
+
   if (!dynS->isNextSliceCredited()) {
     LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynS->getDynStrandId(),
                    "[Not Issue] NextSliceNotAllocated.\n");
     statistic.sampleLLCStreamEngineIssueReason(
         StreamStatistic::LLCStreamEngineIssueReason::NextSliceNotAllocated);
-    return nullptr;
-  }
-
-  if (dynS->isNextSliceOverflown()) {
-    // Do not try to issue this slice if it is overflown.
-    LLC_S_DPRINTF(dynS->getDynStrandId(),
-                  "[Not Issue] NextSliceOverTripCount.\n");
-    statistic.sampleLLCStreamEngineIssueReason(
-        StreamStatistic::LLCStreamEngineIssueReason::NextSliceOverTripCount);
     return nullptr;
   }
 
@@ -1835,18 +1838,18 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynStream *dynIS,
 }
 
 void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
-    LLCDynStream *dynIS, LLCStreamElementPtr element) {
+    LLCDynStream *dynIS, LLCStreamElementPtr elem) {
 
-  auto elementIdx = element->idx;
+  auto elemIdx = elem->idx;
   DynStreamSliceId sliceId;
   sliceId.getDynStrandId() = dynIS->getDynStrandId();
-  sliceId.getStartIdx() = elementIdx;
-  sliceId.getEndIdx() = elementIdx + 1;
-  auto elementSize = dynIS->getMemElementSize();
-  Addr elementVAddr = element->vaddr;
-  auto elementMachineType = dynIS->getFloatMachineTypeAtElem(elementIdx);
+  sliceId.getStartIdx() = elemIdx;
+  sliceId.getEndIdx() = elemIdx + 1;
+  auto elemSize = dynIS->getMemElementSize();
+  Addr elemVAddr = elem->vaddr;
+  auto elemMachineType = dynIS->getFloatMachineTypeAtElem(elemIdx);
   LLC_SLICE_DPRINTF(sliceId, "Issue IndirectStore/Atomic VAddr %#x At %s.\n",
-                    elementVAddr, elementMachineType);
+                    elemVAddr, elemMachineType);
 
   const auto blockBytes = RubySystem::getBlockSizeBytes();
 
@@ -1854,23 +1857,23 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
   const auto &indirectConfig = dynIS->configData;
 
   // This is a store/atomic, we need to issue STREAM_STORE request.
-  assert(elementSize <= sizeof(uint64_t) && "Oversized merged store stream.");
+  assert(elemSize <= sizeof(uint64_t) && "Oversized merged store stream.");
   if (dynIS->hasTotalTripCount()) {
-    assert(elementIdx < dynIS->getTotalTripCount() &&
+    assert(elemIdx < dynIS->getTotalTripCount() &&
            "Try to store beyond TotalTripCount.");
   }
 
-  int lineOffset = elementVAddr % blockBytes;
-  assert(lineOffset + elementSize <= blockBytes &&
+  int lineOffset = elemVAddr % blockBytes;
+  assert(lineOffset + elemSize <= blockBytes &&
          "Multi-line merged store stream.");
 
-  sliceId.vaddr = elementVAddr;
-  sliceId.size = elementSize;
-  Addr elementPAddr;
-  if (dynIS->translateToPAddr(elementVAddr, elementPAddr)) {
+  sliceId.vaddr = elemVAddr;
+  sliceId.size = elemSize;
+  Addr elemPAddr;
+  if (dynIS->translateToPAddr(elemVAddr, elemPAddr)) {
     this->incrementIssueSlice(IS->statistic);
-    auto vaddrLine = makeLineAddress(elementVAddr);
-    auto paddrLine = makeLineAddress(elementPAddr);
+    auto vaddrLine = makeLineAddress(elemVAddr);
+    auto paddrLine = makeLineAddress(elemPAddr);
     /**
      * Compute the store value.
      * If this is a MergededPedicatedStream, it is a constant value.
@@ -1883,11 +1886,10 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
       // TODO: This is no longer supported.
       panic("MergedPredicated is not supported for now.");
       // storeValue = indirectConfig->constUpdateValue;
-    } else if (IS->isMergedLoadStoreDepStream()) {
+    } else if (IS->isStoreComputeStream()) {
       // Compute the value.
-      auto getBaseStreamValue =
-          [&element](uint64_t baseStreamId) -> StreamValue {
-        return element->getBaseStreamValue(baseStreamId);
+      auto getBaseStreamValue = [&elem](uint64_t baseStreamId) -> StreamValue {
+        return elem->getBaseStreamValue(baseStreamId);
       };
       auto params = convertFormalParamToParam(indirectConfig->storeFormalParams,
                                               getBaseStreamValue);
@@ -1925,7 +1927,7 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
     dynIS->prevStorePAddrLine = paddrLine;
     dynIS->prevStoreCycle = this->controller->curCycle();
     if (isIdeaStore) {
-      this->performStore(elementPAddr, elementSize,
+      this->performStore(elemPAddr, elemSize,
                          reinterpret_cast<uint8_t *>(&storeValue));
       LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
                          "Ideal StreamStore done with value %llu, "
@@ -1939,7 +1941,7 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
       }
     } else {
       auto reqIter = this->enqueueRequest(IS, sliceId, vaddrLine, paddrLine,
-                                          elementMachineType,
+                                          elemMachineType,
                                           CoherenceRequestType_STREAM_STORE);
       dynIS->inflyRequests++;
       auto lineOffset = sliceId.vaddr % RubySystem::getBlockSizeBytes();
@@ -2862,9 +2864,7 @@ void LLCStreamEngine::receiveStreamIndirectRequestImpl(const RequestMsg &req) {
 
   auto networkLatency =
       this->curCycle() - this->controller->ticksToCycles(req.getTime());
-  LLC_SLICE_DPRINTF(sliceId,
-                    "Receive [indirect] %s request paddrLine %#x delay cycle "
-                    "%s.\n",
+  LLC_SLICE_DPRINTF(sliceId, "Recv [ind] %s req paddrLine %#x NoC delay %s.\n",
                     CoherenceRequestType_to_string(req.m_Type), req.m_addr,
                     networkLatency);
 
@@ -3048,15 +3048,70 @@ bool LLCStreamEngine::tryToProcessIndirectAtomicUnlockReq(
    */
   element->setSecondIndirectAtomicReqSeen();
   while (!dynS->idxToElementMap.empty()) {
-    auto elementIter = dynS->idxToElementMap.begin();
-    const auto &element = elementIter->second;
-    if (!element->isReady() || !element->areBaseElemsReady() ||
-        !element->hasSecondIndirectAtomicReqSeen()) {
+    auto elemIter = dynS->idxToElementMap.begin();
+    const auto &elem = elemIter->second;
+    if (!elem->isReady() || !elem->areBaseElemsReady() ||
+        !elem->hasSecondIndirectAtomicReqSeen()) {
       break;
     }
-    dynS->eraseElem(elementIter);
+    dynS->eraseElem(elemIter);
   }
   return true;
+}
+
+void LLCStreamEngine::predicateOffElem(LLCDynStreamPtr dynS,
+                                       LLCStreamElementPtr elem) {
+  LLC_ELEMENT_DPRINTF_(LLCStreamPredicate, elem, "[LLCPred] Predicated Off.\n");
+
+  /**
+   * Some sanity check cause so far we only have partial support for
+   * predication.
+   */
+  if (dynS->shouldRangeSync()) {
+    LLC_ELEMENT_PANIC(elem, "PredOff RangeSync.");
+  }
+  if (dynS->shouldSendValueToCore()) {
+    LLC_ELEMENT_PANIC(elem, "PredOff CoreNeedValue.");
+  }
+  if (!dynS->isIndirect()) {
+    LLC_ELEMENT_PANIC(elem, "PredOff DirectS not implemented yet.");
+  }
+  if (dynS->getNextIssueElemIdx() > elem->idx) {
+    LLC_ELEMENT_PANIC(elem, "PredOff but Issued %llu.",
+                      dynS->getNextIssueElemIdx());
+  }
+  for (const auto &edge : dynS->configData->depEdges) {
+    if (edge.type != CacheStreamConfigureData::DepEdge::Type::UsedBy) {
+      LLC_ELEMENT_PANIC(elem, "PredOff with NonUsedBy DepEdge.");
+    }
+  }
+  auto S = dynS->getStaticS();
+  if (S->isStoreComputeStream() || S->isAtomicComputeStream()) {
+    // Need to send back a fake ack using a single slice for this elem.
+    DynStreamSliceId elemSliceId;
+    elemSliceId.getDynStrandId() = dynS->getDynStrandId();
+    elemSliceId.getStartIdx() = elem->idx;
+    elemSliceId.getEndIdx() = elem->idx + 1;
+    this->issueStreamAckToMLC(elemSliceId);
+  }
+  elem->setState(LLCStreamElement::State::PREDICATED_OFF);
+  // Predicate all indirect element.
+  for (const auto &IS : dynS->getIndStreams()) {
+    auto indElem = IS->getElemPanic(elem->idx, "PredOff IndElem.");
+    this->predicateOffElem(IS, indElem);
+  }
+  // Help keep NextIssueElemIdx correct.
+  dynS->skipIssuingPredOffElems();
+  // Try release the element in order.
+  while (!dynS->idxToElementMap.empty()) {
+    auto elemIter = dynS->idxToElementMap.begin();
+    const auto &elem = elemIter->second;
+    if (!elem->isPredicatedOff()) {
+      LLC_ELEMENT_DPRINTF(elem, "[LLCPred] Not Release: !PredOff.\n");
+      break;
+    }
+    dynS->eraseElem(elemIter);
+  }
 }
 
 void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
@@ -3108,8 +3163,8 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
       break;
     }
     if (!predOn) {
-      LLC_ELEMENT_PANIC(indElem,
-                        "[LLCPred] Predicated off is not supported yet.");
+      this->predicateOffElem(IS, indElem);
+      return;
     }
   }
 
@@ -3816,11 +3871,7 @@ void LLCStreamEngine::postProcessIndirectAtomicSlice(
   this->triggerAtomic(dynS, elem, sliceId, loadValueBlock, payloadSize);
   totalPayloadSize += payloadSize;
 
-  bool coreNeedValue = false;
-  auto dynCoreS = dynS->getCoreDynS();
-  if (dynCoreS && dynCoreS->shouldCoreSEIssue()) {
-    coreNeedValue = true;
-  }
+  bool coreNeedValue = dynS->shouldSendValueToCore();
 
   // This is to make sure traffic to MLC is correctly sliced.
   if (coreNeedValue) {
@@ -3845,15 +3896,14 @@ void LLCStreamEngine::postProcessIndirectAtomicSlice(
    */
   if (!dynS->shouldIssueAfterCommit()) {
     while (!dynS->idxToElementMap.empty()) {
-      auto elementIter = dynS->idxToElementMap.begin();
-      const auto &element = elementIter->second;
-      if (!element->isComputationDone()) {
+      auto elemIter = dynS->idxToElementMap.begin();
+      const auto &elem = elemIter->second;
+      if (!elem->isComputationDone() && !elem->isPredicatedOff()) {
         LLC_ELEMENT_DPRINTF(
-            element, "[IndirectAtomic] Cannot release ComputationDone %d.\n",
-            element->isComputationDone());
+            elem, "[IndirectAtomic] Not Release: !CmpDone && !PredOff.\n");
         break;
       }
-      dynS->eraseElem(elementIter);
+      dynS->eraseElem(elemIter);
     }
   }
 }

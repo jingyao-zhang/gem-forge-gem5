@@ -72,7 +72,7 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
     auto firstFloatElemIdx = _configData->floatPlan.getFirstFloatElementIdx();
     this->nextCommitElemIdx = firstFloatElemIdx;
     this->nextInitStrandElemIdx = firstFloatElemIdx;
-    this->nextIssueElementIdx = firstFloatElemIdx;
+    this->nextIssueElemIdx = firstFloatElemIdx;
     this->nextLoopBoundElementIdx = firstFloatElemIdx;
     this->nextTriggerIndElemIdx = firstFloatElemIdx;
   }
@@ -184,6 +184,11 @@ bool LLCDynStream::isInnerLastElem(uint64_t elemIdx) const {
     return 0;
   }
   return (elemIdx % this->getInnerTripCount()) == 0;
+}
+
+bool LLCDynStream::shouldSendValueToCore() const {
+  auto dynCoreS = this->getCoreDynS();
+  return dynCoreS && dynCoreS->shouldCoreSEIssue();
 }
 
 void LLCDynStream::setTotalTripCount(int64_t totalTripCount) {
@@ -385,13 +390,10 @@ bool LLCDynStream::isNextSliceOverflown() const {
   if (!this->hasTotalTripCount()) {
     return false;
   }
-  assert(this->isNextSliceCredited() && "Next slice is not allocated yet.");
   if (auto slice = this->getNextAllocSlice()) {
     return slice->getSliceId().getStartIdx() >= this->getTotalTripCount();
   }
-
-  LLC_S_PANIC(this->getDynStrandId(),
-              "No Initialized Slice to check overflown.");
+  return false;
 }
 
 bool LLCDynStream::isNextElemOverflown() const {
@@ -1768,14 +1770,14 @@ void LLCDynStream::markElemReadyToIssue(uint64_t elemIdx) {
   elem->setState(LLCStreamElement::State::READY_TO_ISSUE);
 
   // Increment the counter in the base stream.
-  this->numElementsReadyToIssue++;
+  this->numElemsReadyToIssue++;
   if (this->rootStream) {
     this->rootStream->numIndirectElementsReadyToIssue++;
   }
 }
 
 void LLCDynStream::markElemIssued(uint64_t elemIdx) {
-  if (elemIdx != this->nextIssueElementIdx) {
+  if (elemIdx != this->nextIssueElemIdx) {
     LLC_S_PANIC(this->getDynStrandId(), "IndElem should be issued in order.");
   }
   auto elem = this->getElemPanic(elemIdx, "Mark IndirectElement issued.");
@@ -1797,10 +1799,14 @@ void LLCDynStream::markElemIssued(uint64_t elemIdx) {
     elem->setRangeBuilt();
   }
   elem->setState(LLCStreamElement::State::ISSUED);
-  assert(this->numElementsReadyToIssue > 0 &&
+  assert(this->numElemsReadyToIssue > 0 &&
          "Underflow NumElementsReadyToIssue.");
-  this->numElementsReadyToIssue--;
-  this->nextIssueElementIdx++;
+  this->numElemsReadyToIssue--;
+  this->nextIssueElemIdx++;
+  /**
+   * Skip the next one elem if it is predicated off.
+   */
+  this->skipIssuingPredOffElems();
   if (this->rootStream) {
     assert(this->rootStream->numIndirectElementsReadyToIssue > 0 &&
            "Underflow NumIndirectElementsReadyToIssue.");
@@ -1808,23 +1814,35 @@ void LLCDynStream::markElemIssued(uint64_t elemIdx) {
   }
 }
 
+void LLCDynStream::skipIssuingPredOffElems() {
+  while (true) {
+    auto elem = this->getElem(this->nextIssueElemIdx);
+    if (!elem || !elem->isPredicatedOff()) {
+      break;
+    }
+    LLC_ELEMENT_DPRINTF_(LLCStreamPredicate, elem,
+                         "[LLCPred] Skip Issuing PredOff Elem.\n");
+    this->nextIssueElemIdx++;
+  }
+}
+
 LLCStreamElementPtr LLCDynStream::getFirstReadyToIssueElem() const {
-  if (this->numElementsReadyToIssue == 0) {
+  if (this->numElemsReadyToIssue == 0) {
     return nullptr;
   }
-  auto element = this->getElemPanic(this->nextIssueElementIdx, __func__);
-  switch (element->getState()) {
+  auto elem = this->getElemPanic(this->nextIssueElemIdx, __func__);
+  switch (elem->getState()) {
   default:
-    LLC_S_PANIC(this->getDynStrandId(), "Element %llu with Invalid state %d.",
-                element->idx, element->getState());
+    LLC_S_PANIC(this->getDynStrandId(), "Elem %llu with Invalid state %d.",
+                elem->idx, elem->getState());
   case LLCStreamElement::State::INITIALIZED:
     // To guarantee in-order, return false here.
     return nullptr;
   case LLCStreamElement::State::READY_TO_ISSUE:
-    return element;
+    return elem;
   case LLCStreamElement::State::ISSUED:
-    LLC_S_PANIC(this->getDynStrandId(), "NextIssueElement %llu already issued.",
-                element->idx);
+    LLC_S_PANIC(this->getDynStrandId(), "NextIssueElem %llu already issued.",
+                elem->idx);
   }
 }
 

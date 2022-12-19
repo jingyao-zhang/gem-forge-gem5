@@ -427,13 +427,17 @@ private:
    */
   void triggerIndElems(LLCDynStreamPtr stream, LLCStreamElementPtr elem);
   void triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx);
-  void triggerUpdate(LLCDynStreamPtr dynS, LLCStreamElementPtr element,
+  void triggerUpdate(LLCDynStreamPtr dynS, LLCStreamElementPtr elem,
                      const DynStreamSliceId &sliceId,
                      const DataBlock &storeValueBlock,
                      DataBlock &loadValueBlock, uint32_t &payloadSize);
-  void triggerAtomic(LLCDynStreamPtr dynS, LLCStreamElementPtr element,
+  void triggerAtomic(LLCDynStreamPtr dynS, LLCStreamElementPtr elem,
                      const DynStreamSliceId &sliceId, DataBlock &loadValueBlock,
                      uint32_t &payloadSize);
+  /**
+   * Helper function to handle predicated-off element.
+   */
+  void predicateOffElem(LLCDynStreamPtr dynS, LLCStreamElementPtr elem);
 
   /**
    * API to manages LLCStreamSlices.

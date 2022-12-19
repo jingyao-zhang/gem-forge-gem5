@@ -126,10 +126,11 @@ bool StreamRegionController::canExecuteStreamEndImpl(StaticRegion &staticRegion,
           dynS.cacheAckedElements.size() + dynS.stepElemCount <
               dynS.getNumFloatedElemUntil(dynS.FIFOIdx.entryIdx)) {
         // We are not ack the LastElement.
-        DYN_S_DPRINTF(
-            dynS.dynStreamId,
-            "Cannot execute StreamEnd. Cache acked %llu, need %llu.\n",
-            dynS.cacheAckedElements.size(), dynS.FIFOIdx.entryIdx);
+        DYN_S_DPRINTF(dynS.dynStreamId,
+                      "[NotExecuteStreamEnd] CacheAcked %llu + StepElemCount "
+                      "%ld < Floated %llu.\n",
+                      dynS.cacheAckedElements.size(), dynS.stepElemCount,
+                      dynS.getNumFloatedElemUntil(dynS.FIFOIdx.entryIdx));
         return false;
       }
     }

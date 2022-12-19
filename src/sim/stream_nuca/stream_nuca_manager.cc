@@ -1208,21 +1208,21 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
   for (const auto &align : region.aligns) {
     const auto &alignToRegion = this->getRegionFromStartVAddr(align.vaddrB);
 
-    auto elementOffset = align.elemOffset;
-    auto bytesOffset = elementOffset * alignToRegion.elementSize;
+    auto elemOffset = align.elemOffset;
+    auto bytesOffset = elemOffset * alignToRegion.elementSize;
     DPRINTF(StreamNUCAManager,
-            "Range %s %#x AlignTo %#x Offset Element %ld Bytes %lu.\n",
-            region.name, region.vaddr, alignToRegion.vaddr, elementOffset,
+            "Range %s %#x AlignTo %#x Offset Elem %ld Bytes %lu.\n",
+            region.name, region.vaddr, alignToRegion.vaddr, elemOffset,
             bytesOffset);
 
-    if (elementOffset < 0) {
+    if (elemOffset < 0) {
       panic("Range %s %#x with negative element offset %ld.\n", region.name,
-            region.vaddr, elementOffset);
+            region.vaddr, elemOffset);
     }
 
     if ((&alignToRegion) == (&region)) {
       // Self alignment.
-      if ((elementOffset < region.arraySizes.front())) {
+      if ((elemOffset < region.arraySizes.front())) {
         // Align along the inner-most dimension is considered implicitly done.
         DPRINTF(StreamNUCAManager, "Range %s %#x Self Aligned.\n", region.name,
                 region.vaddr);
@@ -1263,12 +1263,17 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
     } else {
       // Other alignment.
       auto otherInterleave = this->determineInterleave(alignToRegion);
-      DPRINTF(StreamNUCAManager,
-              "Range %s %#x Align to Range %#x Interleave = %lu / %lu * %lu.\n",
-              region.name, region.vaddr, alignToRegion.vaddr, otherInterleave,
-              alignToRegion.elementSize, region.elementSize);
+      DPRINTF(
+          StreamNUCAManager,
+          "Range %s %#x Align to Range %#x Intrlv = %lu / %lu * %lu /? %ld.\n",
+          region.name, region.vaddr, alignToRegion.vaddr, otherInterleave,
+          alignToRegion.elementSize, region.elementSize, elemOffset);
       interleave =
           otherInterleave / alignToRegion.elementSize * region.elementSize;
+      if (elemOffset > 0) {
+        assert(interleave % elemOffset == 0 && "Invalid ElemOffset.");
+        interleave /= elemOffset;
+      }
     }
   }
 

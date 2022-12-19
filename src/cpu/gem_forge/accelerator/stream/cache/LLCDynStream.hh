@@ -88,6 +88,8 @@ public:
   }
   bool shouldRangeSync() const { return this->configData->rangeSync; }
 
+  bool shouldSendValueToCore() const;
+
   /**
    * Predicate information.
    */
@@ -289,9 +291,16 @@ private:
   const char *curRemoteMachineType() const;
 
   // This is really just used for memorizing in IndirectStream.
-  uint64_t numElementsReadyToIssue = 0;
+  uint64_t numElemsReadyToIssue = 0;
   uint64_t numIndirectElementsReadyToIssue = 0;
-  uint64_t nextIssueElementIdx = 0;
+  uint64_t nextIssueElemIdx = 0;
+public:
+  uint64_t getNextIssueElemIdx() const {
+    return this->nextIssueElemIdx;
+  }
+  void skipIssuingPredOffElems();
+
+private:
 
   std::pair<Addr, MachineType> peekNextInitVAddrAndMachineType() const;
   const DynStreamSliceId &peekNextInitSliceId() const;

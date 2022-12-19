@@ -112,6 +112,7 @@ public:
     assert(!this->computationDone && "Computaion already done.");
     this->computationDone = true;
   }
+  bool isPredicatedOff() const { return this->state == State::PREDICATED_OFF; }
 
   StreamValue getValue(int offset = 0, int size = sizeof(StreamValue)) const;
   uint8_t *getUInt8Ptr(int offset = 0);
@@ -165,6 +166,7 @@ public:
     INITIALIZED,
     READY_TO_ISSUE,
     ISSUED,
+    PREDICATED_OFF,
   };
 
   State getState() const { return this->state; }

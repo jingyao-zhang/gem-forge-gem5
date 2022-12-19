@@ -220,13 +220,23 @@ bool StreamThrottler::tryGlobalThrottle(Stream *S) {
         isElimNestInnerS = true;
       }
     }
-    if (isElimNestInnerS &&
-        S->maxSize >= this->se->myParams->elimNestStreamInstances + 1) {
-      S_DPRINTF(
-          S,
-          "[Not Throttle] InnerS MyMaxSize %d >= %d ElimNestStreamInstances.\n",
-          S->maxSize, this->se->myParams->elimNestStreamInstances);
-      return false;
+    if (isElimNestInnerS) {
+      if (S->maxSize >= this->se->myParams->elimNestStreamInstances + 1) {
+        S_DPRINTF(S,
+                  "[Not Throttle] InnerS MyMaxSize %d >= %d "
+                  "ElimNestStreamInstances.\n",
+                  S->maxSize, this->se->myParams->elimNestStreamInstances);
+        return false;
+      }
+      for (auto nestBaseS : staticRegion.nestConfig.baseStreams) {
+        if (S->maxSize >= nestBaseS->maxSize) {
+          S_DPRINTF(S,
+                    "[Not Throttle] InnerS MyMaxSize %d >= %d "
+                    "NestBaseS %s.\n",
+                    S->maxSize, nestBaseS->maxSize, nestBaseS->getStreamName());
+          return false;
+        }
+      }
     }
   }
 
