@@ -2707,6 +2707,17 @@ void StreamEngine::exitDump() const {
     S->dumpStreamStats(streamOS);
   }
   streamOS.flush();
+  if (this->cpuDelegator->cpuId() == 0) {
+    // Dump aggregated stream stats.
+    auto streamStatsFileName = "stream.agg.stats.txt";
+    auto &streamOS = *simout.findOrCreate(streamStatsFileName)->stream();
+    for (auto &S : allStreams) {
+      streamOS << S->getStreamName() << '\n';
+      const auto &staticStats = StreamStatistic::getStaticStat(S->staticId);
+      staticStats.dump(streamOS);
+    }
+    streamOS.flush();
+  }
 }
 
 bool StreamEngine::isAccelerating() {

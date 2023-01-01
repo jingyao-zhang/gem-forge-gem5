@@ -203,6 +203,12 @@ public:
 
   void terminate();
 
+  using GlobalLLCDynStreamMapT =
+      std::unordered_map<DynStrandId, LLCDynStream *, DynStrandIdHasher>;
+  static GlobalLLCDynStreamMapT &getGlobalLLCDynStreamMap() {
+    return GlobalLLCDynStreamMap;
+  }
+
   static LLCDynStream *getLLCStream(const DynStrandId &strandId) {
     if (GlobalLLCDynStreamMap.count(strandId)) {
       return GlobalLLCDynStreamMap.at(strandId);
@@ -278,8 +284,7 @@ private:
                AbstractStreamAwareController *_llcController,
                CacheStreamConfigureDataPtr _configData);
 
-  static std::unordered_map<DynStrandId, LLCDynStream *, DynStrandIdHasher>
-      GlobalLLCDynStreamMap;
+  static GlobalLLCDynStreamMapT GlobalLLCDynStreamMap;
   static std::unordered_map<NodeID, std::list<std::vector<LLCDynStream *>>>
       GlobalMLCToLLCDynStreamGroupMap;
   static LLCDynStreamPtr
@@ -294,14 +299,12 @@ private:
   uint64_t numElemsReadyToIssue = 0;
   uint64_t numIndirectElementsReadyToIssue = 0;
   uint64_t nextIssueElemIdx = 0;
+
 public:
-  uint64_t getNextIssueElemIdx() const {
-    return this->nextIssueElemIdx;
-  }
+  uint64_t getNextIssueElemIdx() const { return this->nextIssueElemIdx; }
   void skipIssuingPredOffElems();
 
 private:
-
   std::pair<Addr, MachineType> peekNextInitVAddrAndMachineType() const;
   const DynStreamSliceId &peekNextInitSliceId() const;
   uint64_t peekNextInitElemIdx() const;

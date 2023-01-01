@@ -19,8 +19,7 @@
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
 
-std::unordered_map<DynStrandId, LLCDynStream *, DynStrandIdHasher>
-    LLCDynStream::GlobalLLCDynStreamMap;
+LLCDynStream::GlobalLLCDynStreamMapT LLCDynStream::GlobalLLCDynStreamMap;
 std::unordered_map<NodeID, std::list<std::vector<LLCDynStream *>>>
     LLCDynStream::GlobalMLCToLLCDynStreamGroupMap;
 

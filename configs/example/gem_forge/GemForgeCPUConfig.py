@@ -72,6 +72,8 @@ def get_processes(options):
             options.gem_forge_stream_nuca_ind_remap_box_bytes
         process.streamNUCAIndRebalanceThreshold = \
             options.gem_forge_stream_nuca_ind_rebalance_threshold
+        process.streamNUCAEnableCSRReorder = \
+            options.gem_forge_stream_nuca_enable_csr_reorder
         process.enableStreamPUMMapping = \
             options.gem_forge_stream_pum_mode != 0
         process.enableStreamPUMTiling = \

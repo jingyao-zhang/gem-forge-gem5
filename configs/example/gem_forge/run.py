@@ -285,6 +285,9 @@ parser.add_option("--gem-forge-stream-nuca-ind-remap-box-bytes", type="int",
 parser.add_option("--gem-forge-stream-nuca-ind-rebalance-threshold", type="float",
                   action="store", default="0.0",
                   help="Indirect rebalance threshold (0 to disable).")
+parser.add_option("--gem-forge-stream-nuca-enable-csr-reorder", type="int",
+                  action="store", default="0",
+                  help="Reorder CSR edges to reduce migration (0 to disable).")
 
 # Stream PUM Options.
 parser.add_option("--gem-forge-stream-pum-mode", type="int",

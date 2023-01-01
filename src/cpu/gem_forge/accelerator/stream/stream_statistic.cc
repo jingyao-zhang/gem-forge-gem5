@@ -3,6 +3,15 @@
 #include <cassert>
 #include <iomanip>
 
+std::map<uint64_t, StreamStatistic> StreamStatistic::staticStats;
+
+StreamStatistic &StreamStatistic::getStaticStat(uint64_t staticStreamId) {
+  if (!staticStats.count(staticStreamId)) {
+    staticStats.emplace(staticStreamId, StreamStatistic());
+  }
+  return staticStats.at(staticStreamId);
+}
+
 void StreamStatistic::dump(std::ostream &os) const {
 #define dumpScalar(stat)                                                       \
   os << std::setw(40) << "  " #stat << ' ' << stat << '\n'
@@ -87,13 +96,14 @@ void StreamStatistic::dump(std::ostream &os) const {
 
     dumpSingleAvgSample(remoteForwardNoCDelay);
     dumpSingleAvgSample(remoteIndReqNoCDelay);
-
-    dumpScalar(numLLCAliveElementSamples);
-    if (numLLCAliveElementSamples > 0) {
-      dumpAvg(avgLLCAliveElements, numLLCAliveElements,
-              numLLCAliveElementSamples);
-    }
   }
+
+  if (numLLCAliveElementSamples > 0) {
+    dumpScalar(numLLCAliveElementSamples);
+    dumpAvg(avgLLCAliveElements, numLLCAliveElements,
+            numLLCAliveElementSamples);
+  }
+  dumpSingleAvgSample(remoteInflyReq);
 
   dumpAvg(avgLength, numStepped, numConfigured);
   dumpAvg(avgUsed, numUsed, numConfigured);
@@ -306,6 +316,7 @@ void StreamStatistic::clear() {
   this->remoteIndReqNoCDelay.clear();
   this->llcReqLat.clear();
   this->memReqLat.clear();
+  this->remoteInflyReq.clear();
 
   for (auto &reasons : this->llcIssueReasons) {
     reasons = 0;

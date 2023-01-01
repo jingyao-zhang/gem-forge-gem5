@@ -59,6 +59,7 @@ public:
     enum TypeE {
       Indirect,
       PtrChase,
+      CSRIndex,
     };
     const TypeE type;
     const int32_t offset;
@@ -133,6 +134,7 @@ private:
    */
   const int indirectRemapBoxBytes = 0;
   const float indirectRebalanceThreshold = 0.0f;
+  const bool enableCSRReorder;
 
   std::map<Addr, StreamRegion> startVAddrRegionMap;
 
@@ -227,6 +229,15 @@ private:
   void relocateIndirectBoxes(ThreadContext *tc,
                              const IndirectRegionHops &regionHops);
   /**
+   * Estimate the CSR edge list migration.
+   */
+  struct CSREdgeListLine {
+    Addr vaddr;
+    int bank;
+    CSREdgeListLine(Addr _vaddr, int _bank) : vaddr(_vaddr), bank(_bank) {}
+  };
+  void estimateCSRMigration(ThreadContext *tc, const StreamRegion &region);
+  /**
    * Helper function to relocate a continuous range of physical lines.
    */
   void relocateCacheLines(ThreadContext *tc, Addr vaddrLine, Addr paddrLine,
@@ -277,6 +288,11 @@ private:
 
   Stats::ScalarNoReset indRegionMemToLLCRemappedHops;
   Stats::DistributionNoReset indRegionMemRemappedBanks;
+
+  Stats::ScalarNoReset csrEdgeMigrations;
+  Stats::ScalarNoReset csrEdgeMigrationHops;
+  Stats::ScalarNoReset csrReorderEdgeMigrations;
+  Stats::ScalarNoReset csrReorderEdgeMigrationHops;
 };
 
 #endif

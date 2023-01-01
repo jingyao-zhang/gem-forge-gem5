@@ -409,5 +409,7 @@ void StreamNUCAMap::evictRange(RangeMap &range) {
 
 void StreamNUCAMap::overridePAddrToBank(
     const std::unordered_map<Addr, int> &overrideMap) {
-  paddrLineToBankMap.insert(overrideMap.begin(), overrideMap.end());
+  for (const auto &entry : overrideMap) {
+    paddrLineToBankMap[entry.first] = entry.second;
+  }
 }

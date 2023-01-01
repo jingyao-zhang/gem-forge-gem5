@@ -81,6 +81,8 @@ class Process(SimObject):
         "Indirect remap box size (bytes, 0 to disable).")
     streamNUCAIndRebalanceThreshold = Param.Float(0.0,
         "Indirect rebalance threshold (bytes, 0 to disable).")
+    streamNUCAEnableCSRReorder = Param.Bool(False,
+        "Enable reordering CSR edge to reduce migration.")
     enableStreamPUMMapping = Param.Bool(False, "Enable StreamPUM Mapping.")
     enableStreamPUMTiling = Param.Bool(False, "Enable StreamPUM Tiling.")
     forceStreamPUMTilingDim = Param.String('none',

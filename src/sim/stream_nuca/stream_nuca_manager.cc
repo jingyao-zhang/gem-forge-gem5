@@ -31,7 +31,8 @@ StreamNUCAManager::StreamNUCAManager(Process *_process, ProcessParams *_params)
       forcePUMTilingDim(_params->forceStreamPUMTilingDim),
       forcePUMTilingSize(_params->forceStreamPUMTilingSize),
       indirectRemapBoxBytes(_params->streamNUCAIndRemapBoxBytes),
-      indirectRebalanceThreshold(_params->streamNUCAIndRebalanceThreshold) {
+      indirectRebalanceThreshold(_params->streamNUCAIndRebalanceThreshold),
+      enableCSRReorder(_params->streamNUCAEnableCSRReorder) {
   const auto &directRegionFitPolicy = _params->streamNUCADirectRegionFitPolicy;
   if (directRegionFitPolicy == "crop") {
     this->directRegionFitPolicy = DirectRegionFitPolicy::CROP;
@@ -48,7 +49,8 @@ StreamNUCAManager::StreamNUCAManager(const StreamNUCAManager &other)
       enablePUMTiling(other.enablePUMTiling),
       forcePUMTilingSize(other.forcePUMTilingSize),
       directRegionFitPolicy(other.directRegionFitPolicy),
-      indirectRemapBoxBytes(other.indirectRemapBoxBytes) {
+      indirectRemapBoxBytes(other.indirectRemapBoxBytes),
+      enableCSRReorder(other.enableCSRReorder) {
   panic("StreamNUCAManager does not have copy constructor.");
 }
 
@@ -95,6 +97,13 @@ void StreamNUCAManager::regStats() {
                "Distribution of minimal IndRegion banks.");
   distribution(indRegionMemRemappedBanks, 0, numBanks - 1, 1,
                "Distribution of remapped IndRegion banks.");
+
+  scalar(csrEdgeMigrations, "Total migrations to iterate CSR edge list.");
+  scalar(csrEdgeMigrationHops, "Total migrate hops to iterate CSR edge list.");
+  scalar(csrReorderEdgeMigrations,
+         "Total migrations to iterate CSR edge list after reordering it.");
+  scalar(csrReorderEdgeMigrationHops,
+         "Total migrate hops to iterate CSR edge list after reordering it.");
 
 #undef distribution
 #undef scalar
@@ -502,14 +511,25 @@ void StreamNUCAManager::remapIndirectRegion(ThreadContext *tc,
 
   // Register a fake region.
   this->relocateIndirectBoxes(tc, regionHops);
+
+  // Try to estimate CSR edge list migration.
+  this->estimateCSRMigration(tc, region);
 }
 
 StreamNUCAManager::IndirectRegionHops
 StreamNUCAManager::computeIndirectRegionHops(ThreadContext *tc,
                                              const StreamRegion &region) {
-  assert(region.aligns.size() == 1 &&
-         "IndirectRegion should have only one align.");
-  const auto &align = region.aligns.front();
+  auto indAlignIdx = -1;
+  for (int i = 0; i < region.aligns.size(); ++i) {
+    IrregularAlignField indField =
+        decodeIrregularAlign(region.aligns.at(i).elemOffset);
+    if (indField.type == IrregularAlignField::TypeE::Indirect) {
+      assert(indAlignIdx == -1 && "IndirectRegion should have only one align.");
+      indAlignIdx = i;
+    }
+  }
+  assert(indAlignIdx != -1 && "Missing IndAlign");
+  const auto &align = region.aligns.at(indAlignIdx);
   assert(align.vaddrB != region.vaddr && "Self-IndirectAlign?");
 
   /**
@@ -796,9 +816,9 @@ void StreamNUCAManager::relocateIndirectBoxes(
       freq[i] += boxHops.bankFreq[i];
     }
 
-    if (remapBankIdx == defaultBankIdx) {
-      continue;
-    }
+    // if (remapBankIdx == defaultBankIdx) {
+    //   continue;
+    // }
 
     this->relocateCacheLines(tc, boxHops.vaddr, boxHops.paddr,
                              this->indirectRemapBoxBytes, remapBankIdx);
@@ -864,6 +884,174 @@ void StreamNUCAManager::reallocatePageAt(ThreadContext *tc, Addr pageVAddr,
   NUMAPageAllocator::returnPage(pagePAddr, oldNUMANode);
 
   free(pageData);
+}
+
+void StreamNUCAManager::estimateCSRMigration(ThreadContext *tc,
+                                             const StreamRegion &region) {
+
+  auto csrIndexAlignIdx = -1;
+  for (int i = 0; i < region.aligns.size(); ++i) {
+    const auto &align = region.aligns.at(i);
+    if (align.elemOffset < 0) {
+      auto indField = decodeIrregularAlign(align.elemOffset);
+      if (indField.type == IrregularAlignField::TypeE::CSRIndex) {
+        csrIndexAlignIdx = i;
+        break;
+      }
+    }
+  }
+
+  const auto &csrIndexAlign = region.aligns.at(csrIndexAlignIdx);
+  const auto &csrIndexRegion =
+      this->getRegionFromStartVAddr(csrIndexAlign.vaddrB);
+
+  auto regionLhsVAddr = region.vaddr;
+  auto regionRhsVAddr = region.vaddr + region.numElement * region.elementSize;
+
+  assert(csrIndexRegion.elementSize == 8 && "Invalid Ptr.");
+  auto pTable = tc->getProcessPtr()->pTable;
+
+  for (int i = 0; i < csrIndexRegion.numElement; ++i) {
+    // We assume an extra element for the end of edge list.
+    Addr edgePtr[2];
+    tc->getVirtProxy().readBlob(csrIndexRegion.vaddr +
+                                    i * csrIndexRegion.elementSize,
+                                edgePtr, csrIndexRegion.elementSize * 2);
+    auto edgeLhs = edgePtr[0];
+    auto edgeRhs = edgePtr[1];
+    assert(edgeLhs >= regionLhsVAddr && edgeLhs <= regionRhsVAddr);
+    assert(edgeRhs >= regionLhsVAddr && edgeRhs <= regionRhsVAddr);
+    assert(edgeLhs <= edgeRhs);
+
+    auto numEdges = (edgeRhs - edgeLhs) / region.elementSize;
+    DPRINTF(StreamNUCAManager, "[StreamNUCA] CSR Reorder >>> %d %#x %#x %d.\n",
+            i, edgeLhs, edgeRhs, numEdges);
+    if (numEdges > 0) {
+
+      std::vector<CSREdgeListLine> lines;
+
+      for (int j = 0; j < numEdges; ++j) {
+        auto thisEdgeVAddr = edgeLhs + j * region.elementSize;
+        auto thisEdgeVAddrLine = makeLineAddress(thisEdgeVAddr);
+        Addr thisEdgePAddrLine;
+        assert(pTable->translate(thisEdgeVAddrLine, thisEdgePAddrLine));
+        auto thisEdgeBank = StreamNUCAMap::getBank(thisEdgePAddrLine);
+        if (thisEdgeBank == -1) {
+          panic("Invalid EdgeBank %d %d %ld.", i, j,
+                thisEdgeVAddr - regionLhsVAddr);
+        }
+        if (j == 0 || thisEdgeVAddr == thisEdgeVAddrLine) {
+          lines.emplace_back(thisEdgeVAddr, thisEdgeBank);
+        }
+      }
+
+      auto countMigration = [&lines, this](bool reordered) -> void {
+        for (auto j = 1; j < lines.size(); ++j) {
+          const auto &prevBank = lines.at(j - 1).bank;
+          const auto &thisBank = lines.at(j).bank;
+          if (prevBank != thisBank) {
+            // Need migration.
+            if (reordered) {
+              this->csrReorderEdgeMigrations++;
+              this->csrReorderEdgeMigrationHops +=
+                  StreamNUCAMap::computeHops(prevBank, thisBank);
+            } else {
+              this->csrEdgeMigrations++;
+              this->csrEdgeMigrationHops +=
+                  StreamNUCAMap::computeHops(prevBank, thisBank);
+            }
+          }
+        }
+      };
+      countMigration(false /* reordered */);
+
+      /**
+       * Try to reorder edges.
+       * 1. If the head/tail line is not a full line, we can not move it.
+       * 2. Sort all full cache lines.
+       */
+      auto fullLineBegin = lines.begin();
+      auto fullLineEnd = lines.end();
+      auto isFullLine = [edgeLhs, edgeRhs](Addr vaddr) -> bool {
+        return vaddr == makeLineAddress(vaddr) && vaddr >= edgeLhs &&
+               vaddr + StreamNUCAMap::getCacheBlockSize() <= edgeRhs;
+      };
+      if (fullLineBegin < fullLineEnd) {
+        if (!isFullLine(fullLineBegin->vaddr)) {
+          fullLineBegin++;
+        }
+      }
+      if (fullLineBegin < fullLineEnd) {
+        if (!isFullLine((fullLineEnd - 1)->vaddr)) {
+          fullLineEnd--;
+        }
+      }
+
+      auto numFullLines = fullLineEnd - fullLineBegin;
+      auto fullLineBytes = numFullLines * StreamNUCAMap::getCacheBlockSize();
+      if (numFullLines > 0) {
+        auto fullLineLhsVAddr = fullLineBegin->vaddr;
+        auto fullLineRhsVAddr = fullLineLhsVAddr + fullLineBytes;
+
+        // Sort does not change iterator.
+        std::sort(fullLineBegin, fullLineEnd,
+                  [](const CSREdgeListLine &lineA, const CSREdgeListLine &lineB)
+                      -> bool { return lineA.bank < lineB.bank; });
+
+        countMigration(true /*reordered*/);
+
+        // Let's try reorder them now.
+        if (this->enableCSRReorder) {
+          auto buffer = new char[fullLineRhsVAddr - fullLineLhsVAddr];
+          tc->getVirtProxy().readBlob(fullLineLhsVAddr, buffer, fullLineBytes);
+
+          for (int k = 0; k < numFullLines; ++k) {
+            DPRINTF(StreamNUCAManager, "%d\n",
+                    *reinterpret_cast<int *>(
+                        buffer + k * StreamNUCAMap::getCacheBlockSize()));
+          }
+
+          std::unordered_map<Addr, int> paddrToBankMap;
+          for (auto j = 0; j < numFullLines; ++j) {
+            const auto &line = *(fullLineBegin + j);
+            auto oldVAddr = line.vaddr;
+            auto oldData = buffer + (oldVAddr - fullLineLhsVAddr);
+            auto newVAddr =
+                fullLineLhsVAddr + j * StreamNUCAMap::getCacheBlockSize();
+            tc->getVirtProxy().writeBlob(newVAddr, oldData,
+                                         StreamNUCAMap::getCacheBlockSize());
+            // Remap the paddr line to bank.
+            Addr newPAddr;
+            assert(pTable->translate(newVAddr, newPAddr));
+            paddrToBankMap.emplace(newPAddr, line.bank);
+            DPRINTF(StreamNUCAManager,
+                    "[StreamNUCA] CSR Reorder %d %d %#x %d -> %#x.\n", i, j,
+                    oldVAddr, line.bank, newVAddr);
+          }
+
+          StreamNUCAMap::overridePAddrToBank(paddrToBankMap);
+
+          tc->getVirtProxy().readBlob(fullLineLhsVAddr, buffer, fullLineBytes);
+
+          for (int k = 0; k < numFullLines; ++k) {
+            Addr paddr;
+            auto vaddr =
+                fullLineLhsVAddr + k * StreamNUCAMap::getCacheBlockSize();
+            assert(pTable->translate(vaddr, paddr));
+            DPRINTF(StreamNUCAManager, "%d %d\n",
+                    *reinterpret_cast<int *>(
+                        buffer + k * StreamNUCAMap::getCacheBlockSize()),
+                    StreamNUCAMap::getBank(paddr));
+          }
+
+          delete[] buffer;
+        }
+      } else {
+        // Still need to count migration.
+        countMigration(true /*reordered*/);
+      }
+    }
+  }
 }
 
 void StreamNUCAManager::groupDirectRegionsByAlign() {
@@ -1354,9 +1542,15 @@ StreamNUCAManager::decodeIrregularAlign(int64_t irregularAlign) {
   int64_t raw = -irregularAlign;
 
   int typeRaw = raw >> 16;
-  IrregularAlignField::TypeE type = IrregularAlignField::TypeE::Indirect;
-  if (typeRaw == 1) {
-    type = IrregularAlignField::PtrChase;
+  IrregularAlignField::TypeE type =
+      static_cast<IrregularAlignField::TypeE>(typeRaw);
+  switch (type) {
+  case IrregularAlignField::TypeE::Indirect:
+  case IrregularAlignField::TypeE::PtrChase:
+  case IrregularAlignField::TypeE::CSRIndex:
+    break;
+  default:
+    panic("[StreamNUCA] Invalid IrregularAlighType %d.", typeRaw);
   }
   int32_t offset = (raw >> SIZE_BITWIDTH) & OFFSET_MASK;
   int32_t size = raw & SIZE_MASK;

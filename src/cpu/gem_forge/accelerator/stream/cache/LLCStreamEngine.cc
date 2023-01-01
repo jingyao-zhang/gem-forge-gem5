@@ -789,6 +789,9 @@ void LLCStreamEngine::wakeup() {
         this->inflyComputations.size());
   }
 
+  // Sample LLC streams.
+  this->sampleLLCStreams();
+
   // Drain incoming element data.
   this->drainIncomingStreamDataMsg();
 
@@ -4501,4 +4504,28 @@ void LLCStreamEngine::incrementIssueSlice(StreamStatistic &statistic) {
   } else {
     statistic.numLLCIssueSlice++;
   }
+}
+
+Cycles LLCStreamEngine::lastSampleCycle = Cycles(0);
+
+void LLCStreamEngine::sampleLLCStream(LLCDynStreamPtr dynS) {
+  StreamStatistic::sampleStaticLLCAliveElements(curCycle(),
+                                                dynS->getDynStreamId().staticId,
+                                                dynS->idxToElementMap.size());
+  auto &staticStats =
+      StreamStatistic::getStaticStat(dynS->getDynStreamId().staticId);
+  staticStats.remoteInflyReq.sample(curCycle(), dynS->inflyRequests);
+  for (auto indS : dynS->getIndStreams()) {
+    this->sampleLLCStream(indS);
+  }
+}
+
+void LLCStreamEngine::sampleLLCStreams() {
+  if (curCycle() == this->lastSampleCycle) {
+    return;
+  }
+  for (const auto &e : LLCDynStream::getGlobalLLCDynStreamMap()) {
+    this->sampleLLCStream(e.second);
+  }
+  this->lastSampleCycle = curCycle();
 }

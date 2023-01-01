@@ -55,7 +55,23 @@ void MLCStrandManager::receiveStreamConfigure(ConfigVec *configs,
     }
     if (config->stream->getStreamName().find("gap.bfs_push.out_v.ld") !=
         std::string::npos) {
-      splitContext.totalStrands = 8;
+      if (config->getTotalTripCount() <= 32) {
+        splitContext.totalStrands = 2;
+      } else if (config->getTotalTripCount() <= 48) {
+        splitContext.totalStrands = 3;
+      } else if (config->getTotalTripCount() <= 64) {
+        splitContext.totalStrands = 4;
+      } else if (config->getTotalTripCount() <= 80) {
+        splitContext.totalStrands = 5;
+      } else if (config->getTotalTripCount() <= 96) {
+        splitContext.totalStrands = 6;
+      } else if (config->getTotalTripCount() <= 112) {
+        splitContext.totalStrands = 7;
+      } else if (config->getTotalTripCount() <= 256) {
+        splitContext.totalStrands = 8;
+      } else {
+        splitContext.totalStrands = 16;
+      }
     }
   }
   if (this->canSplitIntoStrands(splitContext, *configs)) {
@@ -149,7 +165,7 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
     }
     if (config->stream->getStreamName().find("gap.bfs_push.out_v.ld") !=
         std::string::npos) {
-      if (config->hasTotalTripCount() && config->getTotalTripCount() < 128) {
+      if (config->hasTotalTripCount() && config->getTotalTripCount() < 16) {
         return false;
       }
     }

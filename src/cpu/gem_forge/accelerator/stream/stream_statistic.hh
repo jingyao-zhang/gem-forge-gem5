@@ -166,9 +166,22 @@ public:
     this->llcIssueReasons.at(reason)++;
   }
 
-  void sampleLLCAliveElements(size_t numAliveElements) {
-    this->numLLCAliveElements += numAliveElements;
+  void sampleLLCAliveElements(size_t numAliveElems) {
+    this->numLLCAliveElements += numAliveElems;
     this->numLLCAliveElementSamples++;
+  }
+
+  static void sampleStaticLLCAliveElements(uint64_t curCycle,
+                                           uint64_t staticStreamId,
+                                           size_t numAliveElems) {
+
+    auto &staticStats = getStaticStat(staticStreamId);
+    assert(staticStats.curCycle <= curCycle);
+    staticStats.numLLCAliveElements += numAliveElems;
+    if (staticStats.curCycle != curCycle) {
+      staticStats.curCycle = curCycle;
+      staticStats.numLLCAliveElementSamples++;
+    }
   }
 
   StreamStatistic() = default;
@@ -178,19 +191,29 @@ public:
   struct SingleAvgSampler {
     size_t samples = 0;
     size_t value = 0;
+    size_t curCycle = 0;
     void sample(size_t v) {
       this->samples++;
       this->value += v;
     }
+    void sample(size_t curCycle, size_t v) {
+      this->value += v;
+      if (curCycle != this->curCycle) {
+        this->samples++;
+        this->curCycle = curCycle;
+      }
+    }
     void clear() {
       this->samples = 0;
       this->value = 0;
+      this->curCycle = 0;
     }
   };
   SingleAvgSampler remoteForwardNoCDelay;
   SingleAvgSampler remoteIndReqNoCDelay;
   SingleAvgSampler llcReqLat;
   SingleAvgSampler memReqLat;
+  SingleAvgSampler remoteInflyReq;
 
   /**
    * Collect the cycles between PUM sync.
@@ -202,6 +225,17 @@ public:
     assert(syncIdx < MAX_SYNCS);
     this->pumCyclesBetweenSync.at(syncIdx).sample(cycles);
   }
+
+  /**
+   * A static map from StaticStreamId to Statistics.
+   * Used to aggregate stats of same static stream across the system.
+   */
+  static std::map<uint64_t, StreamStatistic> staticStats;
+  static StreamStatistic &getStaticStat(uint64_t staticStreamId);
+  /**
+   * Record the current cycle for aggregate stats across static streams.
+   */
+  uint64_t curCycle = 0;
 };
 
 #endif
