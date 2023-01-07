@@ -350,9 +350,10 @@ void LLCDynStream::traceEvent(
 }
 
 void LLCDynStream::sanityCheckStreamLife() {
-  if (!Debug::LLCRubyStreamLife) {
-    return;
-  }
+  // if (!Debug::LLCRubyStreamLife) {
+  //   return;
+  // }
+  return;
   bool failed = false;
   if (GlobalLLCDynStreamMap.size() > 4096) {
     failed = true;

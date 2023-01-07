@@ -237,7 +237,7 @@ bool MLCDynStream::checkRecvDynSForPop(const DynStreamSliceId &sliceId) {
           recvStrandElemIdx, recvStreamElemIdx, recvInitStrandElemIdx,
           recvStrandElemIdx);
       remoteRecvS->registerElemInitCallback(recvStrandElemIdx,
-                                               elemInitCallback);
+                                            elemInitCallback);
       return false;
     }
   }
@@ -279,20 +279,19 @@ bool MLCDynStream::tryPopStream() {
      */
     for (auto remoteDynIS : remoteDynS->getIndStreams()) {
 
-      auto unreleasedElementIdx = remoteDynIS->getNextUnreleasedElementIdx();
+      auto unreleasedElemIdx = remoteDynIS->getNextUnreleasedElementIdx();
 
-      auto dynISElementOffset = 1024 / remoteDynIS->getMemElementSize();
+      auto dynISElemOffset = 1024 / remoteDynIS->getMemElementSize();
 
-      if (unreleasedElementIdx + dynISElementOffset <
-          remoteDynISProgressElemIdx) {
+      if (unreleasedElemIdx + dynISElemOffset < remoteDynISProgressElemIdx) {
 
         MLC_S_DPRINTF(
-            this->getDynStreamId(),
-            "Smaller RemoteDynIS %s UnreleaseElement %llu + %llu < %llu.\n",
-            remoteDynIS->getDynStrandId(), unreleasedElementIdx,
-            dynISElementOffset, remoteDynISProgressElemIdx);
+            this->getDynStrandId(),
+            "Smaller RemoteDynIS %s UnreleaseElem %llu + %llu < %llu.\n",
+            remoteDynIS->getDynStrandId(), unreleasedElemIdx, dynISElemOffset,
+            remoteDynISProgressElemIdx);
 
-        remoteDynISProgressElemIdx = unreleasedElementIdx + dynISElementOffset;
+        remoteDynISProgressElemIdx = unreleasedElemIdx + dynISElemOffset;
         // llcDynISLeastProgress = llcDynIS;
       }
     }

@@ -222,6 +222,68 @@ CacheStreamConfigureData::splitLinearParam1D(const StrandSplitInfo &strandSplit,
   return strandParams;
 }
 
+DynStreamFormalParamV CacheStreamConfigureData::splitAffinePatternByElem(
+    int64_t startElem, int64_t endElem, int strandIdx, int totalStrands) {
+  /**
+   * * This is used to implement the "ByElem" StrandSplit, used to increase
+   * * parallelism for edge list streams in graph workloads.
+   *
+   * * So far we assume the streams are 1D pattern with:
+   * * start : S1 : T1
+   *
+   * * ->
+   * * start + startElem * S1 : S1 : endElem - startElem
+   */
+
+  const auto &params = this->addrGenFormalParams;
+  auto callback = this->addrGenCallback;
+
+  auto linearAddrGen =
+      std::dynamic_pointer_cast<LinearAddrGenCallback>(callback);
+  assert(linearAddrGen && "Callback is not linear.");
+  assert(params.size() == 3);
+
+  // Copy the original params.
+  DynStreamFormalParamV strandParams = this->addrGenFormalParams;
+
+#define setTrip(dim, t)                                                        \
+  {                                                                            \
+    strandParams.at((dim)*2 + 1).isInvariant = true;                           \
+    strandParams.at((dim)*2 + 1).invariant.uint64() = t;                       \
+  }
+#define setStride(dim, t)                                                      \
+  {                                                                            \
+    strandParams.at((dim)*2).isInvariant = true;                               \
+    strandParams.at((dim)*2).invariant.uint64() = t;                           \
+  }
+#define setStart(t)                                                            \
+  {                                                                            \
+    strandParams.back().isInvariant = true;                                    \
+    strandParams.back().invariant.uint64() = t;                                \
+  }
+
+  auto stride = params.at(0).invariant.int64();
+  auto trip = params.at(1).invariant.uint64();
+  auto start = params.back().invariant.uint64();
+
+  assert(endElem <= trip);
+  assert(startElem < endElem);
+
+  auto strandStart = start + startElem * stride;
+  auto strandStride = stride;
+  auto strandTrip = endElem - startElem;
+
+  setTrip(0, strandTrip);
+  setStride(0, strandStride);
+  setStart(strandStart);
+
+#undef setTrip
+#undef setStride
+#undef setStart
+
+  return strandParams;
+}
+
 DynStreamFormalParamV CacheStreamConfigureData::splitAffinePatternAtDim(
     int splitDim, int64_t interleave, int strandIdx, int totalStrands) {
   const auto &params = this->addrGenFormalParams;

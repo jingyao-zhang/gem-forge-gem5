@@ -484,7 +484,7 @@ void MLCDynDirectStream::trySendCreditToLLC() {
                                                           "WaitForLLCRecvS");
 
       waitForRecvS->registerElemInitCallback(waitForRecvStrandElemIdx,
-                                                elementInitCallback);
+                                             elementInitCallback);
       return;
     }
 
@@ -800,8 +800,8 @@ void MLCDynDirectStream::notifyIndStreams(const MLCStreamSlice &slice) {
     MLC_SLICE_DPRINTF(
         sliceId, "Extract element %lu data %s.\n", elemIdx,
         GemForgeUtils::dataToString(elementData.data(), elementData.size()));
-    for (auto indirectStream : this->indirectStreams) {
-      auto IS = indirectStream->getStaticStream();
+    for (auto dynIS : this->indirectStreams) {
+      auto IS = dynIS->getStaticStream();
       if (S->addrDepStreams.count(IS) == 0) {
         // This indirect stream does not use my data to generate address.
         continue;
@@ -824,8 +824,9 @@ void MLCDynDirectStream::notifyIndStreams(const MLCStreamSlice &slice) {
             baseId = baseEdge.toStaticId;
           } else {
             if (baseEdge.toStaticId != baseId) {
-              MLC_SLICE_PANIC(sliceId, "IS has multiple BaseMemS to myself.",
-                              baseEdges.size());
+              MLC_SLICE_PANIC(sliceId,
+                              "IS %s has multiple BaseMemS to myself %d.",
+                              dynIS->getDynStrandId(), baseEdges.size());
             }
           }
         }
@@ -858,8 +859,7 @@ void MLCDynDirectStream::notifyIndStreams(const MLCStreamSlice &slice) {
        * IndS.
        */
 
-      indirectStream->receiveBaseStreamData(elemIdx, baseData,
-                                            !isInConstructor);
+      dynIS->receiveBaseStreamData(elemIdx, baseData, !isInConstructor);
     }
   }
 }
@@ -1226,8 +1226,24 @@ MLCDynDirectStream::getRemoteTailPAddrAndMachineType() const {
       auto endElemIdx = lastSegment.endSliceId.getStartIdx();
       endPAddr = lastSegment.endPAddr;
       endMachineType = this->config->floatPlan.getMachineTypeAtElem(endElemIdx);
-    }
-    {
+
+      /**
+       * We have introduced a tiny optimization in
+       * LLCStreamEngine::isNextElemHandledHere(). When the stream has reached
+       * the end, we do not bother to migrate them to the next bank. Therefore,
+       * here we need to adjust the endElemIdx by -1?
+       */
+      if (this->hasTotalTripCount() &&
+          endElemIdx == this->getTotalTripCount()) {
+        assert(endElemIdx > 0);
+        // Take the last slice Id's vaddr?
+        auto endVAddr = lastSegment.sliceIds.sliceIds.back().vaddr;
+        endPAddr = this->translateVAddr(endVAddr);
+        endMachineType =
+            this->config->floatPlan.getMachineTypeAtElem(endElemIdx - 1);
+      }
+
+    } else {
       // We haven't allocate any slice.
     }
 

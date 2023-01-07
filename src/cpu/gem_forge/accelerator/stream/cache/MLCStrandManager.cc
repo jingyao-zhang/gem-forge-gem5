@@ -143,6 +143,9 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
 
   /**
    * Some hack for graph workloads.
+   * 1. Avoid split outer loop streams.
+   * 2. Only split the inner loop streams if they are long enough.
+   * 3. If SplitByElem is enabled, we pass to canSplitIntoStrandsByElem.
    */
   for (const auto &config : configs) {
     if (config->stream->getStreamName().find(
@@ -155,6 +158,9 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
     }
     if (config->stream->getStreamName().find("gap.pr_push.atomic.out_v.ld") !=
         std::string::npos) {
+      if (this->mlcSE->controller->myParams->enable_stream_strand_elem_split) {
+        return this->canSplitIntoStrandsByElem(context, configs);
+      }
       if (config->hasTotalTripCount() && config->getTotalTripCount() < 128) {
         return false;
       }
@@ -165,6 +171,9 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
     }
     if (config->stream->getStreamName().find("gap.bfs_push.out_v.ld") !=
         std::string::npos) {
+      if (this->mlcSE->controller->myParams->enable_stream_strand_elem_split) {
+        return this->canSplitIntoStrandsByElem(context, configs);
+      }
       if (config->hasTotalTripCount() && config->getTotalTripCount() < 16) {
         return false;
       }
@@ -197,6 +206,72 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
       return false;
     }
   }
+  return true;
+}
+
+bool MLCStrandManager::canSplitIntoStrandsByElem(
+    StrandSplitContext &context, const ConfigVec &configs) const {
+
+  // Should have only one direct config.
+  assert(configs.size() == 1);
+  auto config = configs.front();
+
+  const auto &params = config->addrGenFormalParams;
+  auto callback = config->addrGenCallback;
+
+  auto linearAddrGen =
+      std::dynamic_pointer_cast<LinearAddrGenCallback>(callback);
+  assert(linearAddrGen && "Callback is not linear.");
+  assert(params.size() == 3);
+
+  assert(config->hasTotalTripCount());
+
+  auto totalElems = config->getTotalTripCount();
+  assert(totalElems > 0 && "Empty stream should not be floated.");
+
+  auto cpuDelegator = config->stream->getCPUDelegator();
+
+  auto getBank = [cpuDelegator, linearAddrGen,
+                  &params](uint64_t elemIdx) -> int {
+    auto vaddr =
+        linearAddrGen
+            ->genAddr(elemIdx,
+                      convertFormalParamToParam(params, getStreamValueFail))
+            .uint64();
+    auto vaddrLine = makeLineAddress(vaddr);
+    Addr paddrLine;
+    assert(cpuDelegator->translateVAddrOracle(vaddrLine, paddrLine));
+    auto bank = StreamNUCAMap::getBank(paddrLine);
+    assert(bank != -1);
+    return bank;
+  };
+
+  // Get the first bank.
+  auto prevBank = getBank(0);
+
+  std::vector<uint64_t> elemSplits;
+  for (uint64_t elemIdx = 0; elemIdx < totalElems; ++elemIdx) {
+    auto bank = getBank(elemIdx);
+
+    if (bank != prevBank) {
+      // Split into strands.
+      elemSplits.push_back(elemIdx);
+      STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+                  "[ElemSplit] Elem %lu Bank %d -> %d.\n", elemIdx, prevBank,
+                  bank);
+    }
+
+    prevBank = bank;
+  }
+
+  // Always push totalElems as last one.
+  STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+              "[ElemSplit] EndElem %lu Bank %d.\n", totalElems, prevBank);
+  elemSplits.push_back(totalElems);
+
+  context.splitByElem = true;
+  context.splitByElemInfo = StrandSplitInfo(elemSplits, elemSplits.size());
+
   return true;
 }
 
@@ -744,6 +819,13 @@ MLCStrandManager::splitIntoStrands(StrandSplitContext &context,
   assert(config->hasBeenCuttedByMLC == false && "Split MLC cut.");
   assert(config->isPointerChase == false && "Split pointer chase.");
 
+  if (context.splitByElem) {
+    // New implementation to split by element.
+    bool isDirect = true;
+    return this->splitIntoStrandsImpl(context, config, context.splitByElemInfo,
+                                      isDirect);
+  }
+
   // For now just split by interleave = 1kB / 64B = 16, totalStrands = 64.
   auto &psc = context.perStreamContext.at(config->dynamicId);
   // auto interleave =
@@ -753,8 +835,6 @@ MLCStrandManager::splitIntoStrands(StrandSplitContext &context,
   bool isDirect = true;
   StrandSplitInfo strandSplit(psc.innerTrip, psc.trips.at(psc.splitDim),
                               psc.splitTripPerStrand, context.totalStrands);
-  // StrandSplitInfo strandSplit(interleave, tailInterleave,
-  // context.totalStrands);
   return this->splitIntoStrandsImpl(context, config, strandSplit, isDirect);
 }
 
@@ -1027,14 +1107,28 @@ DynStreamFormalParamV MLCStrandManager::splitAffinePattern(
     StrandSplitContext &context, ConfigPtr config,
     const StrandSplitInfo &strandSplit, int strandIdx) {
 
-  auto iter = context.perStreamContext.find(config->dynamicId);
+  if (strandSplit.isSplitByDim()) {
 
-  assert(iter != context.perStreamContext.end());
+    auto iter = context.perStreamContext.find(config->dynamicId);
+    assert(iter != context.perStreamContext.end());
+    const auto &psc = iter->second;
 
-  const auto &psc = iter->second;
-  return config->splitAffinePatternAtDim(
-      psc.splitDim, psc.splitTripPerStrand * psc.innerTrip, strandIdx,
-      strandSplit.getTotalStrands());
+    return config->splitAffinePatternAtDim(
+        psc.splitDim, psc.splitTripPerStrand * psc.innerTrip, strandIdx,
+        strandSplit.getTotalStrands());
+  } else if (strandSplit.isSplitByElem()) {
+    assert(config->hasTotalTripCount());
+    auto startElem =
+        strandSplit.mapStrandToStream(StrandElemSplitIdx(strandIdx, 0));
+    auto strandTrip =
+        strandSplit.getStrandTripCount(config->getTotalTripCount(), strandIdx);
+    auto endElem = strandSplit.mapStrandToStream(
+        StrandElemSplitIdx(strandIdx, strandTrip));
+    return config->splitAffinePatternByElem(startElem, endElem, strandIdx,
+                                            strandSplit.getTotalStrands());
+  } else {
+    panic("Unsupported StrandSplitInfo.");
+  }
 }
 
 void MLCStrandManager::configureStream(ConfigPtr config, MasterID masterId) {
@@ -1397,20 +1491,8 @@ bool MLCStrandManager::isStreamElemAcked(
     MLCDynStream::ElementCallback callback) {
 
   /**
-   * We first get the first Strand. And then get TargetStrandId and
-   * StreamElemIdx.
-   *
-   * NOTE: This does not support InitOffset.
-   *
-   * Define InterleaveCount = StreamElemIdx / (Interleave * TotalStrands).
-   * For all strands:
-   * 1. If strendId < targetStrandId:
-   *    Check that ((InterleaveCount + 1) * Interleave - 1) is Acked.
-   * 2. If strandId == targetStrandId:
-   *    Check that StreamElemIdx is Acked.
-   * 3. If strandId > targetStrandId and InterleaveCount > 0
-   *    Check that IntleaveCount * Interleave is Acked.
-   *
+   * We need to check for all strands to see they have completed before the
+   * target StreamElemIdx.
    */
 
   auto firstDynS = this->mlcSE->getStreamFromStrandId(DynStrandId(streamId));
@@ -1419,11 +1501,8 @@ bool MLCStrandManager::isStreamElemAcked(
   auto firstConfig = firstDynS->getConfig();
   const auto &splitInfo = firstConfig->strandSplit;
 
-  auto targetStrandId =
-      firstConfig->getStrandIdFromStreamElemIdx(streamElemIdx);
+  auto targetStrandElemSplit = splitInfo.mapStreamToPrevStrand(streamElemIdx);
 
-  auto interleaveCount =
-      streamElemIdx / (splitInfo.getInterleave() * splitInfo.getTotalStrands());
   for (auto strandIdx = 0; strandIdx < splitInfo.getTotalStrands();
        ++strandIdx) {
     auto strandId =
@@ -1431,22 +1510,14 @@ bool MLCStrandManager::isStreamElemAcked(
     auto dynS = this->mlcSE->getStreamFromStrandId(strandId);
     assert(dynS && "MLCDynS already released.");
 
-    uint64_t checkStrandElemIdx = 0;
-    if (strandIdx < targetStrandId.strandIdx) {
-      checkStrandElemIdx =
-          (interleaveCount + 1) * splitInfo.getInterleave() - 1;
-    } else if (strandIdx > targetStrandId.strandIdx) {
-      checkStrandElemIdx = interleaveCount * splitInfo.getInterleave();
-    } else {
-      checkStrandElemIdx =
-          dynS->getConfig()->getStrandElemIdxFromStreamElemIdx(streamElemIdx);
+    uint64_t checkStrandElemIdx = targetStrandElemSplit.at(strandIdx).elemIdx;
+    if (checkStrandElemIdx == -1) {
+      // No need to check this one.
+      continue;
     }
     if (!dynS->isElementAcked(checkStrandElemIdx)) {
-      MLC_S_DPRINTF(dynS->getDynStrandId(),
-                    "NoAck for StrandElem %lu TargetStrandIdx %d "
-                    "TargetStreamElemIdx %lu.\n",
-                    checkStrandElemIdx, targetStrandId.strandIdx,
-                    streamElemIdx);
+      MLC_S_DPRINTF(dynS->getDynStrandId(), "NoAck for StrandElem %lu.\n",
+                    checkStrandElemIdx);
       dynS->registerElementAckCallback(checkStrandElemIdx, callback);
       return false;
     }

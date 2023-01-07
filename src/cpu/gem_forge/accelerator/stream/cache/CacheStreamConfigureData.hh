@@ -347,6 +347,9 @@ public:
                                                 int64_t interleave,
                                                 int strandIdx,
                                                 int totalStrands);
+  DynStreamFormalParamV splitAffinePatternByElem(int64_t startElem,
+                                                 int64_t endElem, int strandIdx,
+                                                 int totalStrands);
 
   /**
    * After splitting into strands, we try to detect broadcast opportunity.

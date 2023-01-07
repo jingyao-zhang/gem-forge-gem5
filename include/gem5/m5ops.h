@@ -93,11 +93,16 @@ void m5_stream_nuca_region(const char *regionName, void *buffer,
  *   ...
  * };
  * -((1 << 16) | (offset << 8) | size).
+ *
+ * We also add information about the CSR index array.
+ * For now this is used to inform the hardware about the CSR data structure.
  */
 #define m5_stream_nuca_encode_ind_align(offset, size)                          \
   (-(int64_t)((0 << 16) | ((offset) << 8) | (size)))
 #define m5_stream_nuca_encode_ptr_align(offset, size)                          \
   (-(int64_t)((1 << 16) | ((offset) << 8) | (size)))
+#define m5_stream_nuca_encode_csr_index()                                      \
+  (-(int64_t)((2 << 16) | ((0) << 8) | (0)))
 void m5_stream_nuca_align(void *A, void *B, int64_t elementOffset);
 
 /**

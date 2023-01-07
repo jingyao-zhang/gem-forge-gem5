@@ -659,6 +659,20 @@ void LLCStreamEngine::receiveStoreStreamData(LLCDynStreamPtr dynS,
 }
 
 bool LLCStreamEngine::isNextElemHandledHere(LLCDynStreamPtr dynS) const {
+
+  /**
+   * We introduce a new special case: If the stream has trip count and have
+   * reached the end, do not migrate. The MLC SE need to take care of this
+   * special case to correctly send the StreamEnd message.
+   */
+  if (dynS->hasTotalTripCount()) {
+    auto nextElemIdx = dynS->peekNextAllocElemIdx();
+    if (nextElemIdx == dynS->getTotalTripCount()) {
+      // Do not migrate as we have reached the end.
+      return true;
+    }
+  }
+
   auto nextVAddrAndMachineType = dynS->peekNextAllocVAddrAndMachineType();
   auto nextVAddr = nextVAddrAndMachineType.first;
   auto nextMachineType = nextVAddrAndMachineType.second;
@@ -4509,11 +4523,20 @@ void LLCStreamEngine::incrementIssueSlice(StreamStatistic &statistic) {
 Cycles LLCStreamEngine::lastSampleCycle = Cycles(0);
 
 void LLCStreamEngine::sampleLLCStream(LLCDynStreamPtr dynS) {
+
+  if (dynS->isTerminated() || !dynS->isRemoteConfigured()) {
+    // The dynS is not configured yet or already terminated.
+    return;
+  }
+
+  // LLC alive elements.
   StreamStatistic::sampleStaticLLCAliveElements(curCycle(),
                                                 dynS->getDynStreamId().staticId,
                                                 dynS->idxToElementMap.size());
   auto &staticStats =
       StreamStatistic::getStaticStat(dynS->getDynStreamId().staticId);
+
+  // Remote infly requests.
   staticStats.remoteInflyReq.sample(curCycle(), dynS->inflyRequests);
   for (auto indS : dynS->getIndStreams()) {
     this->sampleLLCStream(indS);

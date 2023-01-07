@@ -78,6 +78,11 @@ private:
       std::vector<int64_t> trips;
       std::vector<int64_t> strides;
     };
+    /**
+     * Fields used for split by Elem.
+     */
+    bool splitByElem = false;
+    StrandSplitInfo splitByElemInfo;
     std::map<DynStreamId, ContextPerStream> perStreamContext;
   };
 
@@ -86,6 +91,8 @@ private:
    */
   bool canSplitIntoStrands(StrandSplitContext &context,
                            const ConfigVec &configs) const;
+  bool canSplitIntoStrandsByElem(StrandSplitContext &context,
+                                 const ConfigVec &configs) const;
   bool chooseNoSplitOuterTrip(StrandSplitContext &context,
                               const ConfigVec &configs) const;
   bool precheckSplitable(StrandSplitContext &context, ConfigPtr config) const;

@@ -3,6 +3,9 @@
 
 #include "DynStrandId.hh"
 
+#include <cassert>
+#include <vector>
+
 struct StrandElemSplitIdx {
   /**
    * Represent an element within one strand.
@@ -77,34 +80,49 @@ public:
 
   StrandSplitInfo() = default;
 
-private:
-  StrandSplitInfo(int64_t _interleave, int64_t _tailInterleave,
-                  int64_t _totalStrands);
-
 public:
-  StrandSplitInfo(int64_t _innerTrip, int64_t _splitTrip,
-                  int64_t _splitTripPerStrand, int64_t _totalStrands);
-
   using StreamElemIdx = uint64_t;
   using StrandIdx = DynStrandId::StrandIndex;
   using TripCount = int64_t;
+
+  StrandSplitInfo(int64_t _innerTrip, int64_t _splitTrip,
+                  int64_t _splitTripPerStrand, int64_t _totalStrands);
+  StrandSplitInfo(const std::vector<StreamElemIdx> &_streamElemSplits,
+                  int64_t _totalStrands);
+
+  int64_t getTotalStrands() const { return this->totalStrands; }
 
   StrandElemSplitIdx mapStreamToStrand(StreamElemIdx streamElemIdx) const;
   StreamElemIdx mapStrandToStream(StrandElemSplitIdx strandElemIdx) const;
   TripCount getStrandTripCount(TripCount streamTripCount,
                                StrandIdx strandIdx) const;
 
+  /**
+   * Get all StrandElemSplitIdxes that would happen before the given
+   * StreamElemIdx. Used to check the serialized progress of strands.
+   */
+  std::vector<StrandElemSplitIdx>
+  mapStreamToPrevStrand(StreamElemIdx streamElemIdx) const;
+
   int64_t getInterleave() const {
+    assert(this->splitByDim);
     return this->innerTrip * this->splitTripPerStrand;
   }
-
-  int64_t getInnerTrip() const { return this->innerTrip; }
-  void setInnerTrip(int64_t innerTrip) { this->innerTrip = innerTrip; }
-
+  int64_t getInnerTrip() const {
+    assert(this->splitByDim);
+    return this->innerTrip;
+  }
+  void setInnerTrip(int64_t innerTrip) {
+    assert(this->splitByDim);
+    this->innerTrip = innerTrip;
+  }
   int64_t getTailInterleave() const {
+    assert(this->splitByDim);
     return this->splitTrip % (this->splitTripPerStrand * this->totalStrands);
   }
-  int64_t getTotalStrands() const { return this->totalStrands; }
+
+  bool isSplitByDim() const { return splitByDim; }
+  bool isSplitByElem() const { return splitByElem; }
 
 private:
   int64_t interleave = 1;
@@ -128,11 +146,28 @@ private:
   /**
    * These are the new implementation to splitByDim.
    */
-  StrandElemSplitIdx mapStreamToStrandImpl(StreamElemIdx streamElemIdx) const;
-  StreamElemIdx mapStrandToStreamImpl(StrandElemSplitIdx strandElemIdx) const;
-  TripCount getStrandTripCountImpl(TripCount streamTripCount,
-                                   StrandIdx strandIdx) const;
+  StrandElemSplitIdx mapStreamToStrandByDim(StreamElemIdx streamElemIdx) const;
+  StreamElemIdx mapStrandToStreamByDim(StrandElemSplitIdx strandElemIdx) const;
+  TripCount getStrandTripCountByDim(TripCount streamTripCount,
+                                    StrandIdx strandIdx) const;
+  std::vector<StrandElemSplitIdx>
+  mapStreamToPrevStrandByDim(StreamElemIdx streamElemIdx) const;
   TripCount getSplitDimTotalTripForStrand(StrandIdx strandIdx) const;
+
+  /**
+   * This is a special implementation for short streams used in graph workloads.
+   * Each strand takes cares of one bank.
+   * We explicitly record the range of each strand here.
+   */
+  bool splitByElem = false;
+  std::vector<StreamElemIdx> streamElemSplits;
+
+  StrandElemSplitIdx mapStreamToStrandByElem(StreamElemIdx streamElemIdx) const;
+  StreamElemIdx mapStrandToStreamByElem(StrandElemSplitIdx strandElemIdx) const;
+  TripCount getStrandTripCountByElem(TripCount streamTripCount,
+                                     StrandIdx strandIdx) const;
+  std::vector<StrandElemSplitIdx>
+  mapStreamToPrevStrandByElem(StreamElemIdx streamElemIdx) const;
 };
 
 #endif
