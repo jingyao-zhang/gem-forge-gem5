@@ -308,6 +308,7 @@ void
 resetstats(ThreadContext *tc, Tick delay, Tick period)
 {
     DPRINTF(PseudoInst, "PseudoInst::resetstats(%i, %i)\n", delay, period);
+    inform("%d - PseudoInst::resetstats(%i, %i)\n", curTick(), delay, period);
     if (!tc->getCpuPtr()->params()->do_statistics_insts)
         return;
 

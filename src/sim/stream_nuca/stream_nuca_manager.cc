@@ -901,6 +901,10 @@ void StreamNUCAManager::estimateCSRMigration(ThreadContext *tc,
     }
   }
 
+  if (csrIndexAlignIdx == -1) {
+    panic("Missing CSR Index Align for region %s.\n", region.name);
+  }
+
   const auto &csrIndexAlign = region.aligns.at(csrIndexAlignIdx);
   const auto &csrIndexRegion =
       this->getRegionFromStartVAddr(csrIndexAlign.vaddrB);
