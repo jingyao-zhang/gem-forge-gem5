@@ -317,33 +317,6 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
     auto instMnem = x86uop->getInstMnem();
     auto uopMnem = x86uop->getName();
 
-    if (instMnem == "PUSH_R") {
-      if (uopMnem == "stis") {
-        // Push into our small stack.
-        // The 3rd argument is the data register.
-        assert(staticInst->numSrcRegs() == 4);
-        auto data = execFuncXC.readIntRegOperand(staticInst->srcRegIdx(2));
-        stack.push_back(data);
-        EXEC_FUNC_DPRINTF("Push %lu.\n", data);
-      }
-      // Ignore other microops.
-      continue;
-    }
-
-    if (instMnem == "POP_R") {
-      if (uopMnem == "mov") {
-        // Pop from our small stack.
-        // The 3rd argument is the data register.
-        assert(staticInst->numDestRegs() == 1);
-        auto data = stack.back();
-        stack.pop_back();
-        execFuncXC.setIntRegOperand(staticInst->destRegIdx(0), data);
-        EXEC_FUNC_DPRINTF("Pop %lu.\n", data);
-      }
-      // Ignore other microops.
-      continue;
-    }
-
     staticInst->execute(&execFuncXC, nullptr /* traceData. */);
 
     /**
