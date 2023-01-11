@@ -9,7 +9,8 @@
 void FunctionTracer::enableFunctionTrace() {
   assert(!this->functionTracingEnabled);
   const std::string fname = csprintf("ftrace.%s", this->name);
-  this->functionTraceStream = simout.findOrCreate(fname)->stream();
+  auto funcTraceFolder = simout.findOrCreateSubdirectory("ftrace");
+  this->functionTraceStream = funcTraceFolder->findOrCreate(fname)->stream();
   this->functionTracingEnabled = true;
   this->functionEntryTick = curTick();
 }
@@ -55,8 +56,15 @@ void FunctionTracer::traceFunctions(Addr pc) {
     auto accumulateTick = curTick() - this->functionEntryTick;
 
     if (this->functionTracingEnabled) {
-      ccprintf(*this->functionTraceStream, " (%d)\n%d: %s", accumulateTick,
-               curTick(), sym_str);
+      std::string oldFuncName;
+      Addr oldFuncLhs, oldFuncRhs;
+      bool found = Loader::debugSymbolTable->findNearestSymbol(
+          oldFunctionStart, oldFuncName, oldFuncLhs, oldFuncRhs);
+      if (!found) {
+        oldFuncName = csprintf("0x%x", oldFunctionStart);
+      }
+      ccprintf(*this->functionTraceStream, " %lu-%lu: %s\n", curTick() / 500,
+               accumulateTick / 500, oldFuncName);
     }
 
     if (this->functionAccumulateTickEnabled) {
@@ -110,8 +118,10 @@ void FunctionTracer::dumpFuncAccumulateTick() {
   }
 
   if (!this->functionAccumulateTickStream) {
+    auto funcTraceFolder = simout.findOrCreateSubdirectory("ftrace");
     const std::string fname = csprintf("ftick.%s", this->name);
-    this->functionAccumulateTickStream = simout.findOrCreate(fname)->stream();
+    this->functionAccumulateTickStream =
+        funcTraceFolder->findOrCreate(fname)->stream();
   }
 
   // Sort by ticks.
@@ -146,6 +156,6 @@ void FunctionTracer::dumpFuncAccumulateTick() {
     float percentage =
         static_cast<float>(tick) / static_cast<float>(sumTicks) * 100.f;
     ccprintf(*this->functionAccumulateTickStream, "%5.2f %20llu %15llu : %s\n",
-             percentage, tick, microOps, symbol);
+             percentage, tick / 500, microOps, symbol);
   }
 }
