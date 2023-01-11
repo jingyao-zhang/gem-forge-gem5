@@ -57,6 +57,16 @@ void Stream::finalize() {
       this->isNonSpec = true;
     }
   }
+  // Merge predicated info.
+  for (auto LS : this->logicals) {
+    if (!LS->getPredicatedStreams().empty()) {
+      assert(this->predicateFuncInfo.name() == "" && "MultiPredCallback");
+      this->predicateFuncInfo = LS->getPredicateFuncInfo();
+      for (const auto &predicatedStreamId : LS->getPredicatedStreams()) {
+        this->predicatedStreamIds.push_back(predicatedStreamId);
+      }
+    }
+  }
   STREAM_DPRINTF("Finalized, ElementSize %d, LStreams: =========.\n",
                  this->coalescedMemElemSize);
   for (auto LS : this->logicals) {

@@ -50,9 +50,11 @@ public:
   /**
    * Receive data from the base direct stream.
    * Try to generate more slices.
+   * Notice that we may require multiple baseS data (when baseS are coalesced),
+   * hence we use the GetStreamValueFunc interface.
    */
-  void receiveBaseStreamData(uint64_t baseStrandElemIdx, uint64_t baseData,
-                             bool tryAdvance);
+  void receiveBaseStreamData(uint64_t baseStrandElemIdx,
+                             GetStreamValueFunc &getBaseData, bool tryAdvance);
 
   void setBaseStream(MLCDynStream *baseStream);
 
@@ -109,12 +111,12 @@ private:
 
   void advanceStream() override;
   void allocateSlice();
-  Addr genElemVAddr(uint64_t strandElemIdx, uint64_t baseData);
+  Addr genElemVAddr(uint64_t strandElemIdx, GetStreamValueFunc &getBaseData);
 
   /**
    * Generate or fill in the VAddr of one slice.
    */
-  void fillElemVAddr(uint64_t strandElemIdx, uint64_t baseData);
+  void fillElemVAddr(uint64_t strandElemIdx, GetStreamValueFunc &getBaseData);
 
   /**
    * Find the begin and end of the substream that belongs to an elementIdx.

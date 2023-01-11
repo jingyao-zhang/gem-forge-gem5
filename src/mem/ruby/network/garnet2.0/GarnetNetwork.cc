@@ -72,6 +72,9 @@ GarnetNetwork::GarnetNetwork(const Params *p)
     /**
      * Record the message stats category and types
      */
+    if (m_ideal_noc_msg.find("GETU") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(0, 3);
+    }
     if (m_ideal_noc_msg.find("GETH") != std::string::npos) {
         m_ideal_noc_msg_types.emplace_back(0, 4);
     }
@@ -89,6 +92,9 @@ GarnetNetwork::GarnetNetwork(const Params *p)
     }
     if (m_ideal_noc_msg.find("STREAM_MIGRATE") != std::string::npos) {
         m_ideal_noc_msg_types.emplace_back(0, 17);
+    }
+    if (m_ideal_noc_msg.find("DATA_EXCLUSIVE") != std::string::npos) {
+        m_ideal_noc_msg_types.emplace_back(1, 2);
     }
     if (m_ideal_noc_msg.find("DATA_EX_1B") != std::string::npos) {
         m_ideal_noc_msg_types.emplace_back(1, 2);

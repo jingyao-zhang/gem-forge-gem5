@@ -94,6 +94,7 @@ public:
    * Predicate information.
    */
 private:
+  bool isPredBase = false;
   bool isPredBy = false;
   bool predValue = false;
   DynStreamId predBaseStreamId;

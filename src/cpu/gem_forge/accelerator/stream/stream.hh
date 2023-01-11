@@ -635,9 +635,7 @@ public:
   Get(bool, IsInnerMostLoop);
   Get(bool, IsConditional);
   Get(bool, FloatManual);
-  Get(const PredicatedStreamIdList &, PredicatedStreams);
   Get(const PredicatedStreamIdList &, MergedPredicatedStreams);
-  Get(const ExecFuncInfo &, PredicateFuncInfo);
   Get(const StreamIdList &, MergedLoadStoreDepStreams);
   Get(const StreamIdList &, MergedLoadStoreBaseStreams);
   Get(const ExecFuncInfo &, StoreFuncInfo);
@@ -765,6 +763,19 @@ public:
   }
 
   bool isNonSpeculative() const { return this->isNonSpec; }
+
+  /**
+   * Record the predicated streams from all logical stream.
+   */
+  std::vector<::LLVM::TDG::PredicatedStreamId> predicatedStreamIds;
+  const std::vector<::LLVM::TDG::PredicatedStreamId> &
+  getPredicatedStreams() const {
+    return predicatedStreamIds;
+  }
+  ExecFuncInfo predicateFuncInfo;
+  const ExecFuncInfo &getPredicateFuncInfo() const {
+    return this->predicateFuncInfo;
+  }
 };
 
 struct GetCoalescedStreamValue {

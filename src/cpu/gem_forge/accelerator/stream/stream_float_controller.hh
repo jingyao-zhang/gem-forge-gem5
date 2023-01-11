@@ -89,6 +89,11 @@ private:
                       const CacheStreamConfigureDataPtr &config) const;
 
   /**
+   * Fix the multi-predication relationship.
+   */
+  void fixMultiPredication(const Args &args);
+
+  /**
    * If the loop is eliminated, we mark some addition fields in the
    * configuration.
    */

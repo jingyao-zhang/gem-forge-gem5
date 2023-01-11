@@ -167,7 +167,7 @@ void MLCDynIndirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
 }
 
 void MLCDynIndirectStream::fillElemVAddr(uint64_t strandElemIdx,
-                                         uint64_t baseData) {
+                                         GetStreamValueFunc &getBaseData) {
 
   // It's possible that we are behind the base stream?
   while (this->tailElementIdx <= strandElemIdx) {
@@ -194,7 +194,7 @@ void MLCDynIndirectStream::fillElemVAddr(uint64_t strandElemIdx,
     }
   }
 
-  auto elemVAddr = this->genElemVAddr(strandElemIdx, baseData);
+  auto elemVAddr = this->genElemVAddr(strandElemIdx, getBaseData);
   auto elemSize = this->elementSize;
 
   DynStreamSliceId sliceId;
@@ -284,15 +284,14 @@ void MLCDynIndirectStream::mapBaseElemToMyElemIdxRange(
   assert(strandIdLhs == this->strandId && "Mismatch IndStrandId.");
 }
 
-void MLCDynIndirectStream::receiveBaseStreamData(uint64_t baseStrandElemIdx,
-                                                 uint64_t baseData,
-                                                 bool tryAdvance) {
+void MLCDynIndirectStream::receiveBaseStreamData(
+    uint64_t baseStrandElemIdx, GetStreamValueFunc &getBaseData,
+    bool tryAdvance) {
 
   MLC_S_DPRINTF(this->strandId,
-                "Recv BaseStreamData BaseStrandElemIdx %lu Data %lu "
+                "Recv BaseStreamData BaseStrandElemIdx %lu "
                 "TailSliceIdx %lu TailElemIdx %lu.\n",
-                baseStrandElemIdx, baseData, this->tailSliceIdx,
-                this->tailElementIdx);
+                baseStrandElemIdx, this->tailSliceIdx, this->tailElementIdx);
 
   auto baseStreamElemIdx =
       this->baseStream->getConfig()->getStreamElemIdxFromStrandElemIdx(
@@ -312,7 +311,7 @@ void MLCDynIndirectStream::receiveBaseStreamData(uint64_t baseStrandElemIdx,
 
   for (uint64_t strandElemIdx = myStrandElemIdxLhs;
        strandElemIdx <= myStrandElemIdxRhs; ++strandElemIdx) {
-    this->fillElemVAddr(strandElemIdx, baseData);
+    this->fillElemVAddr(strandElemIdx, getBaseData);
   }
 
   if (this->isWaitingNothing() && tryAdvance) {
@@ -405,14 +404,12 @@ void MLCDynIndirectStream::setTotalTripCount(int64_t totalTripCount,
 }
 
 Addr MLCDynIndirectStream::genElemVAddr(uint64_t strandElemIdx,
-                                        uint64_t baseData) {
+                                        GetStreamValueFunc &getBaseData) {
 
-  StreamValue baseValue;
-  baseValue.front() = baseData;
   auto getBaseStreamValue = [this, strandElemIdx,
-                             &baseValue](uint64_t streamId) -> StreamValue {
+                             &getBaseData](uint64_t streamId) -> StreamValue {
     if (this->baseStream->getStaticStream()->isCoalescedHere(streamId)) {
-      return baseValue;
+      return getBaseData(streamId);
     }
 
     /**

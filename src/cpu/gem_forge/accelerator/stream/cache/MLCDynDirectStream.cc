@@ -806,43 +806,34 @@ void MLCDynDirectStream::notifyIndStreams(const MLCStreamSlice &slice) {
         // This indirect stream does not use my data to generate address.
         continue;
       }
-      uint64_t baseData = 0;
-      int32_t subOffset = 0;
-      int32_t subSize = elementSize;
+
       /**
-       * In case the base stream is coalesced, we have to translate the offset
-       * for the indirect streams. Ignore the other AddrBaseS.
+       * This is the callback for the IndS to get our data.
        */
-      const auto &baseEdges = IS->baseEdges;
-      auto baseId = DynStreamId::InvalidStaticStreamId;
-      for (const auto &baseEdge : baseEdges) {
-        if (baseEdge.type == Stream::StreamDepEdge::TypeE::Addr) {
-          if (!S->isCoalescedHere(baseEdge.toStaticId)) {
-            continue;
-          }
-          if (baseId == DynStreamId::InvalidStaticStreamId) {
-            baseId = baseEdge.toStaticId;
-          } else {
-            if (baseEdge.toStaticId != baseId) {
-              MLC_SLICE_PANIC(sliceId,
-                              "IS %s has multiple BaseMemS to myself %d.",
-                              dynIS->getDynStrandId(), baseEdges.size());
-            }
-          }
-        }
-      }
-      if (baseId == DynStreamId::InvalidStaticStreamId) {
-        MLC_SLICE_PANIC(sliceId, "IS has no base addr edges.",
-                        baseEdges.size());
-      }
-      S->getCoalescedOffsetAndSize(baseId, subOffset, subSize);
-      assert(subOffset + subSize <= elementSize &&
-             "Overflow of coalesced base element.");
-      baseData =
-          GemForgeUtils::rebuildData(elementData.data() + subOffset, subSize);
-      MLC_SLICE_DPRINTF(sliceId,
-                        "Notify IndS base %lu offset %d size %d data %llu.\n",
-                        elemIdx, subOffset, subSize, baseData);
+      GetStreamValueFunc getBaseData =
+          [this, S, &sliceId, elementSize,
+           &elementData](uint64_t streamId) -> StreamValue {
+        assert(S->isCoalescedHere(streamId));
+
+        int32_t subOffset = 0;
+        int32_t subSize = elementSize;
+
+        S->getCoalescedOffsetAndSize(streamId, subOffset, subSize);
+        assert(subOffset + subSize <= elementSize &&
+               "Overflow of coalesced base element.");
+        uint64_t baseData =
+            GemForgeUtils::rebuildData(elementData.data() + subOffset, subSize);
+
+        MLC_SLICE_DPRINTF(sliceId, "GetBaseData offset %d size %d data %llu.\n",
+                          subOffset, subSize, baseData);
+
+        StreamValue ret;
+        ret.uint64() = baseData;
+
+        return ret;
+      };
+
+      MLC_SLICE_DPRINTF(sliceId, "Notify IndS base %lu.\n", elemIdx);
 
       /**
        * There is a subtle dependence bug when constructing MLC streams.
@@ -859,7 +850,7 @@ void MLCDynDirectStream::notifyIndStreams(const MLCStreamSlice &slice) {
        * IndS.
        */
 
-      dynIS->receiveBaseStreamData(elemIdx, baseData, !isInConstructor);
+      dynIS->receiveBaseStreamData(elemIdx, getBaseData, !isInConstructor);
     }
   }
 }

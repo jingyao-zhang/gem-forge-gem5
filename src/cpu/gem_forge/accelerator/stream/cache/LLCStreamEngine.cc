@@ -1865,7 +1865,7 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
   auto elemSize = dynIS->getMemElementSize();
   Addr elemVAddr = elem->vaddr;
   auto elemMachineType = dynIS->getFloatMachineTypeAtElem(elemIdx);
-  LLC_SLICE_DPRINTF(sliceId, "Issue IndirectStore/Atomic VAddr %#x At %s.\n",
+  LLC_SLICE_DPRINTF(sliceId, "Issue IndStore/Atomic VAddr %#x At %s.\n",
                     elemVAddr, elemMachineType);
 
   const auto blockBytes = RubySystem::getBlockSizeBytes();

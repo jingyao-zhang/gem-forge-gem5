@@ -178,6 +178,19 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
         return false;
       }
     }
+    if (config->stream->getStreamName().find("gap.sssp.frontier.ld") !=
+        std::string::npos) {
+      return false;
+    }
+    if (config->stream->getStreamName().find("gap.sssp.out_w.ld") !=
+        std::string::npos) {
+      if (this->mlcSE->controller->myParams->enable_stream_strand_elem_split) {
+        return this->canSplitIntoStrandsByElem(context, configs);
+      }
+      if (config->hasTotalTripCount() && config->getTotalTripCount() < 16) {
+        return false;
+      }
+    }
   }
 
   if (!this->chooseNoSplitOuterTrip(context, configs)) {

@@ -477,6 +477,8 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
       break;
     }
   }
+
+  this->fixMultiPredication(args);
 }
 
 int StreamFloatController::getFloatChainDepth(
@@ -747,6 +749,125 @@ bool StreamFloatController::floatIndirectStream(const Args &args,
     }
   }
   return true;
+}
+
+void StreamFloatController::fixMultiPredication(const Args &args) {
+  /**
+   * We have encountered a special multi-predication in SSSP.
+   *
+   * weight, v = out_edge[i];
+   * new_dist = u_dist + weight;
+   * old_dist = __atomic_fetch_min(&dist[v], new_dist);
+   * if (old_dist > new_dist) {
+   *   Push to the bucket.
+   * }
+   *
+   * Here the predication depends on two streams: out_edge[i] and dist[v],
+   * while now in LLC we can only handle predication on a single stream.
+   * However, here dist[v] is an indirect stream of out_edge[i]. Therefore,
+   * we disable the predication from out_edge[i] and make sure predicated
+   * streams only predicated by dist[v].
+   *
+   */
+  auto &floatedMap = args.floatedMap;
+
+  std::set<Stream *> finalPredBaseStreams;
+
+  for (const auto &entry : floatedMap) {
+    auto config = entry.second;
+
+    // Collect all PredBaseStreams.
+    std::vector<CacheStreamConfigureDataPtr> predBaseConfigs;
+    for (const auto &baseE : config->baseEdges) {
+      if (baseE.isPredBy) {
+        auto baseConfig = baseE.data.lock();
+        assert(baseConfig);
+        predBaseConfigs.push_back(baseConfig);
+      }
+    }
+
+    if (predBaseConfigs.empty()) {
+      // No pred base.
+      continue;
+    }
+
+    // Sort them with float chain depth.
+    std::sort(predBaseConfigs.begin(), predBaseConfigs.end(),
+              [this](const CacheStreamConfigureDataPtr &configA,
+                     const CacheStreamConfigureDataPtr &configB) -> bool {
+                return this->getFloatChainDepth(*configA) <
+                       this->getFloatChainDepth(*configB);
+              });
+
+    /**
+     * Some sanity check on the PredBaseS.
+     *
+     * 1. They should on the same float chain.
+     * 2. They should have the same predicate callback.
+     *
+     */
+    auto predBaseEndConfig = predBaseConfigs.back();
+    assert(predBaseEndConfig->predCallback);
+
+    finalPredBaseStreams.insert(predBaseEndConfig->stream);
+
+    if (predBaseConfigs.size() <= 1) {
+      // Not Multi-Predication.
+      continue;
+    }
+    for (int i = 0; i + 1 < predBaseConfigs.size(); ++i) {
+      auto baseConfig = predBaseConfigs.at(i);
+      if (!this->isOnFloatChain(predBaseEndConfig, baseConfig)) {
+        DYN_S_PANIC(config->dynamicId,
+                    "[Multi-Pred] By different float chain: %s and %s.",
+                    predBaseEndConfig->dynamicId, baseConfig->dynamicId);
+      }
+      if (!baseConfig->predCallback) {
+        DYN_S_PANIC(baseConfig->dynamicId, "Missing PredCallback. Stream? %d.",
+                    baseConfig->stream->getDynStream(baseConfig->dynamicId)
+                        ->predCallback);
+      }
+      if (predBaseEndConfig->predCallback->getFuncInfo().name() !=
+          baseConfig->predCallback->getFuncInfo().name()) {
+        DYN_S_PANIC(config->dynamicId,
+                    "[Multi-Pred] By different callback: %s and %s.",
+                    predBaseEndConfig->dynamicId, baseConfig->dynamicId);
+      }
+    }
+
+    // We can get rid of the PredByEdge except to the PredBaseEndConfig.
+    std::vector<CacheStreamConfigureData::BaseEdge> newBaseEdges;
+    for (const auto &baseE : config->baseEdges) {
+      if (baseE.isPredBy) {
+        auto baseConfig = baseE.data.lock();
+        assert(baseConfig);
+        if (baseConfig != predBaseEndConfig) {
+
+          StreamFloatPolicy::logS(config->dynamicId)
+              << "[Multi-Pred] Clear PredBy " << baseConfig->dynamicId << ".\n"
+              << std::flush;
+          continue;
+        }
+      }
+      newBaseEdges.push_back(baseE);
+    }
+
+    config->baseEdges = newBaseEdges;
+  }
+
+  // Finally clear the PredCallback from those cleared PredS.
+  for (const auto &entry : floatedMap) {
+    auto config = entry.second;
+
+    if (config->predCallback && !finalPredBaseStreams.count(config->stream)) {
+      // Clear the PredCallback.
+      config->predCallback = nullptr;
+      config->predFormalParams.clear();
+      StreamFloatPolicy::logS(config->dynamicId)
+          << "[Multi-Pred] Clear PredCallback " << config->dynamicId << ".\n"
+          << std::flush;
+    }
+  }
 }
 
 void StreamFloatController::floatDirectStoreComputeStreams(const Args &args) {

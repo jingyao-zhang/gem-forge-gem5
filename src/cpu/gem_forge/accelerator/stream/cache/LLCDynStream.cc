@@ -1914,7 +1914,7 @@ void LLCDynStream::evaluatePredication(LLCStreamEngine *se, uint64_t elemIdx) {
   }
 
   auto getStreamValue = [&elem](uint64_t streamId) -> StreamValue {
-    return elem->getValueByStreamId(streamId);
+    return elem->getBaseOrMyStreamValue(streamId);
   };
   auto predActualParams = convertFormalParamToParam(
       this->configData->predFormalParams, getStreamValue);
