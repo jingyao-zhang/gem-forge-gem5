@@ -140,6 +140,11 @@ private:
 
   bool isPAddrContinuous(const StreamRegion &region);
 
+  /**
+   * Helper function to make paddr of a region continuous.
+   */
+  void makeRegionPAddrContinuous(ThreadContext *tc, const StreamRegion &region);
+
   Addr translate(Addr vaddr);
 
   using AddrVecT = std::vector<Addr>;

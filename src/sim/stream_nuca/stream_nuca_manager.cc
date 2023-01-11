@@ -6,6 +6,7 @@
 #include "cpu/gem_forge/accelerator/stream/cache/pum/PUMHWConfiguration.hh"
 #include "cpu/thread_context.hh"
 #include "params/Process.hh"
+#include "sim/system.hh"
 
 #include <iomanip>
 #include <unordered_set>
@@ -313,6 +314,16 @@ void StreamNUCAManager::remap(ThreadContext *tc) {
 
 void StreamNUCAManager::remapRegions(ThreadContext *tc,
                                      const AddrVecT &regionVAddrs) {
+
+  /**
+   * Make sure each region's physical address is continuous.
+   */
+  for (const auto &entry : this->startVAddrRegionMap) {
+    const auto &region = entry.second;
+    if (!this->isPAddrContinuous(region)) {
+      this->makeRegionPAddrContinuous(tc, region);
+    }
+  }
 
   /**
    * Collect remap decision for each region.
@@ -1363,6 +1374,52 @@ bool StreamNUCAManager::isPAddrContinuous(const StreamRegion &region) {
     }
   }
   return true;
+}
+
+void StreamNUCAManager::makeRegionPAddrContinuous(ThreadContext *tc,
+                                                  const StreamRegion &region) {
+
+  auto pTable = this->process->pTable;
+  auto pageSize = pTable->getPageSize();
+  auto startPageVAddr = pTable->pageAlign(region.vaddr);
+  if (startPageVAddr != region.vaddr) {
+    panic("Region %s VAddr %#x not align to Page.", region.name, region.vaddr);
+  }
+  auto endVAddr = region.vaddr + region.elementSize * region.numElement;
+  auto endPageVAddr = pTable->pageAlign(endVAddr + pageSize - 1);
+
+  // Directly allocate number of pages.
+  auto numPages = (endPageVAddr - startPageVAddr) / pageSize;
+  DPRINTF(StreamNUCAManager, "Alloc %d continuous pages for %s.\n", numPages,
+          region.name);
+  auto newStartPagePAddr = this->process->system->allocPhysPages(numPages);
+
+  // Used to copy the page.
+  char *pageData = reinterpret_cast<char *>(malloc(pageSize));
+
+  for (auto i = 0; i < numPages; ++i) {
+    auto pageVAddr = startPageVAddr + i * pageSize;
+    Addr pagePAddr;
+    if (!pTable->translate(pageVAddr, pagePAddr)) {
+      panic("Region %s failed to translate PageVAddr %#x.", region.name,
+            pageVAddr);
+    }
+
+    // Copy to new page.
+    tc->getVirtProxy().readBlob(pageVAddr, pageData, pageSize);
+
+    /**
+     * Remap the vaddr to the new paddr by setting clobber flag (which will
+     * destroy the old mapping). Then copy the data.
+     */
+    bool clobber = true;
+    Addr newPagePAddr = newStartPagePAddr + i * pageSize;
+
+    pTable->map(pageVAddr, newPagePAddr, pageSize, clobber);
+    tc->getVirtProxy().writeBlob(pageVAddr, pageData, pageSize);
+  }
+
+  assert(this->isPAddrContinuous(region));
 }
 
 Addr StreamNUCAManager::translate(Addr vaddr) {
