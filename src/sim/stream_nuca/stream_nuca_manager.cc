@@ -737,14 +737,22 @@ void StreamNUCAManager::rebalanceIndirectBoxes(IndirectRegionHops &regionHops) {
     return A.size() < B.size();
   };
 
-  auto isBalanced = [&regionHops, &remapBoxIdsCmp, this]() -> bool {
+  /**
+   * Adjust the threshold by formular:
+   *
+   * threshold = (1.0 / nBanks) * indirectRebalanceThreshold.
+   */
+  auto numBanks = StreamNUCAMap::getNumRows() * StreamNUCAMap::getNumCols();
+  const float threshold =
+      (1.0 / static_cast<float>(numBanks)) * this->indirectRebalanceThreshold;
+
+  auto isBalanced = [&regionHops, &remapBoxIdsCmp, threshold, this]() -> bool {
     auto minMaxPair =
         std::minmax_element(regionHops.remapBoxIds.begin(),
                             regionHops.remapBoxIds.end(), remapBoxIdsCmp);
     auto diff = minMaxPair.second->size() - minMaxPair.first->size();
     auto ratio = static_cast<float>(diff) /
                  static_cast<float>(regionHops.boxHops.size());
-    const float threshold = this->indirectRebalanceThreshold;
     return ratio <= threshold;
   };
 
@@ -779,7 +787,7 @@ void StreamNUCAManager::rebalanceIndirectBoxes(IndirectRegionHops &regionHops) {
     regionHops.addRemapBoxId(boxIdx, pushNUMANodeId);
   }
 
-  if (Debug::StreamNUCAManager) {
+  {
     const auto &region = regionHops.region;
     DPRINTF(StreamNUCAManager,
             "[StreamNUCA] IndirectRegion %s Finish Rebalance:\n", region.name);
@@ -787,9 +795,8 @@ void StreamNUCAManager::rebalanceIndirectBoxes(IndirectRegionHops &regionHops) {
       auto boxes = regionHops.remapBoxIds.at(i).size();
       auto totalBoxes = regionHops.boxHops.size();
       auto ratio = static_cast<float>(boxes) / static_cast<float>(totalBoxes);
-      DPRINTF(StreamNUCAManager,
-              "[StreamNUCA]     NUMANode %5d Pages %8lu %3.2f\n", i, boxes,
-              ratio * 100);
+      DPRINTF(StreamNUCAManager, "[StreamNUCA]     Bank %5d Boxes %8lu %3.2f\n",
+              i, boxes, ratio * 100);
     }
   }
 }

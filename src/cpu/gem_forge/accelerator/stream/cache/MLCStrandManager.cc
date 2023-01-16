@@ -148,6 +148,10 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
    * 3. If SplitByElem is enabled, we pass to canSplitIntoStrandsByElem.
    */
   for (const auto &config : configs) {
+    if (config->stream->getStreamName().find("gf_warm_impl") !=
+        std::string::npos) {
+      return false;
+    }
     if (config->stream->getStreamName().find(
             "gap.pr_push.atomic.out_begin.ld") != std::string::npos) {
       return false;

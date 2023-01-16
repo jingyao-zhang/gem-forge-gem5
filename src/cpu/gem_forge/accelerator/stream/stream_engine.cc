@@ -2073,6 +2073,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
          * Should not issue.
          */
         if (!elem->shouldIssue()) {
+          S_ELEMENT_DPRINTF(elem, "Not Issue. Continue.\n");
           continue;
         }
         auto baseElemsValReady =
@@ -2771,7 +2772,7 @@ StreamEngine::getStreamRegion(const std::string &relativePath) const {
 }
 
 void StreamEngine::coalesceContinuousDirectMemStreamElement(
-    StreamElement *element) {
+    StreamElement *elem) {
 
   const bool enableCoalesceContinuousElement = true;
   if (!enableCoalesceContinuousElement) {
@@ -2779,70 +2780,72 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
   }
 
   // Check if this is the first element.
-  if (element->FIFOIdx.entryIdx == 0) {
+  if (elem->FIFOIdx.entryIdx == 0) {
     return;
   }
   // Check if this is the FirstFloatElement.
-  if (element->isElemFloatedToCache() && element->isFirstFloatElem()) {
+  if (elem->isElemFloatedToCache() && elem->isFirstFloatElem()) {
     return;
   }
-  auto S = element->stream;
+  auto S = elem->stream;
   if (!S->isDirectMemStream()) {
     return;
   }
   // Never do this for not floated AtomicComputeStream.
-  if (S->isAtomicComputeStream() && !element->isElemFloatedToCache()) {
+  if (S->isAtomicComputeStream() && !elem->isElemFloatedToCache()) {
     return;
   }
   // Check if this element is flushed.
-  if (element->flushed) {
-    S_ELEMENT_DPRINTF(element, "[NoCoalesce] Flushed.\n");
+  if (elem->flushed) {
+    S_ELEMENT_DPRINTF(elem, "[NoCoalesce] Flushed.\n");
     return;
   }
   // Get the previous element.
-  auto prevElement = S->getPrevElement(element);
+  auto prevElem = S->getPrevElement(elem);
   // Bail out if we have no previous element (we are the first).
-  if (!prevElement) {
-    S_ELEMENT_DPRINTF(element, "[NoCoalesce] No PrevElement.\n");
+  if (!prevElem) {
+    S_ELEMENT_DPRINTF(elem, "[NoCoalesce] No PrevElem.\n");
     return;
   }
   // We found the previous element. Check if completely overlap.
-  if ((prevElement->FIFOIdx.streamId != element->FIFOIdx.streamId) ||
-      (prevElement->FIFOIdx.entryIdx + 1 != element->FIFOIdx.entryIdx)) {
-    S_ELEMENT_PANIC(element, "Mismatch FIFOIdx for prevElement %s.\n",
-                    prevElement->FIFOIdx);
+  if ((prevElem->FIFOIdx.streamId != elem->FIFOIdx.streamId) ||
+      (prevElem->FIFOIdx.entryIdx + 1 != elem->FIFOIdx.entryIdx)) {
+    S_ELEMENT_PANIC(elem, "Mismatch FIFOIdx for PrevElem %s.\n",
+                    prevElem->FIFOIdx);
   }
 
   // Check if the previous element has the cache line.
-  if (!prevElement->isCacheBlockedValue) {
-    S_ELEMENT_DPRINTF(element, "[NoCoalesce] PrevElement not CacheBlocked.\n");
+  if (!prevElem->isCacheBlockedValue) {
+    S_ELEMENT_DPRINTF(elem, "[NoCoalesce] PrevElem not CacheBlocked.\n");
     return;
   }
-  assert(prevElement->cacheBlocks && "No block in prevElement.");
+  if (!prevElem->cacheBlocks) {
+    S_ELEMENT_PANIC(elem, "No block in PrevElem.");
+  }
 
   auto &prevElementMinBlockVAddr =
-      prevElement->cacheBlockBreakdownAccesses[0].cacheBlockVAddr;
-  for (int cacheBlockIdx = 0; cacheBlockIdx < element->cacheBlocks;
+      prevElem->cacheBlockBreakdownAccesses[0].cacheBlockVAddr;
+  for (int cacheBlockIdx = 0; cacheBlockIdx < elem->cacheBlocks;
        ++cacheBlockIdx) {
-    auto &block = element->cacheBlockBreakdownAccesses[cacheBlockIdx];
+    auto &block = elem->cacheBlockBreakdownAccesses[cacheBlockIdx];
     assert(block.state == CacheBlockBreakdownAccess::StateE::Initialized);
     if (block.cacheBlockVAddr < prevElementMinBlockVAddr) {
       // Underflow.
       S_ELEMENT_DPRINTF(
-          element,
+          elem,
           "[NoCoalece] %dth Block %#x, Underflow Prev MinBlockVAddr %#x.\n",
           cacheBlockIdx, block.cacheBlockVAddr, prevElementMinBlockVAddr);
       continue;
     }
     auto blockOffset = (block.cacheBlockVAddr - prevElementMinBlockVAddr) /
-                       element->cacheBlockSize;
-    if (blockOffset >= prevElement->cacheBlocks) {
+                       elem->cacheBlockSize;
+    if (blockOffset >= prevElem->cacheBlocks) {
       // Overflow.
-      S_ELEMENT_DPRINTF(element,
+      S_ELEMENT_DPRINTF(elem,
                         "[NoCoalesce] %dth Block %#x, Overflow Prev "
                         "MinBlockVAddr %#x NumBlocks %d.\n",
                         cacheBlockIdx, block.cacheBlockVAddr,
-                        prevElementMinBlockVAddr, prevElement->cacheBlocks);
+                        prevElementMinBlockVAddr, prevElem->cacheBlocks);
       continue;
     }
     /**
@@ -2854,25 +2857,24 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
      * that we won't issue duplicate requests. Note that for StoreStreams,
      * when the request comes back, it won't set the data.
      */
-    const auto &prevBlock =
-        prevElement->cacheBlockBreakdownAccesses[blockOffset];
+    const auto &prevBlock = prevElem->cacheBlockBreakdownAccesses[blockOffset];
     bool shouldCopyFromPrev = false;
     if (S->isLoadStream()) {
       shouldCopyFromPrev = true;
     }
-    if (S->isAtomicComputeStream() && element->isElemFloatedToCache()) {
+    if (S->isAtomicComputeStream() && elem->isElemFloatedToCache()) {
       shouldCopyFromPrev = true;
     }
     if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Faulted) {
       // Also mark this block faulted.
       block.state = CacheBlockBreakdownAccess::StateE::Faulted;
-      element->tryMarkValueReady();
+      elem->tryMarkValueReady();
     } else if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Ready) {
       if (shouldCopyFromPrev) {
-        auto offset = prevElement->mapVAddrToValueOffset(
-            block.cacheBlockVAddr, element->cacheBlockSize);
-        element->setValue(block.cacheBlockVAddr, element->cacheBlockSize,
-                          &prevElement->value.at(offset));
+        auto offset = prevElem->mapVAddrToValueOffset(block.cacheBlockVAddr,
+                                                      elem->cacheBlockSize);
+        elem->setValue(block.cacheBlockVAddr, elem->cacheBlockSize,
+                       &prevElem->value.at(offset));
       } else {
         // Simply mark issued.
         block.state = CacheBlockBreakdownAccess::StateE::Issued;
@@ -2881,11 +2883,11 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
       if (shouldCopyFromPrev) {
         // Register myself as a receiver.
         if (!prevBlock.memAccess) {
-          S_ELEMENT_PANIC(element,
+          S_ELEMENT_PANIC(elem,
                           "Missing memAccess for issued previous cache block.");
         }
         block.memAccess = prevBlock.memAccess;
-        block.memAccess->registerReceiver(element);
+        block.memAccess->registerReceiver(elem);
         block.state = CacheBlockBreakdownAccess::StateE::Issued;
       } else {
         // Simply mark issued.
@@ -2893,8 +2895,7 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
       }
     }
     S_ELEMENT_DPRINTF(
-        element,
-        "[Coalesce] %dth Block %#x %s, PrevElement %dth Block %#x %s.\n",
+        elem, "[Coalesce] %dth Block %#x %s, PrevElement %dth Block %#x %s.\n",
         cacheBlockIdx, block.cacheBlockVAddr, block.state, blockOffset,
         prevBlock.cacheBlockVAddr, prevBlock.state);
   }

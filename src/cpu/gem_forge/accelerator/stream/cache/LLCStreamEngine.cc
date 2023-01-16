@@ -4544,7 +4544,8 @@ void LLCStreamEngine::sampleLLCStream(LLCDynStreamPtr dynS) {
 }
 
 void LLCStreamEngine::sampleLLCStreams() {
-  if (curCycle() == this->lastSampleCycle) {
+  const Cycles sampleInterval = Cycles(10);
+  if (curCycle() < this->lastSampleCycle + sampleInterval) {
     return;
   }
   for (const auto &e : LLCDynStream::getGlobalLLCDynStreamMap()) {
