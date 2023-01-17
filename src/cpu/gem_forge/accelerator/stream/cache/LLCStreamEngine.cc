@@ -1278,8 +1278,6 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
 
   auto S = dynS->getStaticS();
   auto &statistic = S->statistic;
-  statistic.sampleLLCAliveElements(dynS->idxToElementMap.size());
-  statistic.sampleLLCInflyComputation(dynS->incompleteComputations);
   /**
    * Prioritize indirect streams.
    */
@@ -1500,7 +1498,6 @@ LLCStreamEngine::findIndirectStreamReadyToIssue(LLCDynStreamPtr dynS) {
   uint64_t readyElementIdx = 0;
   for (auto dynIS : dynS->getAllIndStreams()) {
     auto IS = dynIS->getStaticS();
-    IS->statistic.sampleLLCAliveElements(dynIS->idxToElementMap.size());
     // Enforce the per stream maxInflyRequests constraint.
     if (dynIS->inflyRequests == dynIS->getMaxInflyRequests()) {
       LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynIS->getDynStrandId(),
@@ -2738,7 +2735,7 @@ void LLCStreamEngine::migrateStream(LLCDynStream *stream) {
       this->controller->mapAddressToLLCOrMem(paddrLine, machineType);
 
   LLC_S_DPRINTF(stream->getDynStrandId(),
-                "Migrate to %s, InflyReq %d AdvancedMigration %d IndirectS "
+                "Migrate to %s, InflyReq %d AdvancedMigrate %d IndirectS "
                 "%d. Remain DirectStreams %llu.\n",
                 addrMachineId, stream->inflyRequests,
                 this->controller->isStreamAdvanceMigrateEnabled(),
@@ -4528,6 +4525,11 @@ void LLCStreamEngine::sampleLLCStream(LLCDynStreamPtr dynS) {
     // The dynS is not configured yet or already terminated.
     return;
   }
+
+  auto S = dynS->getStaticS();
+  auto &statistic = S->statistic;
+  statistic.sampleLLCAliveElements(dynS->idxToElementMap.size());
+  statistic.sampleLLCInflyComputation(dynS->incompleteComputations);
 
   // LLC alive elements.
   StreamStatistic::sampleStaticLLCAliveElements(curCycle(),

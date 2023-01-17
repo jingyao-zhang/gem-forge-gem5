@@ -247,7 +247,12 @@ bool StreamElement::isElemFloatedToCacheAsRoot() const {
   return this->dynS->isFloatedToCacheAsRoot() && this->isFloatElem();
 }
 bool StreamElement::isElemFloatedToCache() const {
-  return this->dynS->isFloatedToCache() && this->isFloatElem();
+  if (this->memorizedIsElemFloatedToCache.has_value()) {
+    return this->memorizedIsElemFloatedToCache.value();
+  }
+  bool ret = this->dynS->isFloatedToCache() && this->isFloatElem();
+  this->memorizedIsElemFloatedToCache.set(ret);
+  return ret;
 }
 bool StreamElement::isElemFloatedWithDependent() const {
   return this->dynS->isFloatedWithDependent() && this->isFloatElem();
@@ -305,6 +310,8 @@ void StreamElement::clear() {
 
   this->stored = false;
   this->clearScheduledComputation();
+
+  this->memorizedIsElemFloatedToCache.reset();
 }
 
 void StreamElement::flush(bool aliased) {
@@ -339,6 +346,8 @@ void StreamElement::flush(bool aliased) {
   this->clearCacheBlocks();
   this->clearScheduledComputation();
   std::fill(this->value.begin(), this->value.end(), 0);
+
+  this->memorizedIsElemFloatedToCache.reset();
 }
 
 void StreamElement::clearCacheBlocks() {
@@ -983,6 +992,21 @@ void StreamElement::updateFirstValueCheckCycle(bool checkedByCore) const {
                       this->firstValueCheckByCoreCycle, this->isAddrReady(),
                       this->isValueReady, this->updateValueReady);
   }
+}
+
+bool StreamElement::shouldComputeValue() const {
+  /**
+   * 1. Stream need to compute value.
+   * 2. One of:
+   *  a. I am not floated to cache.
+   *  b. I am the last value for reduction.
+   *  c. I am the pointer-chase ind-var.
+   */
+  auto S = this->stream;
+  return S->shouldComputeValue() &&
+         ((!this->isElemFloatedToCache()) ||
+          (S->isReduction() && this->isInnerLastElem()) ||
+          S->isPointerChaseIndVar());
 }
 
 bool StreamElement::isComputeValueReady() const {

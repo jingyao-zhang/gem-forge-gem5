@@ -70,7 +70,7 @@ bool StreamRegionController::canSkipAllocatingDynS(StaticRegion &staticRegion,
       }
       if (allStepMemStreamsOffloaded) {
         DYN_S_DPRINTF(stepRootDynS.dynStreamId,
-                      "[StreamAlloc] BoundedEliminatedNested Floated AllocSize "
+                      "[StreamAlloc] BoundedElimNested Floated AllocSize "
                       "%d TailElemIdx %llu.\n ",
                       stepRootDynS.allocSize, stepRootDynS.FIFOIdx.entryIdx);
         maxTailElemIdx = stepRootDynS.FIFOIdx.entryIdx;

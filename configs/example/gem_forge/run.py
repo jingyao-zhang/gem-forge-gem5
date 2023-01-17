@@ -134,6 +134,8 @@ parser.add_option("--gem-forge-stream-engine-placement",
                   type="string", default="original")
 parser.add_option("--gem-forge-stream-engine-elim-nest-stream-instances", action="store",
                   default="8", type="int", help="""number of elim nested stream instances""")
+parser.add_option("--gem-forge-stream-engine-elim-nest-outer-stream-elems", action="store",
+                  default="16", type="int", help="""number of elim nested outer stream elems""")
 
 # Stream Float options.
 parser.add_option("--gem-forge-stream-engine-enable-float", action="store_true", default=False,

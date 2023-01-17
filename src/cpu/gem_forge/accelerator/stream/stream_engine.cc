@@ -1961,7 +1961,6 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         continue;
       }
       for (auto elem = dynS.tail->next; elem != nullptr; elem = elem->next) {
-        assert(elem->stream == S && "Sanity check that streams match.");
 
         if (elem->isElemFloatedToCache() && dynS.isFloatConfigDelayed()) {
           S_ELEMENT_DPRINTF(elem, "NotReady as FloatConfigDelayed.\n");
@@ -1983,30 +1982,11 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
 
         if (elem->isAddrReady()) {
           // Address already ready. Check if we have type 2 or 3 ready elements.
-          if (S->shouldComputeValue() && !elem->scheduledComputation &&
+          if (elem->shouldComputeValue() && !elem->scheduledComputation &&
               !elem->isComputeValueReady() &&
               elem->checkValueBaseElementsValueReady()) {
-            if (!elem->isElemFloatedToCache()) {
-              S_ELEMENT_DPRINTF(elem, "Found Ready for Compute.\n");
-              readyElems.emplace_back(elem);
-            } else {
-              if (S->isReduction()) {
-                if (elem->isInnerLastElem()) {
-                  // Specialize for the InnerLast ReductionStream element. They
-                  // need to be computed even when offloaded (actually just copy
-                  // from DynStream::innerFinalValueMap).
-                  S_ELEMENT_DPRINTF(elem, "Found Reduce Ready for Compute.\n");
-                  readyElems.emplace_back(elem);
-                }
-              } else if (S->isPointerChaseIndVar()) {
-                /**
-                 * Ideally if we don't need the value, we should not compute it.
-                 */
-                S_ELEMENT_DPRINTF(elem,
-                                  "Found PtrChaseIV Ready for Compute.\n");
-                readyElems.emplace_back(elem);
-              }
-            }
+            S_ELEMENT_DPRINTF(elem, "Found Ready for Compute.\n");
+            readyElems.emplace_back(elem);
           }
           if (S->isAtomicComputeStream() && !elem->isElemFloatedToCache() &&
               !elem->isReqIssued()) {

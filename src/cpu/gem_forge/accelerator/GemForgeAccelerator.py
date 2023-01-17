@@ -80,6 +80,8 @@ class StreamEngine(GemForgeAccelerator):
         "", "The latency modeling of bypassing.")
     streamEnginePlacement = Param.String(
         "placement", "Which placement techinque to use.")
+    elimNestOuterStreamElems = Param.UInt32(
+        8, "Number of outer elems for eliminated nest streams")
     elimNestStreamInstances = Param.UInt32(
         8, "Number of eliminated nest streams")
 

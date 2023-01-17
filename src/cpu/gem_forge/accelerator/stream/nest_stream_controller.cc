@@ -176,8 +176,8 @@ void StreamRegionController::configureNestStream(
       // continue.
     } else {
       DYN_S_DPRINTF(lastDynNestStream.dynStreamId,
-                    "[Nest] NestedLoop not Eliminated. TotalTripCount %ld "
-                    "NextElementIdx %lu EndDispatched %d NumDynRegions %d.\n",
+                    "[Nest] NestedLoop not Eliminated. TripCount %ld "
+                    "NextElemIdx %lu EndDispatched %d NumDynRegions %d.\n",
                     lastDynNestStream.getTotalTripCount(),
                     lastDynNestStream.FIFOIdx.entryIdx,
                     lastDynNestStream.endDispatched,
@@ -187,11 +187,27 @@ void StreamRegionController::configureNestStream(
   }
 
   /**
+   * We also limit the number of dynamic nest regions at the same time.
+   * Previously this is controlled by limit the number of elements allocated for
+   * outer loop streams, however, that limits our prefetch benefits (see
+   * StreamThrottler). Hence now we isolate these two parameters.
+   */
+  if (staticNestRegion.region.loop_eliminated() &&
+      staticNestRegion.dynRegions.size() >=
+          this->se->myParams->elimNestStreamInstances) {
+    SE_DPRINTF("[Nest] Reach MaxNestRegions %d > %d.\n",
+               staticNestRegion.dynRegions.size(),
+               this->se->myParams->elimNestStreamInstances);
+    return;
+  }
+
+  /**
    * Since allocating a new stream will take one element, we check that
    * there are available free elements.
    */
   if (this->se->numFreeFIFOEntries < staticNestRegion.streams.size()) {
-    SE_DPRINTF("[Nest] No Total Free Element to allocate NestConfig, Has %d, "
+    SE_DPRINTF("[Nest] No Total Free Element to allocate "
+               "NestConfig, Has %d, "
                "Required %d.\n",
                this->se->numFreeFIFOEntries, staticNestRegion.streams.size());
     return;
@@ -199,7 +215,8 @@ void StreamRegionController::configureNestStream(
   for (auto S : staticNestRegion.streams) {
     if (S->getAllocSize() + 1 >= S->maxSize) {
       S_DPRINTF(S,
-                "[Nest] No Free Elem to allocate NestConfig, AllocSize %d, "
+                "[Nest] No Free Elem to allocate NestConfig, "
+                "AllocSize %d, "
                 "MaxSize %d.\n",
                 S->getAllocSize(), S->maxSize);
       return;
@@ -230,7 +247,8 @@ void StreamRegionController::configureNestStream(
     }
     if (!baseE->isValueReady) {
       // S_ELEMENT_DPRINTF(baseElement,
-      //                   "[Nest] Value not ready for NestConfig.\n");
+      //                   "[Nest] Value not ready for
+      //                   NestConfig.\n");
       return;
     }
     baseElems.insert(baseE);
@@ -264,7 +282,8 @@ void StreamRegionController::configureNestStream(
       convertFormalParamToParam(dynNestConfig.formalParams, getStreamValue);
 
   if (Debug::StreamNest) {
-    SE_DPRINTF("[Nest] Value ready. Configure NestRegion %s, OuterElementIdx "
+    SE_DPRINTF("[Nest] Value ready. Configure NestRegion %s, "
+               "OuterElementIdx "
                "%lu, ActualParams:\n",
                staticNestRegion.region.region(), dynNestConfig.nextElemIdx);
     for (const auto &actualParam : actualParams) {

@@ -2,6 +2,7 @@
 #define __CPU_TDG_ACCELERATOR_STREAM_ELEMENT_HH__
 
 #include "addr_gen_callback.hh"
+#include "base/optional.hh"
 #include "base/types.hh"
 #include "cache/DynStreamSliceId.hh"
 #include "cpu/gem_forge/gem_forge_packet_handler.hh"
@@ -353,6 +354,11 @@ struct StreamElement {
   void setPrefetchIssued();
 
   /**
+   * Check if the element need to compute value.
+   */
+  bool shouldComputeValue() const;
+
+  /**
    * Check if the computation value is ready.
    * For UpdateStream, this is UpdateValue.
    * Otherwise, this is just normal value.
@@ -396,6 +402,11 @@ private:
    */
   bool loadComputeValueReady = false;
   StreamValue loadComputeValue;
+
+  /**
+   * Memorized isElemFloatedToCache.
+   */
+  mutable Optional<bool> memorizedIsElemFloatedToCache;
 
   /**
    * Helper func to udpate our stats about when first check on value happened.

@@ -179,6 +179,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                                     dcache=l0d_cache,
                                     ruby_system=ruby_system,
                                     is_ideal=options.gem_forge_ideal_ruby,
+                                    deadlock_threshold=400000,
                                     )
             if options.gem_forge_prefetcher == 'imp':
                 if not options.gem_forge_prefetch_on_access:

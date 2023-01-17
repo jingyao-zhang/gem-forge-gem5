@@ -170,7 +170,7 @@ bool StreamThrottler::tryGlobalThrottle(Stream *S) {
     /**
      * For OuterS, there are two cases:
      * 1. If it controls some eliminated nested streams, it is limited by
-     * elimNestStreamInstances.
+     * elimNestOuterStreamElems.
      * 2. Otherwise, we take some heuristic MaxSizeForOuterLoopStream.
      */
     bool isElimNestOuterS = false;
@@ -182,11 +182,11 @@ bool StreamThrottler::tryGlobalThrottle(Stream *S) {
             dynRegion.nestConfigs.back().staticRegion;
         if (staticNestRegion->allStreamsLoopEliminated) {
           isElimNestOuterS = true;
-          if (S->maxSize >= this->se->myParams->elimNestStreamInstances) {
+          if (S->maxSize >= this->se->myParams->elimNestOuterStreamElems) {
             S_DPRINTF(
                 S,
-                "[Not Throttle] MyMaxSize %d >= %d ElimNestStreamInstances.\n",
-                S->maxSize, this->se->myParams->elimNestStreamInstances);
+                "[Not Throttle] MyMaxSize %d >= %d ElimNestOuterStreamElems.\n",
+                S->maxSize, this->se->myParams->elimNestOuterStreamElems);
             return false;
           }
         }
