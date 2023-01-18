@@ -7,7 +7,7 @@
 
 class StreamFloatPolicy {
 public:
-  StreamFloatPolicy(bool _enabled, bool _enabledFloatMem,
+  StreamFloatPolicy(bool _enabled, bool _enabledFloatMem, bool _enabledHistory,
                     const std::string &_policy,
                     const std::string &_levelPolicy);
   ~StreamFloatPolicy();
@@ -41,6 +41,7 @@ public:
 private:
   bool enabled;
   bool enabledFloatMem;
+  bool enabledHistory;
   enum PolicyE {
     STATIC,
     MANUAL,

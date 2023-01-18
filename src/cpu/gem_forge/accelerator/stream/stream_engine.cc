@@ -65,7 +65,8 @@ StreamEngine::StreamEngine(Params *params)
 
   auto streamFloatPolicy = m5::make_unique<StreamFloatPolicy>(
       this->enableStreamFloat, params->enableFloatMem,
-      params->streamEngineFloatPolicy, params->floatLevelPolicy);
+      params->enableFloatHistory, params->streamEngineFloatPolicy,
+      params->floatLevelPolicy);
   this->floatController = m5::make_unique<StreamFloatController>(
       this, std::move(streamFloatPolicy));
 

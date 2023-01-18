@@ -143,6 +143,8 @@ parser.add_option("--gem-forge-stream-engine-enable-float", action="store_true",
 parser.add_option("--gem-forge-stream-engine-float-policy", type="choice", default="static",
                   choices=['static', 'manual', 'smart', 'smart-computation'],
                   help="Policy to choose floating stream in LLC.")
+parser.add_option("--gem-forge-stream-engine-enable-float-history", action="store", type="int",
+                  default=0, help="Enable stream float history when making float decision.")
 parser.add_option("--gem-forge-stream-engine-enable-float-indirect", action="store_true",
                   default=False,
                   help="Enable indirect stream float in LLC.")

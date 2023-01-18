@@ -50,9 +50,11 @@ std::vector<uint64_t> getCacheCapacity(StreamEngine *se) {
 } // namespace
 
 StreamFloatPolicy::StreamFloatPolicy(bool _enabled, bool _enabledFloatMem,
+                                     bool _enabledHistory,
                                      const std::string &_policy,
                                      const std::string &_levelPolicy)
-    : enabled(_enabled), enabledFloatMem(_enabledFloatMem) {
+    : enabled(_enabled), enabledFloatMem(_enabledFloatMem),
+      enabledHistory(_enabledHistory) {
   if (_policy == "static") {
     this->policy = PolicyE::STATIC;
   } else if (_policy == "manual") {
@@ -245,7 +247,7 @@ bool StreamFloatPolicy::checkAggregateHistory(DynStream &dynS) {
    * If so, we should not float this stream.
    */
   auto S = dynS.stream;
-  if (S->aggregateHistory.empty()) {
+  if (S->aggregateHistory.empty() || !enabledHistory) {
     return true;
   }
   auto linearAddrGen =

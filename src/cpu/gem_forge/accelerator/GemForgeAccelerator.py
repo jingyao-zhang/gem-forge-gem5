@@ -100,8 +100,10 @@ class StreamEngine(GemForgeAccelerator):
         Param.UInt32(16, "Initial number of entries of MLC stream buffer")
     streamEngineEnableMidwayFloat = Param.Bool(
         False, "Whether to enable midway float.")
-    streamEngineMidwayFloatElementIdx= Param.Int32(
+    streamEngineMidwayFloatElementIdx = Param.Int32(
         -1, "Whether to force midway float at this element.")
+    enableFloatHistory = Param.Bool(
+        True, "Whether consider stream history for floating decision.")
 
     # parameters for stream computing.
     enableZeroComputeLatency = Param.Bool(
