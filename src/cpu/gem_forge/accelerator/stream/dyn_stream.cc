@@ -992,64 +992,69 @@ StreamElement *DynStream::unstepElement() {
   return element;
 }
 
-void DynStream::allocateElement(StreamElement *newElement) {
+void DynStream::allocateElement(StreamElement *newElem) {
 
   auto S = this->stream;
   assert(S->isConfigured() &&
          "Stream should be configured to allocate element.");
   S->statistic.numAllocated++;
-  newElement->stream = S;
+  newElem->stream = S;
 
   /**
    * Append this new element to the dynamic stream.
    */
   DYN_S_DPRINTF(this->dynStreamId, "Try to allocate element.\n");
-  newElement->dynS = this;
+  newElem->dynS = this;
 
   /**
    * next() is called after assign to make sure
    * entryIdx starts from 0.
    */
-  newElement->FIFOIdx = this->FIFOIdx;
-  newElement->isCacheBlockedValue = S->isMemStream();
+  newElem->FIFOIdx = this->FIFOIdx;
+  newElem->isCacheBlockedValue = S->isMemStream();
   this->FIFOIdx.next(this->stepElemCount);
 
+  /**
+   * Check and memorize if the elem is floated to cache.
+   */
+  newElem->checkIsElemFloatedToCache();
+
   if (this->hasTotalTripCount() &&
-      newElement->FIFOIdx.entryIdx >=
+      newElem->FIFOIdx.entryIdx >=
           this->getTotalTripCount() + this->stepElemCount) {
     DYN_S_PANIC(this->dynStreamId,
                 "Allocate beyond tripCnt %lu stepCnt %ld, allocSize %lu, "
                 "entryIdx %lu.\n",
                 this->getTotalTripCount(), this->stepElemCount,
-                S->getAllocSize(), newElement->FIFOIdx.entryIdx);
+                S->getAllocSize(), newElem->FIFOIdx.entryIdx);
   }
 
   // Add base elements
-  this->addBaseElements(newElement);
+  this->addBaseElements(newElem);
 
-  newElement->allocateCycle = S->getCPUDelegator()->curCycle();
+  newElem->allocateCycle = S->getCPUDelegator()->curCycle();
 
   // Append to the list.
-  this->head->next = newElement;
-  this->head = newElement;
+  this->head->next = newElem;
+  this->head = newElem;
   this->allocSize++;
   S->allocSize++;
 
-  S_ELEMENT_DPRINTF(newElement, "Allocated.\n");
+  S_ELEMENT_DPRINTF(newElem, "Allocated.\n");
 
   /**
    * If there is no AddrBaseElement, we mark AddrReady immediately.
    * This is the case for most IV streams -- they will compute value
    * later.
    */
-  if (newElement->addrBaseElements.empty()) {
+  if (newElem->addrBaseElements.empty()) {
     if (!this->stream->isMemStream()) {
       // IV stream.
-      newElement->markAddrReady();
+      newElem->markAddrReady();
     } else {
       // Mem stream. Make sure we are not issuing.
       if (this->shouldCoreSEIssue()) {
-        newElement->markAddrReady();
+        newElem->markAddrReady();
       }
     }
   }
@@ -1330,6 +1335,13 @@ void DynStream::tryCancelFloat() {
   S->se->sendStreamFloatEndPacket(endIds);
 }
 
+void DynStream::updateFloatInfoForElems() {
+  // Update all StreamElement info.
+  for (auto elem = this->tail->next; elem; elem = elem->next) {
+    elem->checkIsElemFloatedToCache();
+  }
+}
+
 void DynStream::cancelFloat() {
   auto S = this->stream;
   S_DPRINTF(S, "Cancel FloatStream.\n");
@@ -1338,6 +1350,7 @@ void DynStream::cancelFloat() {
   this->setFloatedToCacheAsRoot(false);
   this->floatPlan.clear();
   S->statistic.numFloatCancelled++;
+  this->updateFloatInfoForElems();
 }
 
 bool DynStream::isInnerSecondElem(uint64_t elemIdx) const {

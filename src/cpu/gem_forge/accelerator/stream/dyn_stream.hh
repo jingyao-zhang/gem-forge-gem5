@@ -115,6 +115,7 @@ struct DynStream {
   void setNextCacheDoneElemIdx(uint64_t val) {
     this->nextCacheDoneElementIdx = val;
   }
+  void updateFloatInfoForElems();
 
   StreamFloatPlan &getFloatPlan() { return this->floatPlan; }
   const StreamFloatPlan &getFloatPlan() const { return this->floatPlan; }

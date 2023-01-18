@@ -246,13 +246,8 @@ bool StreamElement::isFloatElem() const {
 bool StreamElement::isElemFloatedToCacheAsRoot() const {
   return this->dynS->isFloatedToCacheAsRoot() && this->isFloatElem();
 }
-bool StreamElement::isElemFloatedToCache() const {
-  if (this->memorizedIsElemFloatedToCache.has_value()) {
-    return this->memorizedIsElemFloatedToCache.value();
-  }
-  bool ret = this->dynS->isFloatedToCache() && this->isFloatElem();
-  this->memorizedIsElemFloatedToCache.set(ret);
-  return ret;
+void StreamElement::checkIsElemFloatedToCache() {
+  this->floatedToCache = this->dynS->isFloatedToCache() && this->isFloatElem();
 }
 bool StreamElement::isElemFloatedWithDependent() const {
   return this->dynS->isFloatedWithDependent() && this->isFloatElem();
@@ -311,7 +306,7 @@ void StreamElement::clear() {
   this->stored = false;
   this->clearScheduledComputation();
 
-  this->memorizedIsElemFloatedToCache.reset();
+  this->floatedToCache = false;
 }
 
 void StreamElement::flush(bool aliased) {
@@ -347,7 +342,7 @@ void StreamElement::flush(bool aliased) {
   this->clearScheduledComputation();
   std::fill(this->value.begin(), this->value.end(), 0);
 
-  this->memorizedIsElemFloatedToCache.reset();
+  this->floatedToCache = false;
 }
 
 void StreamElement::clearCacheBlocks() {

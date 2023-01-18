@@ -314,7 +314,8 @@ struct StreamElement {
   bool isFirstFloatElem() const;
   bool isFloatElem() const;
   bool isElemFloatedToCacheAsRoot() const;
-  bool isElemFloatedToCache() const;
+  bool isElemFloatedToCache() const { return this->floatedToCache; }
+  void checkIsElemFloatedToCache();
   bool isElemFloatedWithDependent() const;
   bool isElemFloatedAsNDC() const;
   bool isElemFloatedAsNDCForward() const;
@@ -406,7 +407,7 @@ private:
   /**
    * Memorized isElemFloatedToCache.
    */
-  mutable Optional<bool> memorizedIsElemFloatedToCache;
+  bool floatedToCache = false;
 
   /**
    * Helper func to udpate our stats about when first check on value happened.

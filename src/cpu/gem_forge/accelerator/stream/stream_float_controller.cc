@@ -229,6 +229,8 @@ void StreamFloatController::rewindFloatStreams(const StreamConfigArgs &args,
       dynS.setFloatConfigDelayed(false);
       dynS.setFloatedToCacheAsRoot(false);
       dynS.getFloatPlan().clear();
+      // Update all StreamElement info.
+      dynS.updateFloatInfoForElems();
     }
   }
   if (!floatedIds.empty()) {
@@ -1447,6 +1449,7 @@ void StreamFloatController::propagateFloatPlan(const Args &args) {
       continue;
     }
     dynS->getFloatPlan().finalize();
+    dynS->updateFloatInfoForElems();
     StreamFloatPolicy::logS(*dynS)
         << "[FloatPlan] Finalized as " << dynS->getFloatPlan() << ".\n"
         << std::flush;

@@ -481,6 +481,7 @@ void StreamFloatPolicy::setFloatPlans(DynStreamList &dynStreams,
 
       dynS->setFloatedToCache(true);
       this->setFloatPlan(*dynS);
+      dynS->updateFloatInfoForElems();
       for (auto &edge : config->depEdges) {
         if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
           auto &usedConfig = edge.data;
