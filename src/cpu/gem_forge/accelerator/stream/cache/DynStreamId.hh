@@ -68,9 +68,18 @@ std::string to_string(const DynStreamId &streamId);
 
 struct DynStreamIdHasher {
   std::size_t operator()(const DynStreamId &key) const {
-    return (std::hash<int>()(key.coreId)) ^
-           (std::hash<DynStreamId::StaticId>()(key.staticId)) ^
-           (std::hash<DynStreamId::InstanceId>()(key.streamInstance));
+    auto x = std::hash<int>()(key.coreId);
+    auto y = std::hash<DynStreamId::StaticId>()(key.staticId);
+    auto z = std::hash<DynStreamId::InstanceId>()(key.streamInstance);
+    return mergeTwoHashes(mergeTwoHashes(x, y), z);
+  }
+
+  static std::size_t mergeTwoHashes(std::size_t x, std::size_t y) {
+    auto yLZ = __builtin_clzl(y | 1);
+    /**
+     * Circular shift to avoid that x and y both have a few LSB.
+     */
+    return ((x << (64 - yLZ)) | (x >> yLZ)) ^ y;
   }
 };
 

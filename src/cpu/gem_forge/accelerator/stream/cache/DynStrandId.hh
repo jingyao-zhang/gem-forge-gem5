@@ -73,8 +73,9 @@ std::string to_string(const DynStrandId &streamId);
 
 struct DynStrandIdHasher {
   std::size_t operator()(const DynStrandId &key) const {
-    return DynStreamIdHasher()(key.dynStreamId) ^
-           std::hash<DynStrandId::StrandIndex>()(key.strandIdx);
+    auto x = DynStreamIdHasher()(key.dynStreamId);
+    auto y = std::hash<DynStrandId::StrandIndex>()(key.strandIdx);
+    return DynStreamIdHasher::mergeTwoHashes(x, y);
   }
 };
 
