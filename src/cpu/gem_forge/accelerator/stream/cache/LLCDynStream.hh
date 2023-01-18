@@ -211,11 +211,11 @@ public:
   }
 
   static LLCDynStream *getLLCStream(const DynStrandId &strandId) {
-    if (GlobalLLCDynStreamMap.count(strandId)) {
-      return GlobalLLCDynStreamMap.at(strandId);
-    } else {
+    auto iter = GlobalLLCDynStreamMap.find(strandId);
+    if (iter == GlobalLLCDynStreamMap.end()) {
       return nullptr;
     }
+    return iter->second;
   }
   static LLCDynStream *getLLCStreamPanic(const DynStrandId &strandId,
                                          const char *msg = "") {
@@ -515,6 +515,8 @@ public:
    */
   void markElemReadyToIssue(uint64_t elemIdx);
   void markElemIssued(uint64_t elemIdx);
+  bool hasElemReadyToIssue() const { return this->numElemsReadyToIssue > 0; }
+  size_t getNumElemReadyToIssue() const { return this->numElemsReadyToIssue; }
   bool hasIndirectElemReadyToIssue() const {
     return this->numIndirectElementsReadyToIssue > 0;
   }

@@ -167,6 +167,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   } else {
     this->streams.emplace_back(S);
     this->addStreamToMulticastTable(S);
+    this->addIssuingDirDynS(S);
     // Let's schedule a wakeup event.
     this->scheduleEvent(Cycles(1));
   }
@@ -182,6 +183,7 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
     if (S->getDynStrandId() == (*endStrandId)) {
       // Found it.
       // ? Can we just sliently release it?
+      this->tryRemoveIssuingDirDynS(S);
       this->removeStreamFromMulticastTable(S);
       S->terminate();
       this->streams.erase(streamIter);
@@ -209,7 +211,7 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   delete pkt;
 }
 
-void LLCStreamEngine::receiveStreamMigrate(LLCDynStreamPtr stream,
+void LLCStreamEngine::receiveStreamMigrate(LLCDynStreamPtr dynS,
                                            bool isCommit) {
 
   this->initializeTranslationBuffer();
@@ -218,54 +220,54 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynStreamPtr stream,
    * Handle the case for commit migration.
    */
   if (isCommit) {
-    LLC_S_DPRINTF_(StreamRangeSync, stream->getDynStrandId(),
+    LLC_S_DPRINTF_(StreamRangeSync, dynS->getDynStrandId(),
                    "[Commit] Received migrate.\n");
-    if (stream->isTerminated()) {
-      LLC_S_DPRINTF_(StreamRangeSync, stream->getDynStrandId(),
+    if (dynS->isTerminated()) {
+      LLC_S_DPRINTF_(StreamRangeSync, dynS->getDynStrandId(),
                      "[Commit] Already terminated.\n");
 
     } else {
-      this->commitController->registerStream(stream);
+      this->commitController->registerStream(dynS);
       this->scheduleEvent(Cycles(1));
     }
     return;
   }
 
   // Sanity check.
-  auto vaddrAndMachineType = stream->peekNextAllocVAddrAndMachineType();
+  auto vaddrAndMachineType = dynS->peekNextAllocVAddrAndMachineType();
   auto vaddr = vaddrAndMachineType.first;
   auto machineType = vaddrAndMachineType.second;
   Addr paddr;
-  assert(stream->translateToPAddr(vaddr, paddr) &&
+  assert(dynS->translateToPAddr(vaddr, paddr) &&
          "Paddr should always be valid to migrate a stream.");
   Addr paddrLine = makeLineAddress(paddr);
   assert(this->isPAddrHandledByMe(paddrLine, machineType) &&
          "Stream migrated to wrong remote bank.\n");
 
   if (!this->controller->isStreamAdvanceMigrateEnabled()) {
-    if (stream->hasIndirectDependent()) {
+    if (dynS->hasIndirectDependent()) {
       // This is only enforced when there is dependent streams.
-      assert(stream->inflyRequests == 0 &&
-             "Stream migrated with inflyRequests.");
+      assert(dynS->inflyRequests == 0 && "Stream migrated with inflyRequests.");
     }
-    assert(!stream->hasIndirectElemReadyToIssue() &&
+    assert(!dynS->hasIndirectElemReadyToIssue() &&
            "Stream migrated with readyIndirectElements.");
   }
 
-  LLC_S_DPRINTF(stream->getDynStrandId(),
+  LLC_S_DPRINTF(dynS->getDynStrandId(),
                 "Received migrate. DirectStreams %llu.\n",
                 this->streams.size());
 
-  stream->migratingDone(this->controller);
+  dynS->migratingDone(this->controller);
 
   // Check for if the stream is already ended.
-  if (this->pendingEndStrandIds.count(stream->getDynStrandId())) {
-    stream->terminate();
+  if (this->pendingEndStrandIds.count(dynS->getDynStrandId())) {
+    dynS->terminate();
     return;
   }
 
-  this->streams.emplace_back(stream);
-  this->addStreamToMulticastTable(stream);
+  this->streams.emplace_back(dynS);
+  this->addStreamToMulticastTable(dynS);
+  this->addIssuingDirDynS(dynS);
   this->scheduleEvent(Cycles(1));
 }
 
@@ -831,8 +833,9 @@ void LLCStreamEngine::wakeup() {
 
   this->pumEngine->tick();
 
-  if (!this->streams.empty() || !this->migratingStreams.empty() ||
-      !this->requestQueue.empty() || !this->incomingStreamDataQueue.empty() ||
+  if (!this->streams.empty() || !this->issuingIndStreamList.empty() ||
+      !this->migratingStreams.empty() || !this->requestQueue.empty() ||
+      !this->incomingStreamDataQueue.empty() ||
       !this->allocatedSlices.empty() || !this->readyComputations.empty() ||
       !this->inflyComputations.empty() ||
       this->commitController->hasStreamToCommit()) {
@@ -1242,32 +1245,144 @@ void LLCStreamEngine::issueStreams() {
 
   // By cheching i < nStreams we avoid issuing the same stream more
   // than once.
-  auto streamIter = this->streams.begin();
-  auto streamEnd = this->streams.end();
-  auto checkedStreams = 0;
   auto issuedStreams = 0;
-  auto nStreams = this->streams.size();
+
+  /**
+   * New issuing logic: manage IndS separately.
+   * Ready IndS is now stored in issuingIndStreamList/Set, and we need to
+   * check them first.
+   */
+  for (auto indSIter = this->issuingIndStreamList.begin(),
+            indSEnd = this->issuingIndStreamList.end();
+       indSIter != indSEnd && issuedStreams < this->issueWidth;) {
+
+    auto dynStrandId = *indSIter;
+    auto dynIS = LLCDynStream::getLLCStream(dynStrandId);
+
+    if (!dynIS) {
+      auto removeIter = indSIter++;
+      LLC_S_DPRINTF(dynStrandId, "[IndS] Already Released Not Issue.\n");
+      this->removeIssuingIndDynS(removeIter);
+      continue;
+    }
+
+    if (!dynIS->hasElemReadyToIssue()) {
+      /**
+       * The IndS has no element to issue. This is possible for the current
+       * implementation that it is issued by some other LLC SE.
+       * In such cases, we simply remove from the list.
+       * TODO: Fix this and relax the issuing order for IndS.
+       */
+      auto removeIter = indSIter++;
+      LLC_S_DPRINTF(dynIS->getDynStrandId(), "[IndS] No Elem to Issue.\n");
+      this->removeIssuingIndDynS(removeIter);
+      continue;
+    }
+
+    auto IS = dynIS->getStaticS();
+    if (auto elem = dynIS->getFirstReadyToIssueElem()) {
+      auto elemIdx = elem->idx;
+
+      /**
+       * Hack: We enforce ordering of alised IndirectUpdateStream
+       * here.
+       * TODO: Really implement the ordering scheme by piggyback the
+       * previous element going to that bank and let the indrect LLC
+       * SE handles ordering. However, delay issuing here actually
+       * pays more overhead, so we should be okay as we are not
+       * cheating for performance.
+       */
+      if (IS->isUpdateStream()) {
+        bool hasAliasedWithPreviousElement = false;
+        for (const auto &idxElement : dynIS->idxToElementMap) {
+          if (idxElement.first >= elemIdx) {
+            break;
+          }
+          const auto &prevElement = idxElement.second;
+          if (prevElement->vaddr == elem->vaddr &&
+              !prevElement->isComputedValueReady()) {
+            LLC_ELEMENT_DPRINTF(elem,
+                                "[NotIssue] Aliased Indirect "
+                                "UpdateElement %llu %#x.\n",
+                                prevElement->idx, prevElement->vaddr);
+            IS->statistic.sampleLLCStreamEngineIssueReason(
+                StreamStatistic::LLCStreamEngineIssueReason::
+                    AliasedIndirectUpdate);
+            hasAliasedWithPreviousElement = true;
+            break;
+          }
+        }
+        if (hasAliasedWithPreviousElement) {
+          // We need to try again some time later.
+          ++indSIter;
+          continue;
+        }
+      }
+
+      /**
+       * We are able to issue.
+       * Move to the next one.
+       */
+      this->issueStreamIndirect(dynIS);
+      issuedStreams++;
+      ++indSIter;
+
+    } else {
+      /**
+       * Somehow the next issuing elem is not ready yet.
+       * We just remove from the list and later when the issuing elem is marked
+       * ready, we will be added back to the list.
+       */
+      auto removeIter = indSIter;
+      ++indSIter;
+      LLC_S_DPRINTF(dynIS->getDynStrandId(),
+                    "[IndS] No NextIssueElem %lu ReadyElems %d.\n",
+                    dynIS->getNextIssueElemIdx(),
+                    dynIS->getNumElemReadyToIssue());
+      this->removeIssuingIndDynS(removeIter);
+    }
+  }
+
+  /**
+   * New Issue Logic: Now check IssuingDirStreams.
+   */
+  auto streamIter = this->issuingDirStreamList.begin();
+  auto streamEnd = this->issuingDirStreamList.end();
+  auto checkedStreams = 0;
+  auto nStreams = this->issuingDirStreamList.size();
   for (; checkedStreams < nStreams && issuedStreams < this->issueWidth;
        ++checkedStreams) {
-    auto curStream = streamIter;
+    auto curIter = streamIter;
+
+    auto dynS = LLCDynStream::getLLCStreamPanic(*curIter, "Issue DirS.");
+
+    /**
+     * If this dynS is overflown, remove it from the IssueList.
+     */
+    if (dynS->isNextElemOverflown() || dynS->isNextSliceOverflown()) {
+      LLC_S_DPRINTF(dynS->getDynStrandId(),
+                    "[Not Issue] Overflown %lld Remove from IssueList.\n",
+                    dynS->getTotalTripCount());
+      streamIter = this->issuingDirStreamList.erase(streamIter);
+      continue;
+    }
+
     // Move to the next one.
     ++streamIter;
-    auto readyS = this->findStreamReadyToIssue(*curStream);
+
+    auto readyS = this->findStreamReadyToIssue(dynS);
     if (readyS) {
-      if (readyS->isIndirect()) {
-        this->issueStreamIndirect(readyS);
-      } else {
-        this->issueStreamDirect(readyS);
-      }
+      this->issueStreamDirect(readyS);
       issuedStreams++;
       // Push the stream back to the end.
-      this->streams.splice(streamEnd, this->streams, curStream);
+      this->issuingDirStreamList.splice(streamEnd, this->issuingDirStreamList,
+                                        curIter);
     }
   }
   for (; checkedStreams < nStreams; ++checkedStreams) {
     // Record that they are not checked.
     assert(streamIter != streamEnd && "Should never happen.");
-    auto dynS = *streamIter;
+    auto dynS = LLCDynStream::getLLCStreamPanic(*streamIter, "MaxIssue DirS");
     auto &statistic = dynS->getStaticS()->statistic;
     statistic.sampleLLCStreamEngineIssueReason(
         StreamStatistic::LLCStreamEngineIssueReason::MaxIssueWidth);
@@ -1278,25 +1393,6 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
 
   auto S = dynS->getStaticS();
   auto &statistic = S->statistic;
-  /**
-   * Prioritize indirect streams.
-   */
-  LLCDynStreamPtr readyS = this->findIndirectStreamReadyToIssue(dynS);
-  if (readyS) {
-    statistic.sampleLLCStreamEngineIssueReason(
-        StreamStatistic::LLCStreamEngineIssueReason::IndirectPriority);
-    return readyS;
-  }
-
-  if (dynS->isNextSliceOverflown() || dynS->isNextElemOverflown()) {
-    // Do not try to issue this slice if it is overflown.
-    LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynS->getDynStrandId(),
-                   "[Not Issue] NextSliceOverflown %lld.\n",
-                   dynS->getTotalTripCount());
-    statistic.sampleLLCStreamEngineIssueReason(
-        StreamStatistic::LLCStreamEngineIssueReason::NextSliceOverTripCount);
-    return nullptr;
-  }
 
   if (!dynS->isNextSliceCredited()) {
     LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynS->getDynStrandId(),
@@ -1553,6 +1649,44 @@ LLCStreamEngine::findIndirectStreamReadyToIssue(LLCDynStreamPtr dynS) {
   }
 
   return readyS;
+}
+
+void LLCStreamEngine::addIssuingDirDynS(LLCDynStreamPtr dynS) {
+  this->issuingDirStreamList.push_back(dynS->getDynStrandId());
+}
+
+void LLCStreamEngine::removeIssuingDirDynS(StrandIdList::iterator iter) {
+  this->issuingDirStreamList.erase(iter);
+}
+
+void LLCStreamEngine::tryRemoveIssuingDirDynS(LLCDynStreamPtr dynS) {
+  for (auto iter = this->issuingDirStreamList.begin(),
+            end = this->issuingDirStreamList.end();
+       iter != end;) {
+    if (dynS->getDynStrandId() == (*iter)) {
+      iter = this->issuingDirStreamList.erase(iter);
+    } else {
+      ++iter;
+    }
+  }
+}
+
+void LLCStreamEngine::addIssuingIndDynS(LLCDynStreamPtr dynIS) {
+  if (this->issuingIndStreamSet.count(dynIS->getDynStrandId())) {
+    return;
+  }
+  if (this->issuingIndStreamList.empty()) {
+    this->scheduleEvent(Cycles(1));
+  }
+  this->issuingIndStreamList.push_back(dynIS->getDynStrandId());
+  this->issuingIndStreamSet.insert(dynIS->getDynStrandId());
+}
+
+void LLCStreamEngine::removeIssuingIndDynS(StrandIdList::iterator iter) {
+  auto dynStrandId = *iter;
+  LLC_S_DPRINTF(dynStrandId, "[IndS] Remove from Issue List.\n");
+  this->issuingIndStreamSet.erase(dynStrandId);
+  this->issuingIndStreamList.erase(iter);
 }
 
 void LLCStreamEngine::issueStreamDirect(LLCDynStream *dynS) {
@@ -2676,9 +2810,10 @@ void LLCStreamEngine::findMigratingStreams() {
   auto streamIter = this->streams.begin();
   auto streamEnd = this->streams.end();
   while (streamIter != streamEnd) {
-    auto stream = *streamIter;
-    if (this->canMigrateStream(stream)) {
-      this->migratingStreams.emplace_back(stream);
+    auto dynS = *streamIter;
+    if (this->canMigrateStream(dynS)) {
+      this->migratingStreams.emplace_back(dynS);
+      this->tryRemoveIssuingDirDynS(dynS);
       streamIter = this->streams.erase(streamIter);
     } else {
       ++streamIter;
@@ -3116,6 +3251,13 @@ void LLCStreamEngine::predicateOffElem(LLCDynStreamPtr dynS,
   }
   // Help keep NextIssueElemIdx correct.
   dynS->skipIssuingPredOffElems();
+  // If the IndS has ready elem, add it back to IssueList.
+  if (dynS->isIndirect() && dynS->hasElemReadyToIssue()) {
+    LLC_ELEMENT_DPRINTF(elem,
+                        "[IndS] PredOff but add to Issue List ReadyElems %d.\n",
+                        dynS->getNumElemReadyToIssue());
+    this->addIssuingIndDynS(dynS);
+  }
   // Try release the element in order.
   while (!dynS->idxToElementMap.empty()) {
     auto elemIter = dynS->idxToElementMap.begin();
@@ -3195,6 +3337,9 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
       }
     } else {
       IS->markElemReadyToIssue(indElemIdx);
+      LLC_S_DPRINTF(IS->getDynStrandId(),
+                    "[IndS] Add to Issue List Elem %lu.\n", indElemIdx);
+      this->addIssuingIndDynS(IS);
       indElem->setLLCSE(this);
     }
   } else {
@@ -3780,15 +3925,13 @@ void LLCStreamEngine::processDirectAtomicSlice(
                       element->idx, element->vaddr);
     if (!element->isReady()) {
       // Not ready yet. Break.
-      LLC_SLICE_PANIC(sliceId,
-                      "Element %llu not ready while we are triggering update.",
-                      idx);
+      LLC_SLICE_PANIC(
+          sliceId, "Elem %llu not ready while we are triggering update.", idx);
     }
     if (!element->areBaseElemsReady()) {
       // We are still waiting for base elements.
-      LLC_SLICE_PANIC(sliceId,
-                      "Element %llu has base element not ready when updating.",
-                      idx);
+      LLC_SLICE_PANIC(
+          sliceId, "Elem %llu has base element not ready when updating.", idx);
     }
     uint32_t payloadSize = 0;
     this->triggerAtomic(dynS, element, sliceId, loadValueBlock, payloadSize);
@@ -4546,7 +4689,7 @@ void LLCStreamEngine::sampleLLCStream(LLCDynStreamPtr dynS) {
 }
 
 void LLCStreamEngine::sampleLLCStreams() {
-  const Cycles sampleInterval = Cycles(10);
+  const Cycles sampleInterval = Cycles(100);
   if (curCycle() < this->lastSampleCycle + sampleInterval) {
     return;
   }

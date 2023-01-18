@@ -120,6 +120,21 @@ private:
   using StreamList = std::list<LLCDynStreamPtr>;
   using StreamListIter = StreamList::iterator;
   StreamList streams;
+
+  using StrandIdSet = std::unordered_set<DynStrandId, DynStrandIdHasher>;
+  using StrandIdList = std::list<DynStrandId>;
+  /**
+   * DirectStreams waiting to be issued.
+   * This optimization removes DirectStreams that have overflown from IssueList.
+   */
+  StrandIdList issuingDirStreamList;
+  /**
+   * IndirectStreams waiting to be issued.
+   * Have a list and set at the same time.
+   */
+  StrandIdList issuingIndStreamList;
+  StrandIdSet issuingIndStreamSet;
+
   /**
    * Streams waiting to be migrated to other LLC bank.
    */
@@ -234,6 +249,15 @@ private:
    */
   LLCDynStreamPtr findStreamReadyToIssue(LLCDynStreamPtr dynS);
   LLCDynStreamPtr findIndirectStreamReadyToIssue(LLCDynStreamPtr dynS);
+
+  /**
+   * Helper function to manage the issuing streams.
+   */
+  void addIssuingDirDynS(LLCDynStreamPtr dynS);
+  void removeIssuingDirDynS(StrandIdList::iterator iter);
+  void tryRemoveIssuingDirDynS(LLCDynStreamPtr dynS);
+  void addIssuingIndDynS(LLCDynStreamPtr dynIS);
+  void removeIssuingIndDynS(StrandIdList::iterator iter);
 
   /**
    * Issue a DirectStream.

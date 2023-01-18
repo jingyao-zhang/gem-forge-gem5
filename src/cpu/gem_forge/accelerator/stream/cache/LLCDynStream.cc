@@ -350,12 +350,14 @@ void LLCDynStream::traceEvent(
 }
 
 void LLCDynStream::sanityCheckStreamLife() {
-  // if (!Debug::LLCRubyStreamLife) {
-  //   return;
-  // }
+  auto hardLLCStreamThreshold = 100000;
+  if (!Debug::LLCRubyStreamLife &&
+      GlobalLLCDynStreamMap.size() < hardLLCStreamThreshold) {
+    return;
+  }
   return;
   bool failed = false;
-  if (GlobalLLCDynStreamMap.size() > 4096) {
+  if (GlobalLLCDynStreamMap.size() >= hardLLCStreamThreshold) {
     failed = true;
   }
   if (!failed) {
@@ -1769,8 +1771,8 @@ void LLCDynStream::markElemReadyToIssue(uint64_t elemIdx) {
   elem->vaddr = elemVAddr;
   elem->setState(LLCStreamElement::State::READY_TO_ISSUE);
 
-  // Increment the counter in the base stream.
   this->numElemsReadyToIssue++;
+  // Increment the counter in the root stream.
   if (this->rootStream) {
     this->rootStream->numIndirectElementsReadyToIssue++;
   }
@@ -2059,12 +2061,12 @@ LLCStreamElementPtr LLCDynStream::getElem(uint64_t elementIdx) const {
   return iter->second;
 }
 
-LLCStreamElementPtr LLCDynStream::getElemPanic(uint64_t elementIdx,
+LLCStreamElementPtr LLCDynStream::getElemPanic(uint64_t elemIdx,
                                                const char *errMsg) const {
-  auto element = this->getElem(elementIdx);
-  if (!element) {
+  auto elem = this->getElem(elemIdx);
+  if (!elem) {
     LLC_S_PANIC(this->getDynStrandId(), "Failed to get LLCElem %llu for %s.",
-                elementIdx, errMsg);
+                elemIdx, errMsg);
   }
-  return element;
+  return elem;
 }
