@@ -120,6 +120,12 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
     }
   }
 
+  /**
+   * Cache the TripCount info here.
+   */
+  this->totalTripCount = this->slicedStream.getTotalTripCount();
+  this->innerTripCount = this->slicedStream.getInnerTripCount();
+
   assert(GlobalLLCDynStreamMap.emplace(this->getDynStrandId(), this).second);
   this->sanityCheckStreamLife();
 }
@@ -147,34 +153,6 @@ LLCDynStream::~LLCDynStream() {
   GlobalLLCDynStreamMap.erase(iter);
 }
 
-bool LLCDynStream::hasTotalTripCount() const {
-  if (this->baseStream) {
-    return this->baseStream->hasTotalTripCount();
-  }
-  return this->slicedStream.hasTotalTripCount();
-}
-
-int64_t LLCDynStream::getTotalTripCount() const {
-  if (this->baseStream) {
-    return this->baseStream->getTotalTripCount() * this->baseStreamReuse;
-  }
-  return this->slicedStream.getTotalTripCount();
-}
-
-bool LLCDynStream::hasInnerTripCount() const {
-  if (this->baseStream) {
-    return this->baseStream->hasInnerTripCount();
-  }
-  return this->slicedStream.hasInnerTripCount();
-}
-
-int64_t LLCDynStream::getInnerTripCount() const {
-  if (this->baseStream) {
-    return this->baseStream->getInnerTripCount();
-  }
-  return this->slicedStream.getInnerTripCount();
-}
-
 bool LLCDynStream::isInnerLastElem(uint64_t elemIdx) const {
   if (!this->hasInnerTripCount()) {
     return false;
@@ -197,6 +175,13 @@ void LLCDynStream::setTotalTripCount(int64_t totalTripCount) {
   for (auto dynIS : this->indirectStreams) {
     dynIS->rangeBuilder->receiveLoopBoundRet(totalTripCount *
                                              dynIS->baseStreamReuse);
+  }
+  // Set for myself and all indirect streams.
+  this->totalTripCount = this->slicedStream.getTotalTripCount();
+  this->innerTripCount = this->slicedStream.getInnerTripCount();
+  for (auto dynIS : this->allIndirectStreams) {
+    dynIS->totalTripCount = this->totalTripCount;
+    dynIS->innerTripCount = this->innerTripCount;
   }
 }
 
@@ -1318,6 +1303,9 @@ void LLCDynStream::setBaseStream(LLCDynStreamPtr baseS, int reuse) {
   this->rootStream = baseS->rootStream ? baseS->rootStream : baseS;
   baseS->indirectStreams.push_back(this);
   this->rootStream->allIndirectStreams.push_back(this);
+  // Copy the RootStream's TripCount.
+  this->totalTripCount = this->rootStream->totalTripCount;
+  this->innerTripCount = this->rootStream->innerTripCount;
 }
 
 Cycles LLCDynStream::curCycle() const {

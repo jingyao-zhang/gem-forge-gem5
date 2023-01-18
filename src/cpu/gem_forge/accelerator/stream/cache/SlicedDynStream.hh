@@ -114,6 +114,8 @@ private:
   bool hasOverflowed(uint64_t elemIdx) const {
     return this->hasTotalTripCount() && elemIdx >= (this->totalTripCount);
   }
+
+  void allocateOneSlice() const;
 };
 
 #endif

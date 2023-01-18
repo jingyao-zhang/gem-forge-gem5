@@ -61,6 +61,12 @@ SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
     this->tailElemIdx = firstFloatElemIdx;
     this->sliceHeadElemIdx = firstFloatElemIdx;
   }
+
+  // Allocate one slice only for PtrChase/Affine Pattern.
+  if (this->isPtChase ||
+      std::dynamic_pointer_cast<LinearAddrGenCallback>(this->addrGenCallback)) {
+    this->allocateOneSlice();
+  }
 }
 
 SlicedDynStream::PtrChaseState::PtrChaseState(
@@ -134,23 +140,24 @@ void SlicedDynStream::stepTailElemIdx() const {
 }
 
 DynStreamSliceId SlicedDynStream::getNextSlice() {
-  while (slices.empty() || slices.front().getEndIdx() == this->tailElemIdx) {
-    // Allocate until it's guaranteed that the first slice has no more
-    // overlaps.
-    this->allocateOneElement();
-  }
+  assert(!this->slices.empty());
   auto slice = this->slices.front();
   this->slices.pop_front();
+  this->allocateOneSlice();
   return slice;
 }
 
 const DynStreamSliceId &SlicedDynStream::peekNextSlice() const {
+  assert(!this->slices.empty());
+  return this->slices.front();
+}
+
+void SlicedDynStream::allocateOneSlice() const {
   while (slices.empty() || slices.front().getEndIdx() == this->tailElemIdx) {
     // Allocate until it's guaranteed that the first slice has no more
     // overlaps.
     this->allocateOneElement();
   }
-  return this->slices.front();
 }
 
 void SlicedDynStream::setTotalAndInnerTripCount(int64_t tripCount) {
@@ -165,12 +172,12 @@ void SlicedDynStream::setTotalAndInnerTripCount(int64_t tripCount) {
   this->innerTripCount = tripCount;
 }
 
-Addr SlicedDynStream::getElementVAddr(uint64_t elementIdx) const {
+Addr SlicedDynStream::getElementVAddr(uint64_t elemIdx) const {
   if (this->isPtChase) {
-    return this->getOrComputePtrChaseElemVAddr(elementIdx);
+    return this->getOrComputePtrChaseElemVAddr(elemIdx);
   }
   return this->addrGenCallback
-      ->genAddr(elementIdx, this->formalParams, getStreamValueFail)
+      ->genAddr(elemIdx, this->formalParams, getStreamValueFail)
       .front();
 }
 

@@ -117,13 +117,27 @@ public:
   /**
    * We must query the sliced stream for total trip count.
    */
-  bool hasTotalTripCount() const;
-  int64_t getTotalTripCount() const;
-  bool hasInnerTripCount() const;
-  int64_t getInnerTripCount() const;
+  bool hasTotalTripCount() const {
+    return this->totalTripCount != InvalidTripCount;
+  }
+  int64_t getTotalTripCount() const { return this->totalTripCount; }
+  bool hasInnerTripCount() const {
+    return this->innerTripCount != InvalidTripCount;
+  }
+  int64_t getInnerTripCount() const { return this->innerTripCount; }
   bool isInnerLastElem(uint64_t elemIdx) const;
   void setTotalTripCount(int64_t totalTripCount);
 
+private:
+  /**
+   * This always match with those TripCounts in BaseStream's SlicedDynStream.
+   */
+  static constexpr int64_t InvalidTripCount =
+      CacheStreamConfigureData::InvalidTripCount;
+  int64_t totalTripCount = InvalidTripCount;
+  int64_t innerTripCount = InvalidTripCount;
+
+public:
   /**
    * Query the offloaded machine type.
    */
@@ -201,6 +215,10 @@ public:
   void remoteConfigured(AbstractStreamAwareController *llcController);
   void migratingStart();
   void migratingDone(AbstractStreamAwareController *llcController);
+
+  AbstractStreamAwareController *getLLCController() const {
+    return this->llcController;
+  }
 
   void terminate();
 

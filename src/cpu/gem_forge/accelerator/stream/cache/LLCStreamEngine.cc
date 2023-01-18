@@ -1180,41 +1180,34 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
   while (iter != end) {
     const auto &msg = *iter;
     bool processed = false;
-    for (auto stream : this->streams) {
-      if (stream->getDynStrandId() == msg.getDynStrandId() &&
-          msg.getStartIdx() == stream->creditedSliceIdx) {
-        // We found it.
-        // Update the idx.
-        LLC_S_DPRINTF(stream->getDynStrandId(), "Add credit %lu -> %lu.\n",
+    auto dynS = LLCDynStream::getLLCStream(msg.getDynStrandId());
+    if (dynS) {
+      if (dynS->getState() == LLCDynStream::State::RUNNING &&
+          dynS->getLLCController() == this->controller &&
+          msg.getStartIdx() == dynS->creditedSliceIdx) {
+        // The stream is at our bank. Update the idx.
+        LLC_S_DPRINTF(dynS->getDynStrandId(), "Add credit %lu -> %lu.\n",
                       msg.getStartIdx(), msg.getEndIdx());
-        stream->addCredit(msg.getNumElements());
+        dynS->addCredit(msg.getNumElements());
         // Maybe we want to resort the Multicast group.
         if (this->controller->isStreamMulticastEnabled() &&
-            this->hasMergedAsMulticast(stream)) {
-          this->sortMulticastGroup(this->getMulticastGroup(stream));
+            this->hasMergedAsMulticast(dynS)) {
+          this->sortMulticastGroup(this->getMulticastGroup(dynS));
         }
         processed = true;
-        break;
       }
-    }
-    if (!processed) {
+    } else {
       // Delete the credit message if the stream is already released
       // due to StreamLoopBound.
-      if (!LLCDynStream::getLLCStream(msg.getDynStrandId())) {
-        LLC_S_DPRINTF(msg.getDynStrandId(),
-                      "[Credit] Discard credit %lu -> %lu as LLCDynStream "
-                      "already released.\n",
-                      msg.getStartIdx(), msg.getEndIdx());
-        processed = true;
-      }
+      LLC_S_DPRINTF(msg.getDynStrandId(),
+                    "[Credit] Discard credit %lu -> %lu as LLCDynStream "
+                    "already released.\n",
+                    msg.getStartIdx(), msg.getEndIdx());
+      processed = true;
     }
     if (processed) {
       iter = this->pendingStreamFlowControlMsgs.erase(iter);
     } else {
-      // LLCSE_DPRINTF("Failed to process stream credit %s [%lu,
-      // %lu).\n",
-      //               msg.streamId.name.c_str(), msg.getStartIdx(),
-      //               msg.getEndIdx());
       ++iter;
     }
   }
