@@ -126,6 +126,7 @@ private:
   /**
    * DirectStreams waiting to be issued.
    * This optimization removes DirectStreams that have overflown from IssueList.
+   * Also, LLCStreamEngine searches for migrating streams within this IssueList.
    */
   StrandIdList issuingDirStreamList;
   /**
@@ -254,10 +255,12 @@ private:
    * Helper function to manage the issuing streams.
    */
   void addIssuingDirDynS(LLCDynStreamPtr dynS);
-  void removeIssuingDirDynS(StrandIdList::iterator iter);
+  StrandIdList::iterator removeIssuingDirDynS(StrandIdList::iterator iter);
   void tryRemoveIssuingDirDynS(LLCDynStreamPtr dynS);
   void addIssuingIndDynS(LLCDynStreamPtr dynIS);
   void removeIssuingIndDynS(StrandIdList::iterator iter);
+
+  void removeDynS(LLCDynStreamPtr dynS);
 
   /**
    * Issue a DirectStream.

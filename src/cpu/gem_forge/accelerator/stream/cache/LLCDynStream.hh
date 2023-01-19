@@ -177,7 +177,8 @@ public:
   uint64_t getNextAllocSliceIdx() const { return this->nextAllocSliceIdx; }
   const DynStreamSliceId &peekNextAllocSliceId() const;
   std::pair<Addr, MachineType> peekNextAllocVAddrAndMachineType() const;
-  uint64_t peekNextAllocElemIdx() const;
+  uint64_t peekNextAllocElemIdx() const { return this->nextAllocElemIdx; }
+  void checkNextAllocElemIdx();
   LLCStreamSlicePtr getNextAllocSlice() const;
   LLCStreamSlicePtr allocNextSlice(LLCStreamEngine *se);
 
@@ -317,6 +318,7 @@ private:
   // This is really just used for memorizing in IndirectStream.
   uint64_t numElemsReadyToIssue = 0;
   uint64_t numIndirectElementsReadyToIssue = 0;
+  uint64_t nextAllocElemIdx = 0;
   uint64_t nextIssueElemIdx = 0;
 
 public:

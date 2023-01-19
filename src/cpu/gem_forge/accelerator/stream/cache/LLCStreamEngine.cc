@@ -1648,8 +1648,9 @@ void LLCStreamEngine::addIssuingDirDynS(LLCDynStreamPtr dynS) {
   this->issuingDirStreamList.push_back(dynS->getDynStrandId());
 }
 
-void LLCStreamEngine::removeIssuingDirDynS(StrandIdList::iterator iter) {
-  this->issuingDirStreamList.erase(iter);
+LLCStreamEngine::StrandIdList::iterator
+LLCStreamEngine::removeIssuingDirDynS(StrandIdList::iterator iter) {
+  return this->issuingDirStreamList.erase(iter);
 }
 
 void LLCStreamEngine::tryRemoveIssuingDirDynS(LLCDynStreamPtr dynS) {
@@ -1680,6 +1681,17 @@ void LLCStreamEngine::removeIssuingIndDynS(StrandIdList::iterator iter) {
   LLC_S_DPRINTF(dynStrandId, "[IndS] Remove from Issue List.\n");
   this->issuingIndStreamSet.erase(dynStrandId);
   this->issuingIndStreamList.erase(iter);
+}
+
+void LLCStreamEngine::removeDynS(LLCDynStreamPtr dynS) {
+  for (auto iter = this->streams.begin(), end = this->streams.end();
+       iter != end; ++iter) {
+    if (*iter == dynS) {
+      this->streams.erase(iter);
+      return;
+    }
+  }
+  LLC_S_PANIC(dynS->getDynStrandId(), "Failed to remove from StreamList.");
 }
 
 void LLCStreamEngine::issueStreamDirect(LLCDynStream *dynS) {
@@ -2799,17 +2811,19 @@ void LLCStreamEngine::sendOffloadedLoopBoundRetToMLC(LLCDynStreamPtr stream,
 }
 
 void LLCStreamEngine::findMigratingStreams() {
-  // Scan all streams for migration target.
-  auto streamIter = this->streams.begin();
-  auto streamEnd = this->streams.end();
-  while (streamIter != streamEnd) {
-    auto dynS = *streamIter;
+  // Scan issuing direct streams for migration target.
+  auto iter = this->issuingDirStreamList.begin();
+  auto end = this->issuingDirStreamList.end();
+  while (iter != end) {
+    const auto &dynStrandId = *iter;
+    auto dynS =
+        LLCDynStream::getLLCStreamPanic(dynStrandId, "Find Migrating DynS");
     if (this->canMigrateStream(dynS)) {
       this->migratingStreams.emplace_back(dynS);
-      this->tryRemoveIssuingDirDynS(dynS);
-      streamIter = this->streams.erase(streamIter);
+      iter = this->removeIssuingDirDynS(iter);
+      this->removeDynS(dynS);
     } else {
-      ++streamIter;
+      ++iter;
     }
   }
 }

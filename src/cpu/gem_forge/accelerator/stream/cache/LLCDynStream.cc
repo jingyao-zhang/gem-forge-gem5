@@ -71,6 +71,7 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
     auto firstFloatElemIdx = _configData->floatPlan.getFirstFloatElementIdx();
     this->nextCommitElemIdx = firstFloatElemIdx;
     this->nextInitStrandElemIdx = firstFloatElemIdx;
+    this->nextAllocElemIdx = firstFloatElemIdx;
     this->nextIssueElemIdx = firstFloatElemIdx;
     this->nextLoopBoundElementIdx = firstFloatElemIdx;
     this->nextTriggerIndElemIdx = firstFloatElemIdx;
@@ -435,6 +436,8 @@ LLCStreamSlicePtr LLCDynStream::allocNextSlice(LLCStreamEngine *se) {
     // Slices allocated are now handled by LLCStreamEngine.
     this->slices.pop_front();
 
+    this->checkNextAllocElemIdx();
+
     return slice;
   }
 
@@ -461,11 +464,11 @@ LLCDynStream::peekNextAllocVAddrAndMachineType() const {
   }
 }
 
-uint64_t LLCDynStream::peekNextAllocElemIdx() const {
+void LLCDynStream::checkNextAllocElemIdx() {
   if (auto slice = this->getNextAllocSlice()) {
-    return slice->getSliceId().getStartIdx();
+    this->nextAllocElemIdx = slice->getSliceId().getStartIdx();
   } else {
-    return this->peekNextInitElemIdx();
+    this->nextAllocElemIdx = this->peekNextInitElemIdx();
   }
 }
 
