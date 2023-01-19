@@ -504,6 +504,29 @@ private:
    */
   void RAWMisspeculate(StreamElement *element);
 
+  /**
+   * List used to avoid scanning through all DynStreams' elements.
+   * And helper function to manage this list.
+   * NOTE: I don't really care about the order between DynS for now.
+   * 
+   * A DynS is added to the list when:
+   * 1. StreamConfig executed if not FloatedAsNDC.
+   * 2. StreamConfig committed if FloatedAsNDC.
+   * 3. New element allocated.
+   * 4. Element flushed.
+   * 
+   * A DynS is removed from the list when:
+   * 1. StreamEnd committed.
+   * 2. All elements are AddrReady and
+   *  if ShouldComputeValue -- all computation is scheduled.
+   */
+  using DynStreamList = std::list<DynStream *>;
+  using DynStreamSet = std::set<DynStream *>;
+  DynStreamSet issuingDynStreamSet;
+  void addIssuingDynS(DynStream *dynS);
+  DynStreamSet::iterator removeIssuingDynS(DynStreamSet::iterator iter);
+  void removeIssuingDynS(DynStream *dynS);
+
   std::vector<StreamElement *> findReadyElements();
 
   size_t getTotalRunAheadLength() const;

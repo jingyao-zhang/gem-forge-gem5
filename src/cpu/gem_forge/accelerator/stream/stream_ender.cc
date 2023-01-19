@@ -293,6 +293,9 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
   for (auto S : staticRegion.streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
 
+    // Remove from the IssueList.
+    this->se->removeIssuingDynS(&dynS);
+
     // Release in reverse order.
     if (dynS.hasZeroTripCount()) {
       // Streams with 0 TripCount does not have last element.

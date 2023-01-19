@@ -428,6 +428,15 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
   if (this->myParams->enableFineGrainedNearDataComputing) {
     this->ndcController->offloadStreams(args, streamRegion, configDynStreams);
   }
+
+  /**
+   * If not FloatAsNDC, add to issuing List.
+   */
+  for (auto dynS : configDynStreams) {
+    if (!dynS->isFloatedAsNDC()) {
+      this->addIssuingDynS(dynS);
+    }
+  }
 }
 
 void StreamEngine::commitStreamConfig(const StreamConfigArgs &args) {
@@ -455,6 +464,16 @@ void StreamEngine::commitStreamConfig(const StreamConfigArgs &args) {
    * Inform the RegionController.
    */
   this->regionController->commitStreamConfig(args);
+
+  /**
+   * If FloatAsNDC, add to issuing List.
+   */
+  for (auto S : configStreams) {
+    auto &dynS = S->getDynStream(args.seqNum);
+    if (dynS.isFloatedAsNDC()) {
+      this->addIssuingDynS(&dynS);
+    }
+  }
 }
 
 void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
@@ -1834,6 +1853,9 @@ void StreamEngine::allocateElement(DynStream &dynS) {
   }
 
   dynS.allocateElement(newElement);
+
+  // Add the DynS to IssueList.
+  this->addIssuingDynS(&dynS);
 }
 
 void StreamEngine::releaseElementStepped(DynStream *dynS, bool isEnd,
@@ -1942,6 +1964,24 @@ bool StreamEngine::releaseElementUnstepped(DynStream &dynS) {
   return releaseElement != nullptr;
 }
 
+void StreamEngine::addIssuingDynS(DynStream *dynS) {
+  DYN_S_DPRINTF(dynS->dynStreamId, "Try Add to IssueList: %d.\n",
+                this->issuingDynStreamSet.count(dynS));
+  this->issuingDynStreamSet.insert(dynS);
+}
+
+StreamEngine::DynStreamSet::iterator
+StreamEngine::removeIssuingDynS(DynStreamSet::iterator iter) {
+  DYN_S_DPRINTF((*iter)->dynStreamId, "Remove from IssueList.\n");
+  return this->issuingDynStreamSet.erase(iter);
+}
+
+void StreamEngine::removeIssuingDynS(DynStream *dynS) {
+  DYN_S_DPRINTF(dynS->dynStreamId, "Try Remove from IssueList: %d.\n",
+                this->issuingDynStreamSet.count(dynS));
+  this->issuingDynStreamSet.erase(dynS);
+}
+
 std::vector<StreamElement *> StreamEngine::findReadyElements() {
   std::vector<StreamElement *> readyElems;
 
@@ -1950,129 +1990,139 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
    * In this way, elements are marked ready in order, i.e. if
    * one element is not ready then we break searching in this stream.
    */
-  for (const auto &idStream : this->streamMap) {
-    auto S = idStream.second;
-    for (auto &dynS : S->dynamicStreams) {
-      if (!dynS.configExecuted) {
-        // The StreamConfig has not been executed, do not issue.
-        continue;
+  for (auto iter = this->issuingDynStreamSet.begin(),
+            end = this->issuingDynStreamSet.end();
+       iter != end;) {
+    auto &dynS = **iter;
+    auto S = dynS.stream;
+
+    bool hasUnissuedElem = false;
+
+    for (auto elem = dynS.tail->next; elem; elem = elem->next) {
+
+      if (elem->isElemFloatedToCache() && dynS.isFloatConfigDelayed()) {
+        S_ELEMENT_DPRINTF(elem, "NotReady as FloatConfigDelayed.\n");
+        hasUnissuedElem = true;
+        break;
       }
-      if (dynS.isFloatedAsNDC() && !dynS.configCommitted) {
-        // The NDC requires configuration to be committed.
-        continue;
-      }
-      for (auto elem = dynS.tail->next; elem != nullptr; elem = elem->next) {
 
-        if (elem->isElemFloatedToCache() && dynS.isFloatConfigDelayed()) {
-          S_ELEMENT_DPRINTF(elem, "NotReady as FloatConfigDelayed.\n");
-          break;
-        }
+      /**
+       * There three types of ready elements:
+       * 1. All the address base elements are ready -> compute address.
+       *  This represents all Mem streams.
+       * 2. Address is ready, value base elements are ready -> compute value.
+       *  This applies to IV/Reduction/StoreCompute/LoadCompute/Update
+       * streams.
+       * 3. Address is ready, request not issued, first user is
+       * non-speculative
+       *  -> Issue the atomic request.
+       *  This applies to AtomicCompute streams.
+       */
 
-        /**
-         * There three types of ready elements:
-         * 1. All the address base elements are ready -> compute address.
-         *  This represents all Mem streams.
-         * 2. Address is ready, value base elements are ready -> compute value.
-         *  This applies to IV/Reduction/StoreCompute/LoadCompute/Update
-         * streams.
-         * 3. Address is ready, request not issued, first user is
-         * non-speculative
-         *  -> Issue the atomic request.
-         *  This applies to AtomicCompute streams.
-         */
-
-        if (elem->isAddrReady()) {
-          // Address already ready. Check if we have type 2 or 3 ready elements.
-          if (elem->shouldComputeValue() && !elem->scheduledComputation &&
-              !elem->isComputeValueReady() &&
-              elem->checkValueBaseElementsValueReady()) {
+      if (elem->isAddrReady()) {
+        // Address already ready. Check if we have type 2 or 3 ready elements.
+        if (elem->shouldComputeValue() && !elem->scheduledComputation &&
+            !elem->isComputeValueReady()) {
+          hasUnissuedElem = true;
+          if (elem->checkValueBaseElementsValueReady()) {
             S_ELEMENT_DPRINTF(elem, "Found Ready for Compute.\n");
             readyElems.emplace_back(elem);
           }
-          if (S->isAtomicComputeStream() && !elem->isElemFloatedToCache() &&
-              !elem->isReqIssued()) {
-            // Check that StreamAtomic inst is non-speculative, i.e. it checks
-            // if my value is ready.
-            if (elem->firstValueCheckByCoreCycle != 0) {
-              S_ELEMENT_DPRINTF(
-                  elem, "StreamAtomic is non-speculative, ready to issue.\n");
-              readyElems.emplace_back(elem);
-            }
-          }
-          continue;
         }
-        /**
-         * To avoid overhead, if an element is aliased, we do not try to
-         * issue it until the first user is dispatched. However, now we
-         * have removed the load b[i] for indirect access like a[b[i]],
-         * we need to further check if my dependent stream has user dispatched
-         * to avoid deadlock.
-         *
-         * TODO: This adhoc fix only works for one level, if it's a[b[c]] then
-         * TODO: it will deadlock again.
-         * TODO: Record dependent element information to avoid this expensive
-         * TODO: search.
-         */
-        if (elem->isAddrAliased && !elem->isFirstUserDispatched()) {
-          bool hasIndirectUserDispatched = false;
-          for (auto depS : S->addrDepStreams) {
-            auto &dynDepS = depS->getDynStream(dynS.configSeqNum);
-            auto depElement = dynDepS.getElemByIdx(elem->FIFOIdx.entryIdx);
-            if (depElement && depElement->isFirstUserDispatched()) {
-              hasIndirectUserDispatched = true;
-            }
-          }
-          if (!hasIndirectUserDispatched) {
-            break;
+        if (S->isAtomicComputeStream() && !elem->isElemFloatedToCache() &&
+            !elem->isReqIssued()) {
+          // Check that StreamAtomic inst is non-speculative, i.e. it checks
+          // if my value is ready.
+          hasUnissuedElem = true;
+          if (elem->firstValueCheckByCoreCycle != 0) {
+            S_ELEMENT_DPRINTF(
+                elem, "StreamAtomic is non-speculative, ready to issue.\n");
+            readyElems.emplace_back(elem);
           }
         }
-
-        if (S->isDelayIssueUntilFIFOHead()) {
-          if (elem != dynS.tail->next) {
-            S_ELEMENT_DPRINTF(elem, "[NotReady] Not FIFO Head.\n");
-            break;
+        continue;
+      }
+      /**
+       * To avoid overhead, if an element is aliased, we do not try to
+       * issue it until the first user is dispatched. However, now we
+       * have removed the load b[i] for indirect access like a[b[i]],
+       * we need to further check if my dependent stream has user dispatched
+       * to avoid deadlock.
+       *
+       * TODO: This adhoc fix only works for one level, if it's a[b[c]] then
+       * TODO: it will deadlock again.
+       * TODO: Record dependent element information to avoid this expensive
+       * TODO: search.
+       */
+      if (elem->isAddrAliased && !elem->isFirstUserDispatched()) {
+        bool hasIndirectUserDispatched = false;
+        for (auto depS : S->addrDepStreams) {
+          auto &dynDepS = depS->getDynStream(dynS.configSeqNum);
+          auto depElement = dynDepS.getElemByIdx(elem->FIFOIdx.entryIdx);
+          if (depElement && depElement->isFirstUserDispatched()) {
+            hasIndirectUserDispatched = true;
           }
         }
-
-        /**
-         * I noticed that sometimes we have prefetched too early for
-         * AtomicStream, especially for gap.bfs_push. The line we prefetched may
-         * be evicted before the core issues the request and we still got
-         * coherence miss. This may cause some extra traffix overhead in the
-         * NoC. Here I try to limit the prefetch distance for AtomicStream
-         * without computation.
-         */
-        if (S->isAtomicStream() && !elem->isElemFloatedToCache()) {
-          if (elem->FIFOIdx.entryIdx >
-              dynS.getFirstElem()->FIFOIdx.entryIdx +
-                  this->myParams->maxNumElementsPrefetchForAtomic) {
-            break;
-          }
-        }
-
-        /**
-         * Should not issue.
-         */
-        if (!elem->shouldIssue()) {
-          S_ELEMENT_DPRINTF(elem, "Not Issue. Continue.\n");
-          continue;
-        }
-        auto baseElemsValReady =
-            elem->checkAddrBaseElementsReady(false /* CheckByCore */);
-        auto canNDCIssue = this->ndcController->canIssueNDCPacket(elem);
-        if (baseElemsValReady && canNDCIssue) {
-          S_ELEMENT_DPRINTF(elem, "Found Addr Ready.\n");
-          readyElems.emplace_back(elem);
-        } else {
-          // We should not check the next one as we should issue inorder.
-          if (!baseElemsValReady) {
-            S_ELEMENT_DPRINTF(elem, "Not Addr Ready, break out.\n");
-          } else {
-            S_ELEMENT_DPRINTF(elem, "Not NDC Ready, break out.\n");
-          }
+        if (!hasIndirectUserDispatched) {
+          hasUnissuedElem = true;
           break;
         }
       }
+
+      if (S->isDelayIssueUntilFIFOHead()) {
+        if (elem != dynS.tail->next) {
+          S_ELEMENT_DPRINTF(elem, "[NotReady] Not FIFO Head.\n");
+          hasUnissuedElem = true;
+          break;
+        }
+      }
+
+      /**
+       * I noticed that sometimes we have prefetched too early for
+       * AtomicStream, especially for gap.bfs_push. The line we prefetched may
+       * be evicted before the core issues the request and we still got
+       * coherence miss. This may cause some extra traffix overhead in the
+       * NoC. Here I try to limit the prefetch distance for AtomicStream
+       * without computation.
+       */
+      if (S->isAtomicStream() && !elem->isElemFloatedToCache()) {
+        hasUnissuedElem = true;
+        if (elem->FIFOIdx.entryIdx >
+            dynS.getFirstElem()->FIFOIdx.entryIdx +
+                this->myParams->maxNumElementsPrefetchForAtomic) {
+          break;
+        }
+      }
+
+      /**
+       * Should not issue.
+       */
+      if (!elem->shouldIssue()) {
+        S_ELEMENT_DPRINTF(elem, "Not Issue. Continue.\n");
+        continue;
+      }
+      auto baseElemsValReady =
+          elem->checkAddrBaseElementsReady(false /* CheckByCore */);
+      auto canNDCIssue = this->ndcController->canIssueNDCPacket(elem);
+      if (baseElemsValReady && canNDCIssue) {
+        S_ELEMENT_DPRINTF(elem, "Found Addr Ready.\n");
+        readyElems.emplace_back(elem);
+      } else {
+        // We should not check the next one as we should issue inorder.
+        if (!baseElemsValReady) {
+          S_ELEMENT_DPRINTF(elem, "Not Addr Ready, break out.\n");
+        } else {
+          S_ELEMENT_DPRINTF(elem, "Not NDC Ready, break out.\n");
+        }
+        hasUnissuedElem = true;
+        break;
+      }
+    }
+
+    if (!hasUnissuedElem) {
+      iter = this->removeIssuingDynS(iter);
+    } else {
+      ++iter;
     }
   }
 
@@ -2941,44 +2991,43 @@ void StreamEngine::flushPEB(Addr vaddr, int size) {
     return;
   }
   bool foundAliasedIndirect = false;
-  for (auto element : this->peb.elements) {
-    assert(element->isAddrReady());
-    assert(!element->isFirstUserDispatched());
-    if (element->addr >= vaddr + size ||
-        element->addr + element->size <= vaddr) {
+  for (auto elem : this->peb.elements) {
+    assert(elem->isAddrReady());
+    assert(!elem->isFirstUserDispatched());
+    if (elem->addr >= vaddr + size || elem->addr + elem->size <= vaddr) {
       // Not aliased.
       continue;
     }
-    if (!element->stream->hasNonCoreDependent()) {
+    if (!elem->stream->hasNonCoreDependent()) {
       // No dependent streams.
       continue;
     }
-    S_ELEMENT_DPRINTF_(StreamAlias, element,
+    S_ELEMENT_DPRINTF_(StreamAlias, elem,
                        "Found AliasedIndrect PEB %#x, +%d.\n", vaddr, size);
     foundAliasedIndirect = true;
   }
-  for (auto elementIter = this->peb.elements.begin(),
+  for (auto elemIter = this->peb.elements.begin(),
             elementEnd = this->peb.elements.end();
-       elementIter != elementEnd;) {
-    auto element = *elementIter;
-    bool aliased = !(element->addr >= vaddr + size ||
-                     element->addr + element->size <= vaddr);
+       elemIter != elementEnd;) {
+    auto elem = *elemIter;
+    bool aliased =
+        !(elem->addr >= vaddr + size || elem->addr + elem->size <= vaddr);
     if (!aliased && !foundAliasedIndirect) {
       // Not aliased, and we are selectively flushing.
-      S_ELEMENT_DPRINTF_(StreamAlias, element, "Skip flush in PEB.\n");
-      ++elementIter;
+      S_ELEMENT_DPRINTF_(StreamAlias, elem, "Skip flush in PEB.\n");
+      ++elemIter;
       continue;
     }
-    S_ELEMENT_DPRINTF_(StreamAlias, element, "Flushed in PEB %#x, +%d.\n",
-                       element->addr, element->size);
-    if (element->isElemFloatedToCache()) {
-      if (!element->getStream()->isLoadStream()) {
+    S_ELEMENT_DPRINTF_(StreamAlias, elem, "Flushed in PEB %#x, +%d.\n",
+                       elem->addr, elem->size);
+    if (elem->isElemFloatedToCache()) {
+      if (!elem->getStream()->isLoadStream()) {
         // This must be computation offloading.
-        S_ELEMENT_PANIC(element,
+        S_ELEMENT_PANIC(elem,
                         "Cannot flush offloaded non-load stream element.\n");
       }
     }
-    if (element->scheduledComputation) {
+    if (elem->scheduledComputation) {
       /**
        * ! So far we ignore this to make sure we have prefetche distance.
        * ! The current implementation to fix this greatly limit the prefetch
@@ -2989,8 +3038,10 @@ void StreamEngine::flushPEB(Addr vaddr, int size) {
     }
 
     // Clear the element to just allocate state.
-    element->flush(aliased);
-    elementIter = this->peb.elements.erase(elementIter);
+    elem->flush(aliased);
+    elemIter = this->peb.elements.erase(elemIter);
+    // Add the dynS back to IssueList.
+    this->addIssuingDynS(elem->dynS);
   }
 }
 
