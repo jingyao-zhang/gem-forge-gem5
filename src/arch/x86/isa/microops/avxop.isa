@@ -247,6 +247,12 @@ let {{
             this->doPackedBinaryOp(xc, BinaryOp::FloatAdd);
         '''
 
+    class Vminf(Varithp):
+        opClass = 'SimdFloatAddOp'
+        code = '''
+            this->doPackedBinaryOp(xc, BinaryOp::FloatMin);
+        '''
+
     class Saddf(Varithp):
         opClass = 'FloatAddOp'
         code = '''

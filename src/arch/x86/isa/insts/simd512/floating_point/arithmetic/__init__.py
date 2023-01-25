@@ -23,6 +23,7 @@ categories = [
     "vsubpd",
     "vminsd",
     "vminss",
+    "vminps",
     "vmaxss",
     "vmulps",
     "vmulpd",

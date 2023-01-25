@@ -123,6 +123,11 @@
                     0x1: VSUBPS(VYdo, WYdo);
                     0x0: VSUBPS(Vo, Wo);
                 }
+                0x5: decode EVEX_L_EXTEND {
+                    0x2: VMINPS(VZqo, WZqo);
+                    0x1: VMINPS(VYdo, WYdo);
+                    0x0: VMINPS(Vo, Wo);
+                }
                 0x6: decode EVEX_L_EXTEND {
                     0x2: VDIVPS(VZqo, WZqo);
                     0x1: VDIVPS(VYdo, WYdo);
