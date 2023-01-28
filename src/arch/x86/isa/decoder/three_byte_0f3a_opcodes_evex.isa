@@ -49,6 +49,11 @@
                         0x0: VALIGND(Vo, Wo, Ib);
                     }
                 }
+                0x04: decode EVEX_L_EXTEND {
+                    0x2: VPERMILPS(VZqo, WZqo, Ib);
+                    0x1: VPERMILPS(VYdo, WYdo, Ib);
+                    0x0: VPERMILPS(Vo, Wo, Ib);
+                }
                 0x05: decode EVEX_L_EXTEND {
                     0x2: VPERMILPD(VZqo, WZqo, Ib);
                     0x1: VPERMILPD(VYdo, WYdo, Ib);
@@ -63,7 +68,7 @@
                         0x0: VPEXTRD(Ed, Vo, Ib);
                     }
                 }
-                0x17: decode EVEX_L {
+                0x17: decode EVEX_L_EXTEND {
                     0x0: VEXTRACTPS(Ed, Vo, Ib);
                 }
                 0x18: decode EVEX_L_EXTEND {

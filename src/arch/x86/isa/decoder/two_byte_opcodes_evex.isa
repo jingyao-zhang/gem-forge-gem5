@@ -207,7 +207,7 @@
         0x0C: decode LEGACY_DECODEVAL {
             // operand size (0x66)
             0x1: decode OPCODE_OP_BOTTOM3 {
-                0x7: decode EVEX_L {
+                0x7: decode EVEX_L_EXTEND {
                     0x2: VPACKUSWB(VZqo, WZqo);
                     0x1: VPACKUSWB(VYdo, WYdo);
                     0x0: VPACKUSWB(Vo, Wo);
@@ -227,10 +227,17 @@
             }
             // operand size (0x66)
             0x1: decode OPCODE_OP_BOTTOM3 {
-                0x7: decode EVEX_L_EXTEND {
-                    0x2: VMOVDQA(VZqo, WZqo);
-                    0x1: VMOVDQA(VYdo, WYdo);
-                    0x0: VMOVDQA(Vo, Wo);
+                0x7: decode REX_W {
+                    0x1: decode EVEX_L_EXTEND {
+                        0x2: VMOVDQA32(VZqo, WZqo);
+                        0x1: VMOVDQA32(VYdo, WYdo);
+                        0x0: VMOVDQA32(Vo, Wo);
+                    }
+                    0x0: decode EVEX_L_EXTEND {
+                        0x2: VMOVDQA(VZqo, WZqo);
+                        0x1: VMOVDQA(VYdo, WYdo);
+                        0x0: VMOVDQA(Vo, Wo);
+                    }
                 }
             }
         }
@@ -335,17 +342,24 @@
         0x1D: decode LEGACY_DECODEVAL {
             // 0x66
             0x1: decode OPCODE_OP_BOTTOM3 {
-                0x4: decode EVEX_L {
+                0x4: decode EVEX_L_EXTEND {
                     0x2: VPADDSB(VZqo, WZqo);
                     0x1: VPADDSB(VYdo, WYdo);
                     0x0: VPADDSB(Vo, Wo);
                 }
-                0x5: decode EVEX_L {
+                0x3: decode REX_W {
+                    0x0: decode EVEX_L_EXTEND {
+                        0x2: VPORD(VZqo, WZqo);
+                        0x1: VPORD(VYdo, WYdo);
+                        0x0: VPORD(Vo, Wo);
+                    }
+                }
+                0x5: decode EVEX_L_EXTEND {
                     0x2: VPADDSW(VZqo, WZqo);
                     0x1: VPADDSW(VYdo, WYdo);
                     0x0: VPADDSW(Vo, Wo);
                 }
-                0x7: decode EVEX_L {
+                0x7: decode EVEX_L_EXTEND {
                     0x2: VPXOR(VZqo, WZqo);
                     0x1: VPXOR(VYdo, WYdo);
                     0x0: VPXOR(Vo, Wo);

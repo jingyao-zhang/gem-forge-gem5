@@ -4,6 +4,9 @@
 
 #include "arch/x86/regs/misc.hh"
 #include "cpu/exec_context.hh"
+#include "debug/X86AVX.hh"
+
+#include "base/logging.hh"
 
 namespace X86ISA {
 std::string
@@ -104,6 +107,12 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
       dest.si.i1 = src1.si.i1 ^ src2.si.i1;
       dest.si.i2 = src1.si.i2 ^ src2.si.i2;
       break;
+    case BinaryOp::IntOr:
+      dest.si.i1 = src1.si.i1 | src2.si.i1;
+      dest.si.i2 = src1.si.i2 | src2.si.i2;
+      DPRINTF(X86AVX, "vor %d %ld | %ld = %ld %s.\n", this->srcVL, src1.si.i1,
+              src2.si.i1, dest.si.i1, this->generateDisassembly(0x00, nullptr));
+      break;
     case BinaryOp::IntCmpEq:
       dest.si.i1 = (src1.si.i1 == src2.si.i1) ? 0xFFFF : 0x0;
       dest.si.i2 = (src1.si.i2 == src2.si.i2) ? 0xFFFF : 0x0;
@@ -201,6 +210,9 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
     case BinaryOp::IntXor:
       dest.sl = src1.sl ^ src2.sl;
       break;
+    case BinaryOp::IntOr:
+      dest.sl = src1.sl | src2.sl;
+      break;
     case BinaryOp::IntCmpEq:
       dest.sl = (src1.sl == src2.sl) ? 0xFFFFFFFF : 0x0;
       break;
@@ -253,10 +265,12 @@ void AVXOpBase::doPackedBinaryOp(ExecContext *xc, BinaryOp op) const {
         // 2 float.
         if (!((maskValue.ul >> (i * 2 + 0)) & 1)) {
           // Unchanged.
+          DPRINTF(X86AVX, "Reset %d-0 to %d.\n", i, originalValue.ui.i1);
           dest.ui.i1 = originalValue.ui.i1;
         }
         if (!((maskValue.ul >> (i * 2 + 1)) & 1)) {
           // Unchanged.
+          DPRINTF(X86AVX, "Reset %d-1 to %d.\n", i, originalValue.ui.i2);
           dest.ui.i2 = originalValue.ui.i2;
         }
       } else if (this->srcSize == 8) {
@@ -565,14 +579,117 @@ void AVXOpBase::doFloatCompare(ExecContext *xc, bool isSingle) const {
         int c2 = compareFloat(src1.f.f2, src2.f.f2);
         result |= (c2 << (i * 2 + 1));
       }
+      DPRINTF(X86AVX, "fltcmp %f %f %s.\n", src1.f.f1, src2.f.f1,
+              this->generateDisassembly(0x00, nullptr));
     } else if (this->srcSize == 8) {
       int c = compareDouble(src1.d, src2.d);
       result |= (c << i);
     }
   }
 
+  DPRINTF(X86AVX, "fcmp %x.\n", result);
+
   assert(destVL == 8 && "Invalid DestVL for FloatCompare.");
   xc->setIntRegOperand(this, 0, result);
+}
+
+void AVXOpBase::doMov(ExecContext *xc) const {
+
+  auto vSrcRegs = srcVL / sizeof(uint64_t);
+  FloatInt src;
+  FloatInt dest;
+  FloatInt maskValue;
+  FloatInt originalValue;
+
+  if (this->mask == MASKREG_K0) {
+    // All active.
+    maskValue.ul = 0xFFFFFFFFFFFFFFFF;
+  } else {
+    maskValue.ul = xc->readIntRegOperand(this, this->numSrcRegs() - 1);
+  }
+  for (int i = 0; i < vSrcRegs; i++) {
+    src.ul = xc->readFloatRegOperandBits(this, i);
+
+    // Move the value.
+    dest.ul = src.ul;
+
+    // Read the original value.
+    if (this->mask != MASKREG_K0) {
+      // We need to apply the mask.
+      originalValue.ul = xc->readFloatRegOperandBits(this, vSrcRegs + i);
+      if (this->srcSize == 4) {
+        // 2 float.
+        if (!((maskValue.ul >> (i * 2 + 0)) & 1)) {
+          // Unchanged.
+          dest.ui.i1 = originalValue.ui.i1;
+        }
+        if (!((maskValue.ul >> (i * 2 + 1)) & 1)) {
+          // Unchanged.
+          dest.ui.i2 = originalValue.ui.i2;
+        }
+      } else if (this->srcSize == 8) {
+        // 1 double.
+        if (!((maskValue.ul >> (i)) & 1)) {
+          // Unchanged.
+          dest.ul = originalValue.ul;
+        }
+      } else {
+        panic("Unsupported Mask Datatype %d.", this->srcSize);
+      }
+    }
+
+    xc->setFloatRegOperandBits(this, i, dest.ul);
+  }
+}
+
+void AVXOpBase::doPermuteInLane(ExecContext *xc) const {
+
+  auto vSrcRegs = srcVL / sizeof(uint64_t);
+  FloatInt src1;
+  FloatInt src2;
+  FloatInt dest1;
+  FloatInt dest2;
+
+  assert(this->srcSize == 4 && "permilpd is not implemented yet.");
+
+  assert(this->mask == MASKREG_K0 && "Mask in permil is not implemented yet.");
+
+  // if (this->mask == MASKREG_K0) {
+  //   // All active.
+  //   maskValue.ul = 0xFFFFFFFFFFFFFFFF;
+  // } else {
+  //   maskValue.ul = xc->readIntRegOperand(this, this->numSrcRegs() - 1);
+  // }
+
+  auto select4 = [&](int imm) -> uint32_t {
+    switch (imm & 0x3) {
+    case 0:
+      return src1.ui.i1;
+    case 1:
+      return src1.ui.i2;
+    case 2:
+      return src2.ui.i1;
+    case 3:
+      return src2.ui.i2;
+    default:
+      assert(false);
+    }
+  };
+
+  for (int i = 0; i < vSrcRegs; i += 2) {
+    // Read in the four 32-bit value.
+    src1.ul = xc->readFloatRegOperandBits(this, i + 0);
+    src2.ul = xc->readFloatRegOperandBits(this, i + 1);
+
+    // Permute the value.
+    dest1.ui.i1 = select4(this->imm8 >> 0);
+    dest1.ui.i2 = select4(this->imm8 >> 2);
+    dest2.ui.i1 = select4(this->imm8 >> 4);
+    dest2.ui.i2 = select4(this->imm8 >> 6);
+
+    xc->setFloatRegOperandBits(this, i + 0, dest1.ul);
+    xc->setFloatRegOperandBits(this, i + 1, dest2.ul);
+  }
 }
 
 } // namespace X86ISA

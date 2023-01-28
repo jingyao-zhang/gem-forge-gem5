@@ -51,4 +51,21 @@ def macroop VPERMILPS_YMM_P_I {
     vclear dest=xmm4, destVL=32
 };
 
+def macroop VPERMILPS_ZMM_ZMM_I {
+    vpermil dest=xmm0, src=xmm0m, imm8="(IMMEDIATE) & 0x1F", size=4, VL=64
+};
+
+def macroop VPERMILPS_ZMM_M_I {
+    ldfp512 ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=64
+    vpermil dest=xmm0, src=ufp1, imm8="(IMMEDIATE) & 0x1F", size=4, VL=64
+};
+
+def macroop VPERMILPS_ZMM_P_I {
+    rdip t7
+    ldfp512 ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=64
+    vpermil dest=xmm0, src=ufp1, imm8="(IMMEDIATE) & 0x1F", size=4, VL=64
+};
+
+
+
 '''

@@ -41,13 +41,13 @@ def macroop VPXOR_ZMM_ZMM {
 };
 
 def macroop VPXOR_ZMM_M {
-    ldfp256 ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=64
+    ldfp512 ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=64
     vxor dest=xmm0, src1=xmm0v, src2=ufp1, size=8, VL=64
 };
 
 def macroop VPXOR_ZMM_P {
     rdip t7
-    ldfp256 ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=64
+    ldfp512 ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=64
     vxor dest=xmm0, src1=xmm0v, src2=ufp1, size=8, VL=64
 };
 

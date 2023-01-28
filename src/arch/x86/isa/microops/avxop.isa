@@ -343,6 +343,12 @@ let {{
             this->doPackedBinaryOp(xc, BinaryOp::IntXor);
         '''
 
+    class Vor(Varithp):
+        opClass = 'SimdCmpOp'
+        code = '''
+            this->doPackedBinaryOp(xc, BinaryOp::IntOr);
+        '''
+
     class Vminsi(Varithp):
         opClass = 'SimdCmpOp'
         code = '''
@@ -698,6 +704,12 @@ let {{
             }
         '''
 
+    class Vpermil(AVXRegImmOp):
+        opClass = 'SimdMiscOp'
+        code = '''
+            this->doPermuteInLane(xc);
+        '''
+
     class Vcmpf(AVXOp):
         # Compare two floating point vectors.
         def __init__(self, dest, src1, src2, imm8, VL, size):
@@ -900,5 +912,38 @@ let {{
         '''
         code = '''
             this->doInsert(xc);
+        '''
+
+    class AVXRegOp(AVXOp):
+        # Support masked mov.
+        abstract = True
+        def __init__(self, dest, src, size, VL, mask='InstRegIndex(MASKREG_K0)'):
+            super(AVXRegOp, self).__init__(
+                dest=dest, src1=src, 
+                destSize=size, destVL=VL, srcSize=size, srcVL=VL,
+                mask=mask
+            )
+        srcType = 'AVXOpBase::SrcType::Reg'
+        constructorCode = '''
+            this->addAVXDestRegs();
+            auto vRegs = destVL / sizeof(uint64_t);
+            _numSrcRegs = vRegs;
+            assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
+            for (int i = 0; i < vRegs; i++) {
+                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
+            }
+            if (mask != MASKREG_K0) {
+                // We also need the dest regs as src.
+                this->addAVXDestAsSrcRegs();
+                assert(_numSrcRegs + 1 <= MaxInstSrcRegs && "MaskRegs overflow.");
+                _srcRegIdx[_numSrcRegs] = RegId(IntRegClass, mask);
+                _numSrcRegs++;
+            }
+        '''
+    
+    class Vmov(AVXRegOp):
+        opClass = 'SimdMiscOp'
+        code = '''
+            this->doMov(xc);
         '''
 }};
