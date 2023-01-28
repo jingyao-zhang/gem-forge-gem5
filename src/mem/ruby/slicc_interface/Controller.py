@@ -108,7 +108,9 @@ class RubyStreamAwareController(RubyController):
     ind_stream_req_multicast_group_size = \
         Param.UInt32(0, "Ind req multicast group is Size x Size, 0 means all.")
     mlc_stream_buffer_init_num_entries = \
-        Param.UInt32(16, "Initial number of entries of MLC stream buffer.")
+        Param.UInt32(16, "# of MLC slices per stream.")
+    mlc_stream_slices_runahead_inverse_ratio = \
+        Param.Int32(1, "Inverse ratio of MLC slices runahead per stream.")
     mlc_stream_buffer_to_segment_ratio = \
         Param.UInt32(4, "Ratio between MLC buffer and segment.")
     enable_mlc_stream_idea_pop_check_llc_progress = \
@@ -172,4 +174,7 @@ class RubyStreamAwareController(RubyController):
     stream_pum_enable_egraph =\
         Param.Bool(False, "Whether e-graph optimizations are enabled.")
     stream_pum_optimized_directory = \
-        Param.String("", "WHich directory the optimized tdfgs are in.")
+        Param.String("", "Which directory the optimized tdfgs are in.")
+    stream_pum_fix_stream_at_req_bank = \
+        Param.Bool(False, ("Fix stream at req. bank (no float/migrate). "
+                           "Used to approximate in-memory computing only (no NSC support)."))

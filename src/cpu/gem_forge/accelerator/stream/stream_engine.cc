@@ -493,6 +493,9 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
   this->floatController->rewindFloatStreams(args, configStreams);
 
   for (auto &S : configStreams) {
+    // Remove from the IssueList.
+    auto &dynS = S->getDynStream(configSeqNum);
+    this->removeIssuingDynS(&dynS);
     // This file is already too long, move this to stream.cc.
     S->rewindStreamConfig(configSeqNum);
   }
@@ -1997,6 +2000,9 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
     auto S = dynS.stream;
 
     bool hasUnissuedElem = false;
+
+    DYN_S_DPRINTF(dynS.dynStreamId, "Try Issue. AllocSize %d.\n",
+                  dynS.allocSize);
 
     for (auto elem = dynS.tail->next; elem; elem = elem->next) {
 

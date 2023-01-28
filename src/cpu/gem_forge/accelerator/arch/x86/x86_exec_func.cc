@@ -272,17 +272,21 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
       }
       intParamIdx++;
     } else {
-      if (floatParamIdx == 8) {
-        panic("Too many FloatArgs on ExecFunc %s.", this->func.name());
-      }
       auto numRegs = this->translateToNumRegs(type);
-      const auto &baseReg = floatRegParams[floatParamIdx];
-      floatParamIdx++;
-      for (int i = 0; i < numRegs; ++i) {
-        RegId reg = RegId(RegClass::FloatRegClass, baseReg.index() + i);
-        execFuncXC.setFloatRegOperand(reg, param.at(i));
-        EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
+      if (floatParamIdx < 8) {
+        const auto &baseReg = floatRegParams[floatParamIdx];
+        for (int i = 0; i < numRegs; ++i) {
+          RegId reg = RegId(RegClass::FloatRegClass, baseReg.index() + i);
+          execFuncXC.setFloatRegOperand(reg, param.at(i));
+          EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
+        }
+      } else {
+        for (int i = 0; i < numRegs; ++i) {
+          stackArgs.push_back(param.uint64(i));
+          EXEC_FUNC_DPRINTF("Arg %d-%d Stack %s.\n", idx, i, param.print(type));
+        }
       }
+      floatParamIdx++;
     }
   }
 

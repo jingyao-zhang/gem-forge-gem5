@@ -78,9 +78,15 @@ void MLCStrandManager::receiveStreamConfigure(ConfigVec *configs,
     this->splitIntoStrands(splitContext, *configs);
   }
 
+  // Set the disableMigration flag for all configs.
+  if (this->controller->myParams->stream_pum_fix_stream_at_req_bank) {
+    for (auto config : *configs) {
+      config->disableMigration = true;
+    }
+  }
+
   mlcSE->computeReuseInformation(*configs);
   for (auto config : *configs) {
-    // this->configureStream(config, pkt->req->masterId());
     this->configureStream(config, masterId);
   }
 
@@ -1012,7 +1018,7 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
       auto strand = strands.at(strandIdx);
       auto depStrand = depStrands.at(strandIdx);
       strand->addUsedBy(depStrand, dep.reuse, isPredBy, predValue);
-      depStrand->totalTripCount = strand->getTotalTripCount();
+      depStrand->totalTripCount = strand->getTotalTripCount() * dep.reuse;
     }
   }
 
@@ -1233,28 +1239,32 @@ void MLCStrandManager::configureStream(ConfigPtr config, MasterID masterId) {
   this->sendConfigToRemoteSE(config, masterId);
 }
 
-void MLCStrandManager::sendConfigToRemoteSE(ConfigPtr streamConfigureData,
+void MLCStrandManager::sendConfigToRemoteSE(ConfigPtr config,
                                             MasterID masterId) {
 
   /**
    * Set the RemoteSE to LLC SE or Mem SE, depending on the FloatPlan on the
    * FirstFloatElemIdx.
    */
-  auto firstFloatElemIdx =
-      streamConfigureData->floatPlan.getFirstFloatElementIdx();
-  auto firstFloatElemMachineTypee =
-      streamConfigureData->floatPlan.getMachineTypeAtElem(firstFloatElemIdx);
+  auto firstFloatElemIdx = config->floatPlan.getFirstFloatElementIdx();
+  auto firstFloatElemMachineType =
+      config->floatPlan.getMachineTypeAtElem(firstFloatElemIdx);
 
-  auto initPAddrLine = makeLineAddress(streamConfigureData->initPAddr);
+  auto initPAddrLine = makeLineAddress(config->initPAddr);
   auto remoteSEMachineID = this->controller->mapAddressToLLCOrMem(
-      initPAddrLine, firstFloatElemMachineTypee);
+      initPAddrLine, firstFloatElemMachineType);
+
+  if (config->disableMigration &&
+      firstFloatElemMachineType != MachineType_L2Cache) {
+    MLC_S_PANIC_NO_DUMP(config->dynamicId,
+                        "Cannot disable migration for non-LLC stream.");
+  }
 
   // Create a new packet.
-  RequestPtr req = std::make_shared<Request>(
-      streamConfigureData->initPAddr, sizeof(streamConfigureData), 0, masterId);
+  RequestPtr req =
+      std::make_shared<Request>(config->initPAddr, sizeof(config), 0, masterId);
   PacketPtr pkt = new Packet(req, MemCmd::StreamConfigReq);
-  uint8_t *pktData =
-      reinterpret_cast<uint8_t *>(new ConfigPtr(streamConfigureData));
+  uint8_t *pktData = reinterpret_cast<uint8_t *>(new ConfigPtr(config));
   pkt->dataDynamic(pktData);
   // Enqueue a configure packet to the target LLC bank.
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
@@ -1279,8 +1289,8 @@ void MLCStrandManager::sendConfigToRemoteSE(ConfigPtr streamConfigureData,
 
   Cycles latency(1); // Just use 1 cycle latency here.
 
-  MLC_S_DPRINTF(streamConfigureData->dynamicId,
-                "Send Config to RemoteSE at %s.\n", remoteSEMachineID);
+  MLC_S_DPRINTF(config->dynamicId, "Send Config to RemoteSE at %s.\n",
+                remoteSEMachineID);
 
   mlcSE->requestToLLCMsgBuffer->enqueue(
       msg, this->controller->clockEdge(),

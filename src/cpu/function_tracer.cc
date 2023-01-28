@@ -63,8 +63,10 @@ void FunctionTracer::traceFunctions(Addr pc) {
       if (!found) {
         oldFuncName = csprintf("0x%x", oldFunctionStart);
       }
-      ccprintf(*this->functionTraceStream, " %lu-%lu: %s\n", curTick() / 500,
-               accumulateTick / 500, oldFuncName);
+      ccprintf(*this->functionTraceStream, " %lu-%lu: %s %s %s\n",
+               curTick() / 500, accumulateTick / 500, oldFuncName,
+               pc == this->currentFunctionStart ? ">>Enter" : ">>BackTo",
+               sym_str);
     }
 
     if (this->functionAccumulateTickEnabled) {

@@ -87,7 +87,18 @@ StrandSplitInfo::mapStreamToPrevStrand(StreamElemIdx streamElemIdx) const {
     return this->mapStreamToPrevStrandByDim(streamElemIdx);
   }
 
-  assert(false && "mapStreamToPrevStrand not implemented.");
+  // Should be no split.
+  assert(this->interleave == 1);
+  assert(this->tailInterleave == 0);
+  assert(this->totalStrands == 1);
+
+  StrandIdx strandIdx = 0;
+  StreamElemIdx strandElemIdx = streamElemIdx;
+
+  std::vector<StrandElemSplitIdx> ret;
+  ret.emplace_back(strandIdx, strandElemIdx);
+
+  return ret;
 }
 
 StrandSplitInfo::StreamElemIdx

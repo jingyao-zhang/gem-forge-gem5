@@ -411,8 +411,8 @@ bool DynStream::isNextAddrBaseElementAllocated(
   // Try to find this element.
   if (baseDynS.FIFOIdx.entryIdx <= baseElemIdx) {
     DYN_S_DPRINTF(this->dynStreamId,
-                  "NextElementIdx(%llu) BaseElementIdx(%llu) Not Ready, "
-                  "Align(%llu), Reuse(%llu), BaseStream %s.\n",
+                  "NextElem(%llu) BaseElem(%llu) Not Ready, Align(%llu), "
+                  "Reuse(%llu), BaseS %s.\n",
                   this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
                   edge.baseElemReuseCnt, baseS->getStreamName());
     return false;
@@ -470,8 +470,8 @@ bool DynStream::isNextBackBaseElementAllocated(
   // Try to find this element.
   if (baseDynS.FIFOIdx.entryIdx <= baseElemIdx) {
     DYN_S_DPRINTF(this->dynStreamId,
-                  "NextElemIdx %llu BackBaseElemIdx %llu Not Ready, "
-                  "Align %llu Reuse %llu BaseStream %s.\n",
+                  "NextElem %llu BackBaseElem %llu Not Ready, "
+                  "Align %llu Reuse %llu BaseS %s.\n",
                   this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
                   edge.baseElemReuseCnt, baseS->getStreamName());
     return false;
@@ -482,7 +482,7 @@ bool DynStream::isNextBackBaseElementAllocated(
                 "NextElemIdx %llu BackBaseElemIdx %llu Already "
                 "Released? Align %llu Reuse %llu BaseDynS %s.",
                 this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
-                edge.baseElemReuseCnt, baseDynS.dumpString());
+                edge.baseElemReuseCnt, baseDynS.dynStreamId);
   }
   return true;
 }
@@ -555,8 +555,8 @@ bool DynStream::isNextValueBaseElementAllocated(
   // Try to find this element.
   if (baseDynS.FIFOIdx.entryIdx <= baseElemIdx) {
     DYN_S_DPRINTF(this->dynStreamId,
-                  "NextElementIdx(%llu) BaseElementIdx(%llu) Not Ready, "
-                  "Align %llu, Reuse %llu, Skip %llu BaseStream %s.\n",
+                  "NextElem(%llu) BaseElem(%llu) Not Ready, Align %llu, Reuse "
+                  "%llu, Skip %llu BaseS %s.\n",
                   this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
                   edge.baseElemReuseCnt, edge.baseElemSkipCnt,
                   baseS->getStreamName());

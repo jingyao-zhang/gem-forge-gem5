@@ -59,14 +59,14 @@ private:
   void floatDirectLoadStreams(const Args &args);
   void floatDirectAtomicComputeStreams(const Args &args);
   void floatPointerChaseStreams(const Args &args);
-  void floatIndirectStreams(const Args &args);
-  bool floatIndirectStream(const Args &args, DynStream *dynS);
+  void floatIndStreams(const Args &args);
+  bool floatIndStream(const Args &args, DynStream *dynS);
   void floatDirectUpdateStreams(const Args &args);
   void floatDirectStoreComputeStreams(const Args &args);
   void floatDirectStoreComputeOrUpdateStream(const Args &args, DynStream *dynS);
-  void floatDirectOrPointerChaseReductionStreams(const Args &args);
+  void floatDirectOrPtrChaseReduceStreams(const Args &args);
   void floatIndirectReductionStreams(const Args &args);
-  void floatIndirectReductionStream(const Args &args, DynStream *dynS);
+  void floatIndReduceStream(const Args &args, DynStream *dynS);
   void floatMultiLevelIndirectStoreComputeStreams(const Args &args);
   void floatMultiLevelIndirectStoreComputeStream(const Args &args,
                                                  DynStream *dynS);

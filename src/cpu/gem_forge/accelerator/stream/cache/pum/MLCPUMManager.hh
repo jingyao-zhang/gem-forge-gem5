@@ -92,6 +92,12 @@ private:
   MLCStreamEngine *mlcSE;
   AbstractStreamAwareController *controller;
 
+  /**
+   * So far we only model register pressure when using unison scheduler as it
+   * sets the register/wordline for each node.
+   */
+  bool modelRegPressure = false;
+
   friend class PUMScheduler;
   std::unique_ptr<PUMScheduler> scheduler;
 

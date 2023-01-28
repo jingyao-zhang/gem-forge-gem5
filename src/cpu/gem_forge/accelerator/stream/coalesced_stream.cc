@@ -394,9 +394,10 @@ bool Stream::isReductionDistributable() const {
     // Supported float addition.
     return true;
   } else if (this->getStreamName().find("bfs_pull") != std::string::npos ||
-             this->getStreamName().find("mm_inner") != std::string::npos) {
+             this->getStreamName().find("mm_inner") != std::string::npos ||
+             this->getStreamName().find("pntnet2") != std::string::npos) {
     /**
-     * ! We manually enable this for bfs_pull and mm_inner.
+     * ! We manually enable this for some benchmark.
      */
     return true;
   } else {

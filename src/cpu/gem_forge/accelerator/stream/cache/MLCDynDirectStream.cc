@@ -29,10 +29,16 @@ MLCDynDirectStream::MLCDynDirectStream(
     : MLCDynStream(_configData, _controller, _responseMsgBuffer,
                    _requestToLLCMsgBuffer, true /* isMLCDirect */),
       slicedStream(_configData),
-      maxNumSlicesPerSegment(
-          std::max(1, _configData->mlcBufferNumSlices /
-                          _controller->getMLCStreamBufferToSegmentRatio())),
-      indirectStreams(_indirectStreams) {
+      maxNumSlicesPerSegment(std::max(
+          1,
+          _configData->mlcBufferNumSlices /
+              controller->myParams->mlc_stream_slices_runahead_inverse_ratio /
+              _controller->getMLCStreamBufferToSegmentRatio())),
+      maxNumRunaheadSlices(
+          _configData->mlcBufferNumSlices /
+          controller->myParams->mlc_stream_slices_runahead_inverse_ratio),
+      indirectStreams(_indirectStreams),
+      lastCreditPAddr(_configData->initPAddr) {
 
   this->isInConstructor = true;
 
@@ -149,7 +155,7 @@ MLCDynDirectStream::MLCDynDirectStream(
     if (dynCoreIS) {
       if (IS->isAtomicComputeStream() && dynIS->shouldRangeSync() &&
           dynCoreIS->shouldCoreSEIssue()) {
-        auto elementsPerSlice = this->slicedStream.getElementPerSlice();
+        auto elementsPerSlice = this->slicedStream.getElemPerSlice();
         auto newMaxNumSlicesPerSegment =
             std::max(1, static_cast<int>(16 / elementsPerSlice));
         auto newMaxNumSlices =
@@ -192,15 +198,11 @@ MLCDynDirectStream::MLCDynDirectStream(
   // Intialize the first segment.
   if (this->tailSliceIdx > 0) {
     this->pushNewLLCSegment(_configData->initPAddr, this->headSliceIdx);
-    // this->llcSegments.push_back(this->llcSegmentsAllocated.front());
-    // this->llcSegmentsAllocated.pop_front();
-    // this->llcSegments.back().state = LLCSegmentPosition::State::CREDIT_SENT;
   }
 
   // Set the CacheStreamConfigureData to inform the LLC stream engine
   // initial credit.
   _configData->initCreditedIdx = 0;
-  // _configData->initCreditedIdx = this->tailSliceIdx;
 
   MLC_S_DPRINTF(this->strandId, "InitPAddr %#x InitCredit %d overflowed %d.\n",
                 _configData->initPAddr, this->tailSliceIdx,
@@ -213,6 +215,9 @@ MLCDynDirectStream::MLCDynDirectStream(
 
 void MLCDynDirectStream::advanceStream() {
   this->tryPopStream();
+
+  this->tryReleaseNonRangeSyncSegment();
+
   /**
    * In order to synchronize the direct/indirect stream, we want to make sure
    * that the direct stream is only ahead of the indirect stream by a reasonable
@@ -220,27 +225,30 @@ void MLCDynDirectStream::advanceStream() {
    *
    * We also directly check the LLC streams.
    */
-  uint64_t maxISElements = 0;
+  uint64_t maxISElems = 0;
   for (auto dynIS : this->indirectStreams) {
     assert(dynIS->getTailSliceIdx() >= dynIS->getHeadSliceIdx() &&
            "Illegal Head/TailSliceIdx.\n");
-    auto ISElements = dynIS->getTailSliceIdx() - dynIS->getHeadSliceIdx();
-    if (ISElements > maxISElements) {
+    // Adjust effective ISElems based on IS reuse.
+    auto reuse = dynIS->getBaseStreamReuse();
+    auto ISElems =
+        (dynIS->getTailSliceIdx() - dynIS->getHeadSliceIdx()) / reuse;
+    if (ISElems > maxISElems) {
       MLC_S_DPRINTF(dynIS->getDynStrandId(),
-                    "[MLCAdvance] New MaxISElements %lu %lu - %lu.\n",
-                    ISElements, dynIS->getHeadSliceIdx(),
-                    dynIS->getTailSliceIdx());
-      maxISElements = ISElements;
+                    "[MLCAdvance] New MaxISElems %lu=(%lu - %lu)/Reuse(%d).\n",
+                    ISElems, dynIS->getHeadSliceIdx(), dynIS->getTailSliceIdx(),
+                    reuse);
+      maxISElems = ISElems;
     }
   }
   uint64_t indirectSlicesThreshold =
       2 * this->maxNumSlices *
       std::max(static_cast<uint64_t>(1),
-               static_cast<uint64_t>(this->slicedStream.getElementPerSlice()));
-  MLC_S_DPRINTF(this->strandId, "MaxISElements %llu Threshold %llu.\n",
-                maxISElements, indirectSlicesThreshold);
+               static_cast<uint64_t>(this->slicedStream.getElemPerSlice()));
+  MLC_S_DPRINTF(this->strandId, "MaxISElems %llu Threshold %llu.\n", maxISElems,
+                indirectSlicesThreshold);
   // Of course we need to allocate more slices.
-  if (maxISElements < indirectSlicesThreshold) {
+  if (maxISElems < indirectSlicesThreshold) {
 
     /**
      * If we require range-sync, we can only release the slice after the segment
@@ -358,6 +366,36 @@ void MLCDynDirectStream::allocateSlice() {
   this->allocateLLCSegment();
 }
 
+void MLCDynDirectStream::tryReleaseNonRangeSyncSegment() {
+
+  /**
+   * If we don't need rang-sync, this is where we try to release llcSegments.
+   */
+  if (this->shouldRangeSync()) {
+    return;
+  }
+
+  auto headSliceId = this->tailSliceId;
+  if (!this->slices.empty()) {
+    headSliceId = this->slices.front().sliceId;
+  }
+
+  for (auto iter = this->llcSegments.begin(), end = this->llcSegments.end();
+       iter != end;) {
+    const auto &seg = *iter;
+    if (seg.endSliceId.getStartIdx() <= headSliceId.getStartIdx()) {
+      MLC_SLICE_DPRINTF(
+          seg.getStartSliceId(), "Release NonRangeSync Seg [%lu, %lu).\n",
+          seg.getStartSliceId().getStartIdx(), seg.endSliceId.getStartIdx());
+      this->lastSegementValid = true;
+      this->lastSegment = seg;
+      iter = this->llcSegments.erase(iter);
+      continue;
+    }
+    break;
+  }
+}
+
 void MLCDynDirectStream::trySendCreditToLLC() {
   /**
    * Find the first LLCSegment in ALLOCATED state and try issue credit.
@@ -378,6 +416,16 @@ void MLCDynDirectStream::trySendCreditToLLC() {
   }
 
   while (!this->llcSegmentsAllocated.empty()) {
+
+    if (this->llcSegments.size() * this->maxNumSlicesPerSegment >=
+        this->maxNumRunaheadSlices) {
+      MLC_S_DPRINTF(this->getDynStrandId(),
+                    "Delayed sending Credit by Segs %lu * %lu >= "
+                    "MaxRunaheadSlices %lu.\n",
+                    this->llcSegments.size(), this->maxNumSlicesPerSegment,
+                    this->maxNumRunaheadSlices);
+      return;
+    }
 
     auto &segment = this->llcSegmentsAllocated.front();
 
@@ -407,15 +455,15 @@ void MLCDynDirectStream::trySendCreditToLLC() {
     {
       auto remoteDynS = LLCDynStream::getLLCStreamPanic(this->getDynStrandId(),
                                                         "trySendCredit()");
-      auto inflyElementTotalSize = remoteDynS->idxToElementMap.size() *
-                                   this->getStaticStream()->getMemElementSize();
+      auto inflyElemTotalSize = remoteDynS->idxToElementMap.size() *
+                                this->getStaticStream()->getMemElementSize();
       auto inflyBytesThreshold = this->config->mlcBufferNumSlices * 64 * 2;
-      if (inflyElementTotalSize >= inflyBytesThreshold) {
-        MLC_S_DPRINTF(
-            this->getDynStrandId(),
-            "Delayed sending Credit since InflyElement %dx%d > %dB.\n",
-            remoteDynS->idxToElementMap.size(),
-            this->getStaticStream()->getMemElementSize(), inflyBytesThreshold);
+      if (inflyElemTotalSize >= inflyBytesThreshold) {
+        MLC_S_DPRINTF(this->getDynStrandId(),
+                      "Delayed sending Credit since InflyElem %dx%d > %dB.\n",
+                      remoteDynS->idxToElementMap.size(),
+                      this->getStaticStream()->getMemElementSize(),
+                      inflyBytesThreshold);
 
         /**
          * PUMPrefetchStream won't send back anything, we here we register a
@@ -597,19 +645,34 @@ void MLCDynDirectStream::sendCreditToLLC(const LLCSegmentPosition &segment) {
   /**
    * We look at the last llc segment to determine where the stream is.
    * The location is determined by the first element of the slice.
+   *
+   * If migration is disabled for the stream, we simply send to the our
+   * local LLC SE. NOTE: In such case stream should never be floated to
+   * Mem.
    */
 
   auto startElemIdx = segment.sliceIds.firstSliceId().getStartIdx();
   auto startElemMachineType =
       this->config->floatPlan.getMachineTypeAtElem(startElemIdx);
-  auto remoteBank = this->controller->mapAddressToLLCOrMem(
-      segment.startPAddr, startElemMachineType);
+  auto remotePAddr = segment.startPAddr;
 
-  MLC_S_DPRINTF(
-      this->strandId, "Extended %lu (Elem %lu) -> %lu, sent credit to %s.\n",
-      segment.startSliceIdx, startElemIdx, segment.endSliceIdx, remoteBank);
+  if (this->config->disableMigration) {
+    if (startElemMachineType != MachineType_L2Cache) {
+      MLC_S_PANIC(this->strandId,
+                  "Cannot disable migration for non-LLC stream.");
+    }
+    remotePAddr = this->lastCreditPAddr;
+  }
+
+  auto remoteBank =
+      this->controller->mapAddressToLLCOrMem(remotePAddr, startElemMachineType);
+
+  MLC_S_DPRINTF(this->strandId,
+                "Extended %lu (Elem %lu) -> %lu at %s (DisableMigration %d).\n",
+                segment.startSliceIdx, startElemIdx, segment.endSliceIdx,
+                remoteBank, this->config->disableMigration);
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
-  msg->m_addr = makeLineAddress(segment.startPAddr);
+  msg->m_addr = makeLineAddress(remotePAddr);
   msg->m_Type = CoherenceRequestType_STREAM_FLOW;
   msg->m_Requestors.add(this->controller->getMachineID());
   msg->m_Destination.add(remoteBank);
@@ -619,6 +682,9 @@ void MLCDynDirectStream::sendCreditToLLC(const LLCSegmentPosition &segment) {
   sliceId.getStartIdx() = segment.startSliceIdx;
   sliceId.getEndIdx() = segment.endSliceIdx;
   msg->m_sliceIds.add(sliceId);
+
+  // Remember the last credit paddr.
+  this->lastCreditPAddr = remotePAddr;
 
   /**
    * Immediately initialize all the LLCStreamSlices and LLCStreamElements to
@@ -933,7 +999,7 @@ void MLCDynDirectStream::allocateLLCSegment() {
    * and thus there is no previous segment for us to built on.
    * See the pushNewLLCSegment() in the constructor.
    */
-  if (this->llcSegments.empty() && this->llcSegmentsAllocated.empty()) {
+  if (this->isInConstructor) {
     return;
   }
 
@@ -966,6 +1032,21 @@ void MLCDynDirectStream::allocateLLCSegment() {
     return;
   }
   this->pushNewLLCSegment(lastSegment.endPAddr, lastSegment.endSliceIdx);
+
+  /**
+   * New implementation: we eagerly allocat LLC slices here.
+   */
+  auto llcS = LLCDynStream::getLLCStreamPanic(this->getDynStrandId());
+  llcS->initDirectStreamSlicesUntil(
+      this->llcSegmentsAllocated.back().endSliceIdx);
+
+  /**
+   * Check and see if we have more credit to issue.
+   */
+  if (this->llcSegments.size() * this->maxNumSlicesPerSegment <
+      this->maxNumRunaheadSlices) {
+    this->trySendCreditToLLC();
+  }
 }
 
 void MLCDynDirectStream::pushNewLLCSegment(Addr startPAddr,
@@ -1001,6 +1082,9 @@ MLCDynDirectStream::getLastLLCSegment() {
   if (!this->llcSegments.empty()) {
     return this->llcSegments.back();
   }
+  if (this->lastSegementValid) {
+    return this->lastSegment;
+  }
   MLC_S_PANIC(this->getDynStrandId(), "Missing Last LLCSegment.");
 }
 
@@ -1012,6 +1096,9 @@ MLCDynDirectStream::getLastLLCSegment() const {
   if (!this->llcSegments.empty()) {
     return this->llcSegments.back();
   }
+  if (this->lastSegementValid) {
+    return this->lastSegment;
+  }
   MLC_S_PANIC(this->getDynStrandId(), "Missing Last LLCSegment.");
 }
 
@@ -1020,18 +1107,18 @@ void MLCDynDirectStream::checkCoreCommitProgress() {
   if (!dynS) {
     return;
   }
-  auto firstCoreElement = dynS->getFirstElem();
-  uint64_t firstCoreElementIdx = 0;
-  if (firstCoreElement) {
-    firstCoreElementIdx = firstCoreElement->FIFOIdx.entryIdx;
+  auto firstCoreElem = dynS->getFirstElem();
+  uint64_t firstCoreElemIdx = 0;
+  if (firstCoreElem) {
+    firstCoreElemIdx = firstCoreElem->FIFOIdx.entryIdx;
   } else {
     // The core may not yet allocate new elements, we just take the next
     // FIFOIdx.
-    firstCoreElementIdx = dynS->FIFOIdx.entryIdx;
+    firstCoreElemIdx = dynS->FIFOIdx.entryIdx;
     MLC_S_DPRINTF_(
         StreamRangeSync, this->getDynStreamId(),
         "Failed to find first core element, use DynS->FIFOIdx.entryIdx = %llu.",
-        firstCoreElementIdx);
+        firstCoreElemIdx);
   }
   for (auto &seg : this->llcSegments) {
     assert(seg.state != LLCSegmentPosition::State::ALLOCATED);
@@ -1040,8 +1127,8 @@ void MLCDynDirectStream::checkCoreCommitProgress() {
       // We already commit this segment.
       continue;
     }
-    bool isLastElement = firstCoreElementIdx == dynS->getTotalTripCount();
-    if (isLastElement) {
+    bool isLastElem = firstCoreElemIdx == dynS->getTotalTripCount();
+    if (isLastElem) {
       /**
        * Due to StreamLoopBound, we may not know the TotalTripCount and
        * allocated more elements. This cause the LastSegement never committing
@@ -1055,18 +1142,18 @@ void MLCDynDirectStream::checkCoreCommitProgress() {
        */
       auto segStartElementIdx = seg.getStartSliceId().getStartIdx();
       auto segEndElementIdx = seg.endSliceId.getStartIdx();
-      bool isLastSegment = firstCoreElementIdx > segStartElementIdx &&
-                           firstCoreElementIdx < segEndElementIdx;
+      bool isLastSegment = firstCoreElemIdx > segStartElementIdx &&
+                           firstCoreElemIdx < segEndElementIdx;
       if (isLastSegment) {
         MLC_S_DPRINTF_(StreamRangeSync, this->getDynStrandId(),
                        "[RangeCommit] Override the LastSegment ElementRange "
                        "[%llu, %llu) -> [%llu, %llu).\n",
                        segStartElementIdx, segEndElementIdx, segStartElementIdx,
-                       firstCoreElementIdx);
-        seg.endSliceId.getStartIdx() = firstCoreElementIdx;
+                       firstCoreElemIdx);
+        seg.endSliceId.getStartIdx() = firstCoreElemIdx;
       }
     }
-    if (seg.endSliceId.getStartIdx() > firstCoreElementIdx) {
+    if (seg.endSliceId.getStartIdx() > firstCoreElemIdx) {
       /**
        * This segment contains an element that has not been committed yet.
        * With one exception:
@@ -1204,13 +1291,19 @@ MLCDynDirectStream::getRemoteTailPAddrAndMachineType() const {
    * of our credits.
    * For such cutted streams, we directly query the LLCStream's location.
    */
+  if (this->config->disableMigration) {
+    // Stays at the req. bank.
+    auto endPAddr = this->lastCreditPAddr;
+    auto endMachineType = MachineType_L2Cache;
+    return std::make_pair(endPAddr, endMachineType);
+  }
   if (this->llcStreamLoopBoundCutted) {
     return std::make_pair(this->llcStreamLoopBoundBrokenPAddr,
                           this->llcStreamLoopBoundBrokenMachineType);
   } else {
 
-    Addr endPAddr = config->initPAddr;
-    MachineType endMachineType = MachineType_L2Cache;
+    auto endPAddr = config->initPAddr;
+    auto endMachineType = MachineType_L2Cache;
 
     if (this->getTailSliceIdx() > 0) {
       const auto &lastSegment = this->getLastLLCSegment();

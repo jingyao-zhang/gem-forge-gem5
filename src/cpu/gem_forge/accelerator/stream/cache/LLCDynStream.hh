@@ -41,6 +41,9 @@ struct LLCStreamRequest {
   // Optional fields.
   DataBlock dataBlock;
 
+  // Optional storeValueBlk. Only used for sending back to NonMigrating stream.
+  DataBlock storeValueBlock;
+
   // Optional for StreamStore request.
   int storeSize = 8;
 
@@ -84,6 +87,7 @@ public:
   bool isIndirect() const { return this->baseStream != nullptr; }
   bool isIndirectReduction() const {
     return this->isIndirect() && this->baseStream->isIndirect() &&
+           this->baseStream->getStaticS()->isMemStream() &&
            this->getStaticS()->isReduction();
   }
   bool shouldRangeSync() const { return this->configData->rangeSync; }
@@ -115,7 +119,17 @@ public:
   }
 
   /**
-   * We must query the sliced stream for total trip count.
+   * Query that this stream is disabled from migration.
+   */
+  bool isMigrationDisabled() const {
+    if (this->rootStream) {
+      return this->rootStream->isMigrationDisabled();
+    }
+    return this->configData->disableMigration;
+  }
+
+  /**
+   * We cache the TripCount from SlicedStream.
    */
   bool hasTotalTripCount() const {
     return this->totalTripCount != InvalidTripCount;
@@ -220,6 +234,7 @@ public:
   AbstractStreamAwareController *getLLCController() const {
     return this->llcController;
   }
+  void setLLCController(AbstractStreamAwareController *llcController);
 
   void terminate();
 

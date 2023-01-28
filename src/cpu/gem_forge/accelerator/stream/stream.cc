@@ -352,17 +352,6 @@ void Stream::commitStreamConfig(uint64_t seqNum) {
   assert(dynStream.configExecuted && "StreamConfig committed before executed.");
   assert(!dynStream.configCommitted && "StreamConfig already committed.");
   dynStream.configCommitted = true;
-
-  /**
-   * Sanity check that StoreComputeStream with LoopEliminated is floated, as the
-   * core SE does not issue store request right now.
-   */
-  if (this->isStoreComputeStream() && this->isLoopEliminated()) {
-    if (!dynStream.isFloatedToCache()) {
-      DYN_S_PANIC(dynStream.dynStreamId,
-                  "LoopEliminated StoreComputeStream should be offloaded.");
-    }
-  }
 }
 
 void Stream::rewindStreamConfig(uint64_t seqNum) {
@@ -1037,6 +1026,28 @@ const ExecFuncPtr &Stream::getComputeCallback() const {
   } else {
     S_PANIC(this, "No Computation Callback.");
   }
+}
+
+int Stream::getComputationNumMicroOps() const {
+  /**
+   * Before we correctly reuse the computation in computeMinDistTo() in pntnet2,
+   * we override the reduce op microops and latency.
+   */
+  if (this->isReduction() &&
+      this->streamName.find("pntnet2") != std::string::npos &&
+      this->streamName.find("computeMinDistTo") != std::string::npos) {
+    return 1;
+  }
+  return this->getComputeCallback()->getNumInstructions();
+}
+
+Cycles Stream::getEstimatedComputationLatency() const {
+  if (this->isReduction() &&
+      this->streamName.find("pntnet2") != std::string::npos &&
+      this->streamName.find("computeMinDistTo") != std::string::npos) {
+    return Cycles(2);
+  }
+  return this->getComputeCallback()->getEstimatedLatency();
 }
 
 Stream::ComputationCategory Stream::getComputationCategory() const {

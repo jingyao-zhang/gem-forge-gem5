@@ -300,7 +300,7 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
           continue;
         }
         if (!dynS.areNextBaseElementsAllocated()) {
-          DYN_S_DPRINTF(dynS.dynStreamId, "NextBaseElements not allocated.\n");
+          DYN_S_DPRINTF(dynS.dynStreamId, "NextBaseElem not allocated.\n");
           continue;
         }
         if (S != stepRootStream) {

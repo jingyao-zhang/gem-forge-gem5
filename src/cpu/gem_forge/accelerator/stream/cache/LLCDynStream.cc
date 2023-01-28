@@ -77,6 +77,10 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
     this->nextTriggerIndElemIdx = firstFloatElemIdx;
   }
 
+  if (this->isOneIterationBehind()) {
+    this->nextTriggerIndElemIdx++;
+  }
+
   // Extract predicated stream information.
   for (const auto &edge : _configData->baseEdges) {
     LLC_S_DPRINTF_(LLCStreamPredicate, this->getDynStrandId(),
@@ -96,8 +100,6 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
            "ReductionStream must be OneIterationBehind.");
     this->nextInitStrandElemIdx++;
   }
-
-  LLC_S_DPRINTF_(LLCRubyStreamLife, this->getDynStrandId(), "Created.\n");
 
   /**
    * Release the previous PUMPrefetchStream.
@@ -126,6 +128,9 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
    */
   this->totalTripCount = this->slicedStream.getTotalTripCount();
   this->innerTripCount = this->slicedStream.getInnerTripCount();
+  LLC_S_DPRINTF(this->getDynStrandId(),
+                "Created with TotalTripCount %ld InnerTripCount %ld.\n",
+                this->totalTripCount, this->innerTripCount);
 
   assert(GlobalLLCDynStreamMap.emplace(this->getDynStrandId(), this).second);
   this->sanityCheckStreamLife();
@@ -276,7 +281,7 @@ void LLCDynStream::updateIssueClearCycle() {
   if (avgTurnAroundCycle != 0) {
     // We need to adjust the turn around cycle from element to slice.
     uint64_t avgSliceTurnAroundCycle = static_cast<float>(avgTurnAroundCycle) *
-                                       this->slicedStream.getElementPerSlice();
+                                       this->slicedStream.getElemPerSlice();
     // We divide by 1.5 so to reflect that we should be slighly faster than
     // core.
     uint64_t adjustSliceTurnAroundCycle = avgSliceTurnAroundCycle * 2 / 3;
@@ -299,7 +304,7 @@ void LLCDynStream::updateIssueClearCycle() {
                     this->issueClearCycle, newIssueClearCycle,
                     IssueClearThreshold, avgTurnAroundCycle,
                     avgSliceTurnAroundCycle, avgLateElements,
-                    this->slicedStream.getElementPerSlice());
+                    this->slicedStream.getElemPerSlice());
       this->issueClearCycle =
           Cycles(newIssueClearCycle > IssueClearThreshold ? IssueClearThreshold
                                                           : newIssueClearCycle);
@@ -478,9 +483,7 @@ void LLCDynStream::initDirectStreamSlicesUntil(uint64_t lastSliceIdx) {
                 "InitDirectStreamSlice for IndirectStream.");
   }
   if (this->nextInitSliceIdx >= lastSliceIdx) {
-    LLC_S_PANIC(this->getDynStrandId(),
-                "Next DirectStreamSlice %llu already initialized.",
-                lastSliceIdx);
+    return;
   }
   while (this->nextInitSliceIdx < lastSliceIdx) {
     auto sliceId = this->initNextSlice();
@@ -732,6 +735,10 @@ void LLCDynStream::initNextElem(Addr vaddr) {
       this->lastReductionElement->setValue(
           this->configData->reductionInitValue);
       this->lastComputedReductionElemIdx = firstStreamElemIdx;
+
+      // Also add the first element to the map.
+      this->idxToElementMap.emplace(firstStreamElemIdx,
+                                    this->lastReductionElement);
     }
 
     assert(this->isOneIterationBehind());
@@ -1065,7 +1072,7 @@ void LLCDynStream::setState(State state) {
 void LLCDynStream::remoteConfigured(
     AbstractStreamAwareController *llcController) {
   this->setState(State::RUNNING);
-  this->llcController = llcController;
+  this->setLLCController(llcController);
   assert(this->prevConfiguredCycle == Cycles(0) && "Already RemoteConfigured.");
   this->prevConfiguredCycle = this->curCycle();
   auto &stats = this->getStaticS()->statistic;
@@ -1085,6 +1092,15 @@ void LLCDynStream::migratingStart() {
       this->prevMigratedCycle - this->prevConfiguredCycle;
 }
 
+void LLCDynStream::setLLCController(
+    AbstractStreamAwareController *llcController) {
+  this->llcController = llcController;
+  // Set the llcController for all indirect streams.
+  for (auto dynIS : this->allIndirectStreams) {
+    dynIS->llcController = llcController;
+  }
+}
+
 void LLCDynStream::migratingDone(AbstractStreamAwareController *llcController) {
 
   /**
@@ -1095,7 +1111,7 @@ void LLCDynStream::migratingDone(AbstractStreamAwareController *llcController) {
   auto &prevMigrateController = prevSE->migrateController;
   prevMigrateController->migratedTo(this, llcController->getMachineID());
 
-  this->llcController = llcController;
+  this->setLLCController(llcController);
   this->setState(State::RUNNING);
   this->prevConfiguredCycle = this->curCycle();
 
@@ -1305,10 +1321,15 @@ void LLCDynStream::setBaseStream(LLCDynStreamPtr baseS, int reuse) {
   this->baseStreamReuse = reuse;
   this->rootStream = baseS->rootStream ? baseS->rootStream : baseS;
   baseS->indirectStreams.push_back(this);
-  this->rootStream->allIndirectStreams.push_back(this);
+  baseS->allIndirectStreams.push_back(this);
+  if (baseS != this->rootStream) {
+    this->rootStream->allIndirectStreams.push_back(this);
+  }
   // Copy the RootStream's TripCount.
-  this->totalTripCount = this->rootStream->totalTripCount;
-  this->innerTripCount = this->rootStream->innerTripCount;
+  if (!this->hasTotalTripCount()) {
+    this->totalTripCount = this->rootStream->totalTripCount;
+    this->innerTripCount = this->rootStream->innerTripCount;
+  }
 }
 
 Cycles LLCDynStream::curCycle() const {
@@ -1383,7 +1404,7 @@ StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &element) {
       return element->getBaseStreamValue(baseStreamId);
     };
 
-    Cycles latency = config->addrGenCallback->getEstimatedLatency();
+    Cycles latency = S->getEstimatedComputationLatency();
     auto newReductionValue = config->addrGenCallback->genAddr(
         element->idx, config->addrGenFormalParams,
         getBaseOrPrevReductionStreamValue);
@@ -1568,6 +1589,10 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
                     "[DirectReduce] Reduction not in order.\n");
       }
       this->lastComputedReductionElemIdx++;
+
+      // Trigger indirect elements.
+      se->triggerIndElems(this, elem);
+      this->markElemTriggeredIndirect(elem->idx);
     }
 
     /**
@@ -1604,14 +1629,14 @@ void LLCDynStream::tryComputeNextDirectReduceElem(
 
   const auto seMachineID = se->controller->getMachineID();
   if (this->idxToElementMap.count(elem->idx + 1)) {
-    auto &nextElement = this->idxToElementMap.at(elem->idx + 1);
-    if (nextElement->areBaseElemsReady()) {
+    auto &nextElem = this->idxToElementMap.at(elem->idx + 1);
+    if (nextElem->areBaseElemsReady()) {
       /**
        * We need to push the computation to the LLC SE at the correct
        * bank.
        */
       LLCStreamEngine *nextComputeSE = se;
-      for (const auto &baseElement : nextElement->baseElements) {
+      for (const auto &baseElement : nextElem->baseElements) {
         if (baseElement->strandId != this->baseStream->getDynStrandId()) {
           continue;
         }
@@ -1633,8 +1658,15 @@ void LLCDynStream::tryComputeNextDirectReduceElem(
        * and immediately complete. To avoid recursive hell, make sure
        * tryComputeNextDirectReduceElem is at the tail of completeComputation().
        */
-      nextComputeSE->pushReadyComputation(nextElement);
+      nextComputeSE->pushReadyComputation(nextElem);
+    } else {
+      for (const auto &baseE : nextElem->baseElements) {
+        LLC_ELEMENT_DPRINTF(nextElem, "BaseElems Ready %d %s%llu.\n",
+                            baseE->isReady(), baseE->strandId, baseE->idx);
+      }
     }
+  } else {
+    LLC_ELEMENT_DPRINTF(elem, "NextElem not initialized.\n");
   }
 }
 
@@ -1692,6 +1724,8 @@ bool LLCDynStream::isNextIdeaAck() const {
     // DirectS can ack at segment granularity.
     int slicesPerSegment = std::max(
         1, this->configData->mlcBufferNumSlices /
+               this->mlcController->myParams
+                   ->mlc_stream_slices_runahead_inverse_ratio /
                this->mlcController->getMLCStreamBufferToSegmentRatio());
     if ((this->streamAckedSlices % slicesPerSegment) != 0) {
       return true;

@@ -274,7 +274,7 @@ void LLCStreamNDCController::handleForwardNDC(NDCContext &context,
 
   // Quick path for StreamForward if it is handled here.
   if (handledHere) {
-    llcSE->receiveStreamForwardRequest(*msg);
+    llcSE->receiveStreamFwdReq(*msg);
   } else {
     llcSE->indReqBuffer->pushRequest(msg);
   }

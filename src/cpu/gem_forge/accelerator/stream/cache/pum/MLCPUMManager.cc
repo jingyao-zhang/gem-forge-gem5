@@ -209,6 +209,9 @@ MLCPUMManager::PUMContext::~PUMContext() {
 MLCPUMManager::MLCPUMManager(MLCStreamEngine *_mlcSE)
     : mlcSE(_mlcSE), controller(_mlcSE->controller) {
   this->scheduler = m5::make_unique<PUMScheduler>(this);
+
+  this->modelRegPressure =
+      this->controller->myParams->stream_pum_schedule_type == "unison";
 }
 
 MLCPUMManager::~MLCPUMManager() {}
@@ -359,6 +362,14 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
 
   if (!computeConfig->stream->isLoopEliminated()) {
     MLC_S_DPRINTF(groupDynId, "[NoPUM] Not Eliminated.\n");
+    return false;
+  }
+
+  if (computeConfig->stream->getStreamName().find("pntnet2") !=
+          std::string::npos &&
+      computeConfig->stream->getStreamName().find("aggregateMaxFeature") !=
+          std::string::npos) {
+    MLC_S_DPRINTF(groupDynId, "[NoPUM] Manually disabled.\n");
     return false;
   }
 
@@ -772,6 +783,10 @@ void MLCPUMManager::buildPUMDataGraph(PUMContext &context) {
 
     auto scheduledNodes = this->scheduler->schedulePUMDataGraph(context);
     context.pumDataGraphNodes = scheduledNodes;
+
+    // Try dump the tDFG?
+    this->buildTDFG(context, "tdfg");
+    this->dumpTDFG(context.tdfg, "tdfg-before-lowering");
   }
 
   PUM_LOG_("--------------------- PUMDataGraph After Schedule.\n");
@@ -3718,6 +3733,14 @@ MLCPUMManager::getStreamRegion(const ConfigPtr &config) const {
 
 void MLCPUMManager::clearOverwrittenPUMDataSinceSync(PUMContext &context) {
 
+  /**
+   * So far we only enable this for unison scheduling, as other implementation
+   * does not correctly set the startWordline.
+   */
+  if (!this->modelRegPressure) {
+    return;
+  }
+
   // Minus 1 to exclude the sync node.
   for (int nodeIdx = context.reachedDataGraphNodes - 1; nodeIdx >= 0;
        --nodeIdx) {
@@ -3758,8 +3781,8 @@ void MLCPUMManager::markComputedRegionsCached(PUMContext &context) {
       Addr startPAddr;
       panic_if(!cpuDelegator->translateVAddrOracle(region.vaddr, startPAddr),
                "Translation Fault on Region %s.", region.name);
-      StreamNUCAMap::setWordlineForRange(startPAddr,
-                                         lastCmpNode->startWordline);
+      StreamNUCAMap::setWordlineForRange(startPAddr, lastCmpNode->startWordline,
+                                         !this->modelRegPressure);
     }
   }
 }
@@ -3814,7 +3837,8 @@ void MLCPUMManager::fetchPUMDataBeforeSync(PUMContext &context) {
       panic_if(!cpuDelegator->translateVAddrOracle(streamNUCARegion.vaddr,
                                                    startPAddr),
                "Translation Fault on Region %s.", regionName);
-      StreamNUCAMap::setWordlineForRange(startPAddr, node->startWordline);
+      StreamNUCAMap::setWordlineForRange(startPAddr, node->startWordline,
+                                         !this->modelRegPressure);
 
       if (fetchConfig) {
         prefetchConfigs->push_back(fetchConfig);

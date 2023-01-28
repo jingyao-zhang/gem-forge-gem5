@@ -240,7 +240,14 @@ AbstractStreamAwareController::mapAddressToLLCOrMem(Addr addr,
 
 Addr AbstractStreamAwareController::getAddressToOurLLC() const {
   // Make it simple.
-  return this->getMachineID().num << this->llcSelectLowBit;
+  auto paddr = this->getMachineID().num << this->llcSelectLowBit;
+
+  // Assert this paddr is not managed by StreamNUCAMap.
+  assert(StreamNUCAMap::getBank(paddr) == -1);
+  assert(mapAddressToLLCOrMem(paddr, MachineType_L2Cache).getNum() ==
+         this->m_machineID.getNum());
+
+  return paddr;
 }
 
 GemForgeCPUDelegator *AbstractStreamAwareController::getCPUDelegator() {

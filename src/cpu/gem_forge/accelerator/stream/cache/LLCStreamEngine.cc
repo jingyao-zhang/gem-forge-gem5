@@ -149,8 +149,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
       auto IS = LLCDynStream::getLLCStreamPanic(DynStrandId(
           ISConfig->dynamicId, ISConfig->strandIdx, ISConfig->totalStrands));
       LLC_S_DPRINTF_(LLCRubyStreamLife, IS->getDynStrandId(),
-                     "Configure IndirectStream MemElementSize %d "
-                     "TotalTripCount %lld.\n",
+                     "Config IndS MemElemSize %d TotalTripCount %lld.\n",
                      IS->getMemElementSize(), IS->getTotalTripCount());
       IS->remoteConfigured(this->controller);
     }
@@ -386,6 +385,19 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
     this->ndcController->receiveStreamData(sliceId, dataBlock, storeValueBlock);
     return;
   }
+
+  /**
+   * We need to handle NoMigration stream be forwarding the response back to
+   * its req. bank.
+   */
+  if (dynS->isMigrationDisabled() &&
+      dynS->getLLCController() != this->controller) {
+    this->issueNonMigrateStreamDataToLLC(
+        dynS, sliceId, dataBlock, storeValueBlock,
+        RubySystem::getBlockSizeBytes() /* PayloadSize */);
+    return;
+  }
+
   // Update inflyRequests.
   if (dynS->inflyRequests == 0) {
     LLC_SLICE_PANIC(sliceId, "Negative inflyRequests.\n");
@@ -499,8 +511,9 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
   if (!dynS->getIndStreams().empty()) {
     for (auto &idxElem : dynS->idxToElementMap) {
       auto &elem = idxElem.second;
-      LLC_SLICE_DPRINTF(sliceId, "Process for elem %llu, Ready %d.\n",
-                        elem->idx, elem->isReady());
+      LLC_SLICE_DPRINTF(
+          sliceId, "Try Trigger Elem %llu Ready %d NextTriggerIndElem %lu.\n",
+          elem->idx, elem->isReady(), dynS->getNextTriggerIndElemIdx());
       if (elem->idx < dynS->getNextTriggerIndElemIdx()) {
         continue;
       }
@@ -560,7 +573,7 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
    * 3. IndirectLoadComputeStream is released in releaseSlice().
    */
   LLC_S_DPRINTF(dynS->getDynStrandId(),
-                "[IndirectRelease] Check ShouldIssueAfterCommit %d "
+                "[IndRelease] Check ShouldIssueAfterCommit %d "
                 "IsLoadCompute %d.\n",
                 dynS->shouldIssueAfterCommit(), S->isLoadComputeStream());
   if (!dynS->shouldIssueAfterCommit() && !S->isLoadComputeStream() &&
@@ -661,6 +674,14 @@ void LLCStreamEngine::receiveStoreStreamData(LLCDynStreamPtr dynS,
 }
 
 bool LLCStreamEngine::isNextElemHandledHere(LLCDynStreamPtr dynS) const {
+
+  /**
+   * If the stream is disabled from migration, always consider the next element
+   * handled here.
+   */
+  if (dynS->isMigrationDisabled()) {
+    return true;
+  }
 
   /**
    * We introduce a new special case: If the stream has trip count and have
@@ -1446,6 +1467,8 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
    * migrated immediately after the stream engine found the next
    * element is not handled here. In such case, we simply give up and
    * return false.
+   * Also, when the stream is disabled from migrating, we always consider the
+   * next element handled here.
    *
    * In case of faulting, the slice will be skipped (see
    * issueDirectStream()).
@@ -1455,7 +1478,8 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
   auto machineType = vaddrAndMachineType.second;
   Addr paddr;
   if (dynS->translateToPAddr(vaddr, paddr)) {
-    if (!this->isPAddrHandledByMe(paddr, machineType)) {
+    if (!dynS->isMigrationDisabled() &&
+        !this->isPAddrHandledByMe(paddr, machineType)) {
       LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynS->getDynStrandId(),
                      "[Not Issue] PendingMigrate.\n");
       statistic.sampleLLCStreamEngineIssueReason(
@@ -1714,9 +1738,10 @@ void LLCStreamEngine::issueStreamDirect(LLCDynStream *dynS) {
     // Remember that the slice has issued.
     slice->issue();
 
-    if (!this->isPAddrHandledByMe(paddr, machineType)) {
-      LLC_S_PANIC(dynS->getDynStrandId(),
-                  "Next address is not handled here %#x.", paddr);
+    if (!dynS->isMigrationDisabled() &&
+        !this->isPAddrHandledByMe(paddr, machineType)) {
+      LLC_S_PANIC(dynS->getDynStrandId(), "Next addr is not handled here %#x.",
+                  paddr);
     }
 
     this->incrementIssueSlice(statistic);
@@ -2285,6 +2310,8 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
     }
   } else if (req.requestType == CoherenceRequestType_STREAM_FORWARD) {
     msg->m_DataBlk = req.dataBlock;
+    // Only used for NonMigrate stream.
+    msg->m_streamStoreBlk = req.storeValueBlock;
     msg->m_sendToStrandId = req.forwardToStrandId;
     /**
      * We model special size for StreamForward request.
@@ -2336,7 +2363,7 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
   if (handledHere) {
     // Quick path for StreamForward to myself.
     if (req.requestType == CoherenceRequestType_STREAM_FORWARD) {
-      this->receiveStreamForwardRequest(*msg);
+      this->receiveStreamFwdReq(*msg);
       return;
     }
     /**
@@ -2360,7 +2387,7 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
         auto recvCtrl = AbstractStreamAwareController::getController(
             msg->getDestination().singleElement());
         auto recvSE = recvCtrl->getLLCStreamEngine();
-        recvSE->receiveStreamForwardRequest(*msg);
+        recvSE->receiveStreamFwdReq(*msg);
         return;
       }
     }
@@ -2597,12 +2624,22 @@ void LLCStreamEngine::issueStreamDataToLLC(
       auto sendSliceId = sliceId;
       sendSliceId.getDynStrandId() = sendConfig->getStrandId();
 
+      /**
+       * If the RecvS is NonMigrating, we simply send to its initPAddr.
+       */
+      if (auto recvDynS = LLCDynStream::getLLCStream(recvStrandId)) {
+        if (recvDynS->isMigrationDisabled()) {
+          recvElemPAddrLine = makeLineAddress(
+              recvDynS->getLLCController()->getAddressToOurLLC());
+        }
+      }
+
       // Now we enqueue the translation request.
-      auto recvElementMachineType =
+      auto recvElemMachineType =
           recvConfig->floatPlan.getMachineTypeAtElem(recvStreamElemIdx);
       auto reqIter = this->enqueueRequest(
           dynS->getStaticS(), sendSliceId, recvElemVAddrLine, recvElemPAddrLine,
-          recvElementMachineType, CoherenceRequestType_STREAM_FORWARD);
+          recvElemMachineType, CoherenceRequestType_STREAM_FORWARD);
 
       // Remember the receiver StrandId and forwarded data block.
       reqIter->forwardToStrandId =
@@ -2615,6 +2652,31 @@ void LLCStreamEngine::issueStreamDataToLLC(
                       recvElemVAddrLine);
     }
   }
+}
+
+void LLCStreamEngine::issueNonMigrateStreamDataToLLC(
+    LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId,
+    const DataBlock &dataBlock, const DataBlock &storeValueBlock,
+    int payloadSize) {
+
+  LLC_SLICE_DPRINTF(sliceId, "[NoMigrate] Send back to %s.\n",
+                    dynS->getLLCController()->getMachineID());
+
+  // Should just send back to the dynS's LLC SE.
+  auto recvElemMachineType = MachineType_L2Cache;
+  auto recvElemVAddrLine = makeLineAddress(sliceId.vaddr);
+  auto recvElemPAddrLine =
+      makeLineAddress(dynS->getLLCController()->getAddressToOurLLC());
+
+  auto reqIter = this->enqueueRequest(
+      dynS->getStaticS(), sliceId, recvElemVAddrLine, recvElemPAddrLine,
+      recvElemMachineType, CoherenceRequestType_STREAM_FORWARD);
+
+  // Remember the receiver StrandId and forwarded data block.
+  reqIter->forwardToStrandId = dynS->getDynStrandId();
+  reqIter->dataBlock = dataBlock;
+  reqIter->storeValueBlock = storeValueBlock;
+  reqIter->payloadSize = payloadSize;
 }
 
 void LLCStreamEngine::issueStreamDataToPUM(
@@ -3026,7 +3088,7 @@ void LLCStreamEngine::receiveStreamIndirectRequestImpl(const RequestMsg &req) {
 
   if (req.m_Type == CoherenceRequestType_STREAM_FORWARD) {
     // Quick path for stream forwarding.
-    this->receiveStreamForwardRequest(req);
+    this->receiveStreamFwdReq(req);
     return;
   }
 
@@ -3057,11 +3119,11 @@ void LLCStreamEngine::receivePUMData(const RequestMsg &req) {
   this->pumEngine->receiveData(req);
 }
 
-void LLCStreamEngine::receiveStreamForwardRequest(const RequestMsg &req) {
-  this->processStreamForwardRequest(req);
+void LLCStreamEngine::receiveStreamFwdReq(const RequestMsg &req) {
+  this->processStreamFwdReq(req);
 }
 
-void LLCStreamEngine::processStreamForwardRequest(const RequestMsg &req) {
+void LLCStreamEngine::processStreamFwdReq(const RequestMsg &req) {
 
   const auto &sliceId = req.m_sliceIds.singleSliceId();
   const auto &recvDynId = req.m_sendToStrandId;
@@ -3096,6 +3158,9 @@ void LLCStreamEngine::processStreamForwardRequest(const RequestMsg &req) {
    *  ----------------------->>>---------------------
    *
    * In such case, we only search in my Two-Level IndirectS...
+   *
+   * NOTE: Now with NonMigrate stream, I can be the sender and receiver
+   * at the same time. In such case, we have to call receiveStreamData().
    */
   bool foundReceiver = false;
   if (sliceId.getDynStreamId() != dynS->getDynStreamId()) {
@@ -3107,7 +3172,7 @@ void LLCStreamEngine::processStreamForwardRequest(const RequestMsg &req) {
       }
     }
 
-    for (auto dynIS : dynS->getIndStreams()) {
+    for (auto dynIS : dynS->getAllIndStreams()) {
       if (dynIS->isBasedOn(sliceId.getDynStreamId())) {
         foundReceiver = true;
         for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx();
@@ -3117,7 +3182,23 @@ void LLCStreamEngine::processStreamForwardRequest(const RequestMsg &req) {
       }
     }
   } else {
-    // Sender is myself. Search for Two-Level Indirection.
+    /**
+     * Sender is myself.
+     * 1. If I am the receiver, this is a non-migrate stream response.
+     * 2. Otherwise, search for Two-Level Indirection.
+     * TODO: Correctly distinguish these two cases.
+     */
+    if (dynS->isMigrationDisabled()) {
+
+      foundReceiver = true;
+      // We need to reconstruct the PAddrLine from SliceId.Vaddr.
+      auto vaddrLine = makeLineAddress(sliceId.vaddr);
+      Addr paddrLine;
+      assert(dynS->translateToPAddr(vaddrLine, paddrLine));
+
+      this->receiveStreamData(paddrLine, sliceId, req.m_DataBlk,
+                              req.m_streamStoreBlk);
+    }
     for (auto dynIS : dynS->getIndStreams()) {
       for (auto dynIIS : dynIS->getIndStreams()) {
         if (dynIIS->isBasedOn(sliceId.getDynStreamId())) {
@@ -3281,7 +3362,8 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
 
   if (IS->hasTotalTripCount() && indElemIdx > IS->getTotalTripCount()) {
     // Ignore overflow elements.
-    LLC_S_DPRINTF(IS, "[TriggerInd] Skip TotalTripCount %ld < ElemIdx %lu.\n",
+    LLC_S_DPRINTF(IS->getDynStrandId(),
+                  "[TriggerInd] Skip TripCount %ld < ElemIdx %lu.\n",
                   IS->getTotalTripCount(), indElemIdx);
     return;
   }
@@ -3295,7 +3377,8 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
     if (IS->getStaticS()->isReduction() &&
         IS->lastComputedReductionElemIdx >= indElemIdx) {
       LLC_S_DPRINTF(
-          IS, "[TriggerInd] Skip ReduceS LastComputedElemIdx %lu > %lu.\n",
+          IS->getDynStrandId(),
+          "[TriggerInd] Skip ReduceS LastComputedElemIdx %lu > %lu.\n",
           IS->lastComputedReductionElemIdx, indElemIdx);
       return;
     }
@@ -3351,15 +3434,15 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
     }
   } else {
     for (const auto &baseE : indElem->baseElements) {
-      LLC_ELEMENT_DPRINTF(indElem, "BaseElems Ready %d %s %llu.\n",
+      LLC_ELEMENT_DPRINTF(indElem, "BaseElems Ready %d %s%llu.\n",
                           baseE->isReady(), baseE->strandId, baseE->idx);
     }
   }
 }
 
-void LLCStreamEngine::triggerIndElems(LLCDynStreamPtr stream,
+void LLCStreamEngine::triggerIndElems(LLCDynStreamPtr dynS,
                                       LLCStreamElementPtr elem) {
-  if (stream->getIndStreams().empty()) {
+  if (dynS->getIndStreams().empty()) {
     // There is no stream dependent on my data.
     return;
   }
@@ -3367,8 +3450,14 @@ void LLCStreamEngine::triggerIndElems(LLCDynStreamPtr stream,
   auto idx = elem->idx;
   assert(elem->isReady());
 
-  // First we handle any indirect element.
-  for (auto IS : stream->getIndStreams()) {
+  /**
+   * Here we try to trigger all IndElements even if they are multi-level
+   * dependence. This is to handle a corner case in pointnet2 furthest sample:
+   * DirS -> ReduceS1 -> ReduceS2.
+   * The Elem 1 of ReduceS2 is never triggered as Elem 0 of ReduceS1 is already
+   * ready. It would be triggered by Elem 0 of DirS.
+   */
+  for (auto IS : dynS->getAllIndStreams()) {
     auto reuse = IS->baseStreamReuse;
 
     /**
@@ -3389,6 +3478,10 @@ void LLCStreamEngine::triggerIndElems(LLCDynStreamPtr stream,
         IS->configData->convertBaseToDepElemIdx(idx, reuse, skip);
     auto indElemIdxRhs =
         IS->configData->convertBaseToDepElemIdx(idx + 1, reuse, skip);
+
+    LLC_ELEMENT_DPRINTF(elem, "Trigger IndS %s Reuse %d Elems [%lu, %lu).\n",
+                        IS->getDynStrandId(), reuse, indElemIdxLhs,
+                        indElemIdxRhs);
 
     for (auto indElemIdx = indElemIdxLhs; indElemIdx < indElemIdxRhs;
          ++indElemIdx) {

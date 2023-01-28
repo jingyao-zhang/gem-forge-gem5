@@ -51,7 +51,7 @@ void StreamFloatController::floatStreams(
   SE_DPRINTF(">>> Consider Float PointerChaseStreams.\n");
   this->floatPointerChaseStreams(floatArgs);
   SE_DPRINTF(">>> Consider Float IndirectStreams.\n");
-  this->floatIndirectStreams(floatArgs);
+  this->floatIndStreams(floatArgs);
   SE_DPRINTF(">>> Consider Float DirectUpdateStreams.\n");
   this->floatDirectUpdateStreams(floatArgs);
 
@@ -60,7 +60,7 @@ void StreamFloatController::floatStreams(
   this->floatEliminatedLoop(floatArgs);
 
   SE_DPRINTF(">>> Consider Float DirectOrPointerChaseReductionStreams.\n");
-  this->floatDirectOrPointerChaseReductionStreams(floatArgs);
+  this->floatDirectOrPtrChaseReduceStreams(floatArgs);
   SE_DPRINTF(">>> Consider Float DirectStoreComputeStreams.\n");
   this->floatDirectStoreComputeStreams(floatArgs);
   /**
@@ -464,14 +464,14 @@ void StreamFloatController::floatPointerChaseStreams(const Args &args) {
   }
 }
 
-void StreamFloatController::floatIndirectStreams(const Args &args) {
+void StreamFloatController::floatIndStreams(const Args &args) {
   if (!this->se->enableStreamFloatIndirect) {
     return;
   }
   while (true) {
     bool floated = false;
     for (auto dynS : args.dynStreams) {
-      if (this->floatIndirectStream(args, dynS)) {
+      if (this->floatIndStream(args, dynS)) {
         floated = true;
       }
     }
@@ -533,8 +533,7 @@ bool StreamFloatController::isOnFloatChain(
   return false;
 }
 
-bool StreamFloatController::floatIndirectStream(const Args &args,
-                                                DynStream *dynS) {
+bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
   auto S = dynS->stream;
   auto &floatedMap = args.floatedMap;
   if (floatedMap.count(S)) {
@@ -953,7 +952,7 @@ void StreamFloatController::floatDirectStoreComputeOrUpdateStream(
   args.rootConfigVec.push_back(config);
 }
 
-void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
+void StreamFloatController::floatDirectOrPtrChaseReduceStreams(
     const Args &args) {
   auto &floatedMap = args.floatedMap;
   for (auto dynS : args.dynStreams) {
@@ -1122,131 +1121,130 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
   }
 }
 
-void StreamFloatController::floatIndirectReductionStream(const Args &args,
-                                                         DynStream *dynS) {
+void StreamFloatController::floatIndReduceStream(const Args &args,
+                                                 DynStream *dynS) {
   auto &floatedMap = args.floatedMap;
   auto S = dynS->stream;
   /**
    * IndirectReductionStream:
-   * 1. Only use one floated indirect stream, and maybe the floated root
-   * direct stream.
+   * 1. Only use one floated Ind/Reduce stream.
    * 2. The ReductionFunc is some simple operation.
    * 3. The total trip count is long enough.
    */
   if (floatedMap.count(S) || !S->isReduction() || !S->addrBaseStreams.empty()) {
     return;
   }
-  Stream *backBaseIndirectS = nullptr;
-  Stream *backBaseDirectS = nullptr;
+  Stream *backBaseIndS = nullptr;
+  std::vector<Stream *> backBaseStreams;
+  std::vector<Stream *> backBaseIVAffineStreams;
+  std::vector<Stream *> backBaseDirectStreams;
   for (auto BS : S->backBaseStreams) {
     if (BS == S) {
       // Ignore dependence on myself.
       continue;
     }
-    if (BS->isIndirectLoadStream()) {
-      if (backBaseIndirectS) {
+    if (BS->isIndirectLoadStream() || BS->isReduction()) {
+      if (backBaseIndS) {
         StreamFloatPolicy::logS(*dynS)
-            << "[Not Float] as IndirectReduction with multiple "
-               "BackBaseIndirectS.\n"
+            << "[Not Float] as IndReduce with multi BackBaseIndS.\n"
             << std::flush;
         return;
       }
-      backBaseIndirectS = BS;
+      backBaseIndS = BS;
+      backBaseStreams.push_back(BS);
     } else if (BS->isDirectLoadStream()) {
-      if (backBaseDirectS) {
-        StreamFloatPolicy::logS(*dynS) << "[Not Float] as IndirectReduction "
-                                          "with multiple BackBaseDirectS.\n"
-                                       << std::flush;
-        return;
-      }
-      backBaseDirectS = BS;
+      backBaseStreams.push_back(BS);
+      backBaseDirectStreams.push_back(BS);
+    } else {
+      backBaseIVAffineStreams.push_back(BS);
     }
   }
-  if (!backBaseIndirectS) {
-    S_DPRINTF(S, "Not an IndirectReductionStream to float.");
+  if (!backBaseIndS) {
+    S_DPRINTF(S, "Not an IndReduceS to float.");
     return;
   }
   if (!this->se->myParams->enableFloatIndirectReduction) {
-    StreamFloatPolicy::logS(*dynS)
-        << "[Not Float] as IndirectReduction is disabled.\n"
-        << std::flush;
+    StreamFloatPolicy::logS(*dynS) << "[Not Float] as IndReduce is disabled.\n"
+                                   << std::flush;
     return;
   }
-  if (!floatedMap.count(backBaseIndirectS)) {
-    StreamFloatPolicy::logS(*dynS)
-        << "[Not Float] as BackBaseIndirectStream is not floated.\n"
-        << std::flush;
-    return;
-  }
-  if (backBaseDirectS && !floatedMap.count(backBaseDirectS)) {
-    StreamFloatPolicy::logS(*dynS)
-        << "[Not Float] as BackBaseDirectStream is not floated.\n"
-        << std::flush;
-    return;
-  }
-  if (backBaseDirectS &&
-      backBaseIndirectS->addrBaseStreams.count(backBaseDirectS) == 0) {
-    StreamFloatPolicy::logS(*dynS)
-        << "[Not Float] as BackBaseIndirectStream is not AddrDependent on "
-           "BackBaseDirectStream.\n"
-        << std::flush;
-    return;
+  for (auto BS : backBaseStreams) {
+    if (!floatedMap.count(BS)) {
+      StreamFloatPolicy::logS(*dynS) << "[Not Float] as unfloated BackBaseS "
+                                     << BS->getStreamName() << ".\n"
+                                     << std::flush;
+      return;
+    }
   }
 
   // Check if my reduction is simple operation.
   if (!S->isReductionDistributable()) {
     StreamFloatPolicy::logS(*dynS)
-        << "[Not Float] as unfavorable TotalTripCount "
+        << "[Not Float] as undistributable op TripCount "
         << dynS->getTotalTripCount() << ".\n"
         << std::flush;
     return;
   }
-  auto &backBaseIndirectConfig = floatedMap.at(backBaseIndirectS);
+  auto &backBaseIndConfig = floatedMap.at(backBaseIndS);
   // Check the total trip count.
-  uint64_t floatIndirectReductionMinTripCount = 256;
+  uint64_t floatIndReduceMinTripCount = 256;
   if (!dynS->hasTotalTripCount() ||
-      dynS->getTotalTripCount() < floatIndirectReductionMinTripCount) {
+      dynS->getTotalTripCount() < floatIndReduceMinTripCount) {
   }
   /**
-   * Okay now we decided to float the IndirectReductionStream.
+   * Okay now we decided to float the IndReduceS.
    */
-  auto reductionConfig =
-      S->allocateCacheConfigureData(dynS->configSeqNum, true);
+  auto reduceConfig = S->allocateCacheConfigureData(dynS->configSeqNum, true);
   // Reduction stream is always one iteration behind.
-  reductionConfig->isOneIterationBehind = true;
+  reduceConfig->isOneIterationBehind = true;
   dynS->setFloatedOneIterBehind(true);
-  floatedMap.emplace(S, reductionConfig);
+  floatedMap.emplace(S, reduceConfig);
 
   // Add UsedBy edge to the BackBaseIndirectS.
-  backBaseIndirectConfig->addUsedBy(reductionConfig);
-  S_DPRINTF(S, "Float IndirectReductionStream associated with %s.\n",
-            backBaseIndirectConfig->dynamicId);
+  backBaseIndConfig->addUsedBy(reduceConfig);
+  S_DPRINTF(S, "Float IndReduceS associated with %s.\n",
+            backBaseIndConfig->dynamicId);
   StreamFloatPolicy::logS(*dynS)
-      << "[Float] as IndirectReduction with "
-      << backBaseIndirectConfig->dynamicId << " TotalTripCount "
-      << dynS->getTotalTripCount() << ".\n"
+      << "[Float] as IndReduce with " << backBaseIndConfig->dynamicId
+      << " TotalTripCount " << dynS->getTotalTripCount() << ".\n"
       << std::flush;
 
-  if (backBaseDirectS) {
+  auto floatRootConfig = this->getFloatRootConfig(backBaseIndConfig);
+
+  for (auto backBaseDirectS : backBaseDirectStreams) {
     /**
-     * As a trick, we add a SendTo edge from BackBaseDirectS to BackBaseDirectS
-     * with the IndirectReductionS as the receiver.
+     * As a trick, we add a SendTo edge from BackBaseDirectS to floatRootS
+     * with the IndReduceS as the receiver.
+     * NOTE: No need to send from floatRootS.
      */
     auto &backBaseDirectConfig = floatedMap.at(backBaseDirectS);
     auto reuse = dynS->getBaseElemReuseCount(backBaseDirectConfig->stream);
     auto skip = dynS->getBaseElemSkipCount(backBaseDirectConfig->stream);
-    backBaseDirectConfig->addSendTo(backBaseDirectConfig, reuse, skip);
-    reductionConfig->addBaseOn(backBaseDirectConfig, reuse, skip);
+    if (backBaseDirectS != floatRootConfig->stream) {
+      backBaseDirectConfig->addSendTo(floatRootConfig, reuse, skip);
+    }
+    reduceConfig->addBaseOn(backBaseDirectConfig, reuse, skip);
     StreamFloatPolicy::logS(*dynS)
-        << "[Float] as IndirectReduction with BackBaseDirectS "
+        << "[Float] as IndReduce with BackBaseDirectS "
         << backBaseDirectConfig->dynamicId << ".\n"
+        << std::flush;
+  }
+
+  /**
+   * Add UsedAffineIVS.
+   */
+  for (auto backBaseIVAffineS : backBaseIVAffineStreams) {
+    this->allocateAddUsedAffineIV(reduceConfig, dynS, backBaseIVAffineS);
+    StreamFloatPolicy::logS(*dynS)
+        << "[Float] as IndReduce with BackBaseIVAffineS "
+        << backBaseIVAffineS->getStreamName() << ".\n"
         << std::flush;
   }
 }
 
 void StreamFloatController::floatIndirectReductionStreams(const Args &args) {
   for (auto dynS : args.dynStreams) {
-    this->floatIndirectReductionStream(args, dynS);
+    this->floatIndReduceStream(args, dynS);
   }
 }
 

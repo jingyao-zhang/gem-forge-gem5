@@ -207,7 +207,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     void receiveStreamFlow(DynStreamSliceId);
     void receiveStreamDataVec(Cycles, Addr, DynStreamSliceIdVec, DataBlock, DataBlock);
     void receiveStreamIndirectRequest(RequestMsg);
-    void receiveStreamForwardRequest(RequestMsg);
+    void receiveStreamFwdReq(RequestMsg);
     void receiveStreamCommit(DynStreamSliceId);
     void receiveStreamNDCRequest(PacketPtr);
     void notifyStreamRequestMiss(DynStreamSliceIdVec);
@@ -1246,7 +1246,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
   action(rsfwd_receiveStreamForward, "rsfwd", desc="Receive the StreamForward") {
     peek(L1RequestL2Network_in, RequestMsg) {
-      se.receiveStreamForwardRequest(in_msg);
+      se.receiveStreamFwdReq(in_msg);
     }
   }
   action(rsn_receiveStreamNDC, "rsn", desc="Receive the StreamNDC") {

@@ -343,8 +343,11 @@ PUMHWConfiguration StreamNUCAMap::getPUMHWConfig() {
                             meshCols);
 }
 
-void StreamNUCAMap::setWordlineForRange(Addr startPAddr, int wordline) {
-  clearWordline(wordline, startPAddr);
+void StreamNUCAMap::setWordlineForRange(Addr startPAddr, int wordline,
+                                        bool noClear) {
+  if (!noClear) {
+    clearWordline(wordline, startPAddr);
+  }
 
   auto &range = getRangeMapByStartPAddr(startPAddr);
 
@@ -372,13 +375,13 @@ void StreamNUCAMap::clearWordline(int wordline, Addr skipPAddr) {
   auto &prevRange = getRangeMapByStartPAddr(prevStartPAddr);
   prevRange.startWordline = RangeMap::InvalidWordline;
   if (prevStartPAddr != skipPAddr) {
+    DPRINTF(MLCStreamPUM, "[PUM] ClearWL [%#x, %#x) WL %d Cached? %d.\n",
+            prevRange.startPAddr, prevRange.endPAddr, wordline,
+            prevRange.isCached);
     evictRange(prevRange);
     prevRange.isCached = false;
   }
   pumWordlineToRangeMap.erase(wordline);
-  DPRINTF(MLCStreamPUM, "[PUM] ClearWL [%#x, %#x) WL %d Cached? %d.\n",
-          prevRange.startPAddr, prevRange.endPAddr, wordline,
-          prevRange.isCached);
 }
 
 void StreamNUCAMap::evictRange(RangeMap &range) {

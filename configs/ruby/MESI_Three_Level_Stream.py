@@ -168,6 +168,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_llc_multicast_issue_policy,
                 mlc_stream_buffer_init_num_entries=\
                     options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
+                mlc_stream_slices_runahead_inverse_ratio=\
+                    options.gem_forge_stream_engine_mlc_stream_runahead_slice_inverse_ratio,
                 enable_stream_range_sync=\
                     options.gem_forge_enable_stream_range_sync,
                 enable_stream_float_mem=options.gem_forge_stream_engine_enable_float_mem,
@@ -254,6 +256,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_llc_multicast_issue_policy,
                 mlc_stream_buffer_init_num_entries=\
                     options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
+                mlc_stream_slices_runahead_inverse_ratio=\
+                    options.gem_forge_stream_engine_mlc_stream_runahead_slice_inverse_ratio,
                 mlc_stream_buffer_to_segment_ratio=\
                     options.gem_forge_stream_engine_mlc_stream_buffer_to_segment_ratio,
                 enable_stream_range_sync=options.gem_forge_enable_stream_range_sync,
@@ -281,6 +285,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_pum_optimized_directory != "",
                 stream_pum_optimized_directory=\
                     options.gem_forge_stream_pum_optimized_directory,
+                stream_pum_fix_stream_at_req_bank=\
+                    options.gem_forge_stream_pum_fix_stream_at_req_bank,
                 )
 
             exec("ruby_system.l0_cntrl%d = l0_cntrl"
@@ -380,6 +386,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_llc_multicast_ind_req_bank_group_size,
                 mlc_stream_buffer_init_num_entries=\
                     options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
+                mlc_stream_slices_runahead_inverse_ratio=\
+                    options.gem_forge_stream_engine_mlc_stream_runahead_slice_inverse_ratio,
                 llc_stream_engine_issue_width=\
                     options.gem_forge_stream_engine_llc_stream_engine_issue_width,
                 llc_stream_engine_migrate_width=\
@@ -507,6 +515,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.stream_multicast_group_size = options.gem_forge_stream_engine_llc_multicast_group_size
         dir_cntrl.stream_multicast_issue_policy = options.gem_forge_stream_engine_llc_multicast_issue_policy
         dir_cntrl.mlc_stream_buffer_init_num_entries = options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries
+        dir_cntrl.mlc_stream_slices_runahead_inverse_ratio = options.gem_forge_stream_engine_mlc_stream_runahead_slice_inverse_ratio
         dir_cntrl.llc_stream_engine_issue_width = options.gem_forge_stream_engine_mc_issue_width
         dir_cntrl.llc_stream_engine_migrate_width = options.gem_forge_stream_engine_llc_stream_engine_migrate_width
         dir_cntrl.llc_stream_max_infly_request = options.gem_forge_stream_engine_mc_stream_max_infly_request

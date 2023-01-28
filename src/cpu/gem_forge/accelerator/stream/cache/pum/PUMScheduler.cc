@@ -173,6 +173,18 @@ PUMScheduler::schedulePUMDataGraphBFS(PUMContext &context, bool addSync) {
     appendSyncNode(context, scheduledNodes);
   }
 
+  /**
+   * Assign fake startWordline for nodes. Unison scheduler will generate real
+   * startWordline. This is to make clearWordline happy.
+   */
+  if (addSync) {
+    auto assignedWL = 1;
+    for (auto &node : scheduledNodes) {
+      node->startWordline = assignedWL;
+      assignedWL++;
+    }
+  }
+
   return scheduledNodes;
 }
 
@@ -532,8 +544,6 @@ PUMScheduler::schedulePUMDataGraphUnison(PUMContext &context) {
 
   directory->close(outF);
   return scheduledNodes;
-
-  // return this->schedulePUMDataGraphBFS(context, true /* addSync */);
 }
 
 void PUMScheduler::memorizeUnisonSolution(int numRegs, const std::string &raw,

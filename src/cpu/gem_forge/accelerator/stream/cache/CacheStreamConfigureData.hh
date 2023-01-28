@@ -395,5 +395,12 @@ public:
     assert(roundIdx >= 0);
     return roundIdx * pumElemPerSync;
   }
+
+  /**
+   * If set, this stream operates at NoMigratiaon mode. This is used to
+   * approximate pum-only configuration, in which there is no NSC support, by
+   * fixing the streams at the requesting bank.
+   */
+  bool disableMigration = false;
 };
 #endif

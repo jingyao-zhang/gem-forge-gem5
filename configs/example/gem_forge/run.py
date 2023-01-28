@@ -195,7 +195,10 @@ parser.add_option("--gem-forge-stream-engine-llc-multicast-issue-policy", type="
                   help="Stream Multicast issue policy, first means most conservative.")
 parser.add_option("--gem-forge-stream-engine-mlc-stream-buffer-init-num-entries", action="store",
                   type="int", default="32",
-                  help="Initial number of entries of MLC stream buffer per stream.")
+                  help="# MLC slices allocated per stream.")
+parser.add_option("--gem-forge-stream-engine-mlc-stream-runahead-slice-inverse-ratio",
+                  action="store", type="int", default="1",
+                  help="Ratio of MLC runahead slices per stream (slices / ratio).")
 parser.add_option("--gem-forge-stream-engine-mlc-stream-buffer-to-segment-ratio", action="store",
                   type="int", default="4",
                   help="Ratio between MLC stream buffer size and sync segment.")
@@ -346,6 +349,10 @@ parser.add_option("--gem-forge-stream-pum-prefetch-level", type="choice", defaul
 parser.add_option("--gem-forge-stream-pum-optimized-directory",
                   action="store", type="string", default="",
                   help="Directory containing optimized tdfgs")
+parser.add_option("--gem-forge-stream-pum-fix-stream-at-req-bank",
+                  action="store", type="int", default="0",
+                  help=("Fix all streams at req. bank. "
+                        "Used to approximate in-mem computing only (no near-stream computing)"))
 
 # Stream in Mem Options.
 parser.add_option("--gem-forge-stream-engine-enable-float-mem", action="store_true", default=False,

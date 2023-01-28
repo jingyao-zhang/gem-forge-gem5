@@ -517,7 +517,8 @@ private:
    * 
    * A DynS is removed from the list when:
    * 1. StreamEnd committed.
-   * 2. All elements are AddrReady and
+   * 2. StreamConfig rewinded.
+   * 3. All elements are AddrReady and
    *  if ShouldComputeValue -- all computation is scheduled.
    */
   using DynStreamList = std::list<DynStream *>;

@@ -339,7 +339,7 @@ bool MLCDynStream::tryPopStream() {
 
     if (mlcHeadSliceEndElemIdx > remoteDynISProgressElemIdx) {
       MLC_SLICE_DPRINTF(slice.sliceId,
-                        "[DelayPop] ISElementIdx MLC %llu > LLC %llu.\n",
+                        "[DelayPop] ISElemIdx MLC %llu > LLC %llu.\n",
                         mlcHeadSliceEndElemIdx, remoteDynISProgressElemIdx);
       this->scheduleAdvanceStream();
       break;

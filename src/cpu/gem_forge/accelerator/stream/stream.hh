@@ -492,12 +492,8 @@ public:
   const ExecFuncPtr &getComputeCallback() const;
 
   bool isComputationNop() const { return this->getComputeCallback()->isNop(); }
-  int getComputationNumMicroOps() const {
-    return this->getComputeCallback()->getNumInstructions();
-  }
-  Cycles getEstimatedComputationLatency() const {
-    return this->getComputeCallback()->getEstimatedLatency();
-  }
+  int getComputationNumMicroOps() const;
+  Cycles getEstimatedComputationLatency() const;
   bool isSIMDComputation() const {
     return this->getComputeCallback()->hasSIMD();
   }

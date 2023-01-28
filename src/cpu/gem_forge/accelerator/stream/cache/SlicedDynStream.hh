@@ -52,7 +52,7 @@ public:
    */
   Addr getElementVAddr(uint64_t elementIdx) const;
   int32_t getMemElementSize() const { return this->elemSize; }
-  float getElementPerSlice() const { return this->elemPerSlice; }
+  float getElemPerSlice() const { return this->elemPerSlice; }
 
 private:
   DynStrandId strandId;

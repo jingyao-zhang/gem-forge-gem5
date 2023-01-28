@@ -164,7 +164,7 @@ public:
    * Set the start wordline for the PUMRange. Notice that it will mark any
    * previous region mapped to that wordline as uncached.
    */
-  static void setWordlineForRange(Addr startPAddr, int wordline);
+  static void setWordlineForRange(Addr startPAddr, int wordline, bool noClear);
   static void clearWordline(int wordline, Addr skipPAddr = 0);
   static void evictRange(RangeMap &range);
 

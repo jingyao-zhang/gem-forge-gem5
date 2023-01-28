@@ -49,7 +49,7 @@ public:
                             const DataBlock &storeValueBlock);
   void receiveStreamIndirectRequest(const RequestMsg &req);
   void receiveStreamIndirectRequestImpl(const RequestMsg &req);
-  void receiveStreamForwardRequest(const RequestMsg &req);
+  void receiveStreamFwdReq(const RequestMsg &req);
   void notifyStreamRequestMiss(const DynStreamSliceIdVec &sliceIds);
   void wakeup() override;
   void print(std::ostream &out) const override;
@@ -368,11 +368,25 @@ private:
    * This is used for LoadComputeStream, where the effective sizes is actually
    * smaller.
    */
-  void issueStreamDataToLLC(LLCDynStreamPtr stream,
+  void issueStreamDataToLLC(LLCDynStreamPtr dynS,
                             const DynStreamSliceId &sliceId,
                             const DataBlock &dataBlock,
                             const CacheStreamConfigureData::DepEdge &sendToEdge,
                             int payloadSize);
+
+  /**
+   * Send the NoMigration stream data back to its req. bank. Used to implement
+   * NoNSC configuration, in which streams do not float but stays at its own
+   * bank.
+   * @param payloadSize: the network should model the payload of this size.
+   * This is used for LoadComputeStream, where the effective sizes is actually
+   * smaller.
+   */
+  void issueNonMigrateStreamDataToLLC(LLCDynStreamPtr dynS,
+                                      const DynStreamSliceId &sliceId,
+                                      const DataBlock &dataBlock,
+                                      const DataBlock &storeValueBlock,
+                                      int payloadSize);
 
   /**
    * Send the stream data to PUM. Used for PUMSendTo edge.
@@ -380,7 +394,7 @@ private:
    * This is used for LoadComputeStream, where the effective sizes is actually
    * smaller.
    */
-  void issueStreamDataToPUM(LLCDynStreamPtr stream,
+  void issueStreamDataToPUM(LLCDynStreamPtr dynS,
                             const DynStreamSliceId &sliceId,
                             const DataBlock &dataBlock,
                             const CacheStreamConfigureData::DepEdge &sendToEdge,
@@ -525,7 +539,7 @@ private:
   /**
    * Process the StreamForward request.
    */
-  void processStreamForwardRequest(const RequestMsg &req);
+  void processStreamFwdReq(const RequestMsg &req);
 
   /**
    * Check if this is the second request to lock the indirect atomic, if so

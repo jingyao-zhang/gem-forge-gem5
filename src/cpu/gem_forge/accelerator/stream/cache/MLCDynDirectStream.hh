@@ -63,6 +63,7 @@ protected:
   SlicedDynStream slicedStream;
 
   uint64_t maxNumSlicesPerSegment;
+  uint64_t maxNumRunaheadSlices;
 
   /**
    * For reuse pattern, store the cut information.
@@ -164,6 +165,11 @@ protected:
   void allocateSlice();
 
   /**
+   * Try to release LLC segments if we do not need range-sync.
+   */
+  void tryReleaseNonRangeSyncSegment();
+
+  /**
    * Check and send credit to the LLC stream. Enqueue a new segment.
    */
   void trySendCreditToLLC();
@@ -187,6 +193,18 @@ protected:
   void notifyIndStreams(const MLCStreamSlice &slice);
 
   bool isInConstructor = false;
+
+  /**
+   * Remeber the last paddr to send credit to. Initialized to config->initPAddr.
+   * Used to implement NonMigrating stream.
+   */
+  Addr lastCreditPAddr = 0;
+
+  /**
+   * Always remember the last segement.
+   */
+  bool lastSegementValid = false;
+  LLCSegmentPosition lastSegment;
 };
 
 #endif

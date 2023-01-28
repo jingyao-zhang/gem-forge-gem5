@@ -72,7 +72,7 @@ unimplementedFunc(SyscallDesc *desc, ThreadContext *tc)
 SyscallReturn
 ignoreFunc(SyscallDesc *desc, ThreadContext *tc)
 {
-    warn("ignoring syscall %s(...)", desc->name());
+    warn("%llu: ignoring syscall %s(...)", curTick(), desc->name());
     return 0;
 }
 
@@ -157,7 +157,7 @@ exitImpl(SyscallDesc *desc, ThreadContext *tc, bool group, int status)
             }
             if (walk->tgid() == p->tgid() && walkThread->status() != ThreadContext::Halted) {
                 // Non-halted thread in the same group.
-                warn("Exit group halt thread %d\n", walkThread->threadId());
+                warn("%lu: Exit group halt thread %d\n", curTick(), walkThread->threadId());
                 walkThread->halt();
             }
         }
