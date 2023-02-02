@@ -634,9 +634,11 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
      * stepped element here if the next element is not addr ready. This is
      * to ensure that it is correctly coalesced.
      * This is disabled if the stream delays issue until reaches the FIFO head.
+     * Or stream is not coalesced.
      */
     if (S->isDirectMemStream() && !S->isDelayIssueUntilFIFOHead() &&
-        dynS->shouldCoreSEIssue() && !dynS->isFloatedAsNDC()) {
+        dynS->shouldCoreSEIssue() && !dynS->isFloatedAsNDC() &&
+        this->shouldCoalesceContinuousDirectMemStreamElement(stepElem)) {
       auto stepNextElem = stepElem->next;
       if (!stepNextElem) {
         S_ELEMENT_DPRINTF(
@@ -2019,12 +2021,20 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
        * 2. Address is ready, value base elements are ready -> compute value.
        *  This applies to IV/Reduction/StoreCompute/LoadCompute/Update
        * streams.
+       *  NOTE: With one exception: InCore LoopElim StoreComputeS is first
+       * ValReady then issued. See below.
        * 3. Address is ready, request not issued, first user is
        * non-speculative
        *  -> Issue the atomic request.
        *  This applies to AtomicCompute streams.
+       *
+       * New issue logic for LoopElimInCoreStoreCmpElem.
+       * 1. They are first markedAddrReady but not issued. This is handled
+       * below.
+       * 2. They are scheduled the computation. This is handled above.
+       * 3. When both addrReady() and computeValueReady(), we finally issue
+       * them.
        */
-
       if (elem->isAddrReady()) {
         // Address already ready. Check if we have type 2 or 3 ready elements.
         if (elem->shouldComputeValue() && !elem->scheduledComputation &&
@@ -2045,6 +2055,14 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
                 elem, "StreamAtomic is non-speculative, ready to issue.\n");
             readyElems.emplace_back(elem);
           }
+        }
+        if (elem->isLoopElimInCoreStoreCmpElem() && !elem->isReqIssued() &&
+            elem->isComputeValueReady()) {
+          hasUnissuedElem = true;
+          S_ELEMENT_DPRINTF(
+              elem,
+              "LoopElimInCoreStoreS is Addr/ValueReady. Ready to issue.\n");
+          readyElems.emplace_back(elem);
         }
         continue;
       }
@@ -2116,9 +2134,9 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
       } else {
         // We should not check the next one as we should issue inorder.
         if (!baseElemsValReady) {
-          S_ELEMENT_DPRINTF(elem, "Not Addr Ready, break out.\n");
+          S_ELEMENT_DPRINTF(elem, "Not Addr Ready. Break.\n");
         } else {
-          S_ELEMENT_DPRINTF(elem, "Not NDC Ready, break out.\n");
+          S_ELEMENT_DPRINTF(elem, "Not NDC Ready. Break.\n");
         }
         hasUnissuedElem = true;
         break;
@@ -2157,29 +2175,30 @@ void StreamEngine::issueElements() {
               const auto &BIdx = B->FIFOIdx;
               return BIdx > AIdx;
             });
-  for (auto &element : readyElements) {
+  for (auto &elem : readyElements) {
 
-    auto S = element->stream;
+    auto S = elem->stream;
 
-    if (element->isAddrReady() && S->shouldComputeValue()) {
+    if (elem->isAddrReady() && S->shouldComputeValue() &&
+        !elem->isComputeValueReady()) {
       // Type 2 ready elements.
-      element->computeValue();
+      assert(!elem->scheduledComputation);
+      elem->computeValue();
       continue;
     }
 
     /**
-     * Sanity check: for loop eliminated AtomicCompute/StoreComputeStream,
+     * Sanity check: for loop eliminated AtomicComputeS,
      * we have to offload.
      */
-    if (S->isLoopEliminated() &&
-        (S->isAtomicComputeStream() || S->isStoreComputeStream())) {
-      if (!element->isElemFloatedToCache()) {
-        S_ELEMENT_PANIC(element, "LoopEliminated Store/AtomicCompute Stream "
-                                 "can not execute in core.");
+    if (S->isLoopEliminated() && S->isAtomicComputeStream()) {
+      if (!elem->isElemFloatedToCache()) {
+        S_ELEMENT_PANIC(elem,
+                        "LoopElim AtomicComputeS can not execute in core.");
       }
     }
 
-    if (!element->isAddrReady()) {
+    if (!elem->isAddrReady()) {
       /**
        * For IndirectUpdateStream, we have possible aliasing, and for now
        * we cannot correctly track all the dependence and flush/rewind.
@@ -2189,11 +2208,11 @@ void StreamEngine::issueElements() {
        * ! This may greatly limit the prefetch distance. For now we disable
        * ! this check.
        */
-      element->markAddrReady();
+      elem->markAddrReady();
     }
 
     if (S->isMemStream()) {
-      assert(!element->isReqIssued() && "Element already issued request.");
+      assert(!elem->isReqIssued() && "Element already issued request.");
 
       /**
        * * New Feature: If the stream is merged, then we do not issue.
@@ -2203,7 +2222,7 @@ void StreamEngine::issueElements() {
         continue;
       }
 
-      if (!element->shouldIssue()) {
+      if (!elem->shouldIssue()) {
         continue;
       }
 
@@ -2214,34 +2233,40 @@ void StreamEngine::issueElements() {
        * So we check the firstValueCheckByCoreCycle.
        * If the stream is floated, then we can immediately issue.
        */
-      if (S->isAtomicStream() && !element->isElemFloatedToCache() &&
-          !element->isElemFloatedAsNDC()) {
-        if (!element->isPrefetchIssued()) {
+      if (S->isAtomicStream() && !elem->isElemFloatedToCache() &&
+          !elem->isElemFloatedAsNDC()) {
+        if (!elem->isPrefetchIssued()) {
           // We first issue prefetch request for AtomicStream.
-          this->prefetchElement(element);
+          this->prefetchElement(elem);
           continue;
         }
         if (S->isAtomicComputeStream() &&
-            element->firstValueCheckByCoreCycle == 0) {
+            elem->firstValueCheckByCoreCycle == 0) {
           S_ELEMENT_DPRINTF(
-              element, "Delay issue as waiting for FirstValueCheckByCore.\n");
+              elem, "Delay issue as waiting for FirstValueCheckByCore.\n");
           continue;
         }
+      }
+
+      if (elem->isLoopElimInCoreStoreCmpElem() &&
+          !elem->isComputeValueReady()) {
+        S_ELEMENT_DPRINTF(elem, "Delay issue as waiting for StoreValue.\n");
+        continue;
       }
 
       /**
        * Intercept the NDC request.
        */
-      if (element->isElemFloatedAsNDC()) {
-        this->issueNDCElement(element);
+      if (elem->isElemFloatedAsNDC()) {
+        this->issueNDCElement(elem);
         continue;
       }
 
       // Increase the reference of the cache block if we enable merging.
       if (this->enableMerge) {
-        for (int i = 0; i < element->cacheBlocks; ++i) {
+        for (int i = 0; i < elem->cacheBlocks; ++i) {
           auto cacheBlockAddr =
-              element->cacheBlockBreakdownAccesses[i].cacheBlockVAddr;
+              elem->cacheBlockBreakdownAccesses[i].cacheBlockVAddr;
           this->cacheBlockRefMap
               .emplace(std::piecewise_construct,
                        std::forward_as_tuple(cacheBlockAddr),
@@ -2250,7 +2275,7 @@ void StreamEngine::issueElements() {
         }
       }
       // Issue the element.
-      this->issueElement(element);
+      this->issueElement(elem);
     }
   }
 }
@@ -2276,40 +2301,40 @@ void StreamEngine::fetchedCacheBlock(Addr cacheBlockVAddr,
   cacheBlockInfo.pendingAccesses.clear();
 }
 
-void StreamEngine::issueElement(StreamElement *element) {
-  assert(element->isAddrReady() && "Address should be ready.");
-  assert(element->stream->isMemStream() &&
+void StreamEngine::issueElement(StreamElement *elem) {
+  assert(elem->isAddrReady() && "Address should be ready.");
+  assert(elem->stream->isMemStream() &&
          "Should never issue element for IVStream.");
-  assert(element->shouldIssue() && "Should not issue this element.");
-  assert(!element->isReqIssued() && "Element req already issued.");
+  assert(elem->shouldIssue() && "Should not issue this element.");
+  assert(!elem->isReqIssued() && "Element req already issued.");
 
-  auto S = element->stream;
-  auto dynS = element->dynS;
-  if (element->flushed) {
+  auto S = elem->stream;
+  auto dynS = elem->dynS;
+  if (elem->flushed) {
     if (!S->trackedByPEB()) {
-      S_ELEMENT_PANIC(element, "Flushed Non-PEB stream element.");
+      S_ELEMENT_PANIC(elem, "Flushed Non-PEB stream element.");
     }
-    S_ELEMENT_DPRINTF(element, "Issue - Reissue.\n");
+    S_ELEMENT_DPRINTF(elem, "Issue - Reissue.\n");
   } else {
-    S_ELEMENT_DPRINTF(element, "Issue.\n");
+    S_ELEMENT_DPRINTF(elem, "Issue.\n");
   }
   if (S->isLoadStream()) {
     this->numLoadElementsFetched++;
   }
   S->statistic.numFetched++;
-  element->setReqIssued();
-  if (S->trackedByPEB() && !element->isFirstUserDispatched()) {
+  elem->setReqIssued();
+  if (S->trackedByPEB() && !elem->isFirstUserDispatched()) {
     // Add to the PEB if the first user has not been dispatched.
-    this->peb.addElement(element);
+    this->peb.addElement(elem);
   }
 
   /**
    * A quick hack to coalesce continuous elements that completely overlap.
    */
-  this->coalesceContinuousDirectMemStreamElement(element);
+  this->coalesceContinuousDirectMemStreamElement(elem);
 
-  for (size_t i = 0; i < element->cacheBlocks; ++i) {
-    auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
+  for (size_t i = 0; i < elem->cacheBlocks; ++i) {
+    auto &cacheBlockBreakdown = elem->cacheBlockBreakdownAccesses[i];
 
     // Normal case: really fetching this from the cache,
     // i.e. not merged & not handled by placement manager.
@@ -2327,13 +2352,12 @@ void StreamEngine::issueElement(StreamElement *element) {
     const auto cacheLineVAddr = cacheBlockBreakdown.cacheBlockVAddr;
     const auto cacheLineSize = cpuDelegator->cacheLineSize();
     if ((cacheLineVAddr % cacheLineSize) != 0) {
-      S_ELEMENT_PANIC(element,
-                      "CacheBlock %d LineVAddr %#x invalid, VAddr %#x.\n", i,
-                      cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
+      S_ELEMENT_PANIC(elem, "CacheBlock %d LineVAddr %#x invalid, VAddr %#x.\n",
+                      i, cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
     }
     Addr cacheLinePAddr;
     if (!cpuDelegator->translateVAddrOracle(cacheLineVAddr, cacheLinePAddr)) {
-      S_ELEMENT_DPRINTF(element, "Fault on vaddr %#x.\n", cacheLineVAddr);
+      S_ELEMENT_DPRINTF(elem, "Fault on vaddr %#x.\n", cacheLineVAddr);
       cacheBlockBreakdown.state = CacheBlockBreakdownAccess::StateE::Faulted;
       /**
        * The current mechanism to mark value ready is too hacky.
@@ -2342,12 +2366,12 @@ void StreamEngine::issueElement(StreamElement *element) {
        * call tryMarkValueReady() whenver we set a block to Faulted state.
        * TODO: Improve this poor design.
        */
-      element->tryMarkValueReady();
+      elem->tryMarkValueReady();
       continue;
     }
     if ((cacheLinePAddr % cacheLineSize) != 0) {
       S_ELEMENT_PANIC(
-          element, "LinePAddr %#x invalid, LineVAddr %#x, VAddr %#x.\n",
+          elem, "LinePAddr %#x invalid, LineVAddr %#x, VAddr %#x.\n",
           cacheLinePAddr, cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
     }
 
@@ -2366,48 +2390,47 @@ void StreamEngine::issueElement(StreamElement *element) {
      * issue this as ReadEx as the StoreStream is not configured.
      */
     Request::Flags flags;
-    if (element->isElemFloatedToCache()) {
-      if (!element->flushed) {
+    if (elem->isElemFloatedToCache()) {
+      if (!elem->flushed) {
         flags.set(Request::NO_RUBY_SEQUENCER_COALESCE);
       }
       if (S->isAtomicComputeStream() || S->isLoadComputeStream() ||
           S->isUpdateStream()) {
-        if (element->flushed) {
+        if (elem->flushed) {
           S_ELEMENT_PANIC(
-              element, "Flushed Floating Atomic/LoadCompute/UpdateStream.\n");
+              elem, "Flushed Floating Atomic/LoadCompute/UpdateStream.\n");
         }
         flags.set(Request::NO_RUBY_BACK_STORE);
       }
     }
     if (S->isStoreStream() || S->isAtomicStream()) {
       if (!S->isStoreComputeStream() && !S->isAtomicComputeStream()) {
-        if (!element->isElemFloatedToCache()) {
+        if (!elem->isElemFloatedToCache()) {
           flags.set(Request::READ_EXCLUSIVE);
         }
       }
     }
-    if (S->isLoadStream() && S->hasUpdate() &&
-        !element->isElemFloatedToCache()) {
+    if (S->isLoadStream() && S->hasUpdate() && !elem->isElemFloatedToCache()) {
       flags.set(Request::READ_EXCLUSIVE);
     }
 
     // Allocate the book-keeping StreamMemAccess.
-    auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
+    auto memAccess = elem->allocateStreamMemAccess(cacheBlockBreakdown);
     PacketPtr pkt = nullptr;
     if (S->isAtomicComputeStream()) {
-      if (element->cacheBlocks != 1) {
-        S_ELEMENT_PANIC(element, "Illegal # of CacheBlocks %d for AtomicOp.",
-                        element->cacheBlocks);
+      if (elem->cacheBlocks != 1) {
+        S_ELEMENT_PANIC(elem, "Illegal # of CacheBlocks %d for AtomicOp.",
+                        elem->cacheBlocks);
       }
       /**
        * It is the programmer/compiler's job to make sure no aliasing for
        * computation (i.e. StoreFunc), so the element should never be flushed.
        */
-      if (element->flushed) {
-        S_ELEMENT_PANIC(element,
+      if (elem->flushed) {
+        S_ELEMENT_PANIC(elem,
                         "AtomicStream with StoreFunc should not be flushed.");
       }
-      if (element->isElemFloatedToCache()) {
+      if (elem->isElemFloatedToCache()) {
         // Offloaded the whole stream.
         pkt = GemForgePacketHandler::createGemForgePacket(
             cacheLinePAddr, cacheLineSize, memAccess, nullptr /* Data */,
@@ -2416,10 +2439,10 @@ void StreamEngine::issueElement(StreamElement *element) {
         pkt->req->setVirt(cacheLineVAddr);
       } else {
         // Special case to handle computation for atomic stream at CoreSE.
-        auto getBaseValue = [element](Stream::StaticId id) -> StreamValue {
-          return element->getValueBaseByStreamId(id);
+        auto getBaseValue = [elem](Stream::StaticId id) -> StreamValue {
+          return elem->getValueBaseByStreamId(id);
         };
-        auto atomicOp = S->setupAtomicOp(element->FIFOIdx, element->size,
+        auto atomicOp = S->setupAtomicOp(elem->FIFOIdx, elem->size,
                                          dynS->storeFormalParams, getBaseValue);
         // * We should use element address here, not line address.
         auto elementVAddr = cacheBlockBreakdown.virtualAddr;
@@ -2433,7 +2456,7 @@ void StreamEngine::issueElement(StreamElement *element) {
         this->computeEngine->recordCompletedStats(S);
 
         pkt = GemForgePacketHandler::createGemForgeAMOPacket(
-            elementVAddr, elementPAddr, element->size, memAccess,
+            elementVAddr, elementPAddr, elem->size, memAccess,
             cpuDelegator->dataMasterId(), 0 /* ContextId */,
             S->getFirstCoreUserPC() /* PC */, std::move(atomicOp));
       }
@@ -2446,14 +2469,14 @@ void StreamEngine::issueElement(StreamElement *element) {
     }
     pkt->req->getStatistic()->isStream = true;
     pkt->req->getStatistic()->streamName = S->streamName.c_str();
-    S_ELEMENT_DPRINTF(element, "Issued %dth request to %#x %d.\n", i,
+    S_ELEMENT_DPRINTF(elem, "Issued %dth request to %#x %d.\n", i,
                       pkt->getAddr(), pkt->getSize());
 
     {
       // Sanity check that no multi-line element.
       auto lineOffset = pkt->getAddr() % cacheLineSize;
       if (lineOffset + pkt->getSize() > cacheLineSize) {
-        S_ELEMENT_PANIC(element,
+        S_ELEMENT_PANIC(elem,
                         "Issued Multi-Line request to %#x size %d, "
                         "lineVAddr %#x linePAddr %#x.",
                         pkt->getAddr(), pkt->getSize(), cacheLineVAddr,
@@ -2464,14 +2487,14 @@ void StreamEngine::issueElement(StreamElement *element) {
     if (flags.isSet(Request::READ_EXCLUSIVE)) {
       S->statistic.numIssuedReadExRequest++;
     }
-    element->dynS->incrementNumIssuedRequests();
+    elem->dynS->incrementNumIssuedRequests();
     S->incrementInflyStreamRequest();
     this->incrementInflyStreamRequest();
 
     // Mark the state.
     cacheBlockBreakdown.state = CacheBlockBreakdownAccess::StateE::Issued;
     cacheBlockBreakdown.memAccess = memAccess;
-    memAccess->registerReceiver(element);
+    memAccess->registerReceiver(elem);
 
     if (cpuDelegator->cpuType == GemForgeCPUDelegator::ATOMIC_SIMPLE) {
       // Directly send to memory for atomic cpu.
@@ -2808,11 +2831,35 @@ StreamEngine::getStreamRegion(const std::string &relativePath) const {
   return protobufRegion;
 }
 
+bool StreamEngine::shouldCoalesceContinuousDirectMemStreamElement(
+    StreamElement *elem) {
+  const bool enableCoalesceContinuousElement = true;
+  if (!enableCoalesceContinuousElement) {
+    return false;
+  }
+
+  auto S = elem->stream;
+  if (!S->isDirectMemStream()) {
+    return false;
+  }
+  // Never do this for not floated Store/AtomicComputeStream.
+  if ((S->isAtomicComputeStream() || S->isStoreComputeStream()) &&
+      !elem->isElemFloatedToCache()) {
+    return false;
+  }
+  // Check if this element is flushed.
+  if (elem->flushed) {
+    S_ELEMENT_DPRINTF(elem, "[NoCoalesce] Flushed.\n");
+    return false;
+  }
+
+  return true;
+}
+
 void StreamEngine::coalesceContinuousDirectMemStreamElement(
     StreamElement *elem) {
 
-  const bool enableCoalesceContinuousElement = true;
-  if (!enableCoalesceContinuousElement) {
+  if (!this->shouldCoalesceContinuousDirectMemStreamElement(elem)) {
     return;
   }
 
@@ -2825,18 +2872,6 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
     return;
   }
   auto S = elem->stream;
-  if (!S->isDirectMemStream()) {
-    return;
-  }
-  // Never do this for not floated AtomicComputeStream.
-  if (S->isAtomicComputeStream() && !elem->isElemFloatedToCache()) {
-    return;
-  }
-  // Check if this element is flushed.
-  if (elem->flushed) {
-    S_ELEMENT_DPRINTF(elem, "[NoCoalesce] Flushed.\n");
-    return;
-  }
   // Get the previous element.
   auto prevElem = S->getPrevElement(elem);
   // Bail out if we have no previous element (we are the first).

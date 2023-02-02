@@ -36,6 +36,12 @@ bool StreamRegionController::canDispatchStreamEndImpl(
       // Streams with 0 TripCount will not allocate the last element.
       continue;
     }
+    if (S->isStoreComputeStream() && S->isLoopEliminated() &&
+        !dynS.isFloatedToCache()) {
+      // LoopElimStoreS may not allocate the last elem.
+      // Especially if they are using the inner loop reduction result.
+      continue;
+    }
     if (!dynS.hasUnsteppedElem()) {
       // We don't have element for this used stream.
       DYN_S_DPRINTF(dynS.dynStreamId,
@@ -92,9 +98,18 @@ void StreamRegionController::dispatchStreamEnd(const EndArgs &args) {
   for (auto S : staticRegion.streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
 
-    // 1. Step one element.
-    if (!dynS.hasZeroTripCount()) {
-      // Streams with 0 TripCount will not allocate the last element.
+    /**
+     * 1. Step one element.
+     * Certain cases when we donot allocate the last elem, hence no stepping.
+     * a. Stream with zero trip count.
+     * b. LoopElimInCoreStoreCmpS.
+     */
+    if (dynS.hasZeroTripCount() || dynS.isLoopElimInCoreStoreCmpS()) {
+      if (dynS.hasUnsteppedElem()) {
+        S_ELEMENT_PANIC(dynS.getFirstUnsteppedElem(),
+                        "Should not allocate last elem.");
+      }
+    } else {
       dynS.stepElement(true /* isEnd */);
     }
 
@@ -176,8 +191,8 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
   for (auto S : staticRegion.streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
 
-    if (dynS.hasZeroTripCount()) {
-      // Streams with 0 TripCount does not have last element.
+    if (dynS.hasZeroTripCount() || dynS.isLoopElimInCoreStoreCmpS()) {
+      // Some streams do not have last element.
       continue;
     }
     auto endElement = dynS.tail->next;
@@ -297,8 +312,8 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
     this->se->removeIssuingDynS(&dynS);
 
     // Release in reverse order.
-    if (dynS.hasZeroTripCount()) {
-      // Streams with 0 TripCount does not have last element.
+    if (dynS.hasZeroTripCount() || dynS.isLoopElimInCoreStoreCmpS()) {
+      // Some streams do not have last element.
       continue;
     }
     /**
@@ -324,20 +339,21 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
     if (dynS.hasTotalTripCount()) {
       uint64_t endElemOffset =
           staticRegion.step.skipStepSecondLastElemStreams.count(S) ? 1 : 0;
-      if (dynS.hasZeroTripCount()) {
-        if (dynS.FIFOIdx.entryIdx + endElemOffset != 0) {
-          DYN_S_PANIC(
-              dynS.dynStreamId,
-              "ZeroTripCount should never allocate. NextElemIdx %llu + %llu.\n",
-              dynS.FIFOIdx.entryIdx, endElemOffset);
-        }
-      } else {
-        if (dynS.getTotalTripCount() + dynS.stepElemCount !=
-            dynS.FIFOIdx.entryIdx + endElemOffset) {
+      if (dynS.hasZeroTripCount() || dynS.isLoopElimInCoreStoreCmpS()) {
+        if (dynS.FIFOIdx.entryIdx + endElemOffset != dynS.getTotalTripCount()) {
           DYN_S_PANIC(
               dynS.dynStreamId,
               "Commit End with TripCount %llu != NextElemIdx %llu + %llu.\n",
               dynS.getTotalTripCount(), dynS.FIFOIdx.entryIdx, endElemOffset);
+        }
+      } else {
+        if (dynS.getTotalTripCount() + dynS.stepElemCount !=
+            dynS.FIFOIdx.entryIdx + endElemOffset) {
+          DYN_S_PANIC(dynS.dynStreamId,
+                      "Commit End with TripCount %llu + %ld != NextElemIdx "
+                      "%llu + %llu.\n",
+                      dynS.getTotalTripCount(), dynS.stepElemCount,
+                      dynS.FIFOIdx.entryIdx, endElemOffset);
         }
       }
     }

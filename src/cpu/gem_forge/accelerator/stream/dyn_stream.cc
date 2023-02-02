@@ -37,11 +37,11 @@ std::string to_string(const DynStream::StreamDepEdge::TypeE &type) {
 
 uint64_t DynStream::StreamDepEdge::getBaseElemIdx(uint64_t elemIdx) const {
   uint64_t ret = this->alignBaseElement;
-  if (this->baseElemReuseCnt != 0) {
-    ret += elemIdx / this->baseElemReuseCnt;
-  }
   if (this->baseElemSkipCnt != 0) {
+    assert(this->baseElemReuseCnt == 1);
     ret += (elemIdx + 1) * this->baseElemSkipCnt;
+  } else if (this->baseElemReuseCnt != 0) {
+    ret += elemIdx / this->baseElemReuseCnt;
   }
   return ret;
 }
@@ -1467,6 +1467,11 @@ DynStreamAddressRangePtr DynStream::getNextReceivedRange() const {
 void DynStream::popReceivedRange() {
   assert(!this->receivedRanges.empty() && "Pop when there is no range.");
   this->receivedRanges.pop_front();
+}
+
+bool DynStream::isLoopElimInCoreStoreCmpS() const {
+  return this->stream->isStoreComputeStream() &&
+         this->stream->isLoopEliminated() && !this->isFloatedToCache();
 }
 
 std::string DynStream::dumpString() const {

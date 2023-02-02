@@ -1,7 +1,7 @@
 microcode = '''
 
 def macroop VMOVAPS_XMM_XMM {
-    movfp128 dest=xmm0, src1=xmm0m, dataSize=16
+    vmov dest=xmm0, src=xmm0m, size=4, VL=16, mask=maskka
     vclear dest=xmm2, destVL=16
 };
 
@@ -26,7 +26,7 @@ def macroop VMOVAPS_P_XMM {
 };
 
 def macroop VMOVAPS_YMM_YMM {
-    movfp256 dest=xmm0, src1=xmm0m, dataSize=32
+    vmov dest=xmm0, src=xmm0m, size=4, VL=32, mask=maskka
     vclear dest=xmm4, destVL=32
 };
 
@@ -51,7 +51,7 @@ def macroop VMOVAPS_P_YMM {
 };
 
 def macroop VMOVAPS_ZMM_ZMM {
-    movfp512 dest=xmm0, src1=xmm0m, dataSize=64
+    vmov dest=xmm0, src=xmm0m, size=4, VL=64, mask=maskka
 };
 
 def macroop VMOVAPS_ZMM_M {

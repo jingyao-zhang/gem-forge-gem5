@@ -508,13 +508,13 @@ private:
    * List used to avoid scanning through all DynStreams' elements.
    * And helper function to manage this list.
    * NOTE: I don't really care about the order between DynS for now.
-   * 
+   *
    * A DynS is added to the list when:
    * 1. StreamConfig executed if not FloatedAsNDC.
    * 2. StreamConfig committed if FloatedAsNDC.
    * 3. New element allocated.
    * 4. Element flushed.
-   * 
+   *
    * A DynS is removed from the list when:
    * 1. StreamEnd committed.
    * 2. StreamConfig rewinded.
@@ -551,7 +551,8 @@ private:
    * Try to coalesce continuous element of direct mem stream if they
    * overlap.
    */
-  void coalesceContinuousDirectMemStreamElement(StreamElement *element);
+  bool shouldCoalesceContinuousDirectMemStreamElement(StreamElement *elem);
+  void coalesceContinuousDirectMemStreamElement(StreamElement *elem);
 };
 
 #endif

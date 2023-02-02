@@ -321,6 +321,8 @@ struct StreamElement {
   bool isElemFloatedAsNDCForward() const;
   bool isElemPseudoFloatedToCache() const;
 
+  bool isLoopElimInCoreStoreCmpElem() const;
+
   StreamMemAccess *
   allocateStreamMemAccess(const CacheBlockBreakdownAccess &cacheBlockBreakDown);
   void handlePacketResponse(StreamMemAccess *memAccess, PacketPtr pkt);

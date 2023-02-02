@@ -100,6 +100,8 @@ struct DynStream {
            this->getAdjustedFirstFloatElemIdx() <= elemIdx;
   }
 
+  bool isLoopElimInCoreStoreCmpS() const;
+
   void setFloatConfigDelayed(bool val) { this->floatConfigDelayed = val; }
   void setFloatedToCacheAsRoot(bool val) { this->floatedToCacheAsRoot = val; }
   void setFloatedToCache(bool val) { this->floatedToCache = val; }

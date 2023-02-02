@@ -1835,16 +1835,21 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
         }
       }
 
-      if (!tileSizeChosen && arraySizes.at(alignDims.at(0)) <= 128) {
-
-        /**
-         * Special rule when the inner dimension is very small. We heuristically
-         * pick 64 as the inner tile size as it helps confine the data move
-         * within two leaves of H-tree.
-         */
-        x = std::min(vBitlines, 64l);
-        y = vBitlines / x;
-        tileSizeChosen = true;
+      if (!tileSizeChosen) {
+          /**
+           * Special rule when the inner dimension is very small. We
+           * heuristically pick 64 as the inner tile size as it helps confine
+           * the data move within two leaves of H-tree.
+           */
+        if (arraySizes.at(alignDims.at(0)) <= 32) {
+          x = std::min(vBitlines, 32l);
+          y = vBitlines / x;
+          tileSizeChosen = true;
+        } else if (arraySizes.at(alignDims.at(0)) <= 128) {
+          x = std::min(vBitlines, 64l);
+          y = vBitlines / x;
+          tileSizeChosen = true;
+        }
       }
 
       if (!tileSizeChosen) {

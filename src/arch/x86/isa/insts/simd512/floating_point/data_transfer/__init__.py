@@ -69,7 +69,6 @@ categories = [
     "vpextrw",
     "vpextrd",
     "vextractps",
-    "vblendps",
     "vpermilps",
     "vpermilpd",
     "vpternlog",

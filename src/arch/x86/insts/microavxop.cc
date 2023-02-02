@@ -8,6 +8,17 @@
 
 #include "base/logging.hh"
 
+// static std::set<Addr> debugPCs = {
+//     0x40236e,
+// };
+
+// static bool isDebugInst(Addr pc) {
+//   if (debugPCs.empty()) {
+//     return true;
+//   }
+//   return debugPCs.count(pc);
+// }
+
 namespace X86ISA {
 std::string
 AVXOpBase::generateDisassembly(Addr pc,
@@ -607,8 +618,13 @@ void AVXOpBase::doMov(ExecContext *xc) const {
   } else {
     maskValue.ul = xc->readIntRegOperand(this, this->numSrcRegs() - 1);
   }
+
+  DPRINTF(X86AVX, ">> Exec %s\n", this->generateDisassembly(0x0, nullptr));
+  DPRINTF(X86AVX, "  Mask %#x\n", maskValue.ul);
+
   for (int i = 0; i < vSrcRegs; i++) {
     src.ul = xc->readFloatRegOperandBits(this, i);
+    DPRINTF(X86AVX, "   %d Src %#x\n", i, src.ul);
 
     // Move the value.
     dest.ul = src.ul;
@@ -617,6 +633,7 @@ void AVXOpBase::doMov(ExecContext *xc) const {
     if (this->mask != MASKREG_K0) {
       // We need to apply the mask.
       originalValue.ul = xc->readFloatRegOperandBits(this, vSrcRegs + i);
+      DPRINTF(X86AVX, "   %d Org %#x\n", i, originalValue.ul);
       if (this->srcSize == 4) {
         // 2 float.
         if (!((maskValue.ul >> (i * 2 + 0)) & 1)) {

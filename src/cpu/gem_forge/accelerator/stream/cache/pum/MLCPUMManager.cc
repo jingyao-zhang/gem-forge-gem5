@@ -455,9 +455,12 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
       }
       const int64_t tripCountThreshold = 2048;
       if (config->getTotalTripCount() <= tripCountThreshold) {
-        MLC_S_DPRINTF(groupDynId, "[NoPUM] TripCount %ld < Threshold %ld.\n",
-                      config->getTotalTripCount(), tripCountThreshold);
-        return false;
+        if (config->stream->getStreamName().find("furthestSample") !=
+            std::string::npos) {
+          MLC_S_DPRINTF(groupDynId, "[NoPUM] TripCount %ld < Threshold %ld.\n",
+                        config->getTotalTripCount(), tripCountThreshold);
+          return false;
+        }
       }
     } else {
       /**
@@ -513,10 +516,13 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
        */
       const int64_t dedupTotalTripThreshold = 2048;
       if (pattern.getDeduplicatedTotalTrip() < dedupTotalTripThreshold) {
-        MLC_S_DPRINTF(groupDynId, "[NoPUM] %s DedupTotalTrip %ld < %ld.\n",
-                      pattern, pattern.getDeduplicatedTotalTrip(),
-                      dedupTotalTripThreshold);
-        return false;
+        if (config->stream->getStreamName().find("furthestSample") !=
+            std::string::npos) {
+          MLC_S_DPRINTF(groupDynId, "[NoPUM] %s DedupTotalTrip %ld < %ld.\n",
+                        pattern, pattern.getDeduplicatedTotalTrip(),
+                        dedupTotalTripThreshold);
+          return false;
+        }
       }
     }
 

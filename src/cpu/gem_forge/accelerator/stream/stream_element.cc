@@ -268,6 +268,12 @@ bool StreamElement::isElemPseudoFloatedToCache() const {
   return this->dynS->isPseudoFloatedToCache() && this->isFloatElem();
 }
 
+bool StreamElement::isLoopElimInCoreStoreCmpElem() const {
+  return !this->isElemFloatedToCache() &&
+         this->stream->isStoreComputeStream() &&
+         this->stream->isLoopEliminated();
+}
+
 void StreamElement::clear() {
 
   this->addrBaseElements.clear();
@@ -541,17 +547,6 @@ void StreamElement::markAddrReady() {
                     this->size);
 
   this->splitIntoCacheBlocks();
-
-  /**
-   * ! AdHoc: Avoid getting the A[i] if B[A[i]] is offloaded.
-   * The current implementation assumes that we have to compute the address for
-   * B[A[i]], which requires we issue and get the data for A[i]. To avoid this,
-   * we direct make A[i] value ready here.
-   * So far this should only be used for Indirect AtomicComputeStream.
-   */
-  // if (this->dynS->coreSEOracleValueReady()) {
-  //   this->readOracleValueFromMem();
-  // }
 }
 
 void StreamElement::readOracleValueFromMem() {
