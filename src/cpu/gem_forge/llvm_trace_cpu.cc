@@ -89,8 +89,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   if (this->mainThread->getRegionStats() != nullptr) {
     // Add the dump handler to dump region stats at the end.
     Stats::registerDumpCallback(
-        new MakeCallback<RegionStats, &RegionStats::dump>(
-            this->mainThread->getRegionStats(), true));
+      [this]() -> void { this->mainThread->getRegionStats(); });
   }
   this->activateThread(mainThread);
 
@@ -147,7 +146,7 @@ void LLVMTraceCPU::tick() {
 
   if (this->cacheWarmer != nullptr) {
     // Disable all tracing output.
-    Debug::SimpleFlag::disableAll();
+    Debug::Flag::globalDisable();
     if (this->cacheWarmer->isDoneWithPreviousRequest()) {
       if (this->cacheWarmer->isDone()) {
         // We are done warming up.
@@ -178,7 +177,7 @@ void LLVMTraceCPU::tick() {
     // We want to synchronize all cpus here.
     if (this->system->getWorkItemsEnd() % this->totalActiveCPUs == 0) {
       // We should have been synchronized.
-      Debug::SimpleFlag::enableAll();
+      Debug::Flag::globalEnable();
       this->cpuStatus = CPUStatusE::EXECUTING;
       inform("Core %d start executing.\n", this->cpuId());
     } else {
@@ -363,7 +362,7 @@ PacketPtr LLVMTraceCPU::CacheWarmer::getNextWarmUpPacket() {
   //        (paddr >> 12) & 0x3);
   // }
   auto pkt = GemForgePacketHandler::createGemForgePacket(
-      paddr, size, this, nullptr, this->cpu->dataMasterId(), 0, pc);
+      paddr, size, this, nullptr, this->cpu->dataRequestorId(), 0, pc);
   return pkt;
 }
 
@@ -407,7 +406,7 @@ void LLVMTraceCPU::CPUPort::sendReq() {
          usedPorts < totalPorts && this->inflyNumPackets < 80) {
     PacketPtr pkt = this->blockedPacketPtrs.front();
     DPRINTF(LLVMTraceCPU, "Try sending pkt at %p\n", pkt);
-    bool success = MasterPort::sendTimingReq(pkt);
+    bool success = RequestPort::sendTimingReq(pkt);
     if (!success) {
       DPRINTF(LLVMTraceCPU, "%llu Blocked packet ptr %p\n",
               this->owner->curCycle(), pkt);
@@ -452,9 +451,6 @@ void LLVMTraceCPU::handleReplay(
   // Set the process and tc.
   this->process = p;
   this->thread_context = tc;
-
-  // Load the global symbols for global variables.
-  this->process->objFile->loadAllSymbols(&this->symbol_table);
 
   // Get the bottom of the stack.
   this->stackMin = tc->readIntReg(TheISA::StackPointerReg);
@@ -581,7 +577,8 @@ Addr LLVMTraceCPU::getVAddrFromBase(const std::string &base) {
   }
   // Try to look at the global symbol table of the process.
   Addr vaddr;
-  if (this->symbol_table.findAddress(base, vaddr)) {
+  assert(this->process);
+  if (this->process->objFile->symtab().findAddress(base, vaddr)) {
     return vaddr;
   }
   panic("Failed to look up base %s\n", base.c_str());

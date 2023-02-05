@@ -121,7 +121,7 @@ class LSQ
     /**
      * DcachePort class for the load/store queue.
      */
-    class DcachePort : public MasterPort
+    class DcachePort : public RequestPort
     {
       protected:
 
@@ -132,7 +132,7 @@ class LSQ
       public:
         /** Default constructor. */
         DcachePort(LSQ<Impl> *_lsq, FullO3CPU<Impl>* _cpu)
-            : MasterPort(_cpu->name() + ".dcache_port", _cpu), lsq(_lsq),
+            : RequestPort(_cpu->name() + ".dcache_port", _cpu), lsq(_lsq),
               cpu(_cpu)
         { }
 
@@ -447,7 +447,7 @@ class LSQ
             if (byte_enable.empty() ||
                 isAnyActiveElement(byte_enable.begin(), byte_enable.end())) {
                 auto request = std::make_shared<Request>(
-                        addr, size, _flags, _inst->masterId(),
+                        addr, size, _flags, _inst->requestorId(),
                         _inst->instAddr(), _inst->contextId(),
                         std::move(_amo_op));
                 if (!byte_enable.empty()) {
@@ -500,9 +500,9 @@ class LSQ
          */
         void
         setVirt(Addr vaddr, unsigned size, Request::Flags flags_,
-                MasterID mid, Addr pc)
+                RequestorID requestor_id, Addr pc)
         {
-            request()->setVirt(vaddr, size, flags_, mid, pc);
+            request()->setVirt(vaddr, size, flags_, requestor_id, pc);
         }
 
         void
@@ -736,6 +736,8 @@ class LSQ
         {
             flags.set(Flag::Complete);
         }
+
+        virtual std::string name() const { return "LSQRequest"; }
     };
 
     class SingleDataRequest : public LSQRequest
@@ -788,6 +790,35 @@ class LSQ
         virtual void buildPackets();
         virtual Cycles handleLocalAccess(ThreadContext *thread, PacketPtr pkt);
         virtual bool isCacheBlockHit(Addr blockAddr, Addr cacheBlockMask);
+        virtual std::string name() const { return "SingleDataRequest"; }
+    };
+
+    // hardware transactional memory
+    // This class extends SingleDataRequest for the sole purpose
+    // of encapsulating hardware transactional memory command requests
+    class HtmCmdRequest : public SingleDataRequest
+    {
+    protected:
+      /* Given that we are inside templates, children need explicit
+       * declaration of the names in the parent class. */
+      using Flag = typename LSQRequest::Flag;
+      using State = typename LSQRequest::State;
+      using LSQRequest::_addr;
+      using LSQRequest::_size;
+      using LSQRequest::_byteEnable;
+      using LSQRequest::_requests;
+      using LSQRequest::_inst;
+      using LSQRequest::_taskId;
+      using LSQRequest::flags;
+      using LSQRequest::setState;
+    public:
+      HtmCmdRequest(LSQUnit* port, const DynInstPtr& inst,
+                        const Request::Flags& flags_);
+      inline virtual ~HtmCmdRequest() {}
+      virtual void initiateTranslation();
+      virtual void finish(const Fault &fault, const RequestPtr &req,
+              ThreadContext* tc, BaseTLB::Mode mode);
+      virtual std::string name() const { return "HtmCmdRequest"; }
     };
 
     class SplitDataRequest : public LSQRequest
@@ -864,6 +895,7 @@ class LSQ
 
         virtual RequestPtr mainRequest();
         virtual PacketPtr mainPacket();
+        virtual std::string name() const { return "SplitDataRequest"; }
     };
 
     /** Constructs an LSQ with the given parameters. */
@@ -872,9 +904,6 @@ class LSQ
 
     /** Returns the name of the LSQ. */
     std::string name() const;
-
-    /** Registers statistics of each LSQ unit. */
-    void regStats();
 
     /** Sets the pointer to the list of active threads. */
     void setActiveThreads(std::list<ThreadID> *at_ptr);
@@ -981,6 +1010,44 @@ class LSQ
     int numStores();
     /** Returns the total number of stores for a single thread. */
     int numStores(ThreadID tid) { return thread.at(tid).numStores(); }
+
+
+    // hardware transactional memory
+
+    int numHtmStarts(ThreadID tid) const
+    {
+        if (tid == InvalidThreadID)
+            return 0;
+        else
+            return thread[tid].numHtmStarts();
+    }
+    int numHtmStops(ThreadID tid) const
+    {
+        if (tid == InvalidThreadID)
+            return 0;
+        else
+            return thread[tid].numHtmStops();
+    }
+
+    void resetHtmStartsStops(ThreadID tid)
+    {
+        if (tid != InvalidThreadID)
+            thread[tid].resetHtmStartsStops();
+    }
+
+    uint64_t getLatestHtmUid(ThreadID tid) const
+    {
+        if (tid == InvalidThreadID)
+            return 0;
+        else
+            return thread[tid].getLatestHtmUid();
+    }
+
+    void setLastRetiredHtmUid(ThreadID tid, uint64_t htmUid)
+    {
+        if (tid != InvalidThreadID)
+            thread[tid].setLastRetiredHtmUid(htmUid);
+    }
 
     /** Returns the number of free load entries. */
     unsigned numFreeLoadEntries();
@@ -1102,7 +1169,7 @@ class LSQ
     /** Another store port is in use */
     void cachePortBusy(bool is_load);
 
-    MasterPort &getDataPort() { return *dcachePort; }
+    RequestPort &getDataPort() { return *dcachePort; }
     std::shared_ptr<DcachePort> &getDataPortPtr() { return dcachePort; }
 
   protected:

@@ -181,7 +181,7 @@ void StreamNDCController::issueNDCPacket(StreamElement *element) {
   // Send all NDC packets in one message.
   Addr initPAddr = 0;
   auto pkt = GemForgePacketHandler::createStreamControlPacket(
-      initPAddr, this->se->cpuDelegator->dataMasterId(), 0,
+      initPAddr, this->se->cpuDelegator->dataRequestorId(), 0,
       MemCmd::Command::StreamNDCReq, reinterpret_cast<uint64_t>(NDCPacketVec));
   this->se->cpuDelegator->sendRequest(pkt);
 }

@@ -123,7 +123,7 @@ void StreamFloatController::floatStreams(
   // Dummy paddr to make ruby happy.
   Addr initPAddr = 0;
   auto pkt = GemForgePacketHandler::createStreamControlPacket(
-      initPAddr, this->se->cpuDelegator->dataMasterId(), 0,
+      initPAddr, this->se->cpuDelegator->dataRequestorId(), 0,
       MemCmd::Command::StreamConfigReq,
       reinterpret_cast<uint64_t>(cacheStreamConfigVec));
   if (hasOffloadStoreFunc || hasOffloadPointerChase ||

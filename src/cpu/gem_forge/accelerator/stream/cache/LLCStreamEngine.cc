@@ -2201,7 +2201,7 @@ LLCStreamEngine::RequestQueueIter LLCStreamEngine::enqueueRequest(
   auto cpuDelegator = S->getCPUDelegator();
   auto tc = cpuDelegator->getSingleThreadContext();
   RequestPtr req = std::make_shared<Request>(paddrLine, sliceId.getSize(), 0,
-                                             cpuDelegator->dataMasterId());
+                                             cpuDelegator->dataRequestorId());
   // Set the vaddrLine as this is what we want to translate.
   req->setVirt(vaddrLine);
   // Simply always read request, since this is a fake request.
@@ -4378,14 +4378,14 @@ LLCStreamEngine::createAtomicPacket(Addr vaddr, Addr paddr, int size,
   /**
    * Create the packet.
    */
-  MasterID masterId = 0;
+  RequestorID requestorId = 0;
   Addr pc = 0;
   int contextId = 0;
 
   Request::Flags flags;
   flags.set(Request::ATOMIC_RETURN_OP);
-  RequestPtr req = std::make_shared<Request>(vaddr, size, flags, masterId, pc,
-                                             contextId, std::move(atomicOp));
+  RequestPtr req = std::make_shared<Request>(
+      vaddr, size, flags, requestorId, pc, contextId, std::move(atomicOp));
   req->setPaddr(paddr);
   PacketPtr pkt = Packet::createWrite(req);
   // Fake some data.

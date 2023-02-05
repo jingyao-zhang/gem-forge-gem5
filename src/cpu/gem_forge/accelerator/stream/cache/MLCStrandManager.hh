@@ -15,13 +15,13 @@ public:
   /**
    * Receive a StreamConfig message and configure all streams.
    */
-  void receiveStreamConfigure(ConfigVec *configs, MasterID masterId);
+  void receiveStreamConfigure(ConfigVec *configs, RequestorID requestorId);
 
   /**
    * Receive a StreamEnd message and end all streams.
    */
   void receiveStreamEnd(const std::vector<DynStreamId> &endIds,
-                        MasterID masterId);
+                        RequestorID requestorId);
 
   /**
    * Function called to check CoreCommitProgress for RangeSync.
@@ -128,12 +128,13 @@ private:
    * In case the first element's virtual address faulted, the MLC StreamEngine
    * will return physical address that maps to the LLC bank of this tile.
    */
-  void configureStream(ConfigPtr configs, MasterID masterId);
+  void configureStream(ConfigPtr configs, RequestorID requestorId);
 
   /**
    * Send configure message to remote SE.
    */
-  void sendConfigToRemoteSE(ConfigPtr streamConfigureData, MasterID masterId);
+  void sendConfigToRemoteSE(ConfigPtr streamConfigureData,
+                            RequestorID requestorId);
   /**
    * Mark a PUMRegion cached when a stream accessed the entire region.
    */
@@ -146,7 +147,7 @@ private:
    * has the flow control information and knows where the stream is.
    * It will terminate the stream and send a EndPacket to the LLC bank.
    */
-  void endStream(const DynStreamId &endId, MasterID masterId);
+  void endStream(const DynStreamId &endId, RequestorID requestorId);
 };
 
 #endif

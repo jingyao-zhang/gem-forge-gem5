@@ -80,7 +80,7 @@ void IdealPrefetcher::tick() {
       panic("Failed translate vaddr %#x.\n", vaddr);
     }
     auto pkt = GemForgePacketHandler::createGemForgePacket(
-        paddr, size, this, nullptr, this->cpuDelegator->dataMasterId(), 0, pc);
+        paddr, size, this, nullptr, this->cpuDelegator->dataRequestorId(), 0, pc);
 
     this->cpuDelegator->sendRequest(pkt);
 

@@ -796,7 +796,7 @@ bool StreamAwareCache::recvTimingReq(PacketPtr pkt) {
         // copy the request and create a new SoftPFReq packet
         RequestPtr req =
             new Request(pkt->req->getPaddr(), pkt->req->getSize(),
-                        pkt->req->getFlags(), pkt->req->masterId());
+                        pkt->req->getFlags(), pkt->req->requestorId());
         pf = new Packet(req, pkt->cmd);
         pf->allocate();
         assert(pf->getAddr() == pkt->getAddr());
@@ -831,8 +831,8 @@ bool StreamAwareCache::recvTimingReq(PacketPtr pkt) {
         } else {
           DPRINTF(Cache, "%s coalescing MSHR for %s\n", __func__, pkt->print());
 
-          assert(pkt->req->masterId() < system->maxMasters());
-          mshr_hits[pkt->cmdToIndex()][pkt->req->masterId()]++;
+          assert(pkt->req->requestorId() < system->maxMasters());
+          mshr_hits[pkt->cmdToIndex()][pkt->req->requestorId()]++;
           // We use forward_time here because it is the same
           // considering new targets. We have multiple
           // requests for the same address here. It
@@ -866,11 +866,11 @@ bool StreamAwareCache::recvTimingReq(PacketPtr pkt) {
       }
     } else {
       // no MSHR
-      assert(pkt->req->masterId() < system->maxMasters());
+      assert(pkt->req->requestorId() < system->maxMasters());
       if (pkt->req->isUncacheable()) {
-        mshr_uncacheable[pkt->cmdToIndex()][pkt->req->masterId()]++;
+        mshr_uncacheable[pkt->cmdToIndex()][pkt->req->requestorId()]++;
       } else {
-        mshr_misses[pkt->cmdToIndex()][pkt->req->masterId()]++;
+        mshr_misses[pkt->cmdToIndex()][pkt->req->requestorId()]++;
       }
 
       if (pkt->isEviction() || (pkt->req->isUncacheable() && pkt->isWrite())) {
@@ -1272,11 +1272,11 @@ void StreamAwareCache::recvTimingResp(PacketPtr pkt) {
   Tick miss_latency = curTick() - initial_tgt->recvTime;
 
   if (pkt->req->isUncacheable()) {
-    assert(pkt->req->masterId() < system->maxMasters());
-    mshr_uncacheable_lat[stats_cmd_idx][pkt->req->masterId()] += miss_latency;
+    assert(pkt->req->requestorId() < system->maxMasters());
+    mshr_uncacheable_lat[stats_cmd_idx][pkt->req->requestorId()] += miss_latency;
   } else {
-    assert(pkt->req->masterId() < system->maxMasters());
-    mshr_miss_latency[stats_cmd_idx][pkt->req->masterId()] += miss_latency;
+    assert(pkt->req->requestorId() < system->maxMasters());
+    mshr_miss_latency[stats_cmd_idx][pkt->req->requestorId()] += miss_latency;
   }
 
   bool wasFull = mshrQueue.isFull();
@@ -1381,8 +1381,8 @@ void StreamAwareCache::recvTimingResp(PacketPtr pkt) {
 
         assert(!tgt_pkt->req->isUncacheable());
 
-        assert(tgt_pkt->req->masterId() < system->maxMasters());
-        missLatency[tgt_pkt->cmdToIndex()][tgt_pkt->req->masterId()] +=
+        assert(tgt_pkt->req->requestorId() < system->maxMasters());
+        missLatency[tgt_pkt->cmdToIndex()][tgt_pkt->req->requestorId()] +=
             completion_time - target.recvTime;
       } else if (pkt->cmd == MemCmd::UpgradeFailResp) {
         // failed StoreCond upgrade
@@ -2280,8 +2280,8 @@ QueueEntry *StreamAwareCache::getNextQueueEntry() {
           !writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
         // Update statistic on number of prefetches issued
         // (hwpf_mshr_misses)
-        assert(pkt->req->masterId() < system->maxMasters());
-        mshr_misses[pkt->cmdToIndex()][pkt->req->masterId()]++;
+        assert(pkt->req->requestorId() < system->maxMasters());
+        mshr_misses[pkt->cmdToIndex()][pkt->req->requestorId()]++;
 
         // allocate an MSHR and return it, note
         // that we send the packet straight away, so do not
@@ -2646,19 +2646,19 @@ Stream *StreamAwareCache::getStreamFromPacket(PacketPtr pkt) const {
 }
 
 void StreamAwareCache::incCoalescedStreamMissCount(PacketPtr pkt) {
-  assert(pkt->req->masterId() < system->maxMasters());
+  assert(pkt->req->requestorId() < system->maxMasters());
   if (this->getStreamFromPacket(pkt) == nullptr) {
     return;
   }
-  this->coalescedStreamMisses[pkt->cmdToIndex()][pkt->req->masterId()]++;
+  this->coalescedStreamMisses[pkt->cmdToIndex()][pkt->req->requestorId()]++;
 }
 
 void StreamAwareCache::incCoalescedStreamHitCount(PacketPtr pkt) {
-  assert(pkt->req->masterId() < system->maxMasters());
+  assert(pkt->req->requestorId() < system->maxMasters());
   if (this->getStreamFromPacket(pkt) == nullptr) {
     return;
   }
-  this->coalescedStreamHits[pkt->cmdToIndex()][pkt->req->masterId()]++;
+  this->coalescedStreamHits[pkt->cmdToIndex()][pkt->req->requestorId()]++;
 }
 
 bool StreamAwareCache::shouldUseStreamAwareReplacementPolicy(MSHR *mshr) {
@@ -2993,7 +2993,7 @@ bool StreamAwareCache::recvTimingReqForStream(PacketPtr pkt) {
         // copy the request and create a new SoftPFReq packet
         RequestPtr req =
             new Request(pkt->req->getPaddr(), pkt->req->getSize(),
-                        pkt->req->getFlags(), pkt->req->masterId());
+                        pkt->req->getFlags(), pkt->req->requestorId());
         pf = new Packet(req, pkt->cmd);
         pf->allocate();
         assert(pf->getAddr() == pkt->getAddr());
@@ -3028,8 +3028,8 @@ bool StreamAwareCache::recvTimingReqForStream(PacketPtr pkt) {
         } else {
           DPRINTF(Cache, "%s coalescing MSHR for %s\n", __func__, pkt->print());
 
-          assert(pkt->req->masterId() < system->maxMasters());
-          mshr_hits[pkt->cmdToIndex()][pkt->req->masterId()]++;
+          assert(pkt->req->requestorId() < system->maxMasters());
+          mshr_hits[pkt->cmdToIndex()][pkt->req->requestorId()]++;
           // We use forward_time here because it is the same
           // considering new targets. We have multiple
           // requests for the same address here. It
@@ -3063,11 +3063,11 @@ bool StreamAwareCache::recvTimingReqForStream(PacketPtr pkt) {
       }
     } else {
       // no MSHR
-      assert(pkt->req->masterId() < system->maxMasters());
+      assert(pkt->req->requestorId() < system->maxMasters());
       if (pkt->req->isUncacheable()) {
-        mshr_uncacheable[pkt->cmdToIndex()][pkt->req->masterId()]++;
+        mshr_uncacheable[pkt->cmdToIndex()][pkt->req->requestorId()]++;
       } else {
-        mshr_misses[pkt->cmdToIndex()][pkt->req->masterId()]++;
+        mshr_misses[pkt->cmdToIndex()][pkt->req->requestorId()]++;
       }
 
       if (pkt->isEviction() || (pkt->req->isUncacheable() && pkt->isWrite())) {

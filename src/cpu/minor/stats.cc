@@ -96,11 +96,9 @@ MinorStats::regStats(const std::string &name, BaseCPU &baseCpu)
     this->loadBlockedDir = simout.createSubdirectory("loadBlocked");
 
     Stats::registerDumpCallback(
-        new MakeCallback<MinorStats, &MinorStats::dumpLoadBlockedStat>(
-            this, true));
+        [this]() -> void { this->dumpLoadBlockedStat(); });
     Stats::registerResetCallback(
-        new MakeCallback<MinorStats, &MinorStats::resetLoadBlockedStat>(
-            this, true));
+        [this]() -> void { this->resetLoadBlockedStat(); });
 
     numFetch2Branches
         .name(name + ".fetch2.branches")

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2013, 2017 ARM Limited
+ * Copyright (c) 2011-2013, 2017, 2020 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -51,10 +51,9 @@
 #include "arch/null/cpu_dummy.hh"
 #else
 #include "arch/generic/interrupts.hh"
-#include "arch/isa_traits.hh"
-#include "arch/microcode_rom.hh"
 #include "base/statistics.hh"
 #include "cpu/function_tracer.hh"
+#include "mem/port_proxy.hh"
 #include "sim/clocked_object.hh"
 #include "sim/eventq.hh"
 #include "sim/full_system.hh"
@@ -134,10 +133,10 @@ class BaseCPU : public ClockedObject
     const uint32_t _socketId;
 
     /** instruction side request id that must be placed in all requests */
-    MasterID _instMasterId;
+    RequestorID _instRequestorId;
 
     /** data side request id that must be placed in all requests */
-    MasterID _dataMasterId;
+    RequestorID _dataRequestorId;
 
     /** An intrenal representation of a task identifier within gem5. This is
      * used so the CPU can add which taskId (which is an internal representation
@@ -172,7 +171,7 @@ class BaseCPU : public ClockedObject
     virtual PortProxy::SendFunctionalFunc
     getSendFunctional()
     {
-        auto port = dynamic_cast<MasterPort *>(&getDataPort());
+        auto port = dynamic_cast<RequestPort *>(&getDataPort());
         assert(port);
         return [port](PacketPtr pkt)->void { port->sendFunctional(pkt); };
     }
@@ -195,9 +194,9 @@ class BaseCPU : public ClockedObject
     uint32_t socketId() const { return _socketId; }
 
     /** Reads this CPU's unique data requestor ID */
-    MasterID dataMasterId() const { return _dataMasterId; }
+    RequestorID dataRequestorId() const { return _dataRequestorId; }
     /** Reads this CPU's unique instruction requestor ID */
-    MasterID instMasterId() const { return _instMasterId; }
+    RequestorID instRequestorId() const { return _instRequestorId; }
 
     /**
      * Get a port on this CPU. All CPUs have a data and
@@ -238,8 +237,6 @@ class BaseCPU : public ClockedObject
      */
     virtual bool shouldCheckDeadlock() const;
 
-    TheISA::MicrocodeRom microcodeRom;
-
   protected:
     std::vector<BaseInterrupts*> interrupts;
 
@@ -257,12 +254,7 @@ class BaseCPU : public ClockedObject
     virtual void wakeup(ThreadID tid) = 0;
 
     void
-    postInterrupt(ThreadID tid, int int_num, int index)
-    {
-        interrupts[tid]->post(int_num, index);
-        if (FullSystem)
-            wakeup(tid);
-    }
+    postInterrupt(ThreadID tid, int int_num, int index);
 
     void
     clearInterrupt(ThreadID tid, int int_num, int index)
@@ -277,13 +269,10 @@ class BaseCPU : public ClockedObject
     }
 
     bool
-    checkInterrupts(ThreadContext *tc) const
+    checkInterrupts(ThreadID tid) const
     {
-        return FullSystem && interrupts[tc->threadId()]->checkInterrupts(tc);
+        return FullSystem && interrupts[tid]->checkInterrupts();
     }
-
-    void processProfileEvent();
-    EventFunctionWrapper * profileEvent;
 
   protected:
     std::vector<ThreadContext *> threadContexts;

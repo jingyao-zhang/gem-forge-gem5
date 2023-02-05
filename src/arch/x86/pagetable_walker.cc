@@ -521,7 +521,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
         Request::Flags flags = oldRead->req->getFlags();
         flags.set(Request::UNCACHEABLE, uncacheable);
         RequestPtr request = std::make_shared<Request>(
-            nextRead, oldRead->getSize(), flags, walker->masterId);
+            nextRead, oldRead->getSize(), flags, walker->requestorId);
         read = new Packet(request, MemCmd::ReadReq);
         read->allocate();
         // If we need to write, adjust the read packet to write the modified
@@ -590,7 +590,7 @@ Walker::WalkerState::setupWalk(Addr vaddr)
         flags.set(Request::UNCACHEABLE);
 
     RequestPtr request = std::make_shared<Request>(
-        topAddr, dataSize, flags, walker->masterId);
+        topAddr, dataSize, flags, walker->requestorId);
 
     read = new Packet(request, MemCmd::ReadReq);
     read->allocate();

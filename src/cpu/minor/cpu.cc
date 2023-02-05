@@ -172,10 +172,8 @@ MinorCPU::startup()
 
     BaseCPU::startup();
 
-    for (ThreadID tid = 0; tid < numThreads; tid++) {
-        threads[tid]->startup();
+    for (ThreadID tid = 0; tid < numThreads; tid++)
         pipeline->wakeupFetch(tid);
-    }
 
     /**
      * ! GemForge

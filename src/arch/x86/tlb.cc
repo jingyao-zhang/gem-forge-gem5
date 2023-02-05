@@ -60,13 +60,11 @@
 namespace X86ISA {
 
 TLB::TLB(const Params *p)
-    : BaseTLB(p), configAddress(0),
-    size(p->size), assoc(p->assoc),
-    l2size(p->l2size), l2assoc(p->l2assoc), l2HitLatency(p->l2_lat),
+    : BaseTLB(p), configAddress(0), size(p->size),
+    assoc(p->assoc), l2size(p->l2size), l2assoc(p->l2assoc), l2HitLatency(p->l2_lat),
     walkerSELatency(p->walker_se_lat), walkerSEPort(p->walker_se_port),
-    timingSE(p->timing_se),
-    tlbCache(p->size, 0),
-    m5opRange(p->system->m5opRange())
+    timingSE(p->timing_se), tlbCache(p->size, 0),
+    tlb(size), lruSeq(0), m5opRange(p->system->m5opRange()), stats(this)
 {
     if (!size)
         fatal("TLBs must have a non-zero size.\n");
@@ -130,8 +128,8 @@ TLB::lookupL1(Addr va, bool isLastLevel, bool updateStats,
         entry = this->tlbCache.lookup(va, updateLRU);
     }
     if (updateStats) {
-        this->l1Accesses++;
-        if (!entry) this->l1Misses++;
+        stats.l1Accesses++;
+        if (!entry) stats.l1Misses++;
     }
     return entry;
 }
@@ -143,8 +141,8 @@ TLB::lookupL2(Addr va, bool isLastLevel, bool updateStats,
     if (this->l2tlb) {
         entry = this->l1tlb->lookup(va, updateLRU);
         if (updateStats) {
-            this->l2Accesses++;
-            if (!entry) this->l2Misses++;
+            stats.l2Accesses++;
+            if (!entry) stats.l2Misses++;
         }
     }
     return entry;
@@ -328,7 +326,7 @@ TLB::finalizePhysical(const RequestPtr &req,
             [func, mode](ThreadContext *tc, PacketPtr pkt) -> Cycles
             {
                 uint64_t ret;
-                PseudoInst::pseudoInst<X86PseudoInstABI>(tc, func, ret);
+                PseudoInst::pseudoInst<X86PseudoInstABI, true>(tc, func, ret);
                 if (mode == Read)
                     pkt->setLE(ret);
                 return Cycles(1);
@@ -437,15 +435,21 @@ TLB::translate(const RequestPtr &req,
             TlbEntry *entry = lookup(vaddr, isLastLevel,
                 updateStats, true /* UpdateLRU */, hitLevel);
             if (updateStats) {
-                if (mode == Read) rdAccesses++;
-                else wrAccesses++;
+                if (mode == Read) {
+                    stats.rdAccesses++;
+                } else {
+                    stats.wrAccesses++;
+                }
             }
             if (!entry) {
                 DPRINTF(TLB, "Handling a TLB miss for address %#x at pc %#x.\n",
                         vaddr, tc->instAddr());
                 if (updateStats) {
-                    if (mode == Read) rdMisses++;
-                    else wrMisses++;
+                    if (mode == Read) {
+                        stats.rdMisses++;
+                    } else {
+                        stats.wrMisses++;
+                    }
                 }
                 if (FullSystem) {
                     Fault fault = walker->start(tc, translation, req, mode);
@@ -617,43 +621,17 @@ TLB::getWalker()
     return walker;
 }
 
-void
-TLB::regStats()
+TLB::TlbStats::TlbStats(Stats::Group *parent)
+  : Stats::Group(parent),
+    ADD_STAT(rdAccesses, "TLB accesses on read requests"),
+    ADD_STAT(wrAccesses, "TLB accesses on write requests"),
+    ADD_STAT(rdMisses, "TLB misses on read requests"),
+    ADD_STAT(wrMisses, "TLB misses on write requests"),
+    ADD_STAT(l1Accesses, "TLB L1 accesses"),
+    ADD_STAT(l1Misses, "TLB L1 misses"),
+    ADD_STAT(l2Accesses, "TLB L2 accesses"),
+    ADD_STAT(l2Misses, "TLB L2 misses")
 {
-    using namespace Stats;
-    BaseTLB::regStats();
-    rdAccesses
-        .name(name() + ".rdAccesses")
-        .desc("TLB accesses on read requests");
-
-    wrAccesses
-        .name(name() + ".wrAccesses")
-        .desc("TLB accesses on write requests");
-
-    rdMisses
-        .name(name() + ".rdMisses")
-        .desc("TLB misses on read requests");
-
-    wrMisses
-        .name(name() + ".wrMisses")
-        .desc("TLB misses on write requests");
-
-    l1Accesses
-        .name(name() + ".l1Accesses")
-        .desc("L1 TLB accesses");
-    l1Misses
-        .name(name() + ".l1Misses")
-        .desc("L1 TLB misses");
-    l2Accesses
-        .name(name() + ".l2Accesses")
-        .desc("L2 TLB accesses");
-    l2Misses
-        .name(name() + ".l2Misses")
-        .desc("L2 TLB misses");
-
-    if (this->sePageWalker) {
-        this->sePageWalker->regStats();
-    }
 }
 
 void

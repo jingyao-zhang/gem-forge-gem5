@@ -52,7 +52,7 @@ DRAMsim3::DRAMsim3(const Params* p) :
                       this, 0, std::placeholders::_1)),
     write_cb(std::bind(&DRAMsim3::writeComplete,
                        this, 0, std::placeholders::_1)),
-    wrapper(p->config_file, p->file_path, name(), read_cb, write_cb,
+    wrapper(p->configFile, p->filePath, name(), read_cb, write_cb,
             p->interleaveBitsLow, p->interleaveBitsHigh),
     retryReq(false), retryResp(false), startTick(0),
     nbrOutstandingReads(0), nbrOutstandingWrites(0),
@@ -65,9 +65,8 @@ DRAMsim3::DRAMsim3(const Params* p) :
 
     // Register a callback to compensate for the destructor not
     // being called. The callback prints the DRAMsim3 stats.
-    Callback* cb = new MakeCallback<DRAMsim3Wrapper,
-        &DRAMsim3Wrapper::printStats>(wrapper);
-    Stats::registerDumpCallback(cb);
+    Stats::registerDumpCallback(
+        [this]() -> void { this->wrapper.printStats(); });
 }
 
 void
@@ -265,7 +264,7 @@ DRAMsim3::accessAndRespond(PacketPtr pkt)
     // response
     access(pkt);
 
-    // turn packet around to go back to requester if response expected
+    // turn packet around to go back to requestor if response expected
     if (needsResponse) {
         // access already turned the packet into a response
         assert(pkt->isResponse());
@@ -344,7 +343,7 @@ Port&
 DRAMsim3::getPort(const std::string &if_name, PortID idx)
 {
     if (if_name != "port") {
-        return AbstractMemory::getPort(if_name, idx);
+        return ClockedObject::getPort(if_name, idx);
     } else {
         return port;
     }
@@ -360,7 +359,7 @@ DRAMsim3::drain()
 
 DRAMsim3::MemoryPort::MemoryPort(const std::string& _name,
                                  DRAMsim3& _memory)
-    : SlavePort(_name, &_memory), memory(_memory)
+    : ResponsePort(_name, &_memory), memory(_memory)
 { }
 
 AddrRangeList

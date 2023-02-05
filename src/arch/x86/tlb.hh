@@ -122,17 +122,27 @@ namespace X86ISA
         std::unique_ptr<TLBCache> l2tlb;
         std::unique_ptr<SEPageWalker> sePageWalker;
 
+        std::vector<TlbEntry> tlb;
+
+        EntryList freeList;
+
+        TlbEntryTrie trie;
+        uint64_t lruSeq;
+
         AddrRange m5opRange;
 
-        // Statistics
-        Stats::Scalar rdAccesses;
-        Stats::Scalar wrAccesses;
-        Stats::Scalar rdMisses;
-        Stats::Scalar wrMisses;
-        Stats::Scalar l1Accesses;
-        Stats::Scalar l1Misses;
-        Stats::Scalar l2Accesses;
-        Stats::Scalar l2Misses;
+        struct TlbStats : public Stats::Group {
+            TlbStats(Stats::Group *parent);
+
+            Stats::Scalar rdAccesses;
+            Stats::Scalar wrAccesses;
+            Stats::Scalar rdMisses;
+            Stats::Scalar wrMisses;
+            Stats::Scalar l1Accesses;
+            Stats::Scalar l1Misses;
+            Stats::Scalar l2Accesses;
+            Stats::Scalar l2Misses;
+        } stats;
 
         Fault translateInt(bool read, RequestPtr req, ThreadContext *tc);
 
@@ -184,11 +194,6 @@ namespace X86ISA
 
         TlbEntry *insert(Addr vpn, const TlbEntry &entry,
             bool isLastLevel);
-
-        /*
-         * Function to register Stats
-         */
-        void regStats() override;
 
         // Checkpointing
         void serialize(CheckpointOut &cp) const override;

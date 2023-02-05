@@ -64,8 +64,7 @@ GemForgeIdeaInorderCPU::GemForgeIdeaInorderCPU(int _cpuId, int _issueWidth,
     : cpuId(_cpuId), issueWidth(_issueWidth), modelFUTiming(_modelFUTiming),
       modelLDTiming(_modelLDTiming), updateMask(numRegs, 0) {
   Stats::registerResetCallback(
-      new MakeCallback<GemForgeIdeaInorderCPU,
-                       &GemForgeIdeaInorderCPU::resetCallback>(this, true));
+    [this]() -> void { this->resetCallback(); });
 }
 
 void GemForgeIdeaInorderCPU::nextCycle() {

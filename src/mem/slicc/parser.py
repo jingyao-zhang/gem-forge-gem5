@@ -120,6 +120,7 @@ class SLICC(Grammar):
         'void' : 'VOID',
         'new' : 'NEW',
         'OOD' : 'OOD',
+        'defer_enqueueing' : 'DEFER_ENQUEUEING',
     }
 
     literals = ':[]{}(),='
@@ -586,6 +587,10 @@ class SLICC(Grammar):
     def p_statement__enqueue_latency_condition(self, p):
         "statement : ENQUEUE '(' var ',' type ',' expr ',' var ')' statements"
         p[0] = ast.EnqueueStatementAST(self, p[3], p[5], p[7], p[9], p[11])
+
+    def p_statement__defer_enqueueing(self, p):
+        "statement : DEFER_ENQUEUEING '(' var ',' type ')' statements"
+        p[0] = ast.DeferEnqueueingStatementAST(self, p[3], p[5], p[7])
 
     def p_statement__stall_and_wait(self, p):
         "statement : STALL_AND_WAIT '(' var ',' var ')' SEMI"

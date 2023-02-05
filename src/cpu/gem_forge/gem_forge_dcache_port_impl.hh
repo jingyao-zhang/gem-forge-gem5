@@ -13,7 +13,7 @@ namespace GemForge {
  */
 class GemForgeDcachePortImpl {
 public:
-  GemForgeDcachePortImpl(BaseCPU *_cpu, MasterPort *_port)
+  GemForgeDcachePortImpl(BaseCPU *_cpu, RequestPort*_port)
       : cpu(_cpu), port(_port), blocked(false), curCycle(0), numUsedPorts(0),
         drainEvent([this]() -> void { this->drain(); }, name()) {}
 
@@ -25,7 +25,7 @@ public:
 
 protected:
   BaseCPU *cpu;
-  MasterPort *port;
+  RequestPort *port;
 
   const int numPorts = 2;
   std::list<std::pair<PacketPtr, bool>> blockedQueue;

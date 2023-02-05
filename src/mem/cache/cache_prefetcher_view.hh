@@ -21,6 +21,7 @@ public:
   virtual bool coalesce() const = 0;
   virtual ProbeManager *getCacheProbeManager() = 0;
   virtual ThreadContext *getThreadContext(ContextID contextId) = 0;
+  virtual System *getSystem() = 0;
 };
 
 #endif

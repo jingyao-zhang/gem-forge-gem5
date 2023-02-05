@@ -418,14 +418,14 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
     this->loadStartCycle = cpu->curCycle();
     for (const auto &packet : this->packets) {
       auto pkt = GemForgePacketHandler::createGemForgePacket(
-          packet.paddr, packet.size, this, packet.data, cpu->dataMasterId(), 0,
+          packet.paddr, packet.size, this, packet.data, cpu->dataRequestorId(), 0,
           this->TDG.pc());
       // We want to set up the virtual address.
       // ! This currently does not work, as ADFA does not has a thread
       // ! associated with it. I need to improve the design.
       // auto thread = cpu->getInflyInstThread(this->TDG.id());
       // asid = thread->getThreadId();
-      pkt->req->setVirt(packet.vaddr, packet.size, 0, cpu->dataMasterId(),
+      pkt->req->setVirt(packet.vaddr, packet.size, 0, cpu->dataRequestorId(),
                         this->TDG.pc());
       // ! setVirt will clear the physical address.
       pkt->req->setPaddr(packet.paddr);
@@ -523,7 +523,7 @@ void LLVMDynamicInstMem::writeback(LLVMTraceCPU *cpu) {
               *(double *)(packet.data), this->getId(), packet.paddr);
     }
     auto pkt = GemForgePacketHandler::createGemForgePacket(
-        packet.paddr, packet.size, this, packet.data, cpu->dataMasterId(), 0,
+        packet.paddr, packet.size, this, packet.data, cpu->dataRequestorId(), 0,
         this->TDG.pc());
     cpu->sendRequest(pkt);
   }

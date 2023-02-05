@@ -22,12 +22,9 @@ void FunctionTracer::enableFunctionAccumulateTick() {
 
   // Register stats callback.
   Stats::registerResetCallback(
-      new MakeCallback<FunctionTracer,
-                       &FunctionTracer::resetFuncAccumulateTick>(
-          this, true /* auto delete */));
+    [this]() -> void { this->resetFuncAccumulateTick(); });
   Stats::registerDumpCallback(
-      new MakeCallback<FunctionTracer, &FunctionTracer::dumpFuncAccumulateTick>(
-          this, true /* auto delete */));
+    [this]() -> void { this->dumpFuncAccumulateTick(); });
 }
 
 void FunctionTracer::traceFunctions(Addr pc) {
@@ -35,15 +32,12 @@ void FunctionTracer::traceFunctions(Addr pc) {
   if (!this->functionTracingEnabled && !this->functionAccumulateTickEnabled)
     return;
 
-  if (!Loader::debugSymbolTable)
-    return;
-
   // if pc enters different function, print new function symbol and
   // update saved range.  Otherwise do nothing.
   if (pc < this->currentFunctionStart || pc >= this->currentFunctionEnd) {
     std::string sym_str;
     auto oldFunctionStart = this->currentFunctionStart;
-    bool found = Loader::debugSymbolTable->findNearestSymbol(
+    bool found = Loader::debugSymbolTable.findNearestSymbol(
         pc, sym_str, this->currentFunctionStart, this->currentFunctionEnd);
 
     if (!found) {
@@ -58,7 +52,7 @@ void FunctionTracer::traceFunctions(Addr pc) {
     if (this->functionTracingEnabled) {
       std::string oldFuncName;
       Addr oldFuncLhs, oldFuncRhs;
-      bool found = Loader::debugSymbolTable->findNearestSymbol(
+      bool found = Loader::debugSymbolTable.findNearestSymbol(
           oldFunctionStart, oldFuncName, oldFuncLhs, oldFuncRhs);
       if (!found) {
         oldFuncName = csprintf("0x%x", oldFunctionStart);
@@ -101,10 +95,6 @@ void FunctionTracer::resetFuncAccumulateTick() {
 }
 
 void FunctionTracer::dumpFuncAccumulateTick() {
-
-  if (!Loader::debugSymbolTable) {
-    return;
-  }
 
   /**
    * Make sure we record the current accumulated ticks.
@@ -152,7 +142,7 @@ void FunctionTracer::dumpFuncAccumulateTick() {
     auto tick = pcTick.second.ticks;
     auto microOps = pcTick.second.microOps;
     std::string symbol;
-    if (!Loader::debugSymbolTable->findSymbol(pc, symbol)) {
+    if (!Loader::debugSymbolTable.findSymbol(pc, symbol)) {
       symbol = csprintf("0x%x", pc);
     }
     float percentage =

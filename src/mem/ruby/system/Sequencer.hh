@@ -101,7 +101,7 @@ class Sequencer : public RubyPort, public CachePrefetcherView
                         DataBlock& data);
 
     // Public Methods
-    void wakeup(); // Used only for deadlock detection
+    virtual void wakeup(); // Used only for deadlock detection
     void resetStats() override;
     void collateStats();
     void regStats() override;
@@ -123,9 +123,10 @@ class Sequencer : public RubyPort, public CachePrefetcherView
                       const Cycles firstResponseTime = Cycles(0));
 
     RequestStatus makeRequest(PacketPtr pkt) override;
-    bool empty() const;
+    virtual bool empty() const;
     int outstandingCount() const override {
-        return m_outstanding_data_count + m_outstanding_inst_count; }
+        return m_outstanding_data_count + m_outstanding_inst_count;
+    }
 
     bool isDeadlockEventScheduled() const override
     { return deadlockCheckEvent.scheduled(); }
@@ -133,8 +134,7 @@ class Sequencer : public RubyPort, public CachePrefetcherView
     void descheduleDeadlockEvent() override
     { deschedule(deadlockCheckEvent); }
 
-    void print(std::ostream& out) const;
-    void checkCoherence(Addr address);
+    virtual void print(std::ostream& out) const;
 
     void markRemoved(bool isInstFetch);
     void evictionCallback(Addr address);
@@ -206,17 +206,23 @@ class Sequencer : public RubyPort, public CachePrefetcherView
                            Cycles forwardRequestTime,
                            Cycles firstResponseTime);
 
-    RequestStatus insertRequest(PacketPtr pkt, RubyRequestType primary_type,
-                                RubyRequestType secondary_type);
-
     // Private copy constructor and assignment operator
     Sequencer(const Sequencer& obj);
     Sequencer& operator=(const Sequencer& obj);
 
+  protected:
+    // RequestTable contains both read and write requests, handles aliasing
+    std::unordered_map<Addr, std::list<SequencerRequest>> m_RequestTable;
+
+    Cycles m_deadlock_threshold;
+
+    virtual RequestStatus insertRequest(PacketPtr pkt,
+                                        RubyRequestType primary_type,
+                                        RubyRequestType secondary_type);
+
   private:
     int m_max_outstanding_data_requests;
     int m_max_outstanding_inst_requests;
-    Cycles m_deadlock_threshold;
 
     CacheMemory* m_dataCache_ptr;
     CacheMemory* m_instCache_ptr;
@@ -228,13 +234,9 @@ class Sequencer : public RubyPort, public CachePrefetcherView
     Cycles m_data_cache_hit_latency;
     Cycles m_inst_cache_hit_latency;
 
-    // RequestTable contains both read and write requests, handles aliasing
-    std::unordered_map<Addr, std::list<SequencerRequest>> m_RequestTable;
-
     // Global outstanding request count, across all request tables
     int m_outstanding_data_count;
     int m_outstanding_inst_count;
-    bool m_deadlock_check_scheduled;
 
     int m_coreId;
 
@@ -333,6 +335,7 @@ class Sequencer : public RubyPort, public CachePrefetcherView
     bool coalesce() const override;
     ProbeManager *getCacheProbeManager() override;
     ThreadContext *getThreadContext(ContextID contextId) override;
+    System *getSystem() override;
     void regProbePoints() override;
   
   protected:
@@ -356,6 +359,13 @@ class Sequencer : public RubyPort, public CachePrefetcherView
      * @return a boolean indicating if the line address was found.
      */
     bool llscCheckMonitor(const Addr);
+
+
+    /**
+     * Removes all addresses from the local monitor.
+     * This is independent of this Sequencer object's version id.
+     */
+    void llscClearLocalMonitor();
 };
 
 inline std::ostream&

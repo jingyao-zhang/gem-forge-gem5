@@ -87,7 +87,7 @@ namespace Prefetcher {
     class Base;
 }
 class MSHR;
-class MasterPort;
+class RequestPort;
 class QueueEntry;
 struct BaseCacheParams;
 
@@ -119,7 +119,7 @@ class BaseCache : public ClockedObject, public CachePrefetcherView
   protected:
 
     /**
-     * A cache master port is used for the memory-side port of the
+     * A cache request port is used for the memory-side port of the
      * cache, and in addition to the basic timing port that only sends
      * response packets through a transmit list, it also offers the
      * ability to schedule and send request packets (requests &
@@ -127,7 +127,7 @@ class BaseCache : public ClockedObject, public CachePrefetcherView
      * and the sendDeferredPacket of the timing port is modified to
      * consider both the transmit list and the requests from the MSHR.
      */
-    class CacheMasterPort : public QueuedMasterPort
+    class CacheRequestPort : public QueuedRequestPort
     {
 
       public:
@@ -144,10 +144,10 @@ class BaseCache : public ClockedObject, public CachePrefetcherView
 
       protected:
 
-        CacheMasterPort(const std::string &_name, BaseCache *_cache,
+        CacheRequestPort(const std::string &_name, BaseCache *_cache,
                         ReqPacketQueue &_reqQueue,
                         SnoopRespPacketQueue &_snoopRespQueue) :
-            QueuedMasterPort(_name, _cache, _reqQueue, _snoopRespQueue)
+            QueuedRequestPort(_name, _cache, _reqQueue, _snoopRespQueue)
         { }
 
         /**
@@ -174,7 +174,7 @@ class BaseCache : public ClockedObject, public CachePrefetcherView
 
       public:
 
-        CacheReqPacketQueue(BaseCache &cache, MasterPort &port,
+        CacheReqPacketQueue(BaseCache &cache, RequestPort &port,
                             SnoopRespPacketQueue &snoop_resp_queue,
                             const std::string &label) :
             ReqPacketQueue(cache, port, label), cache(cache),
@@ -210,10 +210,10 @@ class BaseCache : public ClockedObject, public CachePrefetcherView
 
 
     /**
-     * The memory-side port extends the base cache master port with
+     * The memory-side port extends the base cache request port with
      * access functions for functional, atomic and timing snoops.
      */
-    class MemSidePort : public CacheMasterPort
+    class MemSidePort : public CacheRequestPort
     {
       private:
 
@@ -242,14 +242,14 @@ class BaseCache : public ClockedObject, public CachePrefetcherView
     };
 
     /**
-     * A cache slave port is used for the CPU-side port of the cache,
+     * A cache response port is used for the CPU-side port of the cache,
      * and it is basically a simple timing port that uses a transmit
-     * list for responses to the CPU (or connected master). In
+     * list for responses to the CPU (or connected requestor). In
      * addition, it has the functionality to block the port for
      * incoming requests. If blocked, the port will issue a retry once
      * unblocked.
      */
-    class CacheSlavePort : public QueuedSlavePort
+    class CacheResponsePort : public QueuedResponsePort
     {
 
       public:
@@ -264,7 +264,7 @@ class BaseCache : public ClockedObject, public CachePrefetcherView
 
       protected:
 
-        CacheSlavePort(const std::string &_name, BaseCache *_cache,
+        CacheResponsePort(const std::string &_name, BaseCache *_cache,
                        const std::string &_label);
 
         /** A normal packet queue used to store responses. */
@@ -287,10 +287,10 @@ class BaseCache : public ClockedObject, public CachePrefetcherView
     };
 
     /**
-     * The CPU-side port extends the base cache slave port with access
+     * The CPU-side port extends the base cache response port with access
      * functions for functional, atomic and timing requests.
      */
-    class CpuSidePort : public CacheSlavePort
+    class CpuSidePort : public CacheResponsePort
     {
         /**
          * ! Sean: StreamAwareCache.
@@ -342,7 +342,7 @@ class BaseCache : public ClockedObject, public CachePrefetcherView
     BaseTags *tags;
 
     /** Compression method being used. */
-    BaseCacheCompressor* compressor;
+    Compressor::Base* compressor;
 
     /** Prefetcher */
     Prefetcher::Base *prefetcher;
@@ -1176,7 +1176,7 @@ class BaseCache : public ClockedObject, public CachePrefetcherView
 
     /**
      * Marks the access path of the cache as blocked for the given cause. This
-     * also sets the blocked flag in the slave interface.
+     * also sets the blocked flag in the response interface.
      * @param cause The reason for the cache blocking.
      */
     void setBlocked(BlockedCause cause)
@@ -1241,8 +1241,8 @@ class BaseCache : public ClockedObject, public CachePrefetcherView
 
     void incMissCount(PacketPtr pkt)
     {
-        assert(pkt->req->masterId() < system->maxMasters());
-        stats.cmdStats(pkt).misses[pkt->req->masterId()]++;
+        assert(pkt->req->requestorId() < system->maxRequestors());
+        stats.cmdStats(pkt).misses[pkt->req->requestorId()]++;
         pkt->req->incAccessDepth();
         if (missCount) {
             --missCount;
@@ -1252,8 +1252,8 @@ class BaseCache : public ClockedObject, public CachePrefetcherView
     }
     void incHitCount(PacketPtr pkt)
     {
-        assert(pkt->req->masterId() < system->maxMasters());
-        stats.cmdStats(pkt).hits[pkt->req->masterId()]++;
+        assert(pkt->req->requestorId() < system->maxRequestors());
+        stats.cmdStats(pkt).hits[pkt->req->requestorId()]++;
     }
 
     /**
@@ -1268,8 +1268,10 @@ class BaseCache : public ClockedObject, public CachePrefetcherView
     }
 
     ThreadContext *getThreadContext(ContextID contextId) override {
-        return this->system->getThreadContext(contextId);
+        return this->system->threads[contextId];
     }
+
+    System *getSystem() override { return this->system; };
 
     /**
      * Cache block visitor that writes back dirty cache blocks using

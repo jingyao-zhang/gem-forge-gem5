@@ -46,10 +46,8 @@
 #include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "cpu/base.hh"
-#include "cpu/quiesce_event.hh"
 #include "debug/Context.hh"
 #include "debug/Quiesce.hh"
-#include "kern/kernel_stats.hh"
 #include "params/BaseCPU.hh"
 #include "sim/full_system.hh"
 
@@ -134,35 +132,14 @@ ThreadContext::compare(ThreadContext *one, ThreadContext *two)
 void
 ThreadContext::quiesce()
 {
-    if (!getCpuPtr()->params()->do_quiesce)
-        return;
-
-    DPRINTF(Quiesce, "%s: quiesce()\n", getCpuPtr()->name());
-
-    suspend();
-    if (getKernelStats())
-        getKernelStats()->quiesce();
+    getSystemPtr()->threads.quiesce(contextId());
 }
 
 
 void
 ThreadContext::quiesceTick(Tick resume)
 {
-    BaseCPU *cpu = getCpuPtr();
-
-    if (!cpu->params()->do_quiesce)
-        return;
-
-    EndQuiesceEvent *quiesceEvent = getQuiesceEvent();
-
-    cpu->reschedule(quiesceEvent, resume, true);
-
-    DPRINTF(Quiesce, "%s[tid-%d]: quiesce for %lu until %lu\n",
-        cpu->name(), this->threadId(), resume - curTick(), resume);
-
-    suspend();
-    if (getKernelStats())
-        getKernelStats()->quiesce();
+    getSystemPtr()->threads.quiesceTick(contextId(), resume);
 }
 
 void
@@ -288,44 +265,13 @@ takeOverFrom(ThreadContext &ntc, ThreadContext &otc)
     if (FullSystem) {
         assert(ntc.getSystemPtr() == otc.getSystemPtr());
 
-        BaseCPU *ncpu(ntc.getCpuPtr());
-        assert(ncpu);
-        EndQuiesceEvent *oqe(otc.getQuiesceEvent());
-        assert(oqe);
-        assert(oqe->tc == &otc);
-
-        BaseCPU *ocpu(otc.getCpuPtr());
-        assert(ocpu);
-        EndQuiesceEvent *nqe(ntc.getQuiesceEvent());
-        assert(nqe);
-        assert(nqe->tc == &ntc);
-
-        if (oqe->scheduled()) {
-            ncpu->schedule(nqe, oqe->when());
-            ocpu->deschedule(oqe);
-        }
+        // Do we need to move the quiesce event?
     } else {
         // ! GemForge
         // Don't forgot to update the futexMap and quiesce event.
         otc.getSystemPtr()->futexMap.takeOverThread(&otc, &ntc);
 
-        auto *oqe = otc.getQuiesceEvent();
-        assert(oqe);
-        assert(oqe->tc == &otc);
-
-        auto *nqe = ntc.getQuiesceEvent();
-        assert(nqe);
-        assert(nqe->tc == &ntc);
-
-        if (oqe->scheduled()) {
-            auto *ocpu = otc.getCpuPtr();
-            assert(ocpu);
-            auto *ncpu = ntc.getCpuPtr();
-            assert(ncpu);
-
-            ncpu->schedule(nqe, oqe->when());
-            ocpu->deschedule(oqe);
-        }
+        // Do we need to reschedule the quiesce event?
     }
 
     otc.setStatus(ThreadContext::Halted);
@@ -336,9 +282,9 @@ int ThreadContext::getThreadGroupSize() {
     assert(p && "ThreadContext is unassigned.");
     System *sys = this->getSystemPtr();
     int numThreads = 1;
-    for (int i = 0; i < sys->numContexts(); i++) {
+    for (int i = 0; i < sys->threads.size(); i++) {
         Process *walk;
-        ThreadContext* walkThread = sys->threadContexts[i];
+        ThreadContext* walkThread = sys->threads[i];
         if (!(walk = walkThread->getProcessPtr())) {
             // This ThreadContext is not assigned to any Process.
             continue;

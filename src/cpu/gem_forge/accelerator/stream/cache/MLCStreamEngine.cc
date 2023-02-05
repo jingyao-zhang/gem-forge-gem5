@@ -60,7 +60,7 @@ void MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
          "Receive stream end when stream float is disabled.\n");
 
   auto *endIds = *(pkt->getPtr<std::vector<DynStreamId> *>());
-  auto masterId = pkt->req->masterId();
+  auto masterId = pkt->req->requestorId();
 
   delete pkt;
 

@@ -36,10 +36,8 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
     : tc(_tc), func(_func) {
   auto p = tc->getProcessPtr();
   auto obj = p->objFile;
-  ::Loader::SymbolTable table;
-  obj->loadAllSymbols(&table);
   Addr funcStartVAddr;
-  if (!table.findAddress(this->func.name(), funcStartVAddr)) {
+  if (!obj->symtab().findAddress(this->func.name(), funcStartVAddr)) {
     panic("Failed to resovle symbol: %s.", this->func.name());
   }
 

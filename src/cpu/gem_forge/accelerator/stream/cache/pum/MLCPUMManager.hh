@@ -465,7 +465,7 @@ private:
     // Saved pkt when waiting for prefetching.
     PacketPtr savedPkt = nullptr;
     // MasterId used for creating streams.
-    MasterID masterId = 0;
+    RequestorID requestorId = 0;
 
     // TDFG for equality graph optimization.
     ::LLVM::TDG::TDFG tdfg;
@@ -651,7 +651,8 @@ private:
   /**
    * Run prefetch stage.
    */
-  void runPrefetchStage(CacheStreamConfigureVec *configs, MasterID masterId);
+  void runPrefetchStage(CacheStreamConfigureVec *configs,
+                        RequestorID requestorId);
 
   /**
    * Run PUM execution stage.
@@ -667,7 +668,7 @@ private:
    * Dispatch stream configurations to MLCSE.
    */
   void dispatchStreamConfigs(CacheStreamConfigureVec *configs,
-                             MasterID masterId) const;
+                             RequestorID requestorId) const;
 
   /**
    * Some work needs to be done after MLC SE finish configuring.

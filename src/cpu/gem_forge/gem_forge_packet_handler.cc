@@ -4,8 +4,8 @@ GemForgePacketReleaseHandler GemForgePacketReleaseHandler::instance;
 
 PacketPtr GemForgePacketHandler::createGemForgePacket(
     Addr paddr, int size, GemForgePacketHandler *handler, uint8_t *data,
-    MasterID masterID, int contextId, Addr pc, Request::Flags flags) {
-  RequestPtr req = std::make_shared<Request>(paddr, size, flags, masterID);
+    RequestorID reqestorID, int contextId, Addr pc, Request::Flags flags) {
+  RequestPtr req = std::make_shared<Request>(paddr, size, flags, reqestorID);
   if (pc != 0) {
     req->setPC(pc);
   }
@@ -30,12 +30,13 @@ PacketPtr GemForgePacketHandler::createGemForgePacket(
 
 PacketPtr GemForgePacketHandler::createGemForgeAMOPacket(
     Addr vaddr, Addr paddr, int size, GemForgePacketHandler *handler,
-    MasterID masterID, int contextId, Addr pc, AtomicOpFunctorPtr atomicOp) {
+    RequestorID requestorID, int contextId, Addr pc,
+    AtomicOpFunctorPtr atomicOp) {
   Request::Flags flags;
   flags.set(Request::ATOMIC_RETURN_OP);
 
-  RequestPtr req = std::make_shared<Request>(vaddr, size, flags, masterID, pc,
-                                             contextId, std::move(atomicOp));
+  RequestPtr req = std::make_shared<Request>(
+      vaddr, size, flags, requestorID, pc, contextId, std::move(atomicOp));
   req->setPaddr(paddr);
   // For our request, we always track the request statistic.
   req->setStatistic(std::make_shared<RequestStatistic>());
@@ -51,17 +52,15 @@ PacketPtr GemForgePacketHandler::createGemForgeAMOPacket(
   return pkt;
 }
 
-PacketPtr GemForgePacketHandler::createStreamControlPacket(Addr paddr,
-                                                           MasterID masterID,
-                                                           int contextId,
-                                                           MemCmd::Command cmd,
-                                                           uint64_t data) {
+PacketPtr GemForgePacketHandler::createStreamControlPacket(
+    Addr paddr, RequestorID requestorID, int contextId, MemCmd::Command cmd,
+    uint64_t data) {
   /**
    * ! Pure evil hack here.
    * ! Pass the data in pktData.
    */
   RequestPtr req = std::make_shared<Request>(paddr, sizeof(uint64_t),
-                                             0 /* Flags */, masterID);
+                                             0 /* Flags */, requestorID);
   PacketPtr pkt = new Packet(req, cmd);
   uint8_t *pktData = new uint8_t[req->getSize()];
   *(reinterpret_cast<uint64_t *>(pktData)) = data;

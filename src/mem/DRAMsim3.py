@@ -38,18 +38,19 @@
 from m5.params import *
 from m5.objects.AbstractMemory import *
 
-# A wrapper for DRAMSim2 multi-channel memory controller
+# A wrapper for DRAMSim3 multi-channel memory controller
 class DRAMsim3(AbstractMemory):
     type = 'DRAMsim3'
     cxx_header = "mem/dramsim3.hh"
 
     # A single port for now
-    port = SlavePort("Slave port")
+    port = ResponsePort("port for receiving requests from"
+                        "the CPU or other requestor")
 
-    config_file = Param.String("ext/dramsim3/DRAMsim3/configs/"
+    configFile = Param.String("ext/dramsim3/DRAMsim3/configs/"
                               "DDR4_8Gb_x8_2400.ini",
-                              "One configuration file")
-    file_path = Param.String("ext/dramsim3/DRAMsim3/",
+                              "The configuration file to use with DRAMSim3")
+    filePath = Param.String("ext/dramsim3/DRAMsim3/",
                             "Directory to prepend to file names")
 
     """

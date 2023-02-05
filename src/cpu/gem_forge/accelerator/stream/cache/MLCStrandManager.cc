@@ -38,7 +38,7 @@ MLCStrandManager::~MLCStrandManager() {
 }
 
 void MLCStrandManager::receiveStreamConfigure(ConfigVec *configs,
-                                              MasterID masterId) {
+                                              RequestorID requestorId) {
 
   // auto configs = *(pkt->getPtr<ConfigVec *>());
 
@@ -87,7 +87,7 @@ void MLCStrandManager::receiveStreamConfigure(ConfigVec *configs,
 
   mlcSE->computeReuseInformation(*configs);
   for (auto config : *configs) {
-    this->configureStream(config, masterId);
+    this->configureStream(config, requestorId);
   }
 
   // We initalize all LLCDynStreams here (see LLCDynStream.hh)
@@ -1154,7 +1154,8 @@ DynStreamFormalParamV MLCStrandManager::splitAffinePattern(
   }
 }
 
-void MLCStrandManager::configureStream(ConfigPtr config, MasterID masterId) {
+void MLCStrandManager::configureStream(ConfigPtr config,
+                                       RequestorID requestorId) {
   MLC_S_DPRINTF_(MLCRubyStreamLife,
                  DynStrandId(config->dynamicId, config->strandIdx),
                  "[Strand] Received StreamConfig, TotalTripCount %lu.\n",
@@ -1236,11 +1237,11 @@ void MLCStrandManager::configureStream(ConfigPtr config, MasterID masterId) {
   }
 
   // Configure Remote SE.
-  this->sendConfigToRemoteSE(config, masterId);
+  this->sendConfigToRemoteSE(config, requestorId);
 }
 
 void MLCStrandManager::sendConfigToRemoteSE(ConfigPtr config,
-                                            MasterID masterId) {
+                                            RequestorID requestorId) {
 
   /**
    * Set the RemoteSE to LLC SE or Mem SE, depending on the FloatPlan on the
@@ -1261,8 +1262,8 @@ void MLCStrandManager::sendConfigToRemoteSE(ConfigPtr config,
   }
 
   // Create a new packet.
-  RequestPtr req =
-      std::make_shared<Request>(config->initPAddr, sizeof(config), 0, masterId);
+  RequestPtr req = std::make_shared<Request>(config->initPAddr, sizeof(config),
+                                             0, requestorId);
   PacketPtr pkt = new Packet(req, MemCmd::StreamConfigReq);
   uint8_t *pktData = reinterpret_cast<uint8_t *>(new ConfigPtr(config));
   pkt->dataDynamic(pktData);
@@ -1298,9 +1299,9 @@ void MLCStrandManager::sendConfigToRemoteSE(ConfigPtr config,
 }
 
 void MLCStrandManager::receiveStreamEnd(const std::vector<DynStreamId> &endIds,
-                                        MasterID masterId) {
+                                        RequestorID requestorId) {
   for (const auto &endId : endIds) {
-    this->endStream(endId, masterId);
+    this->endStream(endId, requestorId);
   }
 }
 
@@ -1373,7 +1374,8 @@ void MLCStrandManager::tryMarkPUMRegionCached(const DynStreamId &dynId) {
   nucaManager->markRegionCached(region->vaddr);
 }
 
-void MLCStrandManager::endStream(const DynStreamId &endId, MasterID masterId) {
+void MLCStrandManager::endStream(const DynStreamId &endId,
+                                 RequestorID requestorId) {
   MLC_S_DPRINTF_(MLCRubyStreamLife, endId, "Received StreamEnd.\n");
 
   this->tryMarkPUMRegionCached(endId);
@@ -1437,7 +1439,7 @@ void MLCStrandManager::endStream(const DynStreamId &endId, MasterID masterId) {
         rootLLCStreamPAddrLine, rootStreamOffloadedMachineType);
     auto copyStrandId = new DynStrandId(strandId);
     RequestPtr req = std::make_shared<Request>(
-        rootLLCStreamPAddrLine, sizeof(copyStrandId), 0, masterId);
+        rootLLCStreamPAddrLine, sizeof(copyStrandId), 0, requestorId);
     PacketPtr pkt = new Packet(req, MemCmd::StreamEndReq);
     uint8_t *pktData = new uint8_t[req->getSize()];
     *(reinterpret_cast<uint64_t *>(pktData)) =

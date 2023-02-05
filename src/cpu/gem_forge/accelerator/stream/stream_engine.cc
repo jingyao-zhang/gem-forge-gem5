@@ -2434,7 +2434,7 @@ void StreamEngine::issueElement(StreamElement *elem) {
         // Offloaded the whole stream.
         pkt = GemForgePacketHandler::createGemForgePacket(
             cacheLinePAddr, cacheLineSize, memAccess, nullptr /* Data */,
-            cpuDelegator->dataMasterId(), 0 /* ContextId */,
+            cpuDelegator->dataRequestorId(), 0 /* ContextId */,
             S->getFirstCoreUserPC() /* PC */, flags);
         pkt->req->setVirt(cacheLineVAddr);
       } else {
@@ -2457,13 +2457,13 @@ void StreamEngine::issueElement(StreamElement *elem) {
 
         pkt = GemForgePacketHandler::createGemForgeAMOPacket(
             elementVAddr, elementPAddr, elem->size, memAccess,
-            cpuDelegator->dataMasterId(), 0 /* ContextId */,
+            cpuDelegator->dataRequestorId(), 0 /* ContextId */,
             S->getFirstCoreUserPC() /* PC */, std::move(atomicOp));
       }
     } else {
       pkt = GemForgePacketHandler::createGemForgePacket(
           cacheLinePAddr, cacheLineSize, memAccess, nullptr /* Data */,
-          cpuDelegator->dataMasterId(), 0 /* ContextId */,
+          cpuDelegator->dataRequestorId(), 0 /* ContextId */,
           S->getFirstCoreUserPC() /* PC */, flags);
       pkt->req->setVirt(cacheLineVAddr);
     }
@@ -2626,7 +2626,7 @@ void StreamEngine::prefetchElement(StreamElement *element) {
     auto packetHandler = GemForgePacketReleaseHandler::get();
     pkt = GemForgePacketHandler::createGemForgePacket(
         cacheLinePAddr, cacheLineSize, packetHandler, nullptr /* Data */,
-        cpuDelegator->dataMasterId(), 0 /* ContextId */,
+        cpuDelegator->dataRequestorId(), 0 /* ContextId */,
         S->getFirstCoreUserPC() /* PC */, flags);
     pkt->req->setVirt(cacheLineVAddr);
     pkt->req->getStatistic()->isStream = true;
@@ -2693,7 +2693,7 @@ void StreamEngine::writebackElement(StreamElement *element,
     // Create the writeback package.
     auto pkt = GemForgePacketHandler::createGemForgePacket(
         paddr, packetSize, memAccess, this->writebackCacheLine,
-        cpuDelegator->dataMasterId(), 0, 0);
+        cpuDelegator->dataRequestorId(), 0, 0);
     S->incrementInflyStreamRequest();
     this->incrementInflyStreamRequest();
     cpuDelegator->sendRequest(pkt);
@@ -2981,7 +2981,7 @@ void StreamEngine::sendStreamFloatEndPacket(
   // engine).
   Addr initPAddr = 0;
   auto pkt = GemForgePacketHandler::createStreamControlPacket(
-      initPAddr, cpuDelegator->dataMasterId(), 0, MemCmd::Command::StreamEndReq,
+      initPAddr, cpuDelegator->dataRequestorId(), 0, MemCmd::Command::StreamEndReq,
       reinterpret_cast<uint64_t>(endedIdsCopy));
   if (Debug::CoreRubyStreamLife) {
     std::stringstream ss;
@@ -3011,7 +3011,7 @@ void StreamEngine::sendAtomicPacket(StreamElement *element,
     S_ELEMENT_PANIC(element, "Fault on AtomicOp vaddr %#x.", vaddr);
   }
   auto pkt = GemForgePacketHandler::createGemForgeAMOPacket(
-      vaddr, paddr, size, nullptr /* Handler */, cpuDelegator->dataMasterId(),
+      vaddr, paddr, size, nullptr /* Handler */, cpuDelegator->dataRequestorId(),
       0 /* ContextId */, 0 /* PC */, std::move(atomicOp));
   auto S = element->stream;
   S->statistic.numIssuedRequest++;

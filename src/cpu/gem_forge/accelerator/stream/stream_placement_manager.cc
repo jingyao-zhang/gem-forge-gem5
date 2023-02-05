@@ -360,7 +360,7 @@ PacketPtr StreamPlacementManager::createPacket(
     data = new uint8_t[size];
   }
   auto pkt = GemForgePacketHandler::createGemForgePacket(
-      paddr, size, memAccess, data, Request::funcMasterId, 0, 0);
+      paddr, size, memAccess, data, Request::funcRequestorId, 0, 0);
   if (isWrite) {
     delete[] data;
   }
@@ -396,7 +396,8 @@ void StreamPlacementManager::sendTimingRequestToL2Bus(PacketPtr pkt) {
   assert(this->L2Bus != nullptr);
   auto slavePort = &(this->L2Bus->getPort("slave", 3));
   auto streamAwareSlavePort =
-      dynamic_cast<CoherentXBar::StreamAwareCoherentXBarSlavePort *>(slavePort);
+      dynamic_cast<CoherentXBar::StreamAwareCoherentXBarResponsePort *>(
+          slavePort);
   if (streamAwareSlavePort == nullptr) {
     panic("Failed to get the stream aware slave port from L2 bus.");
   }

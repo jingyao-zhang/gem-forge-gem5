@@ -27,9 +27,7 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
     : tc(_tc), func(_func), decoder(_tc->getDecoderPtr()), funcStartVAddr(0) {
   auto p = tc->getProcessPtr();
   auto obj = p->objFile;
-  SymbolTable table;
-  obj->loadAllSymbols(&table);
-  assert(table.findAddress(this->func.name(), this->funcStartVAddr));
+  assert(obj->symtab().findAddress(this->func.name(), this->funcStartVAddr));
   EXEC_FUNC_DPRINTF("Start PC %#x.\n", this->funcStartVAddr);
 
   auto &prox = this->tc->getVirtProxy();

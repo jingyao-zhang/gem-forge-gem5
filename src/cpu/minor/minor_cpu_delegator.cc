@@ -262,7 +262,7 @@ Fault MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
     int cid = pimpl->getThreadContext(dynInstPtr)->contextId();
     request->request->setContext(cid);
     request->request->setVirt(vaddr, size, 0 /* flags */,
-                              baseCPU->dataMasterId(),
+                              baseCPU->dataRequestorId(),
                               dynInstPtr->pc.instAddr());
 
     /**

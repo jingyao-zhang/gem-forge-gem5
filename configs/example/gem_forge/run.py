@@ -470,14 +470,14 @@ if options.ruby:
         system.cpu[i].createInterruptController()
 
         # Connect the cpu's cache ports to Ruby
-        system.cpu[i].icache_port = ruby_port.slave
-        system.cpu[i].dcache_port = ruby_port.slave
+        system.cpu[i].icache_port = ruby_port.in_ports
+        system.cpu[i].dcache_port = ruby_port.in_ports
         if buildEnv['TARGET_ISA'] == 'x86':
-            system.cpu[i].interrupts[0].pio = ruby_port.master
-            system.cpu[i].interrupts[0].int_master = ruby_port.slave
-            system.cpu[i].interrupts[0].int_slave = ruby_port.master
-            system.cpu[i].itb.walker.port = ruby_port.slave
-            system.cpu[i].dtb.walker.port = ruby_port.slave
+            system.cpu[i].interrupts[0].pio = ruby_port.interrupt_out_port
+            system.cpu[i].interrupts[0].int_requestor = ruby_port.in_ports
+            system.cpu[i].interrupts[0].int_responder = ruby_port.interrupt_out_port
+            system.cpu[i].itb.walker.port = ruby_port.in_ports
+            system.cpu[i].dtb.walker.port = ruby_port.in_ports
 else:
     MemClass = Simulation.setMemClass(options)
     system.membus = SystemXBar()

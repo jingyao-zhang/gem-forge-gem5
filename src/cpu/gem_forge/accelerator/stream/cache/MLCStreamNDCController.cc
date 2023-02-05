@@ -41,7 +41,7 @@ void MLCStreamNDCController::receiveStreamNDCRequest(PacketPtr pkt) {
                     streamNDC->paddr, llcBank);
 
     RequestPtr req = std::make_shared<Request>(
-        paddrLine, streamNDC->stream->getMemElementSize(), 0, pkt->masterId());
+        paddrLine, streamNDC->stream->getMemElementSize(), 0, pkt->requestorId());
     PacketPtr pkt = new Packet(req, MemCmd::StreamNDCReq);
     uint8_t *pktData =
         reinterpret_cast<uint8_t *>(new StreamNDCPacketPtr(streamNDC));

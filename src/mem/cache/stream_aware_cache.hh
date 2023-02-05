@@ -60,7 +60,7 @@ protected:
     SnoopRespPacketQueue &snoopRespQueue;
 
   public:
-    CacheReqPacketQueue(StreamAwareCache &cache, MasterPort &port,
+    CacheReqPacketQueue(StreamAwareCache &cache, RequestPort&port,
                         SnoopRespPacketQueue &snoop_resp_queue,
                         const std::string &label)
         : ReqPacketQueue(cache, port, label), cache(cache),
@@ -95,7 +95,7 @@ protected:
    * The memory-side port extends the base cache master port with
    * access functions for functional, atomic and timing snoops.
    */
-  class MemSidePort : public CacheMasterPort {
+  class MemSidePort : public CacheRequestPort{
   private:
     /** The cache-specific queue. */
     CacheReqPacketQueue _reqQueue;

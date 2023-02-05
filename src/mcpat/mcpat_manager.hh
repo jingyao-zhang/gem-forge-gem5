@@ -15,7 +15,7 @@
 
 class BPredUnit;
 class BaseTagsParams;
-class DRAMCtrlParams;
+class DRAMInterfaceParams;
 class BaseCache;
 class BaseCacheParams;
 class Cache;
@@ -57,7 +57,7 @@ private:
    * This breaks the object orientated principle. But I don't want the
    * modification scatters in the source tree.
    */
-  void configureMemoryControl(const DRAMCtrlParams *params);
+  void configureMemoryControl(const DRAMInterfaceParams *params);
   void configureL2Cache(const BaseCache *cache);
   void configureL2Directories(const BaseCache *cache);
   void configureL3Cache(const BaseCache *cache);

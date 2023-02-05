@@ -2755,7 +2755,7 @@ void MLCPUMManager::compileContext(PUMContext &context) {
 }
 
 void MLCPUMManager::runPrefetchStage(CacheStreamConfigureVec *configs,
-                                     MasterID masterId) {
+                                     RequestorID requestorId) {
   assert(configs != nullptr && !configs->empty());
 
   MLCSE_DPRINTF("Starting prefetch stage.\n");
@@ -2771,11 +2771,10 @@ void MLCPUMManager::runPrefetchStage(CacheStreamConfigureVec *configs,
     auto singleConfig = new CacheStreamConfigureVec;
     singleConfig->push_back(config);
     // SingleConfig will be deleted in MLCStrandManager.
-    this->dispatchStreamConfigs(singleConfig, masterId);
+    this->dispatchStreamConfigs(singleConfig, requestorId);
   }
   // Delete configs.
   delete configs;
-  // this->dispatchStreamConfigs(configs, context.savedPkt->req->masterId());
 
   this->inFlightPrefetchStreams = 0;
   this->totalSentPrefetchPkts = 0;
@@ -2798,7 +2797,7 @@ void MLCPUMManager::runPUMExecutionStage(PUMContext &context) {
     MLCSE_DPRINTF("Everything handled by PUM. No Normal Streams.\n");
   } else {
     this->dispatchStreamConfigs(normalConfigs,
-                                context.savedPkt->req->masterId());
+                                context.savedPkt->req->requestorId());
   }
   // Done with packet. Free it!
   delete context.savedPkt;
@@ -2821,7 +2820,7 @@ void MLCPUMManager::runMLCConfigWithoutPUM(PacketPtr pkt) {
 
   if (pfConfigs->empty()) {
     delete pfConfigs;
-    this->dispatchStreamConfigs(normalConfigs, pkt->req->masterId());
+    this->dispatchStreamConfigs(normalConfigs, pkt->req->requestorId());
     // Done with packet. Free it!
     delete pkt;
   } else {
@@ -2829,15 +2828,15 @@ void MLCPUMManager::runMLCConfigWithoutPUM(PacketPtr pkt) {
     this->inFlightPUMPrefetch = false;
     this->savedNonPUMPkt = pkt;
     this->inFlightNonPUMPrefetchConfigs = *pfConfigs;
-    this->runPrefetchStage(pfConfigs, pkt->req->masterId());
+    this->runPrefetchStage(pfConfigs, pkt->req->requestorId());
   }
 }
 
 void MLCPUMManager::dispatchStreamConfigs(CacheStreamConfigureVec *configs,
-                                          MasterID masterId) const {
+                                          RequestorID requestorId) const {
   assert(!configs->empty());
 
-  this->mlcSE->strandManager->receiveStreamConfigure(configs, masterId);
+  this->mlcSE->strandManager->receiveStreamConfigure(configs, requestorId);
   if (this->mlcSE->controller->isStreamRangeSyncEnabled()) {
     // Enable the range check.
     this->mlcSE->scheduleEvent(Cycles(1));
@@ -3055,7 +3054,7 @@ void MLCPUMManager::finishPrefetchStage() {
     auto &context = this->contexts.front();
 
     // Release all prefetch streams in the MLC SE.
-    auto masterId = context.masterId;
+    auto masterId = context.requestorId;
     std::vector<DynStreamId> prefetchDynIds;
     for (const auto &prefetchConfig : context.prefetchConfigs) {
       prefetchDynIds.push_back(prefetchConfig->dynamicId);
@@ -3075,7 +3074,7 @@ void MLCPUMManager::finishPrefetchStage() {
     assert(this->contexts.empty() &&
            "Should have no PUM context for Non-PUM prefetching.");
 
-    auto masterId = this->savedNonPUMPkt->req->masterId();
+    auto masterId = this->savedNonPUMPkt->req->requestorId();
     std::vector<DynStreamId> prefetchDynIds;
     for (const auto &prefetchConfig : this->inFlightNonPUMPrefetchConfigs) {
       prefetchDynIds.push_back(prefetchConfig->dynamicId);
@@ -3604,7 +3603,7 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
 
   assert(!context.savedPkt);
   context.savedPkt = pkt;
-  context.masterId = pkt->req->masterId();
+  context.requestorId = pkt->req->requestorId();
 
   this->runPUMExecutionStage(context);
 
@@ -3866,7 +3865,7 @@ void MLCPUMManager::fetchPUMDataBeforeSync(PUMContext &context) {
   } else {
     this->inFlightPUMPrefetch = true;
     this->savedNonPUMPkt = nullptr;
-    this->runPrefetchStage(prefetchConfigs, context.masterId);
+    this->runPrefetchStage(prefetchConfigs, context.requestorId);
   }
 
   return;

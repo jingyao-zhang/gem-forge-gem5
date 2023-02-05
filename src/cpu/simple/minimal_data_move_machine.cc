@@ -35,13 +35,9 @@ void MinimalDataMoveMachine::regStats() {
       .flags(Stats::nozero);
 
   Stats::registerResetCallback(
-      new MakeCallback<MinimalDataMoveMachine,
-                       &MinimalDataMoveMachine::resetPCHopsMap>(
-          this, true /* auto delete */));
+    [this]() -> void { this->resetPCHopsMap(); });
   Stats::registerDumpCallback(
-      new MakeCallback<MinimalDataMoveMachine,
-                       &MinimalDataMoveMachine::dumpPCHopsMap>(
-          this, true /* auto delete */));
+    [this]() -> void { this->dumpPCHopsMap(); });
 }
 
 void MinimalDataMoveMachine::commit(StaticInstPtr staticInst,
@@ -176,7 +172,7 @@ bool MinimalDataMoveMachine::shouldIgnoreTraffic(Addr pc) {
     Addr funcStart = 0;
     Addr funcEnd = 0;
     std::string symbol;
-    bool found = Loader::debugSymbolTable->findNearestSymbol(
+    bool found = Loader::debugSymbolTable.findNearestSymbol(
         pc, symbol, funcStart, funcEnd);
     if (!found) {
       symbol = csprintf("0x%x", pc);
@@ -196,9 +192,6 @@ bool MinimalDataMoveMachine::shouldIgnoreTraffic(Addr pc) {
 void MinimalDataMoveMachine::resetPCHopsMap() { this->pcHopsMap.clear(); }
 
 void MinimalDataMoveMachine::dumpPCHopsMap() {
-  if (!Loader::debugSymbolTable) {
-    return;
-  }
 
   /**
    * Make sure we record the current accumulated ticks.
@@ -239,7 +232,7 @@ void MinimalDataMoveMachine::dumpPCHopsMap() {
     Addr funcStart = 0;
     Addr funcEnd = 0;
     std::string symbol;
-    bool found = Loader::debugSymbolTable->findNearestSymbol(
+    bool found = Loader::debugSymbolTable.findNearestSymbol(
         pc, symbol, funcStart, funcEnd);
     if (!found) {
       symbol = csprintf("0x%x", pc);

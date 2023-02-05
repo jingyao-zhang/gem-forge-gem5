@@ -33,8 +33,8 @@ public:
   LLVMTraceCPU(LLVMTraceCPUParams *params);
   ~LLVMTraceCPU();
 
-  MasterPort &getDataPort() override { return this->dataPort; }
-  MasterPort &getInstPort() override { return this->instPort; }
+  RequestPort&getDataPort() override { return this->dataPort; }
+  RequestPort&getInstPort() override { return this->instPort; }
   Counter totalInsts() const override;
   Counter totalOps() const override;
   bool shouldCheckDeadlock() const override {
@@ -88,10 +88,10 @@ public:
 
 private:
   // This port will handle retry.
-  class CPUPort : public MasterPort {
+  class CPUPort : public RequestPort{
   public:
     CPUPort(const std::string &name, LLVMTraceCPU *_owner)
-        : MasterPort(name, _owner), owner(_owner), inflyNumPackets(0),
+        : RequestPort(name, _owner), owner(_owner), inflyNumPackets(0),
           blocked(false) {}
 
     bool recvTimingResp(PacketPtr pkt) override;
@@ -228,7 +228,6 @@ private:
   // Process and ThreadContext for the simulation program.
   Process *process;
   ThreadContext *thread_context;
-  ::Loader::SymbolTable symbol_table;
   // The top of the stack for this replay.
   Addr stackMin;
 

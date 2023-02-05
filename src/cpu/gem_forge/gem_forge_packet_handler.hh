@@ -24,15 +24,16 @@ public:
 
   static PacketPtr createGemForgePacket(Addr paddr, int size,
                                         GemForgePacketHandler *handler,
-                                        uint8_t *data, MasterID masterID,
+                                        uint8_t *data, RequestorID requestorID,
                                         int contextId, Addr pc,
                                         Request::Flags flags = 0);
   static PacketPtr createGemForgeAMOPacket(Addr vaddr, Addr paddr, int size,
                                            GemForgePacketHandler *handler,
-                                           MasterID masterID, int contextId,
-                                           Addr pc,
+                                           RequestorID requestorID,
+                                           int contextId, Addr pc,
                                            AtomicOpFunctorPtr atomicOp);
-  static PacketPtr createStreamControlPacket(Addr paddr, MasterID masterID,
+  static PacketPtr createStreamControlPacket(Addr paddr,
+                                             RequestorID requestorID,
                                              int contextId, MemCmd::Command cmd,
                                              uint64_t data);
   static bool isGemForgePacket(PacketPtr pkt);

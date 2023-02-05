@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2012, 2016-2018 ARM Limited
+ * Copyright (c) 2011-2012, 2016-2018, 2020 ARM Limited
  * Copyright (c) 2013 Advanced Micro Devices, Inc.
  * All rights reserved
  *
@@ -45,6 +45,7 @@
 #include <iostream>
 #include <string>
 
+#include "arch/generic/htm.hh"
 #include "arch/generic/isa.hh"
 #include "arch/registers.hh"
 #include "arch/types.hh"
@@ -64,14 +65,10 @@ class BaseCPU;
 class BaseTLB;
 class CheckerCPU;
 class Checkpoint;
-class EndQuiesceEvent;
 class PortProxy;
 class Process;
 class System;
 class StreamNUCAManager;
-namespace Kernel {
-    class Statistics;
-}
 
 /**
  * ThreadContext is the external interface to all thread state for
@@ -147,8 +144,6 @@ class ThreadContext : public PCEventScope
 
     virtual System *getSystemPtr() = 0;
 
-    virtual ::Kernel::Statistics *getKernelStats() = 0;
-
     virtual PortProxy &getPhysProxy() = 0;
 
     virtual PortProxy &getVirtProxy() = 0;
@@ -197,13 +192,9 @@ class ThreadContext : public PCEventScope
     /// Used for sched_yield syscall.
     void schedYield();
 
-    virtual void dumpFuncProfile() = 0;
-
     virtual void takeOverFrom(ThreadContext *old_context) = 0;
 
-    virtual void regStats(const std::string &name) = 0;
-
-    virtual EndQuiesceEvent *getQuiesceEvent() = 0;
+    virtual void regStats(const std::string &name) {};
 
     virtual void scheduleInstCountEvent(Event *event, Tick count) = 0;
     virtual void descheduleInstCountEvent(Event *event) = 0;
@@ -213,9 +204,6 @@ class ThreadContext : public PCEventScope
     // Having an extra function just to read these is obnoxious
     virtual Tick readLastActivate() = 0;
     virtual Tick readLastSuspend() = 0;
-
-    virtual void profileClear() = 0;
-    virtual void profileSample() = 0;
 
     virtual void copyArchRegs(ThreadContext *tc) = 0;
 
@@ -320,7 +308,7 @@ class ThreadContext : public PCEventScope
     // Same with st cond failures.
     virtual Counter readFuncExeInst() const = 0;
 
-    virtual void syscall(Fault *fault) = 0;
+    virtual void syscall() = 0;
 
     // This function exits the thread context in the CPU and returns
     // 1 if the CPU has no more active threads (meaning it's OK to exit);
@@ -367,6 +355,11 @@ class ThreadContext : public PCEventScope
     virtual void setCCRegFlat(RegIndex idx, RegVal val) = 0;
     /** @} */
 
+    // hardware transactional memory
+    virtual void htmAbortTransaction(uint64_t htm_uid,
+                                     HtmFailureFaultCause cause) = 0;
+    virtual BaseHTMCheckpointPtr& getHtmCheckpointPtr() = 0;
+    virtual void setHtmCheckpointPtr(BaseHTMCheckpointPtr cpt) = 0;
 };
 
 /** @{ */

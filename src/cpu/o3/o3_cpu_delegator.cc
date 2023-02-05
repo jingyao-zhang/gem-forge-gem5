@@ -780,7 +780,7 @@ bool DefaultO3CPUDelegator<
     Addr funcStart = 0;
     Addr funcEnd = 0;
     std::string symbol;
-    bool found = Loader::debugSymbolTable->findNearestSymbol(
+    bool found = Loader::debugSymbolTable.findNearestSymbol(
         pc, symbol, funcStart, funcEnd);
     if (!found) {
       symbol = csprintf("0x%x", pc);
@@ -800,26 +800,26 @@ bool DefaultO3CPUDelegator<
 template <class CPUImpl>
 void DefaultO3CPUDelegator<CPUImpl>::recordStatsForFakeExecutedInst(
     const StaticInstPtr &inst) {
-  pimpl->cpu->decode.decodeDecodedInsts++;
-  pimpl->cpu->rename.renameRenamedOperands += inst->numDestRegs();
-  pimpl->cpu->rename.renameRenameLookups += inst->numSrcRegs();
-  pimpl->cpu->rob.robReads++;
-  pimpl->cpu->rob.robWrites++;
-  pimpl->cpu->commit.opsCommitted[0]++;
+  pimpl->cpu->decode.stats.decodedInsts++;
+  pimpl->cpu->rename.stats.renamedOperands += inst->numDestRegs();
+  pimpl->cpu->rename.stats.lookups += inst->numSrcRegs();
+  pimpl->cpu->rob.stats.reads++;
+  pimpl->cpu->rob.stats.writes++;
+  pimpl->cpu->commit.stats.opsCommitted[0]++;
   if (inst->isInteger()) {
-    pimpl->cpu->commit.statComInteger[0]++;
+    pimpl->cpu->commit.stats.integer[0]++;
     pimpl->cpu->iew.instQueue.intAluAccesses++;
     pimpl->cpu->intRegfileReads += inst->numSrcRegs();
     pimpl->cpu->intRegfileWrites += inst->numDestRegs();
   }
   if (inst->isFloating()) {
-    pimpl->cpu->commit.statComFloating[0]++;
+    pimpl->cpu->commit.stats.floating[0]++;
     pimpl->cpu->iew.instQueue.fpAluAccesses++;
     pimpl->cpu->fpRegfileReads += inst->numSrcRegs();
     pimpl->cpu->fpRegfileWrites += inst->numDestRegs();
   }
   if (inst->isVector()) {
-    pimpl->cpu->commit.statComVector[0]++;
+    pimpl->cpu->commit.stats.vector[0]++;
     pimpl->cpu->iew.instQueue.vecAluAccesses++;
     pimpl->cpu->vecRegfileReads += inst->numSrcRegs();
     pimpl->cpu->vecRegfileWrites += inst->numDestRegs();

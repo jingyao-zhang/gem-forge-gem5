@@ -2,7 +2,7 @@
 
 // Headers for other SimObject's params.
 #include "params/Cache.hh"
-#include "params/DRAMCtrl.hh"
+#include "params/DRAMInterface.hh"
 
 #include "debug/McPATManager.hh"
 
@@ -57,7 +57,7 @@ void McPATManager::init() {
     }
 
     else if (so->name() == "system.mem_ctrls") {
-      auto params = dynamic_cast<const DRAMCtrlParams *>(so->params());
+      auto params = dynamic_cast<const DRAMInterfaceParams *>(so->params());
       this->configureMemoryControl(params);
     }
 
@@ -177,7 +177,7 @@ void McPATManager::startup() {
   panic_if(this->statsMap == nullptr, "Failed to get the stats named map.");
 }
 
-void McPATManager::configureMemoryControl(const DRAMCtrlParams *params) {
+void McPATManager::configureMemoryControl(const DRAMInterfaceParams *params) {
 
   panic_if(params == nullptr, "nullptr for configureMemoryControl.");
   DPRINTF(McPATManager, "Configure McPAT memory control.\n");
@@ -643,7 +643,9 @@ int McPATManager::getTLBSize(const TheISA::TLB *tlb) {
   case Arch::X86ISA: {
     return McPATManager::getParams<TheISATLBParams>(tlb)->size;
   }
-  default: { panic("Unsupported ISA %s for get TLBSize.", THE_ISA_STR); }
+  default: {
+    panic("Unsupported ISA %s for get TLBSize.", THE_ISA_STR);
+  }
   }
 }
 

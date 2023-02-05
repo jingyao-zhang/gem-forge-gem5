@@ -1,7 +1,7 @@
 #include "AbstractStreamAwareController.hh"
 
 #include "cpu/gem_forge/accelerator/stream/cache/pum/PUMTransposeUnit.hh"
-#include "mem/ruby/network/garnet2.0/GarnetNetwork.hh"
+#include "mem/ruby/network/garnet/GarnetNetwork.hh"
 #include "sim/stream_nuca/stream_nuca_map.hh"
 
 #include "RubySlicc_ComponentMapping.hh"
@@ -213,12 +213,11 @@ void AbstractStreamAwareController::regStats() {
 #undef pum_stats
 
   // Register stats callback.
+  auto pcRR = &this->pcReqRecorder;
   Stats::registerResetCallback(
-      new MakeCallback<PCRequestRecorder, &PCRequestRecorder::reset>(
-          &this->pcReqRecorder, true /* auto delete */));
+    [pcRR]() -> void { pcRR->reset(); });
   Stats::registerDumpCallback(
-      new MakeCallback<PCRequestRecorder, &PCRequestRecorder::dump>(
-          &this->pcReqRecorder, true /* auto delete */));
+    [pcRR]() -> void { pcRR->dump(); });
 }
 
 MachineID

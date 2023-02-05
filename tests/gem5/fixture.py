@@ -41,6 +41,8 @@ import shutil
 import sys
 import socket
 import threading
+import gzip
+
 from six.moves import urllib
 from testlib.fixture import Fixture
 from testlib.configuration import config, constants
@@ -58,6 +60,24 @@ class TempdirFixture(Fixture):
                 name=constants.tempdir_fixture_name)
     def setup(self, testitem):
         self.path = tempfile.mkdtemp(prefix='gem5out')
+
+    def post_test_procedure(self, testitem):
+        suiteUID = testitem.metadata.uid.suite
+        testUID = testitem.metadata.name
+        testing_result_folder = os.path.join(config.result_path,
+                                             "SuiteUID:" + suiteUID,
+                                             "TestUID:" + testUID)
+
+        # Copy the output files of the run from /tmp to testing-results
+        # We want to wipe the entire result folder for this test first. Why?
+        #   If the result folder exists (probably from the previous run), if
+        #   this run emits fewer files, there'll be files from the previous
+        #   run in this folder, which would cause confusion if one does not
+        #   check the timestamp of the file.
+        if os.path.exists(testing_result_folder):
+            shutil.rmtree(testing_result_folder)
+        shutil.copytree(self.path, testing_result_folder)
+
     def teardown(self, testitem):
         if testitem.result == Result.Passed:
             shutil.rmtree(self.path)
@@ -162,7 +182,9 @@ class MakeFixture(Fixture):
         targets = set(self.required_by)
         command = ['make', '-C', self.directory]
         command.extend([target.target for target in targets])
-        log_call(command)
+        log_call(log.test_log, command, stderr=sys.stderr)
+
+
 class MakeTarget(Fixture):
     def __init__(self, target, make_fixture=None, *args, **kwargs):
         '''
@@ -187,7 +209,7 @@ class MakeTarget(Fixture):
         return self
 class TestProgram(MakeTarget):
     def __init__(self, program, isa, os, recompile=False):
-        make_dir = joinpath('test-progs', program)
+        make_dir = joinpath(config.bin_dir, program)
         make_fixture = MakeFixture(make_dir)
         target = joinpath('bin', isa, os, program)
         super(TestProgram, self).__init__(target, make_fixture)
@@ -204,10 +226,12 @@ class DownloadedProgram(UniqueFixture):
     """ Like TestProgram, but checks the version in the gem5 binary repository
         and downloads an updated version if it is needed.
     """
-    def __new__(cls, url, path, filename):
+
+    def __new__(cls, url, path, filename, gzip_decompress=False):
         target = joinpath(path, filename)
         return super(DownloadedProgram, cls).__new__(cls, target)
-    def _init(self, url, path, filename, **kwargs):
+
+    def _init(self, url, path, filename, gzip_decompress=False, **kwargs):
         """
         url: string
             The url of the archive
@@ -215,11 +239,16 @@ class DownloadedProgram(UniqueFixture):
             The absolute path of the directory containing the archive
         filename: string
             The name of the archive
+        gzip_decompress: boolean
+            True if this target resource have been compressed using gzip and
+            is to be decompressed prior to usage.
         """
         self.url = url
         self.path = path
         self.filename = joinpath(path, filename)
         self.name = "Downloaded:" + self.filename
+        self.gzip_decompress = gzip_decompress
+
     def _download(self):
         import errno
         log.test_log.debug("Downloading " + self.url + " to " + self.path)
@@ -229,7 +258,18 @@ class DownloadedProgram(UniqueFixture):
             except OSError as e:
                 if e.errno != errno.EEXIST:
                     raise
-        urllib.request.urlretrieve(self.url, self.filename)
+        if self.gzip_decompress:
+            gzipped_filename = self.filename + ".gz"
+            urllib.request.urlretrieve(self.url, gzipped_filename)
+
+            with open(self.filename, 'w') as outfile:
+                with gzip.open(gzipped_filename, 'r') as infile:
+                    shutil.copyfileobj(infile, outfile)
+
+            os.remove(gzipped_filename)
+        else:
+            urllib.request.urlretrieve(self.url, self.filename)
+
     def _getremotetime(self):
         import datetime, time
         import _strptime # Needed for python threading bug

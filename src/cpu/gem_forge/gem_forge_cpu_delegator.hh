@@ -56,7 +56,7 @@ public:
   /** Reads this CPU's ID. */
   int cpuId() const { return this->baseCPU->cpuId(); }
   /** Reads this CPU's unique data requestor ID. */
-  MasterID dataMasterId() const { return this->baseCPU->dataMasterId(); }
+  RequestorID dataRequestorId() const { return this->baseCPU->dataRequestorId(); }
 
   /**
    * The accelerators are implemented as SimObject, not ClockedObject,

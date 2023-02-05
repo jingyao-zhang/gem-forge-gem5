@@ -389,7 +389,29 @@ public:
   /**
    * Executes a syscall specified by the callnum.
    */
-  void syscall(Fault *fault) override {
+  void syscall() override {
+    panic("FuncAddrExecContext does not implement this %s.", __func__);
+  }
+
+  /**
+   * Initiate an HTM command,
+   * e.g. tell Ruby we're starting/stopping a transaction
+   */
+  Fault initiateHtmCmd(Request::Flags flags) override {
+    panic("FuncAddrExecContext does not implement this %s.", __func__);
+  }
+
+  // hardware transactional memory
+  uint64_t newHtmTransactionUid() const override {
+    panic("FuncAddrExecContext does not implement this %s.", __func__);
+  }
+  uint64_t getHtmTransactionUid() const override {
+    panic("FuncAddrExecContext does not implement this %s.", __func__);
+  }
+  bool inHtmTransactionalState() const override {
+    panic("FuncAddrExecContext does not implement this %s.", __func__);
+  }
+  uint64_t getHtmTransactionalDepth() const override {
     panic("FuncAddrExecContext does not implement this %s.", __func__);
   }
 

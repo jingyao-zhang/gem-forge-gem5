@@ -54,8 +54,6 @@
 #include "base/output.hh"
 #include "base/trace.hh"
 #include "cpu/checker/cpu.hh"
-#include "cpu/cpuevent.hh"
-#include "cpu/profile.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Mwait.hh"
 #include "debug/SyscallVerbose.hh"
@@ -159,12 +157,11 @@ CPUProgressEvent::description() const
 BaseCPU::BaseCPU(Params *p, bool is_checker)
     : ClockedObject(p), instCnt(0), lastCommitTick(0),
       _cpuId(p->cpu_id), _socketId(p->socket_id),
-      _instMasterId(p->system->getMasterId(this, "inst")),
-      _dataMasterId(p->system->getMasterId(this, "data")),
+      _instRequestorId(p->system->getRequestorId(this, "inst")),
+      _dataRequestorId(p->system->getRequestorId(this, "data")),
       _taskId(ContextSwitchTaskId::Unknown), _pid(invldPid),
       _switchedOut(p->switched_out), _cacheLineSize(p->system->cacheLineSize()),
-      interrupts(p->interrupts), profileEvent(NULL),
-      numThreads(p->numThreads), system(p->system),
+      interrupts(p->interrupts), numThreads(p->numThreads), system(p->system),
       previousCycle(0), previousState(CPU_STATE_SLEEP),
       addressMonitor(p->numThreads),
       syscallRetryLatency(p->syscallRetryLatency),
@@ -179,16 +176,11 @@ BaseCPU::BaseCPU(Params *p, bool is_checker)
      * Register the exit dump.
      */
     if (this->accelManager) {
+        auto accM = &*this->accelManager;
         registerExitCallback(
-            new MakeCallback<
-                GemForgeAcceleratorManager,
-                &GemForgeAcceleratorManager::exitDump>(
-                    &*this->accelManager, true));
+            [accM]() -> void { accM->exitDump(); });
         Stats::registerResetCallback(
-            new MakeCallback<
-                GemForgeAcceleratorManager,
-                &GemForgeAcceleratorManager::resetStats>(
-                    &*this->accelManager, true));
+            [accM]() -> void { accM->resetStats(); });
     }
 
     // if Python did not provide a valid ID, do it here
@@ -226,23 +218,6 @@ BaseCPU::BaseCPU(Params *p, bool is_checker)
         }
     }
 
-    // The interrupts should always be present unless this CPU is
-    // switched in later or in case it is a checker CPU
-    if (!params()->switched_out && !is_checker) {
-        fatal_if(interrupts.size() != numThreads,
-                 "CPU %s has %i interrupt controllers, but is expecting one "
-                 "per thread (%i)\n",
-                 name(), interrupts.size(), numThreads);
-        for (ThreadID tid = 0; tid < numThreads; tid++)
-            interrupts[tid]->setCPU(this);
-    }
-
-    if (FullSystem) {
-        if (params()->profile)
-            profileEvent = new EventFunctionWrapper(
-                [this]{ processProfileEvent(); },
-                name());
-    }
     tracer = params()->tracer;
 
     if (params()->isa.size() != numThreads) {
@@ -253,7 +228,17 @@ BaseCPU::BaseCPU(Params *p, bool is_checker)
 
 BaseCPU::~BaseCPU()
 {
-    delete profileEvent;
+}
+
+void
+BaseCPU::postInterrupt(ThreadID tid, int int_num, int index)
+{
+    interrupts[tid]->post(int_num, index);
+    // Only wake up syscall emulation if it is not waiting on a futex.
+    // This is to model the fact that instructions such as ARM SEV
+    // should wake up a WFE sleep, but not a futex syscall WAIT. */
+    if (FullSystem || !system->futexMap.is_waiting(threadContexts[tid]))
+        wakeup(tid);
 }
 
 bool
@@ -315,7 +300,7 @@ BaseCPU::mwaitAtomic(ThreadID tid, ThreadContext *tc, BaseTLB *dtb)
     if (secondAddr > addr)
         size = secondAddr - addr;
 
-    req->setVirt(addr, size, 0x0, dataMasterId(), tc->instAddr());
+    req->setVirt(addr, size, 0x0, dataRequestorId(), tc->instAddr());
 
     // translate to physical address
     Fault fault = dtb->translateAtomic(req, tc, BaseTLB::Read);
@@ -374,11 +359,6 @@ BaseCPU::init()
 void
 BaseCPU::startup()
 {
-    if (FullSystem) {
-        if (!params()->switched_out && profileEvent)
-            schedule(profileEvent, curTick());
-    }
-
     if (params()->progress_interval) {
         new CPUProgressEvent(this, params()->progress_interval);
     }
@@ -490,6 +470,11 @@ BaseCPU::registerThreadContexts()
 {
     assert(system->multiThread || numThreads == 1);
 
+    fatal_if(interrupts.size() != numThreads,
+             "CPU %s has %i interrupt controllers, but is expecting one "
+             "per thread (%i)\n",
+             name(), interrupts.size(), numThreads);
+
     ThreadID size = threadContexts.size();
     for (ThreadID tid = 0; tid < size; ++tid) {
         ThreadContext *tc = threadContexts[tid];
@@ -502,6 +487,9 @@ BaseCPU::registerThreadContexts()
 
         if (!FullSystem)
             tc->getProcessPtr()->assignThreadContext(tc->contextId());
+
+        interrupts[tid]->setThreadContext(tc);
+        tc->getIsaPtr()->setThreadContext(tc);
     }
 }
 
@@ -598,8 +586,6 @@ BaseCPU::switchOut()
 {
     assert(!_switchedOut);
     _switchedOut = true;
-    if (profileEvent && profileEvent->scheduled())
-        deschedule(profileEvent);
 
     // Flush all TLBs in the CPU to avoid having stale translations if
     // it gets switched in later.
@@ -631,9 +617,9 @@ BaseCPU::takeOverFrom(BaseCPU *oldCPU)
         ThreadContext *newTC = threadContexts[i];
         ThreadContext *oldTC = oldCPU->threadContexts[i];
 
-        newTC->takeOverFrom(oldTC);
+        newTC->getIsaPtr()->setThreadContext(newTC);
 
-        CpuEvent::replaceThreadContext(oldTC, newTC);
+        newTC->takeOverFrom(oldTC);
 
         assert(newTC->contextId() == oldTC->contextId());
         assert(newTC->threadId() == oldTC->threadId());
@@ -686,17 +672,9 @@ BaseCPU::takeOverFrom(BaseCPU *oldCPU)
 
     interrupts = oldCPU->interrupts;
     for (ThreadID tid = 0; tid < numThreads; tid++) {
-        interrupts[tid]->setCPU(this);
+        interrupts[tid]->setThreadContext(threadContexts[tid]);
     }
     oldCPU->interrupts.clear();
-
-    if (FullSystem) {
-        for (ThreadID i = 0; i < size; ++i)
-            threadContexts[i]->profileClear();
-
-        if (profileEvent)
-            schedule(profileEvent, curTick());
-    }
 
     // All CPUs have an instruction and a data port, and the new CPU's
     // ports are dangling while the old CPU has its ports connected
@@ -732,17 +710,6 @@ BaseCPU::flushTLBs()
             checker->getDTBPtr()->flushAll();
         }
     }
-}
-
-void
-BaseCPU::processProfileEvent()
-{
-    ThreadID size = threadContexts.size();
-
-    for (ThreadID i = 0; i < size; ++i)
-        threadContexts[i]->profileSample();
-
-    schedule(profileEvent, curTick() + params()->profile);
 }
 
 void

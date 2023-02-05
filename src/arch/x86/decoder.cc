@@ -37,6 +37,8 @@
 namespace X86ISA
 {
 
+X86ISAInst::MicrocodeRom Decoder::microcodeRom;
+
 Decoder::State
 Decoder::doResetState()
 {
@@ -73,11 +75,11 @@ Decoder::doResetState()
 void
 Decoder::process()
 {
-    //This function drives the decoder state machine.
+    // This function drives the decoder state machine.
 
-    //Some sanity checks. You shouldn't try to process more bytes if
-    //there aren't any, and you shouldn't overwrite an already
-    //decoder ExtMachInst.
+    // Some sanity checks. You shouldn't try to process more bytes if
+    // there aren't any, and you shouldn't overwrite an already decoded
+    // ExtMachInst.
     assert(!outOfBytes);
     assert(!instDone);
 
@@ -89,7 +91,7 @@ Decoder::process()
         instBytes->chunks.push_back(fetchChunk);
     }
 
-    //While there's still something to do...
+    // While there's still something to do...
     while (!instDone && !outOfBytes) {
         uint8_t nextByte = getNextByte();
         switch (state) {
@@ -181,8 +183,8 @@ Decoder::doFromCacheState()
     }
 }
 
-//Either get a prefix and record it in the ExtMachInst, or send the
-//state machine on to get the opcode(s).
+// Either get a prefix and record it in the ExtMachInst, or send the
+// state machine on to get the opcode(s).
 Decoder::State
 Decoder::doPrefixState(uint8_t nextByte)
 {
@@ -193,9 +195,8 @@ Decoder::doPrefixState(uint8_t nextByte)
         prefix = 0;
     if (prefix)
         consumeByte();
-    switch(prefix)
-    {
-        //Operand size override prefixes
+    switch(prefix) {
+        // Operand size override prefixes
       case OperandSizeOverride:
         DPRINTF(Decoder, "Found operand size override prefix.\n");
         emi.legacy.op = true;
@@ -204,7 +205,7 @@ Decoder::doPrefixState(uint8_t nextByte)
         DPRINTF(Decoder, "Found address size override prefix.\n");
         emi.legacy.addr = true;
         break;
-        //Segment override prefixes
+        // Segment override prefixes
       case CSOverride:
       case DSOverride:
       case ESOverride:
@@ -582,8 +583,8 @@ Decoder::processOpcode(ByteTable &immTable, ByteTable &modrmTable,
     State nextState = ErrorState;
     const uint8_t opcode = emi.opcode.op;
 
-    //Figure out the effective operand size. This can be overriden to
-    //a fixed value at the decoder level.
+    // Figure out the effective operand size. This can be overriden to
+    // a fixed value at the decoder level.
     int logOpSize;
     if (emi.rex.w)
         logOpSize = 3; // 64 bit operand size
@@ -592,33 +593,33 @@ Decoder::processOpcode(ByteTable &immTable, ByteTable &modrmTable,
     else
         logOpSize = defOp;
 
-    //Set the actual op size
+    // Set the actual op size.
     emi.opSize = 1 << logOpSize;
 
-    //Figure out the effective address size. This can be overriden to
-    //a fixed value at the decoder level.
+    // Figure out the effective address size. This can be overriden to
+    // a fixed value at the decoder level.
     int logAddrSize;
     if (emi.legacy.addr)
         logAddrSize = altAddr;
     else
         logAddrSize = defAddr;
 
-    //Set the actual address size
+    // Set the actual address size.
     emi.addrSize = 1 << logAddrSize;
 
-    //Figure out the effective stack width. This can be overriden to
-    //a fixed value at the decoder level.
+    // Figure out the effective stack width. This can be overriden to
+    // a fixed value at the decoder level.
     emi.stackSize = 1 << stack;
 
-    //Figure out how big of an immediate we'll retreive based
-    //on the opcode.
+    // Figure out how big of an immediate we'll retreive based
+    // on the opcode.
     int immType = immTable[opcode];
     if (addrSizedImm)
         immediateSize = SizeTypeToSize[logAddrSize - 1][immType];
     else
         immediateSize = SizeTypeToSize[logOpSize - 1][immType];
 
-    //Determine what to expect next
+    // Determine what to expect next.
     if (modrmTable[opcode]) {
         nextState = ModRMState;
     } else {
@@ -633,9 +634,9 @@ Decoder::processOpcode(ByteTable &immTable, ByteTable &modrmTable,
     return nextState;
 }
 
-//Get the ModRM byte and determine what displacement, if any, there is.
-//Also determine whether or not to get the SIB byte, displacement, or
-//immediate next.
+// Get the ModRM byte and determine what displacement, if any, there is.
+// Also determine whether or not to get the SIB byte, displacement, or
+// immediate next.
 Decoder::State
 Decoder::doModRMState(uint8_t nextByte)
 {
@@ -643,7 +644,7 @@ Decoder::doModRMState(uint8_t nextByte)
     ModRM modRM = nextByte;
     DPRINTF(Decoder, "Found modrm byte %#x.\n", nextByte);
     if (defOp == 1) {
-        //figure out 16 bit displacement size
+        // Figure out 16 bit displacement size.
         if ((modRM.mod == 0 && modRM.rm == 6) || modRM.mod == 2)
             displacementSize = 2;
         else if (modRM.mod == 1)
@@ -651,7 +652,7 @@ Decoder::doModRMState(uint8_t nextByte)
         else
             displacementSize = 0;
     } else {
-        //figure out 32/64 bit displacement size
+        // Figure out 32/64 bit displacement size.
         if ((modRM.mod == 0 && modRM.rm == 5) || modRM.mod == 2)
             displacementSize = 4;
         else if (modRM.mod == 1)
@@ -669,8 +670,8 @@ Decoder::doModRMState(uint8_t nextByte)
            immediateSize = (emi.opSize == 8) ? 4 : emi.opSize;
     }
 
-    //If there's an SIB, get that next.
-    //There is no SIB in 16 bit mode.
+    // If there's an SIB, get that next.
+    // There is no SIB in 16 bit mode.
     if (modRM.rm == 4 && modRM.mod != 3) {
             // && in 32/64 bit mode)
         nextState = SIBState;
@@ -682,15 +683,15 @@ Decoder::doModRMState(uint8_t nextByte)
         instDone = true;
         nextState = ResetState;
     }
-    //The ModRM byte is consumed no matter what
+    // The ModRM byte is consumed no matter what.
     consumeByte();
     emi.modRM = modRM;
     return nextState;
 }
 
-//Get the SIB byte. We don't do anything with it at this point, other
-//than storing it in the ExtMachInst. Determine if we need to get a
-//displacement or immediate next.
+// Get the SIB byte. We don't do anything with it at this point, other
+// than storing it in the ExtMachInst. Determine if we need to get a
+// displacement or immediate next.
 Decoder::State
 Decoder::doSIBState(uint8_t nextByte)
 {
@@ -711,8 +712,7 @@ Decoder::doSIBState(uint8_t nextByte)
     return nextState;
 }
 
-//Gather up the displacement, or at least as much of it
-//as we can get.
+// Gather up the displacement, or at least as much of it as we can get.
 Decoder::State
 Decoder::doDisplacementState()
 {
@@ -726,9 +726,9 @@ Decoder::doDisplacementState()
             displacementSize, immediateCollected);
 
     if (displacementSize == immediateCollected) {
-        //Reset this for other immediates.
+        // Reset this for other immediates.
         immediateCollected = 0;
-        //Sign extend the displacement
+        // Sign extend the displacement.
         switch(displacementSize)
         {
           case 1:
@@ -761,35 +761,30 @@ Decoder::doDisplacementState()
     return nextState;
 }
 
-//Gather up the immediate, or at least as much of it
-//as we can get
+// Gather up the immediate, or at least as much of it as we can get.
 Decoder::State
 Decoder::doImmediateState()
 {
     State nextState = ErrorState;
 
-    getImmediate(immediateCollected,
-            emi.immediate,
-            immediateSize);
+    getImmediate(immediateCollected, emi.immediate, immediateSize);
 
     DPRINTF(Decoder, "Collecting %d byte immediate, got %d bytes.\n",
             immediateSize, immediateCollected);
 
-    if (immediateSize == immediateCollected)
-    {
-        //Reset this for other immediates.
+    if (immediateSize == immediateCollected) {
+        // Reset this for other immediates.
         immediateCollected = 0;
 
         //XXX Warning! The following is an observed pattern and might
-        //not always be true!
+        // not always be true!
 
-        //Instructions which use 64 bit operands but 32 bit immediates
-        //need to have the immediate sign extended to 64 bits.
-        //Instructions which use true 64 bit immediates won't be
-        //affected, and instructions that use true 32 bit immediates
-        //won't notice.
-        switch(immediateSize)
-        {
+        // Instructions which use 64 bit operands but 32 bit immediates
+        // need to have the immediate sign extended to 64 bits.
+        // Instructions which use true 64 bit immediates won't be
+        // affected, and instructions that use true 32 bit immediates
+        // won't notice.
+        switch(immediateSize) {
           case 4:
             emi.immediate = sext<32>(emi.immediate);
             break;
@@ -801,9 +796,9 @@ Decoder::doImmediateState()
                 emi.immediate);
         instDone = true;
         nextState = ResetState;
-    }
-    else
+    } else {
         nextState = ImmediateState;
+    }
     return nextState;
 }
 
@@ -887,4 +882,11 @@ bool Decoder::isGemForgeInst(const ExtMachInst &emi) const {
     }
     return true;
 }
+
+StaticInstPtr
+Decoder::fetchRomMicroop(MicroPC micropc, StaticInstPtr curMacroop)
+{
+    return microcodeRom.fetchMicroop(micropc, curMacroop);
+}
+
 }
