@@ -7,6 +7,8 @@
 #include "debug/MLCStreamPUM.hh"
 #include "debug/StreamNUCAMap.hh"
 
+namespace gem5 {
+
 bool StreamNUCAMap::topologyInitialized = false;
 int StreamNUCAMap::numRows = 0;
 int StreamNUCAMap::numCols = 0;
@@ -44,10 +46,10 @@ void StreamNUCAMap::initializeCache(const CacheParams &cacheParams) {
   }
 }
 
-void StreamNUCAMap::addNonUniformNode(int routerId, MachineID machineId,
+void StreamNUCAMap::addNonUniformNode(int routerId, ruby::MachineID machineId,
                                       const AddrRange &addrRange,
                                       const std::vector<int> &handleBanks) {
-  if (machineId.getType() != MachineType_Directory) {
+  if (machineId.getType() != ruby::MachineType_Directory) {
     return;
   }
   DPRINTF(StreamNUCAMap,
@@ -395,17 +397,18 @@ void StreamNUCAMap::evictRange(RangeMap &range) {
   for (auto paddr = range.startPAddr; paddr < range.endPAddr;
        paddr += lineSize) {
 
-    MachineID machineId(MachineType_L2Cache, 0);
-    auto controller = AbstractStreamAwareController::getController(machineId);
+    ruby::MachineID machineId(ruby::MachineType_L2Cache, 0);
+    auto controller =
+        ruby::AbstractStreamAwareController::getController(machineId);
 
     auto llcMachineId =
-        controller->mapAddressToLLCOrMem(paddr, MachineType_L2Cache);
-    auto llc = AbstractStreamAwareController::getController(llcMachineId);
+        controller->mapAddressToLLCOrMem(paddr, ruby::MachineType_L2Cache);
+    auto llc = ruby::AbstractStreamAwareController::getController(llcMachineId);
     llc->evictCleanLine(paddr);
 
     auto dirMachineId =
-        controller->mapAddressToLLCOrMem(paddr, MachineType_Directory);
-    auto dir = AbstractStreamAwareController::getController(dirMachineId);
+        controller->mapAddressToLLCOrMem(paddr, ruby::MachineType_Directory);
+    auto dir = ruby::AbstractStreamAwareController::getController(dirMachineId);
     dir->evictCleanLine(paddr);
   }
 }
@@ -416,3 +419,4 @@ void StreamNUCAMap::overridePAddrToBank(
     paddrLineToBankMap[entry.first] = entry.second;
   }
 }
+} // namespace gem5

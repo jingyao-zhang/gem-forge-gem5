@@ -13,6 +13,8 @@
 
 #include <deque>
 
+namespace gem5 {
+
 class SlicedDynStream {
 public:
   SlicedDynStream(CacheStreamConfigureDataPtr _configData);
@@ -117,5 +119,7 @@ private:
 
   void allocateOneSlice() const;
 };
+
+} // namespace gem5
 
 #endif

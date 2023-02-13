@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Copyright (c) 2016 ARM Limited
 # All rights reserved
@@ -35,7 +35,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from __future__ import print_function
 
 from tempfile import TemporaryFile
 import os
@@ -48,11 +47,11 @@ from style.style import StdioUI, check_ignores
 
 import argparse
 
-parser = argparse.ArgumentParser(
-    description="gem5 git style checker hook")
+parser = argparse.ArgumentParser(description="gem5 git style checker hook")
 
-parser.add_argument("--verbose", "-v", action="store_true",
-                    help="Produce verbose output")
+parser.add_argument(
+    "--verbose", "-v", action="store_true", help="Produce verbose output"
+)
 
 args = parser.parse_args()
 
@@ -76,12 +75,26 @@ for status, fname in git.status(filter="MA", cached=True):
     else:
         regions = all_regions
 
-    # Show they appropriate object and dump it to a file
-    status = git.file_from_index(fname)
-    f = TemporaryFile()
-    f.write(status.encode('utf-8'))
+    # Show the appropriate object and dump it to a file
+    try:
+        status = git.file_from_index(fname)
+    except UnicodeDecodeError:
+        print(
+            "Decoding '" + fname + "' throws a UnicodeDecodeError.",
+            file=sys.stderr,
+        )
+        print(
+            "Please check '"
+            + fname
+            + "' exclusively uses utf-8 character encoding.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
-    verifiers = [ v(ui, opts, base=repo_base) for v in all_verifiers ]
+    f = TemporaryFile()
+    f.write(status.encode("utf-8"))
+
+    verifiers = [v(ui, opts, base=repo_base) for v in all_verifiers]
     for v in verifiers:
         f.seek(0)
         # It is prefered that the first check is silent as it is in the
@@ -105,15 +118,18 @@ if failing_files:
             "Please run the style checker manually to fix "
             "the offending files.\n"
             "To check your modifications, run: util/style.py -m",
-            file=sys.stderr)
+            file=sys.stderr,
+        )
 
     print("\n", file=sys.stderr)
     if staged_mismatch:
         print(
             "It looks like you have forgotten to stage your "
             "fixes for commit in\n"
-            "the following files: ", file=sys.stderr)
+            "the following files: ",
+            file=sys.stderr,
+        )
         for f in staged_mismatch:
-            print("\t%s".format(f), file=sys.stderr)
+            print("\t{}".format(f), file=sys.stderr)
         print("Please `git --add' them", file=sys.stderr)
     sys.exit(1)

@@ -5,6 +5,9 @@
 
 #include <vector>
 
+namespace gem5 {
+namespace ruby {
+
 /**
  * Represent an address bulk (multiple addresses), as well as
  * intermediate state for the cache controller.
@@ -96,5 +99,8 @@ private:
   MsgPtr currentBulkMsg = nullptr;
   Tick currentBulkMsgTick = 0;
 };
+
+} // namespace ruby
+} // namespace gem5
 
 #endif

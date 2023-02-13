@@ -15,6 +15,8 @@
 #include <fstream>
 #include <sstream>
 
+namespace gem5 {
+
 const int64_t array_rows = 512;
 const int64_t array_cols = 512;
 const int64_t array_per_way = 8;
@@ -198,7 +200,7 @@ void compileTDFG(const ::LLVM::TDG::TDFG &tdfg) {
       if (!compiler || sendTile != compiler->tile_pattern) {
         // We need a new compiler.
         // Otherwise we can reuse it.
-        compiler = m5::make_unique<DataMoveCompiler>(hwConfig, sendTile);
+        compiler = std::make_unique<DataMoveCompiler>(hwConfig, sendTile);
       }
 
       printf("SendTile %s.\n", sendTile.to_string().c_str());
@@ -335,4 +337,5 @@ const char *OpClassStrings[Num_OpClass] = {
     "InstPrefetch",
     "Accelerator",
 };
-} // namespace Enums
+} // namespace Enums} // namespace gem5
+

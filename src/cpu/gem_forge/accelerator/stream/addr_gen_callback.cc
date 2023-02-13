@@ -4,6 +4,8 @@
 #include "base/logging.hh"
 #include "base/trace.hh"
 
+namespace gem5 {
+
 StreamValue getStreamValueFail(uint64_t streamId) {
   assert(false && "Failed to get stream value.");
 }
@@ -276,3 +278,6 @@ LinearAddrGenCallback::getNestTripCount(const DynStreamFormalParamV &params,
       params.at((nestLevel - 1) * 2 + 1).invariant.uint64();
   return nestTripCount;
 }
+
+} // namespace gem5
+

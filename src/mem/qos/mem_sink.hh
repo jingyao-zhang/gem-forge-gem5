@@ -33,23 +33,37 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Author: Matteo Andreozzi
  */
 
 
 #ifndef __MEM_QOS_MEM_SINK_HH__
 #define __MEM_QOS_MEM_SINK_HH__
 
+#include <cstdint>
+#include <deque>
+#include <vector>
+
+#include "base/compiler.hh"
+#include "base/types.hh"
 #include "mem/abstract_mem.hh"
 #include "mem/qos/mem_ctrl.hh"
 #include "mem/qport.hh"
 #include "params/QoSMemSinkCtrl.hh"
+#include "sim/eventq.hh"
 
-class QoSMemSinkInterfaceParams;
-class QoSMemSinkInterface;
+namespace gem5
+{
 
-namespace QoS {
+struct QoSMemSinkInterfaceParams;
+
+namespace memory
+{
+
+GEM5_DEPRECATED_NAMESPACE(QoS, qos);
+namespace qos
+{
+
+class MemSinkInterface;
 
 /**
  * QoS Memory Sink
@@ -72,7 +86,7 @@ class MemSinkCtrl : public MemCtrl
     {
       private:
         /** reference to parent memory object */
-        MemSinkCtrl& memory;
+        MemSinkCtrl& mem;
 
         /** Outgoing packet responses queue */
         RespPacketQueue queue;
@@ -124,7 +138,7 @@ class MemSinkCtrl : public MemCtrl
      *
      * @param p QoS Memory Sink configuration parameters
      */
-    MemSinkCtrl(const QoSMemSinkCtrlParams*);
+    MemSinkCtrl(const QoSMemSinkCtrlParams &);
 
     virtual ~MemSinkCtrl();
 
@@ -170,7 +184,7 @@ class MemSinkCtrl : public MemCtrl
     /**
      * Create pointer to interface of actual media
      */
-    QoSMemSinkInterface* const interface;
+    MemSinkInterface* const interface;
 
     /** Read request pending */
     bool retryRdReq;
@@ -181,11 +195,16 @@ class MemSinkCtrl : public MemCtrl
     /** Next request service time */
     Tick nextRequest;
 
-    /** Count the number of read retries */
-    Stats::Scalar numReadRetries;
+    struct MemSinkCtrlStats : public statistics::Group
+    {
+        MemSinkCtrlStats(statistics::Group *parent);
 
-    /** Count the number of write retries */
-    Stats::Scalar numWriteRetries;
+        /** Count the number of read retries */
+        statistics::Scalar numReadRetries;
+
+        /** Count the number of write retries */
+        statistics::Scalar numWriteRetries;
+    };
 
     /**
      * QoS-aware (per priority) incoming read requests packets queue
@@ -247,23 +266,23 @@ class MemSinkCtrl : public MemCtrl
     */
     bool recvTimingReq(PacketPtr pkt);
 
-    /** Registers statistics */
-    void regStats() override;
+    MemSinkCtrlStats stats;
 };
 
-} // namespace QoS
-
-class QoSMemSinkInterface : public AbstractMemory
+class MemSinkInterface : public AbstractMemory
 {
   public:
     /** Setting a pointer to the interface */
-    void setMemCtrl(QoS::MemSinkCtrl* _ctrl) { ctrl = _ctrl; };
+    void setMemCtrl(MemSinkCtrl* _ctrl) { ctrl = _ctrl; };
 
     /** Pointer to the controller */
-    QoS::MemSinkCtrl* ctrl;
+    MemSinkCtrl* ctrl;
 
-    QoSMemSinkInterface(const QoSMemSinkInterfaceParams* _p);
+    MemSinkInterface(const QoSMemSinkInterfaceParams &_p);
 };
 
+} // namespace qos
+} // namespace memory
+} // namespace gem5
 
-#endif /* __MEM_QOS_MEM_SINK_HH__ */
+#endif // __MEM_QOS_MEM_SINK_HH__

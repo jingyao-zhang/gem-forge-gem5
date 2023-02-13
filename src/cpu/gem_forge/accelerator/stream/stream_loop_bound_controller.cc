@@ -12,6 +12,8 @@
   DPRINTF(X, "[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 #define SE_DPRINTF(format, args...) SE_DPRINTF_(StreamLoopBound, format, ##args)
 
+namespace gem5 {
+
 void StreamRegionController::initializeStreamLoopBound(
     const ::LLVM::TDG::StreamRegion &region, StaticRegion &staticRegion) {
   if (!region.is_loop_bound()) {
@@ -190,4 +192,5 @@ void StreamRegionController::receiveOffloadedLoopBoundRet(
       dynS.setTotalAndInnerTripCount(tripCount);
     }
   }
-}
+}} // namespace gem5
+

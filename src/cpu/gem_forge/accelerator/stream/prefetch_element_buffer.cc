@@ -8,6 +8,8 @@
 #define DEBUG_TYPE PrefetchElementBuffer
 #include "stream_log.hh"
 
+namespace gem5 {
+
 void PrefetchElementBuffer::addElement(StreamElement *element) {
   assert(!element->isFirstUserDispatched() &&
          "Insert element with first user dispatched.");
@@ -39,4 +41,5 @@ StreamElement *PrefetchElementBuffer::isHit(Addr vaddr, int size) const {
     return element;
   }
   return nullptr;
-}
+}} // namespace gem5
+

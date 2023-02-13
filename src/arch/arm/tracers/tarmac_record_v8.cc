@@ -37,13 +37,18 @@
 
 #include "arch/arm/tracers/tarmac_record_v8.hh"
 
+#include <memory>
+
 #include "arch/arm/insts/static_inst.hh"
-#include "arch/arm/tlb.hh"
+#include "arch/arm/mmu.hh"
 #include "arch/arm/tracers/tarmac_tracer.hh"
+
+namespace gem5
+{
 
 using namespace ArmISA;
 
-namespace Trace {
+namespace trace {
 
 TarmacTracerRecordV8::TraceInstEntryV8::TraceInstEntryV8(
     const TarmacContext& tarmCtx,
@@ -56,8 +61,9 @@ TarmacTracerRecordV8::TraceInstEntryV8::TraceInstEntryV8(
     const auto thread = tarmCtx.thread;
 
     // Evaluate physical address
-    ArmISA::TLB* dtb = static_cast<TLB*>(thread->getDTBPtr());
-    paddrValid = dtb->translateFunctional(thread, addr, paddr);
+    auto mmu = static_cast<ArmISA::MMU*>(thread->getMMUPtr());
+    paddrValid = mmu->translateFunctional(
+        thread, addr, paddr);
 }
 
 TarmacTracerRecordV8::TraceMemEntryV8::TraceMemEntryV8(
@@ -70,8 +76,8 @@ TarmacTracerRecordV8::TraceMemEntryV8::TraceMemEntryV8(
     const auto thread = tarmCtx.thread;
 
     // Evaluate physical address
-    ArmISA::TLB* dtb = static_cast<TLB*>(thread->getDTBPtr());
-    dtb->translateFunctional(thread, addr, paddr);
+    auto mmu = static_cast<ArmISA::MMU*>(thread->getMMUPtr());
+    mmu->translateFunctional(thread, addr, paddr);
 }
 
 TarmacTracerRecordV8::TraceRegEntryV8::TraceRegEntryV8(
@@ -84,22 +90,19 @@ TarmacTracerRecordV8::TraceRegEntryV8::TraceRegEntryV8(
 }
 
 void
-TarmacTracerRecordV8::TraceRegEntryV8::updateInt(
-    const TarmacContext& tarmCtx,
-    RegIndex regRelIdx
-)
+TarmacTracerRecordV8::TraceRegEntryV8::updateInt(const TarmacContext& tarmCtx)
 {
     // Do not trace pseudo register accesses: invalid
     // register entry.
-    if (regRelIdx > NUM_ARCH_INTREGS) {
+    if (regId.index() > int_reg::NumArchRegs) {
         regValid = false;
         return;
     }
 
-    TraceRegEntry::updateInt(tarmCtx, regRelIdx);
+    TraceRegEntry::updateInt(tarmCtx);
 
-    if ((regRelIdx != PCReg) || (regRelIdx != StackPointerReg) ||
-        (regRelIdx != FramePointerReg) || (regRelIdx != ReturnAddressReg)) {
+    if ((regId != int_reg::Pc) || (regId != StackPointerReg) ||
+        (regId != FramePointerReg) || (regId != ReturnAddressReg)) {
 
         const auto* arm_inst = static_cast<const ArmStaticInst*>(
             tarmCtx.staticInst.get()
@@ -107,33 +110,27 @@ TarmacTracerRecordV8::TraceRegEntryV8::updateInt(
 
         regWidth = (arm_inst->getIntWidth());
         if (regWidth == 32) {
-            regName = "W" + std::to_string(regRelIdx);
+            regName = "W" + std::to_string(regId.index());
         } else {
-            regName = "X" + std::to_string(regRelIdx);
+            regName = "X" + std::to_string(regId.index());
         }
     }
 }
 
 void
-TarmacTracerRecordV8::TraceRegEntryV8::updateMisc(
-    const TarmacContext& tarmCtx,
-    RegIndex regRelIdx
-)
+TarmacTracerRecordV8::TraceRegEntryV8::updateMisc(const TarmacContext& tarmCtx)
 {
-    TraceRegEntry::updateMisc(tarmCtx, regRelIdx);
+    TraceRegEntry::updateMisc(tarmCtx);
     // System registers are 32bit wide
     regWidth = 32;
 }
 
 void
-TarmacTracerRecordV8::TraceRegEntryV8::updateVec(
-    const TarmacContext& tarmCtx,
-    RegIndex regRelIdx
-)
+TarmacTracerRecordV8::TraceRegEntryV8::updateVec(const TarmacContext& tarmCtx)
 {
     auto thread = tarmCtx.thread;
-    const auto& vec_container = thread->readVecReg(
-        RegId(regClass, regRelIdx));
+    ArmISA::VecRegContainer vec_container;
+    thread->getReg(regId, &vec_container);
     auto vv = vec_container.as<VecElem>();
 
     regWidth = ArmStaticInst::getCurSveVecLenInBits(thread);
@@ -147,18 +144,15 @@ TarmacTracerRecordV8::TraceRegEntryV8::updateVec(
     }
 
     regValid = true;
-    regName = "Z" + std::to_string(regRelIdx);
+    regName = "Z" + std::to_string(regId.index());
 }
 
 void
-TarmacTracerRecordV8::TraceRegEntryV8::updatePred(
-    const TarmacContext& tarmCtx,
-    RegIndex regRelIdx
-)
+TarmacTracerRecordV8::TraceRegEntryV8::updatePred(const TarmacContext& tarmCtx)
 {
     auto thread = tarmCtx.thread;
-    const auto& pred_container = thread->readVecPredReg(
-        RegId(regClass, regRelIdx));
+    ArmISA::VecPredRegContainer pred_container;
+    thread->getReg(regId, &pred_container);
 
     // Predicate registers are always 1/8 the size of related vector
     // registers. (getCurSveVecLenInBits(thread) / 8)
@@ -175,7 +169,7 @@ TarmacTracerRecordV8::TraceRegEntryV8::updatePred(
     }
 
     regValid = true;
-    regName = "P" + std::to_string(regRelIdx);
+    regName = "P" + std::to_string(regId.index());
 }
 
 void
@@ -185,7 +179,7 @@ TarmacTracerRecordV8::addInstEntry(std::vector<InstPtr>& queue,
     // Generate an instruction entry in the record and
     // add it to the Instruction Queue
     queue.push_back(
-        m5::make_unique<TraceInstEntryV8>(tarmCtx, predicate)
+        std::make_unique<TraceInstEntryV8>(tarmCtx, predicate)
     );
 }
 
@@ -198,9 +192,9 @@ TarmacTracerRecordV8::addMemEntry(std::vector<MemPtr>& queue,
     // Memory Queue
     if (getMemValid()) {
         queue.push_back(
-            m5::make_unique<TraceMemEntryV8>(tarmCtx,
-                                             static_cast<uint8_t>(getSize()),
-                                             getAddr(), getIntData())
+            std::make_unique<TraceMemEntryV8>(tarmCtx,
+                                              static_cast<uint8_t>(getSize()),
+                                              getAddr(), getIntData())
         );
     }
 }
@@ -220,9 +214,7 @@ TarmacTracerRecordV8::addRegEntry(std::vector<RegPtr>& queue,
 
         // Copying the entry and adding it to the "list"
         // of entries to be dumped to trace.
-        queue.push_back(
-            m5::make_unique<TraceRegEntryV8>(single_reg)
-        );
+        queue.push_back(std::make_unique<TraceRegEntryV8>(single_reg));
     }
 
     // Gem5 is treating CPSR flags as separate registers (CC registers),
@@ -321,4 +313,5 @@ TarmacTracerRecordV8::TraceRegEntryV8::formatReg() const
     }
 }
 
-} // namespace Trace
+} // namespace trace
+} // namespace gem5

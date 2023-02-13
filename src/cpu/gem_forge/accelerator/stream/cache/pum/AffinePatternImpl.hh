@@ -17,6 +17,8 @@
 
 #include "base/logging.hh"
 
+namespace gem5 {
+
 /**
  * To optimize for the performance, we use template to specialize some common
  * affine pattern for certain dimensions.
@@ -372,5 +374,7 @@ public:
     }
   };
 };
+
+} // namespace gem5
 
 #endif

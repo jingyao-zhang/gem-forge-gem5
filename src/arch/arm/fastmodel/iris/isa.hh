@@ -28,7 +28,11 @@
 #ifndef __ARCH_ARM_FASTMODEL_IRIS_ISA_HH__
 #define __ARCH_ARM_FASTMODEL_IRIS_ISA_HH__
 
+#include "arch/arm/utility.hh"
 #include "arch/generic/isa.hh"
+
+namespace gem5
+{
 
 namespace Iris
 {
@@ -36,11 +40,51 @@ namespace Iris
 class ISA : public BaseISA
 {
   public:
-    ISA(const Params *p) : BaseISA(p) {}
+    ISA(const Params &p) : BaseISA(p) {}
 
-    void serialize(CheckpointOut &cp) const;
+    void serialize(CheckpointOut &cp) const override;
+
+    void copyRegsFrom(ThreadContext *src) override;
+
+    bool
+    inUserMode() const override
+    {
+        ArmISA::CPSR cpsr = tc->readMiscRegNoEffect(ArmISA::MISCREG_CPSR);
+        return ArmISA::inUserMode(cpsr);
+    }
+
+    PCStateBase *
+    newPCState(Addr new_inst_addr=0) const override
+    {
+        return new ArmISA::PCState(new_inst_addr);
+    }
+
+    RegVal
+    readMiscRegNoEffect(RegIndex idx) const override
+    {
+        panic("readMiscRegNoEffect not implemented.");
+    }
+
+    RegVal
+    readMiscReg(RegIndex idx) override
+    {
+        panic("readMiscReg not implemented.");
+    }
+
+    void
+    setMiscRegNoEffect(RegIndex idx, RegVal val) override
+    {
+        panic("setMiscRegNoEffect not implemented.");
+    }
+
+    void
+    setMiscReg(RegIndex idx, RegVal val) override
+    {
+        panic("setMiscReg not implemented.");
+    }
 };
 
 } // namespace Iris
+} // namespace gem5
 
 #endif // __ARCH_ARM_FASTMODEL_IRIS_ISA_HH__

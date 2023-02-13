@@ -2,8 +2,6 @@
  * Copyright (c) 2014-2015 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -40,7 +38,11 @@
 #include <utility>
 #include <vector>
 
-#include "sim/stats.hh"
+#include "base/statistics.hh"
+#include "base/stats/group.hh"
+
+namespace gem5
+{
 
 class ComputeUnit;
 class ScoreboardCheckToSchedule;
@@ -59,11 +61,13 @@ struct ComputeUnitParams;
 class ScoreboardCheckStage
 {
   public:
-    enum nonrdytype_e {
+    enum nonrdytype_e
+    {
         NRDY_ILLEGAL,
         NRDY_WF_STOP,
         NRDY_IB_EMPTY,
         NRDY_WAIT_CNT,
+        NRDY_SLEEP,
         NRDY_BARRIER_WAIT,
         NRDY_VGPR_NRDY,
         NRDY_SGPR_NRDY,
@@ -71,14 +75,13 @@ class ScoreboardCheckStage
         NRDY_CONDITIONS
     };
 
-    ScoreboardCheckStage(const ComputeUnitParams* p, ComputeUnit &cu,
+    ScoreboardCheckStage(const ComputeUnitParams &p, ComputeUnit &cu,
                          ScoreboardCheckToSchedule &to_schedule);
     ~ScoreboardCheckStage();
     void exec();
 
     // Stats related variables and methods
     const std::string& name() const { return _name; }
-    void regStats();
 
   private:
     void collectStatistics(nonrdytype_e rdyStatus);
@@ -94,10 +97,17 @@ class ScoreboardCheckStage
      */
     ScoreboardCheckToSchedule &toSchedule;
 
-    // Stats
-    Stats::Vector stallCycles;
-
     const std::string _name;
+
+  protected:
+    struct ScoreboardCheckStageStats : public statistics::Group
+    {
+        ScoreboardCheckStageStats(statistics::Group *parent);
+
+        statistics::Vector stallCycles;
+    } stats;
 };
+
+} // namespace gem5
 
 #endif // __SCOREBOARD_CHECK_STAGE_HH__

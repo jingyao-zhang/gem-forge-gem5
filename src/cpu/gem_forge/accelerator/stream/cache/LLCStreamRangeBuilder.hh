@@ -6,6 +6,8 @@
 
 #include <list>
 
+namespace gem5 {
+
 class LLCStreamRangeBuilder {
 public:
   LLCStreamRangeBuilder(LLCDynStream *_stream, int64_t _totalTripCount);
@@ -46,5 +48,7 @@ private:
     return this->stream->curRemoteMachineType();
   }
 };
+
+} // namespace gem5
 
 #endif

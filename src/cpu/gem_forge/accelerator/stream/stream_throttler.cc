@@ -6,6 +6,8 @@
 #define DEBUG_TYPE StreamThrottle
 #include "stream_log.hh"
 
+namespace gem5 {
+
 StreamThrottler::StreamThrottler(const std::string &_strategy,
                                  StreamEngine *_se)
     : se(_se) {
@@ -345,4 +347,5 @@ void StreamThrottler::boostStreams(const Stream::StreamVec &stepRootStreams) {
       break;
     }
   }
-}
+}} // namespace gem5
+

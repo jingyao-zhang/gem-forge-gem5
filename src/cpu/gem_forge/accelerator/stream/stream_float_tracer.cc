@@ -6,8 +6,10 @@
 
 #include <sstream>
 
+namespace gem5 {
+
 void StreamFloatTracer::traceEvent(
-    uint64_t cycle, MachineID machineId,
+    uint64_t cycle, ruby::MachineID machineId,
     const ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType &type) const {
   if (this->buffer.size() == 0) {
     // Initialize.
@@ -26,11 +28,11 @@ void StreamFloatTracer::traceEvent(
   default:
     panic("Unsupported FloatTracer on %s.", machineId);
     break;
-  case MachineType_L2Cache:
+  case ruby::MachineType_L2Cache:
     entry.set_se(LLVM::TDG::StreamFloatEvent::StreamEngineType::
                      StreamFloatEvent_StreamEngineType_LLC);
     break;
-  case MachineType_Directory:
+  case ruby::MachineType_Directory:
     entry.set_se(LLVM::TDG::StreamFloatEvent::StreamEngineType::
                      StreamFloatEvent_StreamEngineType_MEM);
     break;
@@ -48,7 +50,7 @@ void StreamFloatTracer::initialize() const {
   std::stringstream ss;
   ss << cpuId << '-' << streamName << ".data";
   auto fileName = directory->resolve(ss.str());
-  this->protoStream = m5::make_unique<ProtoOutputStream>(fileName);
+  this->protoStream = std::make_unique<ProtoOutputStream>(fileName);
 }
 
 void StreamFloatTracer::write() const {
@@ -56,4 +58,5 @@ void StreamFloatTracer::write() const {
     this->protoStream->write(this->buffer.at(i));
   }
   this->used = 0;
-}
+}} // namespace gem5
+

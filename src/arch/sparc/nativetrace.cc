@@ -28,15 +28,18 @@
 
 #include "arch/sparc/nativetrace.hh"
 
-#include "arch/sparc/isa_traits.hh"
-#include "arch/sparc/registers.hh"
+#include "arch/sparc/pcstate.hh"
+#include "arch/sparc/regs/int.hh"
 #include "cpu/thread_context.hh"
 #include "params/SparcNativeTrace.hh"
 #include "sim/byteswap.hh"
 
-namespace Trace {
+namespace gem5
+{
 
-static const char *intRegNames[SparcISA::NumIntArchRegs] = {
+namespace trace {
+
+static const char *intRegNames[SparcISA::int_reg::NumArchRegs] = {
     // Global registers
     "g0", "g1", "g2", "g3", "g4", "g5", "g6", "g7",
     // Output registers
@@ -48,7 +51,7 @@ static const char *intRegNames[SparcISA::NumIntArchRegs] = {
 };
 
 void
-Trace::SparcNativeTrace::check(NativeTraceRecord *record)
+SparcNativeTrace::check(NativeTraceRecord *record)
 {
     ThreadContext *tc = record->getThread();
 
@@ -57,16 +60,16 @@ Trace::SparcNativeTrace::check(NativeTraceRecord *record)
     // Integer registers
 
     // I doubt a real SPARC will describe more integer registers than this.
-    assert(SparcISA::NumIntArchRegs == 32);
+    assert(SparcISA::int_reg::NumArchRegs == 32);
     const char **regName = intRegNames;
-    for (int i = 0; i < SparcISA::NumIntArchRegs; i++) {
-        regVal = tc->readIntReg(i);
+    for (int i = 0; i < SparcISA::int_reg::NumArchRegs; i++) {
+        regVal = tc->getReg(SparcISA::intRegClass[i]);
         read(&realRegVal, sizeof(realRegVal));
         realRegVal = betoh(realRegVal);
         checkReg(*(regName++), regVal, realRegVal);
     }
 
-    SparcISA::PCState pc = tc->pcState();
+    auto &pc = tc->pcState().as<SparcISA::PCState>();
     // PC
     read(&realRegVal, sizeof(realRegVal));
     realRegVal = betoh(realRegVal);
@@ -76,24 +79,15 @@ Trace::SparcNativeTrace::check(NativeTraceRecord *record)
     // NPC
     read(&realRegVal, sizeof(realRegVal));
     realRegVal = betoh(realRegVal);
-    pc.nnpc();
+    regVal = pc.nnpc();
     checkReg("npc", regVal, realRegVal);
 
     // CCR
     read(&realRegVal, sizeof(realRegVal));
     realRegVal = betoh(realRegVal);
-    regVal = tc->readIntReg(SparcISA::INTREG_CCR);
+    regVal = tc->getReg(SparcISA::int_reg::Ccr);
     checkReg("ccr", regVal, realRegVal);
 }
 
-} // namespace Trace
-
-////////////////////////////////////////////////////////////////////////
-//
-//  ExeTracer Simulation Object
-//
-Trace::SparcNativeTrace *
-SparcNativeTraceParams::create()
-{
-    return new Trace::SparcNativeTrace(this);
-};
+} // namespace trace
+} // namespace gem5

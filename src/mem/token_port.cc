@@ -2,8 +2,6 @@
  * Copyright (c) 2016-2020 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -29,8 +27,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Matthew Poremba
  */
 
 
@@ -38,6 +34,9 @@
 
 #include "base/trace.hh"
 #include "debug/TokenPort.hh"
+
+namespace gem5
+{
 
 void
 TokenRequestPort::bind(Port &peer)
@@ -181,3 +180,5 @@ TokenManager::acquireTokens(int num_tokens)
     DPRINTF(TokenPort, "Acquired %d tokens, have %d\n",
                        num_tokens, availableTokens);
 }
+
+} // namespace gem5

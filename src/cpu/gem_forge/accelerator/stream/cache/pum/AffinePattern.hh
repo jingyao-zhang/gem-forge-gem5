@@ -16,6 +16,8 @@
 #error "Require protobuf to parse tensor dataflow graph."
 #endif
 
+namespace gem5 {
+
 class AffinePattern {
 public:
   /**
@@ -403,5 +405,7 @@ getAffinePatternFromImpl(const AffinePatternImpl<dimension, T> &p) {
   }
   return AffinePattern(p.start, params);
 }
+
+} // namespace gem5
 
 #endif

@@ -28,12 +28,16 @@
 #include "arch/arm/fastmodel/CortexA76/cortex_a76.hh"
 
 #include "arch/arm/fastmodel/iris/cpu.hh"
+#include "arch/arm/regs/misc.hh"
 #include "base/logging.hh"
 #include "dev/arm/base_gic.hh"
-#include "sim/core.hh"
 #include "systemc/tlm_bridge/gem5_to_tlm.hh"
 
-namespace FastModel
+namespace gem5
+{
+
+GEM5_DEPRECATED_NAMESPACE(FastModel, fastmodel);
+namespace fastmodel
 {
 
 void
@@ -41,6 +45,8 @@ CortexA76::initState()
 {
     for (auto *tc : threadContexts)
         tc->setMiscRegNoEffect(ArmISA::MISCREG_CNTFRQ_EL0, params().cntfrq);
+
+    evs_base_cpu->setSysCounterFrq(params().cntfrq);
 }
 
 void
@@ -89,31 +95,31 @@ CortexA76::setCluster(CortexA76Cluster *_cluster, int _num)
     set_evs_param("vfp-enable_at_reset", params().vfp_enable_at_reset);
 }
 
+void
+CortexA76::setResetAddr(Addr addr, bool secure)
+{
+    evs_base_cpu->setResetAddr(num, addr, secure);
+}
+
 Port &
 CortexA76::getPort(const std::string &if_name, PortID idx)
 {
-    if (if_name == "redistributor")
+    if (if_name == "redistributor" || if_name == "core_reset" ||
+        if_name == "poweron_reset")
         return cluster->getEvs()->gem5_getPort(if_name, num);
     else
         return Base::getPort(if_name, idx);
 }
 
-CortexA76Cluster::CortexA76Cluster(Params &p) :
-    SimObject(&p), _params(p), cores(p.cores), evs(p.evs)
+CortexA76Cluster::CortexA76Cluster(const Params &p) :
+    SimObject(p), cores(p.cores), evs(p.evs)
 {
     for (int i = 0; i < p.cores.size(); i++)
         p.cores[i]->setCluster(this, i);
 
-    sc_core::sc_attr_base *base;
-
-    base = evs->get_attribute(Iris::Gem5CpuClusterAttributeName);
-    auto *gem5_cluster_attr =
-        dynamic_cast<sc_core::sc_attribute<CortexA76Cluster *> *>(base);
-    panic_if(base && !gem5_cluster_attr,
-             "The EVS gem5 CPU cluster attribute was not of type "
-             "sc_attribute<FastModel::CortexA76Cluster *>.");
-    if (gem5_cluster_attr)
-        gem5_cluster_attr->value = this;
+    Iris::BaseCpuEvs *e = dynamic_cast<Iris::BaseCpuEvs *>(evs);
+    panic_if(!e, "EVS should be of type Iris::BaseCpuEvs");
+    e->setCluster(this);
 
     set_evs_param("core.BROADCASTATOMIC", p.BROADCASTATOMIC);
     set_evs_param("core.BROADCASTCACHEMAINT", p.BROADCASTCACHEMAINT);
@@ -194,23 +200,13 @@ CortexA76Cluster::CortexA76Cluster(Params &p) :
 Port &
 CortexA76Cluster::getPort(const std::string &if_name, PortID idx)
 {
-    if (if_name == "amba") {
+    if (if_name == "amba" || if_name == "top_reset" ||
+        if_name == "dbg_reset" || if_name == "model_reset") {
         return evs->gem5_getPort(if_name, idx);
     } else {
         return SimObject::getPort(if_name, idx);
     }
 }
 
-} // namespace FastModel
-
-FastModel::CortexA76 *
-FastModelCortexA76Params::create()
-{
-    return new FastModel::CortexA76(*this);
-}
-
-FastModel::CortexA76Cluster *
-FastModelCortexA76ClusterParams::create()
-{
-    return new FastModel::CortexA76Cluster(*this);
-}
+} // namespace fastmodel
+} // namespace gem5

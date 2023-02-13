@@ -32,6 +32,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -40,9 +41,9 @@
 #include "base/trace.hh"
 #include "cpu/smt.hh"
 #include "debug/Checkpoint.hh"
-#include "sim/core.hh"
 
-using namespace std;
+namespace gem5
+{
 
 Tick simQuantum = 0;
 
@@ -53,7 +54,7 @@ Tick simQuantum = 0;
 // cycle, before the pipeline simulation is performed.
 //
 uint32_t numMainEventQueues = 0;
-vector<EventQueue *> mainEventQueue;
+std::vector<EventQueue *> mainEventQueue;
 __thread EventQueue *_curEventQueue = NULL;
 bool inParallelMode = false;
 
@@ -219,7 +220,7 @@ EventQueue::serviceOne()
         setCurTick(event->when());
 
         DPRINTF(Event, "Process Event %s.\n", event->name());
-        if (DTRACE(Event))
+        if (debug::Event)
             event->trace("executed");
         event->process();
         DPRINTF(Event, "Process Event %s: Done.\n", event->name());
@@ -380,16 +381,12 @@ Event::description() const
 void
 Event::trace(const char *action)
 {
-    // This DPRINTF is unconditional because calls to this function
-    // are protected by an 'if (DTRACE(Event))' in the inlined Event
-    // methods.
-    //
     // This is just a default implementation for derived classes where
     // it's not worth doing anything special.  If you want to put a
     // more informative message in the trace, override this method on
     // the particular subclass where you have the information that
     // needs to be printed.
-    DPRINTF_UNCONDITIONAL(Event, "%s %s %s @ %d\n",
+    DPRINTF(Event, "%s %s %s @ %d\n",
             description(), instanceString(), action, when());
 }
 
@@ -421,7 +418,7 @@ Event::dump() const
     }
 }
 
-EventQueue::EventQueue(const string &n)
+EventQueue::EventQueue(const std::string &n)
     : objName(n), head(NULL), _curTick(0)
 {
 }
@@ -464,3 +461,4 @@ EventFunctionWrapper::EventFunctionWrapper(
     if (del)
         setFlags(AutoDelete);
 }
+} // namespace gem5

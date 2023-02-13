@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 
 # Copyright (c) 2013-2014 ARM Limited
 # All rights reserved
@@ -45,43 +45,44 @@ import sys
 
 util_dir = os.path.dirname(os.path.realpath(__file__))
 # Make sure the proto definitions are up to date.
-subprocess.check_call(['make', '--quiet', '-C', util_dir, 'packet_pb2.py'])
+subprocess.check_call(["make", "--quiet", "-C", util_dir, "packet_pb2.py"])
 import packet_pb2
+
 
 def main():
     if len(sys.argv) != 3:
-        print "Usage: ", sys.argv[0], " <protobuf input> <ASCII output>"
+        print("Usage: ", sys.argv[0], " <protobuf input> <ASCII output>")
         exit(-1)
 
     # Open the file in read mode
     proto_in = protolib.openFileRd(sys.argv[1])
 
     try:
-        ascii_out = open(sys.argv[2], 'w')
+        ascii_out = open(sys.argv[2], "w")
     except IOError:
-        print "Failed to open ", sys.argv[2], " for writing"
+        print("Failed to open ", sys.argv[2], " for writing")
         exit(-1)
 
     # Read the magic number in 4-byte Little Endian
-    magic_number = proto_in.read(4)
+    magic_number = proto_in.read(4).decode()
 
     if magic_number != "gem5":
-        print "Unrecognized file", sys.argv[1]
+        print("Unrecognized file", sys.argv[1])
         exit(-1)
 
-    print "Parsing packet header"
+    print("Parsing packet header")
 
     # Add the packet header
     header = packet_pb2.PacketHeader()
     protolib.decodeMessage(proto_in, header)
 
-    print "Object id:", header.obj_id
-    print "Tick frequency:", header.tick_freq
+    print("Object id:", header.obj_id)
+    print("Tick frequency:", header.tick_freq)
 
     for id_string in header.id_strings:
-        print 'Master id %d: %s' % (id_string.key, id_string.value)
+        print("Master id %d: %s" % (id_string.key, id_string.value))
 
-    print "Parsing packets"
+    print("Parsing packets")
 
     num_packets = 0
     packet = packet_pb2.Packet()
@@ -90,25 +91,29 @@ def main():
     while protolib.decodeMessage(proto_in, packet):
         num_packets += 1
         # ReadReq is 1 and WriteReq is 4 in src/mem/packet.hh Command enum
-        cmd = 'r' if packet.cmd == 1 else ('w' if packet.cmd == 4 else 'u')
-        if packet.HasField('pkt_id'):
-            ascii_out.write('%s,' % (packet.pkt_id))
-        if packet.HasField('flags'):
-            ascii_out.write('%s,%s,%s,%s,%s' % (cmd, packet.addr, packet.size,
-                            packet.flags, packet.tick))
+        cmd = "r" if packet.cmd == 1 else ("w" if packet.cmd == 4 else "u")
+        if packet.HasField("pkt_id"):
+            ascii_out.write("%s," % (packet.pkt_id))
+        if packet.HasField("flags"):
+            ascii_out.write(
+                "%s,%s,%s,%s,%s"
+                % (cmd, packet.addr, packet.size, packet.flags, packet.tick)
+            )
         else:
-            ascii_out.write('%s,%s,%s,%s' % (cmd, packet.addr, packet.size,
-                                           packet.tick))
-        if packet.HasField('pc'):
-            ascii_out.write(',%s\n' % (packet.pc))
+            ascii_out.write(
+                "%s,%s,%s,%s" % (cmd, packet.addr, packet.size, packet.tick)
+            )
+        if packet.HasField("pc"):
+            ascii_out.write(",%s\n" % (packet.pc))
         else:
-            ascii_out.write('\n')
+            ascii_out.write("\n")
 
-    print "Parsed packets:", num_packets
+    print("Parsed packets:", num_packets)
 
     # We're done
     ascii_out.close()
     proto_in.close()
+
 
 if __name__ == "__main__":
     main()

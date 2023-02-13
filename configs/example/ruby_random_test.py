@@ -25,16 +25,13 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from __future__ import print_function
-from __future__ import absolute_import
-
 import m5
 from m5.objects import *
 from m5.defines import buildEnv
 from m5.util import addToPath
-import os, optparse, sys
+import os, argparse, sys
 
-addToPath('../')
+addToPath("../")
 
 from common import Options
 from ruby import Ruby
@@ -44,41 +41,47 @@ config_path = os.path.dirname(os.path.abspath(__file__))
 config_root = os.path.dirname(config_path)
 m5_root = os.path.dirname(config_root)
 
-parser = optparse.OptionParser()
+parser = argparse.ArgumentParser()
 Options.addNoISAOptions(parser)
 
-parser.add_option("--maxloads", metavar="N", default=100,
-                  help="Stop after N loads")
-parser.add_option("-f", "--wakeup_freq", metavar="N", default=10,
-                  help="Wakeup every N cycles")
+parser.add_argument(
+    "--maxloads", metavar="N", default=100, help="Stop after N loads"
+)
+parser.add_argument(
+    "-f",
+    "--wakeup_freq",
+    metavar="N",
+    default=10,
+    help="Wakeup every N cycles",
+)
 
 #
 # Add the ruby specific and protocol specific options
 #
 Ruby.define_options(parser)
 
-exec(compile( \
-    open(os.path.join(config_root, "common", "Options.py")).read(), \
-    os.path.join(config_root, "common", "Options.py"), 'exec'))
+exec(
+    compile(
+        open(os.path.join(config_root, "common", "Options.py")).read(),
+        os.path.join(config_root, "common", "Options.py"),
+        "exec",
+    )
+)
 
-(options, args) = parser.parse_args()
+args = parser.parse_args()
 
 #
 # Set the default cache size and associativity to be very small to encourage
 # races between requests and writebacks.
 #
-options.l1d_size="256B"
-options.l1i_size="256B"
-options.l2_size="512B"
-options.l3_size="1kB"
-options.l1d_assoc=2
-options.l1i_assoc=2
-options.l2_assoc=2
-options.l3_assoc=2
-
-if args:
-     print("Error: script doesn't take any positional arguments")
-     sys.exit(1)
+args.l1d_size = "256B"
+args.l1i_size = "256B"
+args.l2_size = "512B"
+args.l3_size = "1kB"
+args.l1d_assoc = 2
+args.l1i_assoc = 2
+args.l2_assoc = 2
+args.l3_assoc = 2
 
 #
 # Create the ruby random tester
@@ -86,33 +89,43 @@ if args:
 
 # Check the protocol
 check_flush = False
-if buildEnv['PROTOCOL'] == 'MOESI_hammer':
+if buildEnv["PROTOCOL"] == "MOESI_hammer":
     check_flush = True
 
-tester = RubyTester(check_flush = check_flush,
-                    checks_to_complete = options.maxloads,
-                    wakeup_frequency = options.wakeup_freq)
+tester = RubyTester(
+    check_flush=check_flush,
+    checks_to_complete=args.maxloads,
+    wakeup_frequency=args.wakeup_freq,
+)
 
 #
 # Create the M5 system.  Note that the Memory Object isn't
 # actually used by the rubytester, but is included to support the
 # M5 memory size == Ruby memory size checks
 #
-system = System(cpu = tester, mem_ranges = [AddrRange(options.mem_size)])
+system = System(cpu=tester, mem_ranges=[AddrRange(args.mem_size)])
 
 # Create a top-level voltage domain and clock domain
-system.voltage_domain = VoltageDomain(voltage = options.sys_voltage)
+system.voltage_domain = VoltageDomain(voltage=args.sys_voltage)
 
-system.clk_domain = SrcClockDomain(clock = options.sys_clock,
-                                   voltage_domain = system.voltage_domain)
+system.clk_domain = SrcClockDomain(
+    clock=args.sys_clock, voltage_domain=system.voltage_domain
+)
 
-Ruby.create_system(options, False, system)
+# the ruby tester reuses num_cpus to specify the
+# number of cpu ports connected to the tester object, which
+# is stored in system.cpu. because there is only ever one
+# tester object, num_cpus is not necessarily equal to the
+# size of system.cpu
+cpu_list = [system.cpu] * args.num_cpus
+Ruby.create_system(args, False, system, cpus=cpu_list)
 
 # Create a seperate clock domain for Ruby
-system.ruby.clk_domain = SrcClockDomain(clock = options.ruby_clock,
-                                        voltage_domain = system.voltage_domain)
+system.ruby.clk_domain = SrcClockDomain(
+    clock=args.ruby_clock, voltage_domain=system.voltage_domain
+)
 
-assert(options.num_cpus == len(system.ruby._cpu_ports))
+assert args.num_cpus == len(system.ruby._cpu_ports)
 
 tester.num_cpus = len(system.ruby._cpu_ports)
 
@@ -127,11 +140,11 @@ for ruby_port in system.ruby._cpu_ports:
     # Tie the ruby tester ports to the ruby cpu read and write ports
     #
     if ruby_port.support_data_reqs and ruby_port.support_inst_reqs:
-        tester.cpuInstDataPort = ruby_port.slave
+        tester.cpuInstDataPort = ruby_port.in_ports
     elif ruby_port.support_data_reqs:
-        tester.cpuDataPort = ruby_port.slave
+        tester.cpuDataPort = ruby_port.in_ports
     elif ruby_port.support_inst_reqs:
-        tester.cpuInstPort = ruby_port.slave
+        tester.cpuInstPort = ruby_port.in_ports
 
     # Do not automatically retry stalled Ruby requests
     ruby_port.no_retry_on_stall = True
@@ -146,16 +159,16 @@ for ruby_port in system.ruby._cpu_ports:
 # run simulation
 # -----------------------
 
-root = Root( full_system = False, system = system )
-root.system.mem_mode = 'timing'
+root = Root(full_system=False, system=system)
+root.system.mem_mode = "timing"
 
 # Not much point in this being higher than the L1 latency
-m5.ticks.setGlobalFrequency('1ns')
+m5.ticks.setGlobalFrequency("1ns")
 
 # instantiate configuration
 m5.instantiate()
 
 # simulate until program terminates
-exit_event = m5.simulate(options.abs_max_tick)
+exit_event = m5.simulate(args.abs_max_tick)
 
-print('Exiting @ tick', m5.curTick(), 'because', exit_event.getCause())
+print("Exiting @ tick", m5.curTick(), "because", exit_event.getCause())

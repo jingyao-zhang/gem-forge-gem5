@@ -9,6 +9,8 @@
 #include "speculative_precomputation/speculative_precomputation_manager.hh"
 #include "stream/stream_engine.hh"
 
+namespace gem5 {
+
 void GemForgeAccelerator::handshake(GemForgeCPUDelegator *_cpuDelegator,
                                     GemForgeAcceleratorManager *_manager) {
   this->cpuDelegator = _cpuDelegator;
@@ -22,8 +24,8 @@ void GemForgeAccelerator::takeOverBy(GemForgeCPUDelegator *newCpuDelegator,
 }
 
 GemForgeAcceleratorManager::GemForgeAcceleratorManager(
-    GemForgeAcceleratorManagerParams *params)
-    : SimObject(params), accelerators(params->accelerators),
+    const GemForgeAcceleratorManagerParams &params)
+    : SimObject(params), accelerators(params.accelerators),
       cpuDelegator(nullptr), tickEvent([this] { this->tick(); }, name()) {}
 
 GemForgeAcceleratorManager::~GemForgeAcceleratorManager() {}
@@ -132,10 +134,6 @@ void GemForgeAcceleratorManager::takeOverFrom(
   }
 }
 
-GemForgeAcceleratorManager *GemForgeAcceleratorManagerParams::create() {
-  return new GemForgeAcceleratorManager(this);
-}
-
 void GemForgeAcceleratorManager::exitDump() {
   if (auto se = this->getStreamEngine()) {
     se->exitDump();
@@ -147,3 +145,4 @@ void GemForgeAcceleratorManager::resetStats() {
     accelerator->resetStats();
   }
 }
+} // namespace gem5

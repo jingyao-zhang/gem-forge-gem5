@@ -6,6 +6,8 @@
 #define s(v) ss(v)
 #pragma message(s(__cplusplus))
 
+namespace gem5 {
+
 const RegionTable::RegionId RegionTable::REGION_ID_ALL;
 
 RegionTable::RegionTable(const LLVM::TDG::StaticInformation &info) {
@@ -54,4 +56,5 @@ bool RegionTable::hasRegionSetFromBB(BasicBlockId bbId) const {
 const RegionTable::RegionSet &
 RegionTable::getRegionSetFromBB(BasicBlockId bbId) const {
   return this->bbToRegionMap.at(bbId);
-}
+}} // namespace gem5
+

@@ -10,13 +10,15 @@
 #include "cpu/timebuf.hh"
 #include "params/LLVMTraceCPU.hh"
 
+namespace gem5 {
+
 class LLVMTraceCPU;
 
 class LLVMCommitStage {
 public:
   using IEWStruct = LLVMIEWStage::IEWStruct;
 
-  LLVMCommitStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
+  LLVMCommitStage(const LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
   LLVMCommitStage(const LLVMCommitStage &other) = delete;
   LLVMCommitStage(LLVMCommitStage &&other) = delete;
 
@@ -30,12 +32,12 @@ public:
 
   void regStats();
 
-  Stats::Vector instsCommitted;
-  Stats::Vector opsCommitted;
-  Stats::Vector intInstsCommitted;
-  Stats::Vector fpInstsCommitted;
-  Stats::Vector callInstsCommitted;
-  Stats::Scalar blockedCycles;
+  statistics::Vector instsCommitted;
+  statistics::Vector opsCommitted;
+  statistics::Vector intInstsCommitted;
+  statistics::Vector fpInstsCommitted;
+  statistics::Vector callInstsCommitted;
+  statistics::Scalar blockedCycles;
 
 private:
   LLVMTraceCPU *cpu;
@@ -61,5 +63,7 @@ private:
 
   std::vector<CommitState> commitStates;
 };
+
+} // namespace gem5
 
 #endif

@@ -38,6 +38,9 @@
 #include "arch/x86/decoder.hh"
 #include "arch/x86/types.hh"
 
+namespace gem5
+{
+
 namespace X86ISA
 {
     const uint8_t CS = CSOverride;
@@ -57,9 +60,30 @@ namespace X86ISA
     const uint8_t V3 = Vex3Prefix;
     const uint8_t EV = EVexPrefix;
 
-    //This table identifies whether a byte is a prefix, and if it is,
+    //These table identifies whether a byte is a prefix, and if it is,
     //which prefix it is.
-    const Decoder::ByteTable Decoder::Prefixes =
+    const Decoder::ByteTable Decoder::Prefixes[] =
+    {{    //LSB
+// MSB   0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
+/*   0*/ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
+/*   1*/ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
+/*   2*/ 0 , 0 , 0 , 0 , 0 , 0 , ES, 0 , 0 , 0 , 0 , 0 , 0 , 0 , CS, 0,
+/*   3*/ 0 , 0 , 0 , 0 , 0 , 0 , SS, 0 , 0 , 0 , 0 , 0 , 0 , 0 , DS, 0,
+/*   4*/ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
+/*   5*/ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
+/*   6*/ 0 , 0 , 0 , 0 , FS, GS, OO, AO, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
+/*   7*/ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
+/*   8*/ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
+/*   9*/ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
+/*   A*/ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
+/*   B*/ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
+/*   C*/ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
+/*   D*/ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
+/*   E*/ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
+/*   F*/ LO, 0 , RN, RE, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0
+    },
+
+    //This table is the same as the above, except used in 64 bit mode.
     {    //LSB
 // MSB   0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
 /*   0*/ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
@@ -78,7 +102,7 @@ namespace X86ISA
 /*   D*/ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
 /*   E*/ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
 /*   F*/ LO, 0 , RN, RE, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0
-    };
+    }};
 
     // These tables identify whether a particular opcode uses the ModRM byte.
     const Decoder::ByteTable Decoder::UsesModRMOneByte =
@@ -116,7 +140,7 @@ namespace X86ISA
 /*  8 */ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
 /*  9 */ 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1,
 /*  A */ 0 , 0 , 0 , 1 , 1 , 1 , 1 , 1 , 0 , 0 , 0 , 1 , 1 , 1 , 1 , 1,
-/*  B */ 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 0 , 0 , 1 , 1 , 1 , 1 , 1 , 1,
+/*  B */ 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 0 , 1 , 1 , 1 , 1 , 1 , 1,
 /*  C */ 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0,
 /*  D */ 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1,
 /*  E */ 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1,
@@ -186,7 +210,8 @@ namespace X86ISA
 /*  F */ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0
     };
 
-    enum SizeType {
+    enum SizeType
+    {
         NoImm,
         NI = NoImm,
         ByteImm,
@@ -233,7 +258,7 @@ namespace X86ISA
 /*  6 */ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , ZW, ZW, BY, BY, 0 , 0 , 0 , 0 ,
 /*  7 */ BY, BY, BY, BY, BY, BY, BY, BY, BY, BY, BY, BY, BY, BY, BY, BY,
 /*  8 */ BY, ZW, BY, BY, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
-/*  9 */ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
+/*  9 */ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , PO, 0 , 0 , 0 , 0 , 0 ,
 /*  A */ VW, VW, VW, VW, 0 , 0 , 0 , 0 , BY, ZW, 0 , 0 , 0 , 0 , 0 , 0 ,
 /*  B */ BY, BY, BY, BY, BY, BY, BY, BY, VW, VW, VW, VW, VW, VW, VW, VW,
 /*  C */ BY, BY, WO, 0 , 0 , 0 , BY, ZW, EN, 0 , WO, 0 , 0 , BY, 0 , 0 ,
@@ -256,7 +281,7 @@ namespace X86ISA
 /*  8 */ ZW, ZW, ZW, ZW, ZW, ZW, ZW, ZW, ZW, ZW, ZW, ZW, ZW, ZW, ZW, ZW,
 /*  9 */ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
 /*  A */ 0 , 0 , 0 , 0 , BY, 0 , 0 , 0 , 0 , 0 , 0 , 0 , BY, 0 , 0 , 0 ,
-/*  B */ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , ZW, 0 , BY, 0 , 0 , 0 , 0 , 0 ,
+/*  B */ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , BY, 0 , 0 , 0 , 0 , 0 ,
 /*  C */ 0 , 0 , BY, 0 , BY, BY, BY, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
 /*  D */ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
 /*  E */ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
@@ -325,4 +350,5 @@ namespace X86ISA
 /*  E */ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
 /*  F */ 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0
     };
-}
+} // namespace X86ISA
+} // namespace gem5

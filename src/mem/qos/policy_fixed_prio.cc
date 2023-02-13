@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Author: Matteo Andreozzi
  */
 
 #include "mem/qos/policy_fixed_prio.hh"
@@ -42,12 +40,23 @@
 #include <algorithm>
 #include <functional>
 
+#include "base/trace.hh"
+#include "debug/QOS.hh"
 #include "mem/request.hh"
+#include "params/QoSFixedPriorityPolicy.hh"
 
-namespace QoS {
+namespace gem5
+{
 
-FixedPriorityPolicy::FixedPriorityPolicy(const Params* p)
-  : Policy(p), defaultPriority(p->qos_fixed_prio_default_prio)
+namespace memory
+{
+
+GEM5_DEPRECATED_NAMESPACE(QoS, qos);
+namespace qos
+{
+
+FixedPriorityPolicy::FixedPriorityPolicy(const Params &p)
+  : Policy(p), defaultPriority(p.qos_fixed_prio_default_prio)
 {}
 
 FixedPriorityPolicy::~FixedPriorityPolicy()
@@ -93,10 +102,6 @@ FixedPriorityPolicy::schedule(const RequestorID id, const uint64_t data)
     }
 }
 
-} // namespace QoS
-
-QoS::FixedPriorityPolicy *
-QoSFixedPriorityPolicyParams::create()
-{
-    return new QoS::FixedPriorityPolicy(this);
-}
+} // namespace qos
+} // namespace memory
+} // namespace gem5

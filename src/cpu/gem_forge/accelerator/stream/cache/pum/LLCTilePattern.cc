@@ -1,5 +1,7 @@
 #include "LLCTilePattern.hh"
 
+namespace gem5 {
+
 const size_t LLCTilePattern::NumBanks;
 
 #define LLCTilePatternInit(dim)                                                \
@@ -33,3 +35,6 @@ LLCTilePatternInitAligned(3);
 
 #undef LLCTilePatternInit
 #undef LLCTilePatternInitAligned
+
+} // namespace gem5
+

@@ -18,7 +18,11 @@
 
 #include <unordered_map>
 
+namespace gem5 {
+
+namespace ruby {
 class AbstractStreamAwareController;
+}
 class StreamMemAccess;
 
 /**
@@ -28,7 +32,7 @@ class StreamMemAccess;
 class L0DynStream {
 public:
   L0DynStream(const DynStreamId &_rootDynStreamId,
-                  CacheStreamConfigureDataPtr _configData)
+              CacheStreamConfigureDataPtr _configData)
       : dynStreamId(_configData->dynamicId), rootDynStreamId(_rootDynStreamId),
         isOneIterationBehind(_configData->isOneIterationBehind),
         isPseudoOffload(_configData->isPseudoOffload),
@@ -55,7 +59,7 @@ private:
 
 class L0StreamEngine {
 public:
-  L0StreamEngine(AbstractStreamAwareController *_controller);
+  L0StreamEngine(ruby::AbstractStreamAwareController *_controller);
   ~L0StreamEngine();
 
   bool isStreamAccess(PacketPtr pkt) const;
@@ -68,7 +72,7 @@ public:
   DynStreamSliceId getSliceId(PacketPtr pkt) const;
 
 private:
-  AbstractStreamAwareController *controller;
+  ruby::AbstractStreamAwareController *controller;
 
   /**
    * Set of all offloaded streams, along with their root dynamic stream id.
@@ -78,5 +82,7 @@ private:
 
   StreamMemAccess *getStreamMemAccessFromPacket(PacketPtr pkt) const;
 };
+
+} // namespace gem5
 
 #endif

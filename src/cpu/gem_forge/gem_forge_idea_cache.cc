@@ -1,5 +1,7 @@
 #include "gem_forge_idea_cache.hh"
 
+namespace gem5 {
+
 GemForgeIdeaCache::GemForgeIdeaCache(int _size) : size(_size) {}
 
 int GemForgeIdeaCache::access(Addr paddr, int size) {
@@ -30,4 +32,5 @@ int GemForgeIdeaCache::accessByte(Addr paddr) {
     mapIter->second = newLRUIter;
     return 0;
   }
-}
+}} // namespace gem5
+

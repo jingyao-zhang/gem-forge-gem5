@@ -11,6 +11,8 @@
 #include "debug/StreamEngineBase.hh"
 #include "proto/protoio.hh"
 
+namespace gem5 {
+
 StreamHistory::StreamHistory(const std::string &_historyPath)
     : historyPath(_historyPath) {
   ProtoInputStream historyStream(_historyPath);
@@ -95,4 +97,5 @@ StreamValue StreamHistory::StreamHistoryAddrGenCallback::genAddr(
         this->history.history(this->history.history_size() - 1).addr();
   }
   return ret;
-}
+}} // namespace gem5
+

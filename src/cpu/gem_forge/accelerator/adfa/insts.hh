@@ -5,6 +5,8 @@
 #include "cpu/gem_forge/llvm_insts.hh"
 #include "cpu/gem_forge/queue_buffer.hh"
 
+namespace gem5 {
+
 class ADFAConfigInst : public LLVMDynamicInst {
 public:
   ADFAConfigInst(const LLVM::TDG::TDGInstruction &_TDG);
@@ -65,5 +67,7 @@ private:
  * Returns nullptr if this is not ADFA instruction.
  */
 LLVMDynamicInst *parseADFAInst(LLVM::TDG::TDGInstruction &TDGInst);
+
+} // namespace gem5
 
 #endif

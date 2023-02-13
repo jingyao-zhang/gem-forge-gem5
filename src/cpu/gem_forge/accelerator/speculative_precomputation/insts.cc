@@ -6,6 +6,8 @@
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "debug/SpeculativePrecomputation.hh"
 
+namespace gem5 {
+
 SpeculativePrecomputationTriggerInst::SpeculativePrecomputationTriggerInst(
     const LLVM::TDG::TDGInstruction &_TDG)
     : LLVMDynamicInst(_TDG, 1), finished(false) {
@@ -41,4 +43,5 @@ LLVMDynamicInst *parseSpeculativePrecomputationInst(
   }
 
   return nullptr;
-}
+}} // namespace gem5
+

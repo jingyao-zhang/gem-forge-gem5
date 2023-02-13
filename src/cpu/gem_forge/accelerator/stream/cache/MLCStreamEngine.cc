@@ -27,17 +27,19 @@
           ##args)
 #define MLCSE_DPRINTF(format, args...) MLCSE_DPRINTF_(MLCRubyStream, ##args)
 
-MLCStreamEngine::MLCStreamEngine(AbstractStreamAwareController *_controller,
-                                 MessageBuffer *_responseToUpperMsgBuffer,
-                                 MessageBuffer *_requestToLLCMsgBuffer)
-    : Consumer(_controller), controller(_controller),
+namespace gem5 {
+
+MLCStreamEngine::MLCStreamEngine(ruby::AbstractStreamAwareController *_controller,
+                                 ruby::MessageBuffer *_responseToUpperMsgBuffer,
+                                 ruby::MessageBuffer *_requestToLLCMsgBuffer)
+    : ruby::Consumer(_controller), controller(_controller),
       responseToUpperMsgBuffer(_responseToUpperMsgBuffer),
       requestToLLCMsgBuffer(_requestToLLCMsgBuffer) {
   this->controller->registerMLCStreamEngine(this);
 
-  this->ndcController = m5::make_unique<MLCStreamNDCController>(this);
-  this->strandManager = m5::make_unique<MLCStrandManager>(this);
-  this->pumManager = m5::make_unique<MLCPUMManager>(this);
+  this->ndcController = std::make_unique<MLCStreamNDCController>(this);
+  this->strandManager = std::make_unique<MLCStrandManager>(this);
+  this->pumManager = std::make_unique<MLCPUMManager>(this);
 }
 
 MLCStreamEngine::~MLCStreamEngine() {}
@@ -72,30 +74,30 @@ void MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   delete endIds;
 }
 
-void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
+void MLCStreamEngine::receiveStreamData(const ruby::ResponseMsg &msg) {
 
   this->recordStreamCycle();
 
-  if (msg.m_Type == CoherenceResponseType_STREAM_NDC) {
+  if (msg.m_Type == ruby::CoherenceResponseType_STREAM_NDC) {
     this->receiveStreamNDCResponse(msg);
     return;
   }
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream data when stream float is disabled.\n");
   if (msg.m_isPUM) {
-    if (msg.m_Type == CoherenceResponseType_STREAM_ACK) {
+    if (msg.m_Type == ruby::CoherenceResponseType_STREAM_ACK) {
       // This is a PUM sync message.
       this->pumManager->reachSync(msg.m_AckCount);
       return;
     }
-    if (msg.m_Type == CoherenceResponseType_STREAM_DONE) {
+    if (msg.m_Type == ruby::CoherenceResponseType_STREAM_DONE) {
       // This is a PUM done message.
       this->pumManager->receivePacket(msg.m_AckCount);
       return;
     }
   }
 
-  if (msg.m_Type == CoherenceResponseType_STREAM_RANGE) {
+  if (msg.m_Type == ruby::CoherenceResponseType_STREAM_RANGE) {
     auto sliceId = msg.m_sliceIds.singleSliceId();
     auto stream = this->getStreamFromStrandId(sliceId.getDynStrandId());
     if (stream) {
@@ -108,7 +110,7 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
     }
     return;
   }
-  if (msg.m_Type == CoherenceResponseType_STREAM_DONE) {
+  if (msg.m_Type == ruby::CoherenceResponseType_STREAM_DONE) {
     auto sliceId = msg.m_sliceIds.singleSliceId();
     auto stream = this->getStreamFromStrandId(sliceId.getDynStrandId());
     if (stream) {
@@ -137,12 +139,12 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
 }
 
 void MLCStreamEngine::receiveStreamDataForSingleSlice(
-    const DynStreamSliceId &sliceId, const DataBlock &dataBlock,
+    const DynStreamSliceId &sliceId, const ruby::DataBlock &dataBlock,
     Addr paddrLine) {
   MLC_SLICE_DPRINTF(
       sliceId, "Recv data vaddr %#x %s.\n", sliceId.vaddr,
       GemForgeUtils::dataToString(dataBlock.getData(0, 1),
-                                  RubySystem::getBlockSizeBytes()));
+                                  ruby::RubySystem::getBlockSizeBytes()));
   auto stream = this->getStreamFromStrandId(sliceId.getDynStrandId());
   if (stream) {
     // Found the stream.
@@ -326,7 +328,7 @@ void MLCStreamEngine::computeReuseInformation(
             rhsConfig->dynamicId.staticId, startOffset);
         continue;
       }
-      auto rhsStartLindAddr = makeLineAddress(rhsStartAddr);
+      auto rhsStartLindAddr = ruby::makeLineAddress(rhsStartAddr);
       auto lhsCutElementIdx = lhsAddrGen->getFirstElementForAddr(
           lhsConfig->addrGenFormalParams, lhsConfig->elementSize,
           rhsStartLindAddr);
@@ -347,7 +349,7 @@ void MLCStreamEngine::computeReuseInformation(
 }
 
 void MLCStreamEngine::reuseSlice(const DynStreamSliceId &sliceId,
-                                 const DataBlock &dataBlock) {
+                                 const ruby::DataBlock &dataBlock) {
   auto streamId = sliceId.getDynStreamId();
   while (this->reuseInfoMap.count(streamId)) {
     const auto &reuseInfo = this->reuseInfoMap.at(streamId);
@@ -367,7 +369,7 @@ void MLCStreamEngine::reuseSlice(const DynStreamSliceId &sliceId,
     }
     auto S = dynamic_cast<MLCDynDirectStream *>(mlcDynS);
     assert(S && "Only direct stream can have reuse.");
-    S->receiveReuseStreamData(makeLineAddress(sliceId.vaddr), dataBlock);
+    S->receiveReuseStreamData(ruby::makeLineAddress(sliceId.vaddr), dataBlock);
     streamId = targetStreamId;
   }
 }
@@ -376,7 +378,7 @@ void MLCStreamEngine::receiveStreamNDCRequest(PacketPtr pkt) {
   this->ndcController->receiveStreamNDCRequest(pkt);
 }
 
-void MLCStreamEngine::receiveStreamNDCResponse(const ResponseMsg &msg) {
+void MLCStreamEngine::receiveStreamNDCResponse(const ruby::ResponseMsg &msg) {
   this->ndcController->receiveStreamNDCResponse(msg);
 }
 
@@ -393,7 +395,7 @@ void MLCStreamEngine::wakeup() {
 
 void MLCStreamEngine::receiveStreamTotalTripCount(
     const DynStrandId &strandId, int64_t totalTripCount, Addr brokenPAddr,
-    MachineType brokenMachineType) {
+    ruby::MachineType brokenMachineType) {
   assert(strandId.totalStrands == 1 && "StreamLoopBound with Strand?");
   auto dynS = this->getStreamFromStrandId(strandId);
   if (!dynS) {
@@ -403,7 +405,7 @@ void MLCStreamEngine::receiveStreamTotalTripCount(
 }
 
 void MLCStreamEngine::issueStreamDataToLLC(
-    const DynStreamSliceId &sliceId, const DataBlock &dataBlock,
+    const DynStreamSliceId &sliceId, const ruby::DataBlock &dataBlock,
     const CacheStreamConfigureDataPtr &recvConfig, uint64_t recvStreamElemIdx,
     int payloadSize) {
 
@@ -414,7 +416,7 @@ void MLCStreamEngine::issueStreamDataToLLC(
           .front();
 
   // Check that receiver does not across lines.
-  auto recvElemVAddrLine = makeLineAddress(recvElemVAddr);
+  auto recvElemVAddrLine = ruby::makeLineAddress(recvElemVAddr);
 
   Addr recvElemPAddrLine;
 
@@ -427,10 +429,10 @@ void MLCStreamEngine::issueStreamDataToLLC(
     auto dstMachineId = this->controller->mapAddressToLLCOrMem(
         recvElemPAddrLine, recvElemMachineType);
 
-    auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
+    auto msg = std::make_shared<ruby::RequestMsg>(this->controller->clockEdge());
     msg->m_addr = recvElemPAddrLine;
-    msg->m_Type = CoherenceRequestType_STREAM_FORWARD;
-    msg->m_Requestors.add(MachineID(MachineType::MachineType_L1Cache,
+    msg->m_Type = ruby::CoherenceRequestType_STREAM_FORWARD;
+    msg->m_Requestors.add(ruby::MachineID(ruby::MachineType_L1Cache,
                                     sliceId.getDynStreamId().coreId));
     msg->m_Destination.add(dstMachineId);
     msg->m_MessageSize = this->controller->getMessageSizeType(payloadSize);
@@ -451,3 +453,5 @@ void MLCStreamEngine::issueStreamDataToLLC(
 }
 
 void MLCStreamEngine::print(std::ostream &out) const {}
+} // namespace gem5
+

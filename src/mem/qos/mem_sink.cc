@@ -33,26 +33,36 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Author: Matteo Andreozzi
  */
 
+#include "mem/qos/mem_sink.hh"
+
+#include "base/logging.hh"
+#include "base/trace.hh"
 #include "debug/Drain.hh"
 #include "debug/QOS.hh"
-#include "mem_sink.hh"
+#include "mem/qos/q_policy.hh"
 #include "params/QoSMemSinkInterface.hh"
-#include "sim/system.hh"
 
-namespace QoS {
+namespace gem5
+{
 
-MemSinkCtrl::MemSinkCtrl(const QoSMemSinkCtrlParams* p)
-  : MemCtrl(p), requestLatency(p->request_latency),
-    responseLatency(p->response_latency),
-    memoryPacketSize(p->memory_packet_size),
-    readBufferSize(p->read_buffer_size),
-    writeBufferSize(p->write_buffer_size), port(name() + ".port", *this),
-    interface(p->interface),
-    retryRdReq(false), retryWrReq(false), nextRequest(0), nextReqEvent(this)
+namespace memory
+{
+
+GEM5_DEPRECATED_NAMESPACE(QoS, qos);
+namespace qos
+{
+
+MemSinkCtrl::MemSinkCtrl(const QoSMemSinkCtrlParams &p)
+  : MemCtrl(p), requestLatency(p.request_latency),
+    responseLatency(p.response_latency),
+    memoryPacketSize(p.memory_packet_size),
+    readBufferSize(p.read_buffer_size),
+    writeBufferSize(p.write_buffer_size), port(name() + ".port", *this),
+    interface(p.interface),
+    retryRdReq(false), retryWrReq(false), nextRequest(0), nextReqEvent(this),
+    stats(this)
 {
     // Resize read and write queue to allocate space
     // for configured QoS priorities
@@ -155,7 +165,7 @@ MemSinkCtrl::recvTimingReq(PacketPtr pkt)
                     "%s Read queue full, not accepting\n", __func__);
             // Remember that we have to retry this port
             retryRdReq = true;
-            numReadRetries++;
+            stats.numReadRetries++;
             req_accepted = false;
         } else {
             // Enqueue the incoming packet into corresponding
@@ -169,7 +179,7 @@ MemSinkCtrl::recvTimingReq(PacketPtr pkt)
                     "%s Write queue full, not accepting\n", __func__);
             // Remember that we have to retry this port
             retryWrReq = true;
-            numWriteRetries++;
+            stats.numWriteRetries++;
             req_accepted = false;
         } else {
             // Enqueue the incoming packet into corresponding QoS
@@ -221,7 +231,7 @@ MemSinkCtrl::processNextReqEvent()
             "%s DUMPING %s queues status\n", __func__,
             (busState == WRITE ? "WRITE" : "READ"));
 
-    if (DTRACE(QOS)) {
+    if (debug::QOS) {
         for (uint8_t i = 0; i < numPriorities(); ++i) {
             std::string plist = "";
             for (auto& e : (busState == WRITE ? writeQueue[i]: readQueue[i])) {
@@ -332,50 +342,45 @@ MemSinkCtrl::drain()
     }
 }
 
-void
-MemSinkCtrl::regStats()
+MemSinkCtrl::MemSinkCtrlStats::MemSinkCtrlStats(statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(numReadRetries, statistics::units::Count::get(),
+               "Number of read retries"),
+      ADD_STAT(numWriteRetries, statistics::units::Count::get(),
+               "Number of write retries")
 {
-    MemCtrl::regStats();
-
-    // Initialize all the stats
-    using namespace Stats;
-
-    numReadRetries.name(name() + ".numReadRetries")
-        .desc("Number of read retries");
-    numWriteRetries.name(name() + ".numWriteRetries")
-        .desc("Number of write retries");
 }
 
 MemSinkCtrl::MemoryPort::MemoryPort(const std::string& n,
                                     MemSinkCtrl& m)
   : QueuedResponsePort(n, &m, queue, true),
-   memory(m), queue(memory, *this, true)
+   mem(m), queue(mem, *this, true)
 {}
 
 AddrRangeList
 MemSinkCtrl::MemoryPort::getAddrRanges() const
 {
     AddrRangeList ranges;
-    ranges.push_back(memory.interface->getAddrRange());
+    ranges.push_back(mem.interface->getAddrRange());
     return ranges;
 }
 
 Tick
 MemSinkCtrl::MemoryPort::recvAtomic(PacketPtr pkt)
 {
-    return memory.recvAtomic(pkt);
+    return mem.recvAtomic(pkt);
 }
 
 void
 MemSinkCtrl::MemoryPort::recvFunctional(PacketPtr pkt)
 {
-    pkt->pushLabel(memory.name());
+    pkt->pushLabel(mem.name());
 
     if (!queue.trySatisfyFunctional(pkt)) {
         // Default implementation of SimpleTimingPort::recvFunctional()
         // calls recvAtomic() and throws away the latency; we can save a
         // little here by just not calculating the latency.
-        memory.recvFunctional(pkt);
+        mem.recvFunctional(pkt);
     }
 
     pkt->popLabel();
@@ -384,24 +389,14 @@ MemSinkCtrl::MemoryPort::recvFunctional(PacketPtr pkt)
 bool
 MemSinkCtrl::MemoryPort::recvTimingReq(PacketPtr pkt)
 {
-    return memory.recvTimingReq(pkt);
+    return mem.recvTimingReq(pkt);
 }
 
-} // namespace QoS
-
-QoS::MemSinkCtrl*
-QoSMemSinkCtrlParams::create()
-{
-    return new QoS::MemSinkCtrl(this);
-}
-
-QoSMemSinkInterface::QoSMemSinkInterface(const QoSMemSinkInterfaceParams* _p)
+MemSinkInterface::MemSinkInterface(const QoSMemSinkInterfaceParams &_p)
     : AbstractMemory(_p)
 {
 }
 
-QoSMemSinkInterface*
-QoSMemSinkInterfaceParams::create()
-{
-    return new QoSMemSinkInterface(this);
-}
+} // namespace qos
+} // namespace memory
+} // namespace gem5

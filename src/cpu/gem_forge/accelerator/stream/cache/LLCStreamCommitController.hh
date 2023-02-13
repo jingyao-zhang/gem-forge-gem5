@@ -5,6 +5,8 @@
 
 #include <list>
 
+namespace gem5 {
+
 class LLCStreamCommitController {
 public:
   LLCStreamCommitController(LLCStreamEngine *_se);
@@ -32,5 +34,7 @@ private:
    */
   bool commitStream(LLCDynStreamPtr dynS, bool &migrated);
 };
+
+} // namespace gem5
 
 #endif

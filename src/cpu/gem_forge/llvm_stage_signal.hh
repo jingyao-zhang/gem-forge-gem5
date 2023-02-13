@@ -6,6 +6,8 @@
 #include <array>
 #include <cassert>
 
+namespace gem5 {
+
 struct LLVMStageSignal {
   // Per-context stall signal;
   std::array<bool, LLVMTraceCPUConstants::MaxContexts> contextStall;
@@ -15,5 +17,7 @@ struct LLVMStageSignal {
     }
   }
 };
+
+} // namespace gem5
 
 #endif

@@ -28,12 +28,13 @@
 
 #include "arch/mips/idle_event.hh"
 
-#include "cpu/thread_context.hh"
-
-using namespace MipsISA;
+namespace gem5
+{
 
 void
 IdleStartEvent::process(ThreadContext *tc)
 {
     fatal("Idle Start Event Not Defined for MIPS ISA ");
 }
+
+} // namespace gem5

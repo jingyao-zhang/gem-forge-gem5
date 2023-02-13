@@ -3,6 +3,8 @@
 
 #include "llvm_insts.hh"
 
+namespace gem5 {
+
 /**
  * An interface to the execution pipeline.
  */
@@ -26,5 +28,7 @@ public:
   void updateInflyInstStatus(LLVMDynamicInstId instId,
                              InstStatus newStatus) = 0;
 };
+
+} // namespace gem5
 
 #endif

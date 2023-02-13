@@ -2,8 +2,6 @@
  * Copyright (c) 2015-2017 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -29,9 +27,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: John Kalamatianos,
- *          Mark Wyse
  */
 
 #ifndef __GPU_COMPUTE_SCALAR_REGISTER_FILE_HH__
@@ -45,6 +40,9 @@
 #include "gpu-compute/register_file.hh"
 #include "gpu-compute/wavefront.hh"
 
+namespace gem5
+{
+
 struct ScalarRegisterFileParams;
 
 // Scalar Register File
@@ -53,7 +51,7 @@ class ScalarRegisterFile : public RegisterFile
   public:
     using ScalarRegU32 = TheGpuISA::ScalarRegU32;
 
-    ScalarRegisterFile(const ScalarRegisterFileParams *p);
+    ScalarRegisterFile(const ScalarRegisterFileParams &p);
     ~ScalarRegisterFile() { }
 
     virtual bool operandsReady(Wavefront *w, GPUDynInstPtr ii) const override;
@@ -100,5 +98,7 @@ class ScalarRegisterFile : public RegisterFile
   private:
     std::vector<ScalarRegU32> regFile;
 };
+
+} // namespace gem5
 
 #endif // __GPU_COMPUTE_SCALAR_REGISTER_FILE_HH__

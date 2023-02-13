@@ -2,6 +2,8 @@
 
 #include <sstream>
 
+namespace gem5 {
+
 std::ostream &operator<<(std::ostream &os, const DynStrandId &strandId) {
   if (strandId.totalStrands > 1) {
     os << strandId.dynStreamId << strandId.strandIdx << '/'
@@ -18,3 +20,5 @@ std::string to_string(const DynStrandId &strandId) {
   ss << strandId;
   return ss.str();
 }
+} // namespace gem5
+

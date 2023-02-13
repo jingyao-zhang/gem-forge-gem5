@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 ARM Limited
+ * Copyright (c) 2012-2019, 2021 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -49,6 +49,7 @@
 
 #include <bitset>
 #include <cassert>
+#include <initializer_list>
 #include <list>
 
 #include "base/addr_range.hh"
@@ -60,7 +61,10 @@
 #include "base/types.hh"
 #include "mem/htm.hh"
 #include "mem/request.hh"
-#include "sim/core.hh"
+#include "sim/byteswap.hh"
+
+namespace gem5
+{
 
 class Packet;
 typedef Packet *PacketPtr;
@@ -108,6 +112,10 @@ class MemCmd
         StoreCondReq,
         StoreCondFailReq,       // Failed StoreCondReq in MSHR (never sent)
         StoreCondResp,
+        LockedRMWReadReq,
+        LockedRMWReadResp,
+        LockedRMWWriteReq,
+        LockedRMWWriteResp,
         SwapReq,
         SwapResp,
         // MessageReq and MessageResp are deprecated.
@@ -125,6 +133,8 @@ class MemCmd
         // compatibility
         InvalidDestError,  // packet dest field invalid
         BadAddressError,   // memory address invalid
+        ReadError,         // packet dest unable to fulfill read command
+        WriteError,        // packet dest unable to fulfill write command
         FunctionalReadError, // unable to fulfill functional read
         FunctionalWriteError, // unable to fulfill functional write
         // Fake simulator-only commands
@@ -142,6 +152,8 @@ class MemCmd
         HTMReq,
         HTMReqResp,
         HTMAbort,
+        // Tlb shootdown
+        TlbiExtSync,
         NUM_MEM_CMDS
     };
 
@@ -164,6 +176,7 @@ class MemCmd
         IsSWPrefetch,
         IsHWPrefetch,
         IsLlsc,         //!< Alpha/MIPS LL or SC access
+        IsLockedRMW,    //!< x86 locked RMW access
         HasData,        //!< There is an associated payload
         IsError,        //!< Error response
         IsPrint,        //!< Print state matching address (for debugging)
@@ -171,6 +184,15 @@ class MemCmd
         FromCache,      //!< Request originated from a caching agent
         NUM_COMMAND_ATTRIBUTES
     };
+
+    static constexpr unsigned long long
+    buildAttributes(std::initializer_list<Attribute> attrs)
+    {
+        unsigned long long ret = 0;
+        for (const auto &attr: attrs)
+            ret |= (1ULL << attr);
+        return ret;
+    }
 
     /**
      * Structure that defines attributes and other data associated
@@ -185,6 +207,11 @@ class MemCmd
         const Command response;
         /// String representation (for printing)
         const std::string str;
+
+        CommandInfo(std::initializer_list<Attribute> attrs,
+                Command _response, const std::string &_str) :
+            attributes(buildAttributes(attrs)), response(_response), str(_str)
+        {}
     };
 
     /// Array to map Command enum to associated info.
@@ -227,6 +254,7 @@ class MemCmd
      */
     bool hasData() const        { return testCmdAttrib(HasData); }
     bool isLLSC() const         { return testCmdAttrib(IsLlsc); }
+    bool isLockedRMW() const    { return testCmdAttrib(IsLockedRMW); }
     bool isSWPrefetch() const   { return testCmdAttrib(IsSWPrefetch); }
     bool isHWPrefetch() const   { return testCmdAttrib(IsHWPrefetch); }
     bool isPrefetch() const     { return testCmdAttrib(IsSWPrefetch) ||
@@ -234,6 +262,14 @@ class MemCmd
     bool isError() const        { return testCmdAttrib(IsError); }
     bool isPrint() const        { return testCmdAttrib(IsPrint); }
     bool isFlush() const        { return testCmdAttrib(IsFlush); }
+
+    bool
+    isDemand() const
+    {
+        return (cmd == ReadReq || cmd == WriteReq ||
+                cmd == WriteLineReq || cmd == ReadExReq ||
+                cmd == ReadCleanReq || cmd == ReadSharedReq);
+    }
 
     Command
     responseCommand() const
@@ -264,11 +300,11 @@ class Packet : public Printable
 {
   public:
     typedef uint32_t FlagsType;
-    typedef ::Flags<FlagsType> Flags;
+    typedef gem5::Flags<FlagsType> Flags;
 
   private:
-
-    enum : FlagsType {
+    enum : FlagsType
+    {
         // Flags to transfer across when copying a packet
         COPY_FLAGS             = 0x000000FF,
 
@@ -561,6 +597,7 @@ class Packet : public Printable
 
     bool isRead() const              { return cmd.isRead(); }
     bool isWrite() const             { return cmd.isWrite(); }
+    bool isDemand() const            { return cmd.isDemand(); }
     bool isUpgrade()  const          { return cmd.isUpgrade(); }
     bool isRequest() const           { return cmd.isRequest(); }
     bool isResponse() const          { return cmd.isResponse(); }
@@ -586,6 +623,7 @@ class Packet : public Printable
         return resp_cmd.hasData();
     }
     bool isLLSC() const              { return cmd.isLLSC(); }
+    bool isLockedRMW() const         { return cmd.isLockedRMW(); }
     bool isError() const             { return cmd.isError(); }
     bool isPrint() const             { return cmd.isPrint(); }
     bool isFlush() const             { return cmd.isFlush(); }
@@ -753,6 +791,19 @@ class Packet : public Printable
     {
         assert(isResponse());
         cmd = MemCmd::BadAddressError;
+    }
+
+    // Command error conditions. The request is sent to target but the target
+    // cannot make it.
+    void
+    setBadCommand()
+    {
+        assert(isResponse());
+        if (isWrite()) {
+            cmd = MemCmd::WriteError;
+        } else {
+            cmd = MemCmd::ReadError;
+        }
     }
 
     void copyError(Packet *pkt) { assert(pkt->isError()); cmd = pkt->cmd; }
@@ -957,6 +1008,8 @@ class Packet : public Printable
             return MemCmd::ReadExReq;
         else if (req->isPrefetch())
             return MemCmd::SoftPFReq;
+        else if (req->isLockedRMW())
+            return MemCmd::LockedRMWReadReq;
         else
             return MemCmd::ReadReq;
     }
@@ -976,6 +1029,8 @@ class Packet : public Printable
               MemCmd::InvalidateReq;
         } else if (req->isCacheClean()) {
             return MemCmd::CleanSharedReq;
+        } else if (req->isLockedRMW()) {
+            return MemCmd::LockedRMWWriteReq;
         } else
             return MemCmd::WriteReq;
     }
@@ -1267,7 +1322,7 @@ class Packet : public Printable
             assert(req->getByteEnable().size() == getSize());
             // Write only the enabled bytes
             const uint8_t *base = getConstPtr<uint8_t>();
-            for (int i = 0; i < getSize(); i++) {
+            for (unsigned int i = 0; i < getSize(); i++) {
                 if (req->getByteEnable()[i]) {
                     p[i] = *(base + i);
                 }
@@ -1477,5 +1532,7 @@ class Packet : public Printable
      */
     HtmCacheFailure getHtmTransactionFailedInCacheRC() const;
 };
+
+} // namespace gem5
 
 #endif //__MEM_PACKET_HH

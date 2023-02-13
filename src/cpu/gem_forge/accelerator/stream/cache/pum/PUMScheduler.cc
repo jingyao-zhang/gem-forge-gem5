@@ -29,6 +29,8 @@
     StreamFloatPolicy::getLog() << __s.str() << std::flush;                    \
   }
 
+namespace gem5 {
+
 std::string exec(const char *cmd) {
   std::array<char, 128> buffer;
   std::string result;
@@ -566,4 +568,5 @@ PUMScheduler::searchPrevUnisonSolution(int numRegs,
     }
   }
   return nullptr;
-}
+}} // namespace gem5
+

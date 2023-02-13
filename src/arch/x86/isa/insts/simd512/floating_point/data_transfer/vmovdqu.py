@@ -1,7 +1,7 @@
 microcode = '''
 
 def macroop VMOVDQU_XMM_XMM {
-    movfp128 dest=xmm0, src1=xmm0m, dataSize=16
+    movfp128 reg1=xmm0, reg2=xmm0m, dataSize=16
 };
 
 def macroop VMOVDQU_XMM_M {
@@ -23,7 +23,7 @@ def macroop VMOVDQU_P_XMM {
 };
 
 def macroop VMOVDQU_YMM_YMM {
-    movfp256 dest=xmm0, src1=xmm0m, dataSize=32
+    movfp256 reg1=xmm0, reg2=xmm0m, dataSize=32
 };
 
 def macroop VMOVDQU_YMM_M {
@@ -45,7 +45,7 @@ def macroop VMOVDQU_P_YMM {
 };
 
 def macroop VMOVDQU_ZMM_ZMM {
-    movfp512 dest=xmm0, src1=xmm0m, dataSize=64
+    movfp512 reg1=xmm0, reg2=xmm0m, dataSize=64
 };
 
 def macroop VMOVDQU_ZMM_M {

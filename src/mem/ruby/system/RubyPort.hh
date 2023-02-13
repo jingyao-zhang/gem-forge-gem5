@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2013,2019 ARM Limited
+ * Copyright (c) 2012-2013,2019,2021 ARM Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -53,6 +53,12 @@
 #include "params/RubyPort.hh"
 #include "sim/clocked_object.hh"
 
+namespace gem5
+{
+
+namespace ruby
+{
+
 class AbstractController;
 
 class RubyPort : public ClockedObject
@@ -99,6 +105,7 @@ class RubyPort : public ClockedObject
         void addToRetryList();
 
       private:
+        bool isShadowRomAddress(Addr addr) const;
         bool isPhysMemAddress(PacketPtr pkt) const;
     };
 
@@ -151,7 +158,7 @@ class RubyPort : public ClockedObject
      };
 
     typedef RubyPortParams Params;
-    RubyPort(const Params *p);
+    RubyPort(const Params &p);
     virtual ~RubyPort() {}
 
     void init() override;
@@ -187,6 +194,9 @@ class RubyPort : public ClockedObject
      * is truly ready (with backing store accessed).
      */
     virtual void justBeforeResponseCallback(PacketPtr pkt) {}
+
+    void ruby_unaddressed_callback(PacketPtr pkt);
+    void ruby_stale_translation_callback(Addr txnId);
     void testDrainComplete();
     void ruby_eviction_callback(Addr address);
 
@@ -239,5 +249,8 @@ class RubyPort : public ClockedObject
 
     bool m_isCPUSequencer;
 };
+
+} // namespace ruby
+} // namespace gem5
 
 #endif // __MEM_RUBY_SYSTEM_RUBYPORT_HH__

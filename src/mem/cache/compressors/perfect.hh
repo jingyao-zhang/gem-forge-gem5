@@ -41,9 +41,14 @@
 #include "base/types.hh"
 #include "mem/cache/compressors/base.hh"
 
+namespace gem5
+{
+
 struct PerfectCompressorParams;
 
-namespace Compressor {
+GEM5_DEPRECATED_NAMESPACE(Compressor, compression);
+namespace compression
+{
 
 class Perfect : public Base
 {
@@ -67,7 +72,7 @@ class Perfect : public Base
 
   public:
     typedef PerfectCompressorParams Params;
-    Perfect(const Params *p);
+    Perfect(const Params &p);
     ~Perfect() = default;
 };
 
@@ -89,6 +94,7 @@ class Perfect::CompData : public CompressionData
     ~CompData() = default;
 };
 
-} // namespace Compressor
+} // namespace compression
+} // namespace gem5
 
 #endif //__MEM_CACHE_COMPRESSORS_PERFECT_COMPRESSOR_HH__

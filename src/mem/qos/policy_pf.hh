@@ -33,17 +33,28 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Author: Giacomo Travaglini
  */
 
 #ifndef __MEM_QOS_POLICY_PF_HH__
 #define __MEM_QOS_POLICY_PF_HH__
 
-#include "mem/qos/policy.hh"
-#include "params/QoSPropFairPolicy.hh"
+#include <vector>
 
-namespace QoS {
+#include "base/compiler.hh"
+#include "mem/qos/policy.hh"
+#include "mem/request.hh"
+
+namespace gem5
+{
+
+struct QoSPropFairPolicyParams;
+
+namespace memory
+{
+
+GEM5_DEPRECATED_NAMESPACE(QoS, qos);
+namespace qos
+{
 
 /**
  * Proportional Fair QoS Policy
@@ -59,11 +70,9 @@ namespace QoS {
 class PropFairPolicy : public Policy
 {
     using Params = QoSPropFairPolicyParams;
-    const Params *params() const
-    { return static_cast<const Params *>(_params); }
 
   public:
-    PropFairPolicy(const Params*);
+    PropFairPolicy(const Params &);
     virtual ~PropFairPolicy();
 
     /**
@@ -112,6 +121,8 @@ class PropFairPolicy : public Policy
     std::vector<RequestorHistory> history;
 };
 
-} // namespace QoS
+} // namespace qos
+} // namespace memory
+} // namespace gem5
 
 #endif // __MEM_QOS_POLICY_PF_HH__

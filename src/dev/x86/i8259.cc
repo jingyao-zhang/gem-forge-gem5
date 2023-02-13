@@ -28,6 +28,7 @@
 
 #include "dev/x86/i8259.hh"
 
+#include "arch/x86/x86_traits.hh"
 #include "base/bitfield.hh"
 #include "base/trace.hh"
 #include "debug/I8259.hh"
@@ -35,28 +36,35 @@
 #include "mem/packet.hh"
 #include "mem/packet_access.hh"
 
-X86ISA::I8259::I8259(Params * p)
-    : BasicPioDevice(p, 2),
-      latency(p->pio_latency),
-      mode(p->mode), slave(p->slave),
-      IRR(0), ISR(0), IMR(0),
-      readIRR(true), initControlWord(0), autoEOI(false)
+namespace gem5
 {
-    for (int i = 0; i < p->port_output_connection_count; i++) {
+
+X86ISA::I8259::I8259(const Params &p) : BasicPioDevice(p, 2),
+      latency(p.pio_latency), mode(p.mode), slave(p.slave)
+{
+    for (int i = 0; i < p.port_output_connection_count; i++) {
         output.push_back(new IntSourcePin<I8259>(
                     csprintf("%s.output[%d]", name(), i), i, this));
     }
 
-    int in_count = p->port_inputs_connection_count;
-    panic_if(in_count >= NumLines,
+    int in_count = p.port_inputs_connection_count;
+    panic_if(in_count > NumLines,
             "I8259 only supports 8 inputs, but there are %d.", in_count);
     for (int i = 0; i < in_count; i++) {
         inputs.push_back(new IntSinkPin<I8259>(
                     csprintf("%s.inputs[%d]", name(), i), i, this));
     }
+}
 
-    for (bool &state: pinStates)
-        state = false;
+AddrRangeList
+X86ISA::I8259::getAddrRanges() const
+{
+    AddrRangeList ranges = BasicPioDevice::getAddrRanges();
+    if (mode == enums::I8259Master || mode == enums::I8259Single) {
+        // Listen for INTA messages.
+        ranges.push_back(RangeSize(PhysAddrIntA, 1));
+    }
+    return ranges;
 }
 
 void
@@ -72,8 +80,11 @@ Tick
 X86ISA::I8259::read(PacketPtr pkt)
 {
     assert(pkt->getSize() == 1);
-    switch(pkt->getAddr() - pioAddr)
-    {
+    if (pkt->getAddr() == PhysAddrIntA) {
+        assert(mode == enums::I8259Master || mode == enums::I8259Single);
+        pkt->setLE<uint8_t>(getVector());
+    }
+    switch(pkt->getAddr() - pioAddr) {
       case 0x0:
         if (readIRR) {
             DPRINTF(I8259, "Reading IRR as %#x.\n", IRR);
@@ -190,7 +201,7 @@ X86ISA::I8259::write(PacketPtr pkt)
             break;
           case 0x2:
             DPRINTF(I8259, "Received initialization command word 3.\n");
-            if (mode == Enums::I8259Master) {
+            if (mode == enums::I8259Master) {
                 DPRINTF(I8259, "Responders attached to "
                         "IRQs:%s%s%s%s%s%s%s%s\n",
                         bits(val, 0) ? " 0" : "",
@@ -365,8 +376,4 @@ X86ISA::I8259::unserialize(CheckpointIn &cp)
     UNSERIALIZE_SCALAR(autoEOI);
 }
 
-X86ISA::I8259 *
-I8259Params::create()
-{
-    return new X86ISA::I8259(this);
-}
+} // namespace gem5

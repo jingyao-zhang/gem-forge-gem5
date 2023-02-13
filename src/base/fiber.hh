@@ -39,10 +39,19 @@
 #include <ucontext.h>
 #endif
 
+// Avoid fortify source for longjmp to work between ucontext stacks.
+#pragma push_macro("__USE_FORTIFY_LEVEL")
+#undef __USE_FORTIFY_LEVEL
+#include <setjmp.h>
+#pragma pop_macro("__USE_FORTIFY_LEVEL")
+
 #include <cstddef>
 #include <cstdint>
 
 #include "config/have_valgrind.hh"
+
+namespace gem5
+{
 
 /**
  * This class represents a fiber, which is a light weight sort of thread which
@@ -137,6 +146,10 @@ class Fiber
     void start();
 
     ucontext_t ctx;
+    // ucontext is slow in swapcontext. Here we use _setjmp/_longjmp to avoid
+    // the additional signals for speed up.
+    jmp_buf jmp;
+
     Fiber *link;
 
     // The stack for this context, or a nullptr if allocated elsewhere.
@@ -152,5 +165,7 @@ class Fiber
     bool _finished;
     void createContext();
 };
+
+} // namespace gem5
 
 #endif // __BASE_FIBER_HH__

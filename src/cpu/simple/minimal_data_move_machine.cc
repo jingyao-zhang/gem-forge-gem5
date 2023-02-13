@@ -9,6 +9,8 @@
 
 #include "debug/MinimalDataMoveMachine.hh"
 
+namespace gem5 {
+
 std::vector<std::string> MinimalDataMoveMachine::ignoredFuncs{
     // "__kmp_hyper_barrier_release",
     // "__kmp_hardware_timestamp",
@@ -34,14 +36,12 @@ void MinimalDataMoveMachine::regStats() {
       .desc("TotalStreamHops of the MinimalDataMoveMachine")
       .flags(Stats::nozero);
 
-  Stats::registerResetCallback(
-    [this]() -> void { this->resetPCHopsMap(); });
-  Stats::registerDumpCallback(
-    [this]() -> void { this->dumpPCHopsMap(); });
+  Stats::registerResetCallback([this]() -> void { this->resetPCHopsMap(); });
+  Stats::registerDumpCallback([this]() -> void { this->dumpPCHopsMap(); });
 }
 
 void MinimalDataMoveMachine::commit(StaticInstPtr staticInst,
-                                    const TheISA::PCState &pc, Addr paddr,
+                                    const PCStateBase &pc, Addr paddr,
                                     bool isStream) {
 
   // Collect source reg information.
@@ -53,7 +53,8 @@ void MinimalDataMoveMachine::commit(StaticInstPtr staticInst,
     /**
      * We just ignore MiscReg and CCReg.
      */
-    if (srcRegId.isCCReg() || srcRegId.isMiscReg()) {
+    if (srcRegId.classValue() == RegClassType::CCRegClass ||
+        srcRegId.classValue() == RegClassType::MiscRegClass) {
       continue;
     }
     bankToSrcRegMap
@@ -74,18 +75,18 @@ void MinimalDataMoveMachine::commit(StaticInstPtr staticInst,
     finalBank = this->mapPAddrToBank(paddr);
   }
   auto traffic = this->getTraffic(bankToSrcRegMap, finalBank);
-  bool ignored = this->shouldIgnoreTraffic(pc.pc());
+  bool ignored = this->shouldIgnoreTraffic(pc.instAddr());
   if (!ignored) {
     this->totalHops += traffic.first;
     this->totalStreamHops += traffic.second;
-    this->pcHopsMap.emplace(pc.pc(), 0).first->second += traffic.first;
+    this->pcHopsMap.emplace(pc.instAddr(), 0).first->second += traffic.first;
   } else {
     this->totalIgnoredHops += traffic.first;
   }
 
   DPRINTF(MinimalDataMoveMachine,
           "%s Ignored %d IsStream %d FinalBank %d Hops %d StreamHops %d.\n",
-          staticInst->disassemble(pc.pc()), ignored, isStream, finalBank,
+          staticInst->disassemble(pc.instAddr()), ignored, isStream, finalBank,
           traffic.first, traffic.second);
 
   for (int i = 0; i < staticInst->numDestRegs(); ++i) {
@@ -172,8 +173,8 @@ bool MinimalDataMoveMachine::shouldIgnoreTraffic(Addr pc) {
     Addr funcStart = 0;
     Addr funcEnd = 0;
     std::string symbol;
-    bool found = Loader::debugSymbolTable.findNearestSymbol(
-        pc, symbol, funcStart, funcEnd);
+    bool found = Loader::debugSymbolTable.findNearestSymbol(pc, symbol,
+                                                            funcStart, funcEnd);
     if (!found) {
       symbol = csprintf("0x%x", pc);
     }
@@ -232,8 +233,8 @@ void MinimalDataMoveMachine::dumpPCHopsMap() {
     Addr funcStart = 0;
     Addr funcEnd = 0;
     std::string symbol;
-    bool found = Loader::debugSymbolTable.findNearestSymbol(
-        pc, symbol, funcStart, funcEnd);
+    bool found = Loader::debugSymbolTable.findNearestSymbol(pc, symbol,
+                                                            funcStart, funcEnd);
     if (!found) {
       symbol = csprintf("0x%x", pc);
     }
@@ -243,3 +244,5 @@ void MinimalDataMoveMachine::dumpPCHopsMap() {
              tick, symbol);
   }
 }
+
+} // namespace gem5

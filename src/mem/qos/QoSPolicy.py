@@ -33,26 +33,25 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from six import string_types
-
 from m5.SimObject import *
 from m5.params import *
 
 # QoS scheduler policy used to serve incoming transaction
 class QoSPolicy(SimObject):
-    type = 'QoSPolicy'
+    type = "QoSPolicy"
     abstract = True
     cxx_header = "mem/qos/policy.hh"
-    cxx_class = 'QoS::Policy'
+    cxx_class = "gem5::memory::qos::Policy"
+
 
 class QoSFixedPriorityPolicy(QoSPolicy):
-    type = 'QoSFixedPriorityPolicy'
+    type = "QoSFixedPriorityPolicy"
     cxx_header = "mem/qos/policy_fixed_prio.hh"
-    cxx_class = 'QoS::FixedPriorityPolicy'
+    cxx_class = "gem5::memory::qos::FixedPriorityPolicy"
 
     cxx_exports = [
-        PyBindMethod('initRequestorName'),
-        PyBindMethod('initRequestorObj'),
+        PyBindMethod("initRequestorName"),
+        PyBindMethod("initRequestorObj"),
     ]
 
     _requestor_priorities = None
@@ -64,39 +63,47 @@ class QoSFixedPriorityPolicy(QoSPolicy):
         self._requestor_priorities.append([request_port, priority])
 
     def setMasterPriority(self, request_port, priority):
-        warn('QosFixedPriority.setMasterPriority is deprecated in favor of '
-            'setRequestorPriority. See src/mem/qos/QoSPolicy.py for more '
-            'information')
+        warn(
+            "QosFixedPriority.setMasterPriority is deprecated in favor of "
+            "setRequestorPriority. See src/mem/qos/QoSPolicy.py for more "
+            "information"
+        )
         self.setRequestorPriority(request_port, priority)
 
     def init(self):
         if not self._requestor_priorities:
-            print("Error,"
-                 "use setRequestorPriority to init requestors/priorities\n");
+            print(
+                "Error,"
+                "use setRequestorPriority to init requestors/priorities\n"
+            )
             exit(1)
         else:
             for prio in self._requestor_priorities:
                 request_port = prio[0]
                 priority = prio[1]
-                if isinstance(request_port, string_types):
+                if isinstance(request_port, str):
                     self.getCCObject().initRequestorName(
-                        request_port, int(priority))
+                        request_port, int(priority)
+                    )
                 else:
                     self.getCCObject().initRequestorObj(
-                        request_port.getCCObject(), priority)
+                        request_port.getCCObject(), priority
+                    )
 
     # default fixed priority value for non-listed Requestors
-    qos_fixed_prio_default_prio = Param.UInt8(0,
-        "Default priority for non-listed Requestors")
+    qos_fixed_prio_default_prio = Param.UInt8(
+        0, "Default priority for non-listed Requestors"
+    )
+
 
 class QoSPropFairPolicy(QoSPolicy):
-    type = 'QoSPropFairPolicy'
+    type = "QoSPropFairPolicy"
     cxx_header = "mem/qos/policy_pf.hh"
-    cxx_class = 'QoS::PropFairPolicy'
+    cxx_class = "gem5::memory::qos::PropFairPolicy"
 
     cxx_exports = [
-        PyBindMethod('initRequestorName'),
-        PyBindMethod('initRequestorObj'),
+        PyBindMethod("initRequestorName"),
+        PyBindMethod("initRequestorObj"),
     ]
 
     _requestor_scores = None
@@ -109,17 +116,19 @@ class QoSPropFairPolicy(QoSPolicy):
 
     def init(self):
         if not self._requestor_scores:
-            print("Error, use setInitialScore to init requestors/scores\n");
+            print("Error, use setInitialScore to init requestors/scores\n")
             exit(1)
         else:
             for prio in self._requestor_scores:
                 request_port = prio[0]
                 score = prio[1]
-                if isinstance(request_port, string_types):
+                if isinstance(request_port, str):
                     self.getCCObject().initRequestorName(
-                        request_port, float(score))
+                        request_port, float(score)
+                    )
                 else:
                     self.getCCObject().initRequestorObj(
-                        request_port.getCCObject(), float(score))
+                        request_port.getCCObject(), float(score)
+                    )
 
     weight = Param.Float(0.5, "Pf score weight")

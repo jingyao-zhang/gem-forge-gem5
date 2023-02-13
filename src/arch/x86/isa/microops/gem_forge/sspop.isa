@@ -48,7 +48,7 @@
 //////////////////////////////////////////////////////////////////////////
 def template MicroSSPRawOpExecute {{
         Fault %(class_name)s::execute(ExecContext *xc,
-                Trace::InstRecord *traceData) const
+                trace::InstRecord *traceData) const
         {
             %(op_decl)s;
             %(op_rd)s;
@@ -59,14 +59,14 @@ def template MicroSSPRawOpExecute {{
 }};
 
 def template MicroSSPRawOpDeclare {{
-    class %(class_name)s : public X86ISA::X86MicroopBase
+    class %(class_name)s : public X86ISA::GemForgeMicroopBase
     {
       protected:
         const uint8_t dataSize;
         RegIndex foldOBit;
 
         std::string generateDisassembly(Addr pc,
-            const ::Loader::SymbolTable *symtab) const;
+            const gem5::loader::SymbolTable *symtab) const;
 
       public:
         %(class_name)s(ExtMachInst _machInst,
@@ -74,13 +74,13 @@ def template MicroSSPRawOpDeclare {{
                 uint64_t setFlags,
                 uint8_t _dataSize);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const;
+        Fault execute(ExecContext *, trace::InstRecord *) const;
     };
 }};
 
 def template MicroSSPRawOpDisassembly {{
     std::string %(class_name)s::generateDisassembly(Addr pc,
-            const ::Loader::SymbolTable *symtab) const
+            const gem5::loader::SymbolTable *symtab) const
     {
         std::stringstream response;
 
@@ -110,7 +110,7 @@ def template MicroSSPRawOpConstructor {{
 //////////////////////////////////////////////////////////////////////////
 def template MicroSSPImmOpExecute {{
         Fault %(class_name)s::execute(ExecContext *xc,
-                Trace::InstRecord *traceData) const
+                trace::InstRecord *traceData) const
         {
             %(op_decl)s;
             %(op_rd)s;
@@ -121,7 +121,7 @@ def template MicroSSPImmOpExecute {{
 
         Fault
         %(class_name)s::initiateAcc(
-            ExecContext *xc, Trace::InstRecord *traceData) const {
+            ExecContext *xc, trace::InstRecord *traceData) const {
             assert(this->isMemRef() && "InitiateAcc on NonMemRef Inst.");
             Fault fault = NoFault;
             return fault;
@@ -129,7 +129,7 @@ def template MicroSSPImmOpExecute {{
 
         Fault
         %(class_name)s::completeAcc(
-            PacketPtr pkt, ExecContext *xc, Trace::InstRecord *traceData) const {
+            PacketPtr pkt, ExecContext *xc, trace::InstRecord *traceData) const {
             assert(this->isMemRef() && "CompleteAcc on NonMemRef Inst.");
             Fault fault = NoFault;
             return fault;
@@ -137,7 +137,7 @@ def template MicroSSPImmOpExecute {{
 }};
 
 def template MicroSSPImmOpDeclare {{
-    class %(class_name)s : public X86ISA::X86MicroopBase
+    class %(class_name)s : public X86ISA::GemForgeMicroopBase
     {
       protected:
         const uint64_t imm;
@@ -145,7 +145,7 @@ def template MicroSSPImmOpDeclare {{
         RegIndex foldOBit;
 
         std::string generateDisassembly(Addr pc,
-            const ::Loader::SymbolTable *symtab) const;
+            const gem5::loader::SymbolTable *symtab) const;
 
       public:
         %(class_name)s(ExtMachInst _machInst,
@@ -154,16 +154,16 @@ def template MicroSSPImmOpDeclare {{
                 uint64_t _imm,
                 uint8_t _dataSize);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(
-            PacketPtr, ExecContext *, Trace::InstRecord *) const override;
+            PacketPtr, ExecContext *, trace::InstRecord *) const override;
     };
 }};
 
 def template MicroSSPImmOpDisassembly {{
     std::string %(class_name)s::generateDisassembly(Addr pc,
-            const ::Loader::SymbolTable *symtab) const
+            const gem5::loader::SymbolTable *symtab) const
     {
         std::stringstream response;
 
@@ -194,7 +194,7 @@ let {{
         def __init__(self, imm, dataSize="env.dataSize"):
             self.className = "SSPStreamConfig"
             self.mnemonic = "ssp.stream.config"
-            if isinstance(imm, (int, long)):
+            if isinstance(imm, int):
                 imm = "ULL(%d)" % imm
             self.imm = imm
             self.dataSize = dataSize
@@ -224,7 +224,7 @@ let {{
         def __init__(self, imm, dataSize="env.dataSize"):
             self.className = "SSPStreamEnd"
             self.mnemonic = "ssp.stream.end"
-            if isinstance(imm, (int, long)):
+            if isinstance(imm, int):
                 imm = "ULL(%d)" % imm
             self.imm = imm
             self.dataSize = dataSize
@@ -254,7 +254,7 @@ let {{
         def __init__(self, imm, dataSize="env.dataSize"):
             self.className = "SSPStreamStep"
             self.mnemonic = "ssp.stream.step"
-            if isinstance(imm, (int, long)):
+            if isinstance(imm, int):
                 imm = "ULL(%d)" % imm
             self.imm = imm
             self.dataSize = dataSize
@@ -284,7 +284,7 @@ let {{
         def __init__(self, imm, dataSize="env.dataSize"):
             self.className = "SSPStreamStore"
             self.mnemonic = "ssp.stream.store"
-            if isinstance(imm, (int, long)):
+            if isinstance(imm, int):
                 imm = "ULL(%d)" % imm
             self.imm = imm
             self.dataSize = dataSize
@@ -345,7 +345,7 @@ let {{
             # classname
             "SSPStreamConfig",
             # base_class
-            'X86MicroopBase',
+            'GemForgeMicroopBase',
             # snippets
             {
                 'code' : '',
@@ -356,7 +356,7 @@ let {{
         InstObjParams(
             "ssp_stream_end",
             "SSPStreamEnd",
-            'X86MicroopBase',
+            'GemForgeMicroopBase',
             {
                 'code' : '',
             },
@@ -365,7 +365,7 @@ let {{
         InstObjParams(
             "ssp_stream_step",
             "SSPStreamStep",
-            'X86MicroopBase',
+            'GemForgeMicroopBase',
             {
                 'code' : '',
             },
@@ -374,11 +374,11 @@ let {{
         InstObjParams(
             "ssp_stream_store",
             "SSPStreamStore",
-            'X86MicroopBase',
+            'GemForgeMicroopBase',
             {
                 'code' : '',
             },
-            ['MemWriteOp', 'IsStore', 'IsMemRef', 'IsGemForge']
+            ['MemWriteOp', 'IsStore', 'IsGemForge']
         ),
     ]
     for iop in iops:
@@ -391,7 +391,7 @@ let {{
         InstObjParams(
             "ssp_stream_ready",
             "SSPStreamReady",
-            'X86MicroopBase',
+            'GemForgeMicroopBase',
             {
                 'code' : '',
             },

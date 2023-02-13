@@ -4,6 +4,8 @@
 #include "base/trace.hh"
 #include "debug/LLVMTraceCPU.hh"
 
+namespace gem5 {
+
 DynamicInstructionStream::DynamicInstructionStream(
     std::shared_ptr<Buffer> _buffer)
     : buffer(_buffer) {
@@ -163,4 +165,5 @@ void DynamicInstructionStreamInterfaceFixedEnd::commit(LLVMDynamicInst *inst) {
   ++this->lhs;
   this->stream->commit(committedIter);
   --this->fetchedSize;
-}
+}} // namespace gem5
+

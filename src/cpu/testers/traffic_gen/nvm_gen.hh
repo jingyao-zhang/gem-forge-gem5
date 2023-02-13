@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Wendy Elsasser
  */
 
 /**
@@ -51,6 +49,9 @@
 #include "enums/AddrMap.hh"
 #include "mem/packet.hh"
 #include "random_gen.hh"
+
+namespace gem5
+{
 
 /**
  * NVM specific generator is for issuing request with variable buffer
@@ -92,7 +93,7 @@ class NvmGen : public RandomGen
            uint8_t read_percent, Addr data_limit,
            unsigned int num_seq_pkts, unsigned int buffer_size,
            unsigned int nbr_of_banks, unsigned int nbr_of_banks_util,
-           Enums::AddrMap addr_mapping,
+           enums::AddrMap addr_mapping,
            unsigned int nbr_of_ranks);
 
     PacketPtr getNextPacket();
@@ -138,7 +139,7 @@ class NvmGen : public RandomGen
     const unsigned int nbrOfBanksUtil;
 
     /** Address mapping to be used */
-    Enums::AddrMap addrMapping;
+    enums::AddrMap addrMapping;
 
     /** Number of rank bits in NVM address*/
     const unsigned int rankBits;
@@ -147,5 +148,7 @@ class NvmGen : public RandomGen
     const unsigned int nbrOfRanks;
 
 };
+
+} // namespace gem5
 
 #endif

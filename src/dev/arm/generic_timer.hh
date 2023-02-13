@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2015, 2017-2018,2020 ARM Limited
+ * Copyright (c) 2013, 2015, 2017-2018,2020,2022 Arm Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -38,11 +38,19 @@
 #ifndef __DEV_ARM_GENERIC_TIMER_HH__
 #define __DEV_ARM_GENERIC_TIMER_HH__
 
+#include <cstdint>
+#include <vector>
+
 #include "arch/arm/isa_device.hh"
 #include "arch/arm/system.hh"
+#include "base/addr_range.hh"
+#include "base/bitunion.hh"
+#include "base/types.hh"
 #include "dev/arm/base_gic.hh"
 #include "dev/arm/generic_timer_miscregs_types.hh"
-#include "sim/core.hh"
+#include "sim/drain.hh"
+#include "sim/eventq.hh"
+#include "sim/serialize.hh"
 #include "sim/sim_object.hh"
 
 /// @file
@@ -54,15 +62,18 @@
 ///     G6.2  - The AArch32 view of the Generic Timer
 ///     I2 - System Level Implementation of the Generic Timer
 
+namespace gem5
+{
+
 class Checkpoint;
-class SystemCounterParams;
-class GenericTimerParams;
-class GenericTimerFrameParams;
-class GenericTimerMemParams;
+struct SystemCounterParams;
+struct GenericTimerParams;
+struct GenericTimerFrameParams;
+struct GenericTimerMemParams;
 
 /// Abstract class for elements whose events depend on the counting speed
 /// of the System Counter
-class SystemCounterListener : public Serializable
+class SystemCounterListener
 {
   public:
     /// Called from the SystemCounter when a change in counting speed occurred
@@ -100,7 +111,7 @@ class SystemCounter : public SimObject
     static constexpr size_t MAX_FREQ_ENTRIES = 1004;
 
   public:
-    SystemCounter(SystemCounterParams *const p);
+    SystemCounter(const SystemCounterParams &p);
 
     /// Validates a System Counter reference
     /// @param sys_cnt System counter reference to validate
@@ -165,7 +176,8 @@ class SystemCounter : public SimObject
 };
 
 /// Per-CPU architected timer.
-class ArchTimer : public SystemCounterListener, public Drainable
+class ArchTimer : public SystemCounterListener, public Drainable,
+                  public Serializable
 {
   protected:
     /// Control register.
@@ -268,17 +280,15 @@ class ArchTimerKvm : public ArchTimer
     // For ArchTimer's in a GenericTimerISA with Kvm execution about
     // to begin, skip rescheduling the event.
     // Otherwise, we should reschedule the event (if necessary).
-    bool scheduleEvents() override {
-        return !system.validKvmEnvironment();
-    }
+    bool scheduleEvents() override;
 };
 
 class GenericTimer : public SimObject
 {
   public:
-    const GenericTimerParams * params() const;
+    PARAMS(GenericTimer);
 
-    GenericTimer(GenericTimerParams *const p);
+    GenericTimer(const Params &p);
 
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
@@ -288,12 +298,17 @@ class GenericTimer : public SimObject
     RegVal readMiscReg(int misc_reg, unsigned cpu);
 
   protected:
-    class CoreTimers : public SystemCounterListener
+    class CoreTimers : public SystemCounterListener, public Serializable
     {
       public:
         CoreTimers(GenericTimer &_parent, ArmSystem &system, unsigned cpu,
-                   ArmInterruptPin *_irqPhysS, ArmInterruptPin *_irqPhysNS,
-                   ArmInterruptPin *_irqVirt, ArmInterruptPin *_irqHyp);
+                   ArmInterruptPin *irq_el3_phys,
+                   ArmInterruptPin *irq_el1_phys,
+                   ArmInterruptPin *irq_el1_virt,
+                   ArmInterruptPin *irq_el2_ns_phys,
+                   ArmInterruptPin *irq_el2_ns_virt,
+                   ArmInterruptPin *irq_el2_s_phys,
+                   ArmInterruptPin *irq_el2_s_virt);
 
         /// Generic Timer parent reference
         GenericTimer &parent;
@@ -310,15 +325,21 @@ class GenericTimer : public SimObject
         /// Thread (HW) context associated to this PE implementation
         ThreadContext *threadContext;
 
-        ArmInterruptPin const *irqPhysS;
-        ArmInterruptPin const *irqPhysNS;
-        ArmInterruptPin const *irqVirt;
-        ArmInterruptPin const *irqHyp;
+        ArmInterruptPin const *irqPhysEL3;
+        ArmInterruptPin const *irqPhysEL1;
+        ArmInterruptPin const *irqVirtEL1;
+        ArmInterruptPin const *irqPhysNsEL2;
+        ArmInterruptPin const *irqVirtNsEL2;
+        ArmInterruptPin const *irqPhysSEL2;
+        ArmInterruptPin const *irqVirtSEL2;
 
-        ArchTimerKvm physS;
-        ArchTimerKvm physNS;
-        ArchTimerKvm virt;
-        ArchTimerKvm hyp;
+        ArchTimerKvm physEL3;
+        ArchTimerKvm physEL1;
+        ArchTimerKvm virtEL1;
+        ArchTimerKvm physNsEL2;
+        ArchTimerKvm virtNsEL2;
+        ArchTimerKvm physSEL2;
+        ArchTimerKvm virtSEL2;
 
         // Event Stream. Events are generated based on a configurable
         // transitionBit over the counter value. transitionTo indicates
@@ -392,7 +413,7 @@ class GenericTimerISA : public ArmISA::BaseISADevice
 class GenericTimerFrame : public PioDevice
 {
   public:
-    GenericTimerFrame(GenericTimerFrameParams *const p);
+    GenericTimerFrame(const GenericTimerFrameParams &p);
 
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
@@ -496,7 +517,7 @@ class GenericTimerFrame : public PioDevice
 class GenericTimerMem : public PioDevice
 {
   public:
-    GenericTimerMem(GenericTimerMemParams *const p);
+    GenericTimerMem(const GenericTimerMemParams &p);
 
     /// Validates a Generic Timer register frame address range
     /// @param base_addr Range of the register frame
@@ -574,5 +595,7 @@ class GenericTimerMem : public PioDevice
 
     ArmSystem &system;
 };
+
+} // namespace gem5
 
 #endif // __DEV_ARM_GENERIC_TIMER_HH__

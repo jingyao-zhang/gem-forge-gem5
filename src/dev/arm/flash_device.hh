@@ -46,6 +46,9 @@
 #include "params/FlashDevice.hh"
 #include "sim/serialize.hh"
 
+namespace gem5
+{
+
 /**
  * Flash Device model
  * The Flash Device model is a timing model for a NAND flash device.
@@ -56,7 +59,7 @@ class FlashDevice : public AbstractNVM
   public:
 
     /** Initialize functions*/
-    FlashDevice(const FlashDeviceParams*);
+    FlashDevice(const FlashDeviceParams &);
     ~FlashDevice();
 
     /** Checkpoint functions*/
@@ -68,7 +71,8 @@ class FlashDevice : public AbstractNVM
 
   private:
     /** Defines the possible actions to the flash*/
-    enum Actions {
+    enum Actions
+    {
         ActionRead,
         ActionWrite,
         ActionErase,
@@ -80,28 +84,33 @@ class FlashDevice : public AbstractNVM
     };
 
     /** Every logical address maps to a physical block and a physical page*/
-    struct PageMapEntry {
+    struct PageMapEntry
+    {
         uint32_t page;
         uint32_t block;
     };
 
-    struct CallBackEntry {
+    struct CallBackEntry
+    {
         Tick time;
         std::function<void()> function;
     };
 
-    struct FlashDeviceStats {
+    struct FlashDeviceStats : public statistics::Group
+    {
+        FlashDeviceStats(statistics::Group *parent);
+
         /** Amount of GC activations*/
-        Stats::Scalar totalGCActivations;
+        statistics::Scalar totalGCActivations;
 
         /** Histogram of address accesses*/
-        Stats::Histogram writeAccess;
-        Stats::Histogram readAccess;
-        Stats::Histogram fileSystemAccess;
+        statistics::Histogram writeAccess;
+        statistics::Histogram readAccess;
+        statistics::Histogram fileSystemAccess;
 
         /** Histogram of access latencies*/
-        Stats::Histogram writeLatency;
-        Stats::Histogram readLatency;
+        statistics::Histogram writeLatency;
+        statistics::Histogram readLatency;
     };
 
     /** Device access functions Inherrited from AbstractNVM*/
@@ -147,9 +156,6 @@ class FlashDevice : public AbstractNVM
     /** Function to test if a page is known*/
     bool getUnknownPages(uint32_t index);
 
-    /**Stats register function*/
-    void regStats() override;
-
     /** Disk sizes in bytes */
     uint64_t diskSize;
     const uint32_t blockSize;
@@ -164,7 +170,7 @@ class FlashDevice : public AbstractNVM
     const Tick eraseLatency;
 
     /** Flash organization */
-    const Enums::DataDistribution dataDistribution;
+    const enums::DataDistribution dataDistribution;
     const uint32_t numPlanes;
 
     /** RequestHandler stats */
@@ -195,4 +201,7 @@ class FlashDevice : public AbstractNVM
     /** Completion event */
     EventFunctionWrapper planeEvent;
 };
+
+} // namespace gem5
+
 #endif //__DEV_ARM_FLASH_DEVICE_HH__

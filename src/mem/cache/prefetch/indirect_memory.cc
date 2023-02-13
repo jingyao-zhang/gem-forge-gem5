@@ -33,7 +33,12 @@
  #include "params/IndirectMemoryPrefetcher.hh"
  #include "debug/IMPrefetcher.hh"
 
-namespace Prefetcher {
+namespace gem5
+{
+
+GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
+namespace prefetch
+{
 
 void
 IndirectMemory::insertIndex(int64_t index, PrefetchTableEntry &entry)
@@ -90,21 +95,22 @@ IndirectMemory::checkAccessMatchOnIndex(Addr pc, Addr addr, PrefetchTableEntry &
     }
 }
 
-IndirectMemory::IndirectMemory(const IndirectMemoryPrefetcherParams *p)
+IndirectMemory::IndirectMemory(const IndirectMemoryPrefetcherParams &p)
   : Queued(p),
-    maxPrefetchDistance(p->max_prefetch_distance),
-    shiftValues(p->shift_values), prefetchThreshold(p->prefetch_threshold),
-    streamCounterThreshold(p->stream_counter_threshold),
-    streamingDistance(p->streaming_distance),
-    indexQueueSize(p->index_queue_size),
-    prefetchTable(p->pt_table_assoc, p->pt_table_entries,
-                  p->pt_table_indexing_policy, p->pt_table_replacement_policy,
-                  PrefetchTableEntry(p->num_stream_counter_bits,
-                                     p->num_indirect_counter_bits)),
-    ipd(p->ipd_table_assoc, p->ipd_table_entries, p->ipd_table_indexing_policy,
-        p->ipd_table_replacement_policy,
-        IndirectPatternDetectorEntry(p->addr_array_len, shiftValues.size())),
-    ipdEntryTrackingMisses(nullptr), byteOrder(p->sys->getGuestByteOrder())
+    maxPrefetchDistance(p.max_prefetch_distance),
+    shiftValues(p.shift_values), prefetchThreshold(p.prefetch_threshold),
+    streamCounterThreshold(p.stream_counter_threshold),
+    streamingDistance(p.streaming_distance),
+    indexQueueSize(p.index_queue_size),
+    prefetchTable(p.pt_table_assoc, p.pt_table_entries,
+                  p.pt_table_indexing_policy, p.pt_table_replacement_policy,
+                  PrefetchTableEntry(
+                    p.num_stream_counter_bits,
+                    p.num_indirect_counter_bits)),
+    ipd(p.ipd_table_assoc, p.ipd_table_entries, p.ipd_table_indexing_policy,
+        p.ipd_table_replacement_policy,
+        IndirectPatternDetectorEntry(p.addr_array_len, shiftValues.size())),
+    ipdEntryTrackingMisses(nullptr), byteOrder(p.sys->getGuestByteOrder())
 {
 }
 
@@ -484,10 +490,5 @@ IndirectMemory::regStats()
         ;
 }
 
-} // namespace Prefetcher
-
-Prefetcher::IndirectMemory*
-IndirectMemoryPrefetcherParams::create()
-{
-    return new Prefetcher::IndirectMemory(this);
-}
+} // namespace prefetch
+} // namespace gem5

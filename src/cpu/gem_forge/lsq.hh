@@ -10,6 +10,8 @@
 #include <memory>
 #include <vector>
 
+namespace gem5 {
+
 class LLVMTraceCPU;
 class LLVMIEWStage;
 
@@ -37,8 +39,8 @@ public:
   const int storeQueueSize;
   const int cacheStorePorts;
 
-  mutable Stats::Scalar LQEntriesAllocated;
-  mutable Stats::Scalar SQEntriesAllocated;
+  mutable statistics::Scalar LQEntriesAllocated;
+  mutable statistics::Scalar SQEntriesAllocated;
 
 private:
   LLVMTraceCPU *cpu;
@@ -86,5 +88,7 @@ private:
                             StoreQueueEntry &storeEntry2);
   static bool isAliased(Addr addr1, uint32_t size1, Addr addr2, uint32_t size2);
 };
+
+} // namespace gem5
 
 #endif

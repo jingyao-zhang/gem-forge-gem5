@@ -20,6 +20,8 @@
  * 4. Variable page size.
  */
 
+namespace gem5 {
+
 namespace X86ISA {
 class SEPageWalker {
 public:
@@ -33,9 +35,9 @@ public:
    */
   Cycles walk(Addr pageVAddr, Cycles curCycle);
 
-  Stats::Scalar accesses;
-  Stats::Scalar hits;
-  Stats::Scalar waits;
+  statistics::Scalar accesses;
+  statistics::Scalar hits;
+  statistics::Scalar waits;
 
 private:
   std::string myName;
@@ -62,5 +64,6 @@ private:
   void clearReadyStates(Cycles curCycle);
 };
 } // namespace X86ISA
+} // namespace gem5
 
 #endif

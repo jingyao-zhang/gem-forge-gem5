@@ -56,7 +56,8 @@
 
 #include "base/logging.hh"
 
-using namespace std;
+namespace gem5
+{
 
 OutputDirectory simout;
 
@@ -108,8 +109,8 @@ OutputFile<StreamType>::relocate(const OutputDirectory &dir)
     }
 }
 
-OutputStream OutputDirectory::stdout("stdout", &cout);
-OutputStream OutputDirectory::stderr("stderr", &cerr);
+OutputStream OutputDirectory::stdout("stdout", &std::cout);
+OutputStream OutputDirectory::stderr("stderr", &std::cerr);
 
 /**
  * @file This file manages creating / deleting output files for the simulator.
@@ -131,7 +132,7 @@ OutputDirectory::~OutputDirectory()
 }
 
 OutputStream *
-OutputDirectory::checkForStdio(const string &name)
+OutputDirectory::checkForStdio(const std::string &name)
 {
     if (name == "cerr" || name == "stderr")
         return &stderr;
@@ -160,9 +161,9 @@ OutputDirectory::close(OutputStream *file)
 }
 
 void
-OutputDirectory::setDirectory(const string &d)
+OutputDirectory::setDirectory(const std::string &d)
 {
-    const string old_dir(dir);
+    const std::string old_dir(dir);
 
     dir = d;
 
@@ -190,7 +191,7 @@ OutputDirectory::setDirectory(const string &d)
 
 }
 
-const string &
+const std::string &
 OutputDirectory::directory() const
 {
     if (dir.empty())
@@ -199,21 +200,21 @@ OutputDirectory::directory() const
     return dir;
 }
 
-string
-OutputDirectory::resolve(const string &name) const
+std::string
+OutputDirectory::resolve(const std::string &name) const
 {
     return !isAbsolute(name) ? dir + name : name;
 }
 
 OutputStream *
-OutputDirectory::create(const string &name, bool binary, bool no_gz)
+OutputDirectory::create(const std::string &name, bool binary, bool no_gz)
 {
     OutputStream *file = checkForStdio(name);
     if (file)
         return file;
 
-    const ios_base::openmode mode(
-        ios::trunc | (binary ? ios::binary : (ios::openmode)0));
+    const std::ios_base::openmode mode(
+        std::ios::trunc | (binary ? std::ios::binary : (std::ios::openmode)0));
     const bool recreateable(!isAbsolute(name));
 
     return open(name, mode, recreateable, no_gz);
@@ -221,7 +222,7 @@ OutputDirectory::create(const string &name, bool binary, bool no_gz)
 
 OutputStream *
 OutputDirectory::open(const std::string &name,
-                      ios_base::openmode mode,
+                      std::ios_base::openmode mode,
                       bool recreateable,
                       bool no_gz)
 {
@@ -234,7 +235,7 @@ OutputDirectory::open(const std::string &name,
         mode |= std::ios::out;
         os = new OutputFile<gzofstream>(*this, name, mode, recreateable);
     } else {
-        os = new OutputFile<ofstream>(*this, name, mode, recreateable);
+        os = new OutputFile<std::ofstream>(*this, name, mode, recreateable);
     }
 
     files[name] = os;
@@ -243,7 +244,7 @@ OutputDirectory::open(const std::string &name,
 }
 
 OutputStream *
-OutputDirectory::find(const string &name) const
+OutputDirectory::find(const std::string &name) const
 {
     OutputStream *file = checkForStdio(name);
     if (file)
@@ -268,7 +269,7 @@ OutputDirectory::findOrCreate(const std::string &name, bool binary)
 }
 
 bool
-OutputDirectory::isFile(const string &name) const
+OutputDirectory::isFile(const std::string &name) const
 {
     // definitely a file if in our data structure
     if (find(name) != NULL) return true;
@@ -279,10 +280,10 @@ OutputDirectory::isFile(const string &name) const
 }
 
 OutputDirectory *
-OutputDirectory::createSubdirectory(const string &name)
+OutputDirectory::createSubdirectory(const std::string &name)
 {
-    const string new_dir = resolve(name);
-    if (new_dir.find(directory()) == string::npos)
+    const std::string new_dir = resolve(name);
+    if (new_dir.find(directory()) == std::string::npos)
         fatal("Attempting to create subdirectory not in m5 output dir\n");
 
     OutputDirectory *dir(new OutputDirectory(new_dir));
@@ -292,7 +293,7 @@ OutputDirectory::createSubdirectory(const string &name)
 }
 
 OutputDirectory *
-OutputDirectory::findOrCreateSubdirectory(const string &name)
+OutputDirectory::findOrCreateSubdirectory(const std::string &name)
 {
     if (dirs.count(name)) {
         return dirs[name];
@@ -301,11 +302,11 @@ OutputDirectory::findOrCreateSubdirectory(const string &name)
 }
 
 void
-OutputDirectory::remove(const string &name, bool recursive)
+OutputDirectory::remove(const std::string &name, bool recursive)
 {
-    const string fname = resolve(name);
+    const std::string fname = resolve(name);
 
-    if (fname.find(directory()) == string::npos)
+    if (fname.find(directory()) == std::string::npos)
         fatal("Attempting to remove file/dir not in output dir\n");
 
     if (isFile(fname)) {
@@ -355,3 +356,5 @@ OutputDirectory::remove(const string &name, bool recursive)
         }
     }
 }
+
+} // namespace gem5

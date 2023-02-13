@@ -37,8 +37,14 @@
 
 #include "dev/arm/smmu_v3_proc.hh"
 
+#include <cassert>
+#include <functional>
+
 #include "dev/arm/smmu_v3.hh"
 #include "sim/system.hh"
+
+namespace gem5
+{
 
 SMMUProcess::SMMUProcess(const std::string &name, SMMUv3 &_smmu) :
     coroutine(NULL),
@@ -78,7 +84,7 @@ SMMUProcess::doRead(Yield &yield, Addr addr, void *ptr, size_t size)
     RequestPtr req = std::make_shared<Request>(
         addr, size, 0, smmu.requestorId);
 
-    req->taskId(ContextSwitchTaskId::DMA);
+    req->taskId(context_switch_task_id::DMA);
 
     a.pkt = new Packet(req, MemCmd::ReadReq);
     a.pkt->dataStatic(ptr);
@@ -111,7 +117,7 @@ SMMUProcess::doWrite(Yield &yield, Addr addr, const void *ptr, size_t size)
     RequestPtr req = std::make_shared<Request>(
         addr, size, 0, smmu.requestorId);
 
-    req->taskId(ContextSwitchTaskId::DMA);
+    req->taskId(context_switch_task_id::DMA);
 
     a.pkt = new Packet(req, MemCmd::WriteReq);
     a.pkt->dataStatic(ptr);
@@ -206,3 +212,5 @@ SMMUProcess::run(PacketPtr pkt)
     assert(*coroutine);
     return (*coroutine)(pkt).get();
 }
+
+} // namespace gem5

@@ -4,6 +4,8 @@
 
 #include "debug/PUMTransposeUnit.hh"
 
+namespace gem5 {
+
 Cycles PUMTransposeUnit::access(Addr paddrLine, Cycles defaultLat) {
 
   this->initialize();
@@ -49,4 +51,5 @@ void PUMTransposeUnit::initialize() {
   auto numWays = hwConfig.way_per_bank;
   this->readyCycles.resize(numWays, Cycles(0));
   this->initialized = true;
-}
+}} // namespace gem5
+

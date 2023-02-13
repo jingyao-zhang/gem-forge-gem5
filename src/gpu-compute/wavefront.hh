@@ -2,8 +2,6 @@
  * Copyright (c) 2011-2017 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -43,6 +41,8 @@
 
 #include "arch/gpu_isa.hh"
 #include "base/logging.hh"
+#include "base/statistics.hh"
+#include "base/stats/group.hh"
 #include "base/types.hh"
 #include "config/the_gpu_isa.hh"
 #include "gpu-compute/compute_unit.hh"
@@ -54,10 +54,14 @@
 #include "params/Wavefront.hh"
 #include "sim/sim_object.hh"
 
+namespace gem5
+{
+
 class Wavefront : public SimObject
 {
   public:
-    enum status_e {
+    enum status_e
+    {
         // wavefront is stalled
         S_STOPPED,
         // wavefront is returning from a kernel
@@ -66,6 +70,9 @@ class Wavefront : public SimObject
         S_RUNNING,
         // wavefront is stalled
         S_STALLED,
+
+        S_STALLED_SLEEP,
+
         /**
          * wavefront has unsatisfied wait counts
          *
@@ -132,6 +139,7 @@ class Wavefront : public SimObject
     bool isGmInstruction(GPUDynInstPtr ii);
     bool isLmInstruction(GPUDynInstPtr ii);
     bool isOldestInstWaitcnt();
+    bool isOldestInstSleep();
     bool isOldestInstGMem();
     bool isOldestInstLMem();
     bool isOldestInstPrivMem();
@@ -217,52 +225,13 @@ class Wavefront : public SimObject
     // unique WF id over all WFs executed across all CUs
     uint64_t wfDynId;
 
-    // Wavefront slot stats
-
-    // Number of instructions executed by this wavefront slot across all
-    // dynamic wavefronts
-    Stats::Scalar numInstrExecuted;
-
-    // Number of cycles this WF spends in SCH stage
-    Stats::Scalar schCycles;
-
-    // Number of stall cycles encounterd by this WF in SCH stage
-    Stats::Scalar schStalls;
-
-    // The following stats sum to the value of schStalls, and record, per
-    // WF slot, what the cause of each stall was at a coarse granularity.
-
-    // Cycles WF is selected by scheduler, but RFs cannot support instruction
-    Stats::Scalar schRfAccessStalls;
-    // Cycles spent waiting for execution resources
-    Stats::Scalar schResourceStalls;
-    // cycles spent waiting for RF reads to complete in SCH stage
-    Stats::Scalar schOpdNrdyStalls;
-    // LDS arbitration stall cycles. WF attempts to execute LM instruction,
-    // but another wave is executing FLAT, which requires LM and GM and forces
-    // this WF to stall.
-    Stats::Scalar schLdsArbStalls;
-
-    // number of times an instruction of a WF is blocked from being issued
-    // due to WAR and WAW dependencies
-    Stats::Scalar numTimesBlockedDueWAXDependencies;
-    // number of times an instruction of a WF is blocked from being issued
-    // due to WAR and WAW dependencies
-    Stats::Scalar numTimesBlockedDueRAWDependencies;
-
     // dyn inst id (per SIMD) of last instruction exec from this wave
     uint64_t lastInstExec;
 
-    // Distribution to track the distance between producer and consumer
-    // for vector register values
-    Stats::Distribution vecRawDistance;
     // Map to track the dyn instruction id of each vector register value
     // produced, indexed by physical vector register ID
     std::unordered_map<int,uint64_t> rawDist;
 
-    // Distribution to track the number of times every vector register
-    // value produced is consumed.
-    Stats::Distribution readsPerWrite;
     // Counts the number of reads performed to each physical register
     // - counts are reset to 0 for each dynamic wavefront launched
     std::vector<int> vecReads;
@@ -273,7 +242,7 @@ class Wavefront : public SimObject
     uint8_t *context;
 
     typedef WavefrontParams Params;
-    Wavefront(const Params *p);
+    Wavefront(const Params &p);
     ~Wavefront();
     virtual void init();
 
@@ -289,7 +258,6 @@ class Wavefront : public SimObject
     // called by SCH stage to reserve
     std::vector<int> reserveResources();
     bool stopFetch();
-    void regStats();
 
     Addr pc() const;
     void pc(Addr new_pc);
@@ -313,6 +281,9 @@ class Wavefront : public SimObject
 
     /** Freeing VRF space */
     void freeRegisterFile();
+
+    bool sleepDone();
+    void setSleepTime(int sleep_time);
 
     TheGpuISA::GPUISA&
     gpuISA()
@@ -353,10 +324,59 @@ class Wavefront : public SimObject
     int vmemInstsIssued;
     int expInstsIssued;
     int lgkmInstsIssued;
+    int sleepCnt;
     status_e status;
     Addr _pc;
     VectorMask _execMask;
     int barId;
+
+  public:
+    struct WavefrontStats : public statistics::Group
+    {
+        WavefrontStats(statistics::Group *parent);
+
+        // Number of instructions executed by this wavefront slot across all
+        // dynamic wavefronts
+        statistics::Scalar numInstrExecuted;
+
+        // Number of cycles this WF spends in SCH stage
+        statistics::Scalar schCycles;
+
+        // Number of stall cycles encounterd by this WF in SCH stage
+        statistics::Scalar schStalls;
+
+        // The following stats sum to the value of schStalls, and record, per
+        // WF slot, what the cause of each stall was at a coarse granularity.
+
+        // Cycles WF is selected by scheduler, but RFs cannot support
+        // instruction
+        statistics::Scalar schRfAccessStalls;
+        // Cycles spent waiting for execution resources
+        statistics::Scalar schResourceStalls;
+        // cycles spent waiting for RF reads to complete in SCH stage
+        statistics::Scalar schOpdNrdyStalls;
+        // LDS arbitration stall cycles. WF attempts to execute LM instruction,
+        // but another wave is executing FLAT, which requires LM and GM and
+        // forces this WF to stall.
+        statistics::Scalar schLdsArbStalls;
+
+        // number of times an instruction of a WF is blocked from being issued
+        // due to WAR and WAW dependencies
+        statistics::Scalar numTimesBlockedDueWAXDependencies;
+        // number of times an instruction of a WF is blocked from being issued
+        // due to WAR and WAW dependencies
+        statistics::Scalar numTimesBlockedDueRAWDependencies;
+
+        // Distribution to track the distance between producer and consumer
+        // for vector register values
+        statistics::Distribution vecRawDistance;
+
+        // Distribution to track the number of times every vector register
+        // value produced is consumed.
+        statistics::Distribution readsPerWrite;
+    } stats;
 };
+
+} // namespace gem5
 
 #endif // __GPU_COMPUTE_WAVEFRONT_HH__

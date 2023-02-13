@@ -7,6 +7,8 @@
 #include <string>
 #include <unordered_map>
 
+namespace gem5 {
+
 // A simple local 2 bit predictor.
 class LLVMBranchPredictor {
 public:
@@ -23,5 +25,7 @@ protected:
   bool predict(const LLVMDynamicInst *inst) const;
   void update(const LLVMDynamicInst *inst);
 };
+
+} // namespace gem5
 
 #endif

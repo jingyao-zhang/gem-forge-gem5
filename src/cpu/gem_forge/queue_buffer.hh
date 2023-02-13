@@ -5,6 +5,8 @@
 #include <list>
 #include <utility>
 
+namespace gem5 {
+
 /**
  * This class represents a buffer, where elements are allocated and deallocated
  * in a FIFO order.
@@ -103,5 +105,7 @@ private:
     }
   }
 };
+
+} // namespace gem5
 
 #endif

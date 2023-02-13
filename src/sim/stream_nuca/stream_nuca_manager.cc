@@ -6,6 +6,7 @@
 #include "cpu/gem_forge/accelerator/stream/cache/pum/PUMHWConfiguration.hh"
 #include "cpu/thread_context.hh"
 #include "params/Process.hh"
+#include "sim/se_workload.hh"
 #include "sim/system.hh"
 
 #include <iomanip>
@@ -13,18 +14,21 @@
 
 #include "debug/StreamNUCAManager.hh"
 
+namespace gem5 {
+
 std::shared_ptr<StreamNUCAManager> StreamNUCAManager::singleton = nullptr;
 
 // There is only one StreamNUCAManager.
 std::shared_ptr<StreamNUCAManager>
-StreamNUCAManager::initialize(Process *_process, ProcessParams *_params) {
+StreamNUCAManager::initialize(Process *_process, const ProcessParams *_params) {
   if (!singleton) {
     singleton = std::make_shared<StreamNUCAManager>(_process, _params);
   }
   return singleton;
 }
 
-StreamNUCAManager::StreamNUCAManager(Process *_process, ProcessParams *_params)
+StreamNUCAManager::StreamNUCAManager(Process *_process,
+                                     const ProcessParams *_params)
     : process(_process), enabledMemStream(_params->enableMemStream),
       enabledNUCA(_params->enableStreamNUCA),
       enablePUM(_params->enableStreamPUMMapping),
@@ -93,7 +97,8 @@ void StreamNUCAManager::regStats() {
   scalar(indRegionMemToLLCRemappedHops,
          "Remapped hops from Mem to LLC in indirect region.");
 
-  auto numBanks = StreamNUCAMap::getNumRows() * StreamNUCAMap::getNumCols();
+  // At this moment we haven't init topology in the StreamNUCAMap yet.
+  auto numBanks = 64;
   distribution(indRegionMemMinBanks, 0, numBanks - 1, 1,
                "Distribution of minimal IndRegion banks.");
   distribution(indRegionMemRemappedBanks, 0, numBanks - 1, 1,
@@ -874,7 +879,7 @@ void StreamNUCAManager::reallocatePageAt(ThreadContext *tc, Addr pageVAddr,
                                          Addr pagePAddr, int numaNode) {
 
   auto pTable = this->process->pTable;
-  auto pageSize = pTable->getPageSize();
+  auto pageSize = pTable->pageSize();
 
   char *pageData = reinterpret_cast<char *>(malloc(pageSize));
 
@@ -954,7 +959,7 @@ void StreamNUCAManager::estimateCSRMigration(ThreadContext *tc,
 
       for (int j = 0; j < numEdges; ++j) {
         auto thisEdgeVAddr = edgeLhs + j * region.elementSize;
-        auto thisEdgeVAddrLine = makeLineAddress(thisEdgeVAddr);
+        auto thisEdgeVAddrLine = ruby::makeLineAddress(thisEdgeVAddr);
         Addr thisEdgePAddrLine;
         assert(pTable->translate(thisEdgeVAddrLine, thisEdgePAddrLine));
         auto thisEdgeBank = StreamNUCAMap::getBank(thisEdgePAddrLine);
@@ -995,7 +1000,7 @@ void StreamNUCAManager::estimateCSRMigration(ThreadContext *tc,
       auto fullLineBegin = lines.begin();
       auto fullLineEnd = lines.end();
       auto isFullLine = [edgeLhs, edgeRhs](Addr vaddr) -> bool {
-        return vaddr == makeLineAddress(vaddr) && vaddr >= edgeLhs &&
+        return vaddr == ruby::makeLineAddress(vaddr) && vaddr >= edgeLhs &&
                vaddr + StreamNUCAMap::getCacheBlockSize() <= edgeRhs;
       };
       if (fullLineBegin < fullLineEnd) {
@@ -1356,7 +1361,7 @@ StreamNUCAManager::getRegionFromName(const std::string &name) {
 
 bool StreamNUCAManager::isPAddrContinuous(const StreamRegion &region) {
   auto pTable = this->process->pTable;
-  auto pageSize = pTable->getPageSize();
+  auto pageSize = pTable->pageSize();
   auto startPageVAddr = pTable->pageAlign(region.vaddr);
   Addr startPagePAddr;
   if (!pTable->translate(startPageVAddr, startPagePAddr)) {
@@ -1387,7 +1392,7 @@ void StreamNUCAManager::makeRegionPAddrContinuous(ThreadContext *tc,
                                                   const StreamRegion &region) {
 
   auto pTable = this->process->pTable;
-  auto pageSize = pTable->getPageSize();
+  auto pageSize = pTable->pageSize();
   auto startPageVAddr = pTable->pageAlign(region.vaddr);
   if (startPageVAddr != region.vaddr) {
     panic("Region %s VAddr %#x not align to Page.", region.name, region.vaddr);
@@ -1399,7 +1404,8 @@ void StreamNUCAManager::makeRegionPAddrContinuous(ThreadContext *tc,
   auto numPages = (endPageVAddr - startPageVAddr) / pageSize;
   DPRINTF(StreamNUCAManager, "Alloc %d continuous pages for %s.\n", numPages,
           region.name);
-  auto newStartPagePAddr = this->process->system->allocPhysPages(numPages);
+  assert(this->process->seWorkload);
+  auto newStartPagePAddr = this->process->seWorkload->allocPhysPages(numPages);
 
   // Used to copy the page.
   char *pageData = reinterpret_cast<char *>(malloc(pageSize));
@@ -1836,11 +1842,11 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
       }
 
       if (!tileSizeChosen) {
-          /**
-           * Special rule when the inner dimension is very small. We
-           * heuristically pick 64 as the inner tile size as it helps confine
-           * the data move within two leaves of H-tree.
-           */
+        /**
+         * Special rule when the inner dimension is very small. We
+         * heuristically pick 64 as the inner tile size as it helps confine
+         * the data move within two leaves of H-tree.
+         */
         if (arraySizes.at(alignDims.at(0)) <= 32) {
           x = std::min(vBitlines, 32l);
           y = vBitlines / x;
@@ -2049,3 +2055,4 @@ StreamNUCAManager::getAlignDimsForDirectRegion(const StreamRegion &region) {
   }
   return ret;
 }
+} // namespace gem5

@@ -2,6 +2,8 @@
 
 #include "base/logging.hh"
 
+namespace gem5 {
+
 std::string GemForgeLSQCallback::getTypeString() const {
   switch (this->getType()) {
   default:
@@ -13,4 +15,5 @@ std::string GemForgeLSQCallback::getTypeString() const {
     Case(STORE);
 #undef Case
   }
-}
+}} // namespace gem5
+

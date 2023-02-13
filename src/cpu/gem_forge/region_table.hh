@@ -12,6 +12,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+namespace gem5 {
+
 /**
  * This class contains the region map and bb to region map.
  */
@@ -40,5 +42,7 @@ private:
   // Reverse map from basic block to regions to speed up the look up.
   std::unordered_map<BasicBlockId, RegionSet> bbToRegionMap;
 };
+
+} // namespace gem5
 
 #endif

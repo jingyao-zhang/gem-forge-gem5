@@ -38,26 +38,32 @@
 #include "debug/LTage.hh"
 #include "params/LoopPredictor.hh"
 
-LoopPredictor::LoopPredictor(LoopPredictorParams *p)
-  : SimObject(p), logSizeLoopPred(p->logSizeLoopPred),
-    loopTableAgeBits(p->loopTableAgeBits),
-    loopTableConfidenceBits(p->loopTableConfidenceBits),
-    loopTableTagBits(p->loopTableTagBits),
-    loopTableIterBits(p->loopTableIterBits),
-    logLoopTableAssoc(p->logLoopTableAssoc),
+namespace gem5
+{
+
+namespace branch_prediction
+{
+
+LoopPredictor::LoopPredictor(const LoopPredictorParams &p)
+  : SimObject(p), logSizeLoopPred(p.logSizeLoopPred),
+    loopTableAgeBits(p.loopTableAgeBits),
+    loopTableConfidenceBits(p.loopTableConfidenceBits),
+    loopTableTagBits(p.loopTableTagBits),
+    loopTableIterBits(p.loopTableIterBits),
+    logLoopTableAssoc(p.logLoopTableAssoc),
     confidenceThreshold((1 << loopTableConfidenceBits) - 1),
     loopTagMask((1 << loopTableTagBits) - 1),
     loopNumIterMask((1 << loopTableIterBits) - 1),
     loopSetMask((1 << (logSizeLoopPred - logLoopTableAssoc)) - 1),
     loopUseCounter(-1),
-    withLoopBits(p->withLoopBits),
-    useDirectionBit(p->useDirectionBit),
-    useSpeculation(p->useSpeculation),
-    useHashing(p->useHashing),
-    restrictAllocation(p->restrictAllocation),
-    initialLoopIter(p->initialLoopIter),
-    initialLoopAge(p->initialLoopAge),
-    optionalAgeReset(p->optionalAgeReset),
+    withLoopBits(p.withLoopBits),
+    useDirectionBit(p.useDirectionBit),
+    useSpeculation(p.useSpeculation),
+    useHashing(p.useHashing),
+    restrictAllocation(p.restrictAllocation),
+    initialLoopIter(p.initialLoopIter),
+    initialLoopAge(p.initialLoopAge),
+    optionalAgeReset(p.optionalAgeReset),
     stats(this)
 {
     assert(initialLoopAge <= ((1 << loopTableAgeBits) - 1));
@@ -73,7 +79,7 @@ LoopPredictor::init()
 
     assert(logSizeLoopPred >= logLoopTableAssoc);
 
-    ltable = new LoopEntry[ULL(1) << logSizeLoopPred];
+    ltable = new LoopEntry[1ULL << logSizeLoopPred];
 }
 
 LoopPredictor::BranchInfo*
@@ -345,12 +351,15 @@ LoopPredictor::condBranchUpdate(ThreadID tid, Addr branch_pc, bool taken,
     loopUpdate(branch_pc, taken, bi, tage_pred);
 }
 
-LoopPredictor::LoopPredictorStats::LoopPredictorStats(Stats::Group *parent)
-    : Stats::Group(parent),
-      ADD_STAT(correct, "Number of times the loop predictor is"
-          " the provider and the prediction is correct"),
-      ADD_STAT(wrong, "Number of times the loop predictor is the"
-          " provider and the prediction is wrong")
+LoopPredictor::LoopPredictorStats::LoopPredictorStats(
+    statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(correct, statistics::units::Count::get(),
+               "Number of times the loop predictor is the provider and the "
+               "prediction is correct"),
+      ADD_STAT(wrong, statistics::units::Count::get(),
+               "Number of times the loop predictor is the provider and the "
+               "prediction is wrong")
 {
 }
 
@@ -363,8 +372,5 @@ LoopPredictor::getSizeInBits() const
         loopTableAgeBits + useDirectionBit);
 }
 
-LoopPredictor *
-LoopPredictorParams::create()
-{
-    return new LoopPredictor(this);
-}
+} // namespace branch_prediction
+} // namespace gem5

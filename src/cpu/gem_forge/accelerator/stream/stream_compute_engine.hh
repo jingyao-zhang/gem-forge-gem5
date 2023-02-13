@@ -3,6 +3,8 @@
 
 #include "stream_engine.hh"
 
+namespace gem5 {
+
 /**
  * A tiny structure that models an ideal computation engine with
  * some width and variable latency. It assumes to be pipelined.
@@ -10,7 +12,7 @@
 
 class StreamComputeEngine {
 public:
-  StreamComputeEngine(StreamEngine *_se, StreamEngine::Params *_params);
+  StreamComputeEngine(StreamEngine *_se, const StreamEngine::Params *_params);
 
   void pushReadyComputation(StreamElement *element, StreamValue result,
                             Cycles latency);
@@ -40,5 +42,7 @@ private:
 
   void pushInflyComputation(ComputationPtr computation);
 };
+
+} // namespace gem5
 
 #endif

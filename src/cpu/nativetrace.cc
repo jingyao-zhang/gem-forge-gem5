@@ -33,11 +33,12 @@
 #include "debug/GDBMisc.hh"
 #include "params/NativeTrace.hh"
 
-using namespace std;
+namespace gem5
+{
 
-namespace Trace {
+namespace trace {
 
-NativeTrace::NativeTrace(const Params *p)
+NativeTrace::NativeTrace(const Params &p)
     : ExeTracer(p)
 {
     if (ListenSocket::allDisabled())
@@ -49,12 +50,12 @@ NativeTrace::NativeTrace(const Params *p)
         DPRINTF(GDBMisc, "Can't bind port %d\n", port);
         port++;
     }
-    ccprintf(cerr, "Listening for native process on port %d\n", port);
+    ccprintf(std::cerr, "Listening for native process on port %d\n", port);
     fd = native_listener.accept();
 }
 
 void
-Trace::NativeTraceRecord::dump()
+NativeTraceRecord::dump()
 {
     //Don't print what happens for each micro-op, just print out
     //once at the last op, and for regular instructions.
@@ -62,4 +63,5 @@ Trace::NativeTraceRecord::dump()
         parent->check(this);
 }
 
-} // namespace Trace
+} // namespace trace
+} // namespace gem5

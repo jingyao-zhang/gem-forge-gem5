@@ -41,103 +41,127 @@
 #include "arch/x86/regs/segment.hh"
 #include "cpu/reg_class.hh"
 
+namespace gem5
+{
+
 namespace X86ISA
 {
-    void X86StaticInst::printMnemonic(std::ostream &os,
-            const char * mnemonic) const
-    {
-        ccprintf(os, "  %s   ", mnemonic);
-    }
 
-    void X86StaticInst::printMnemonic(std::ostream &os,
-            const char * instMnemonic, const char * mnemonic) const
-    {
-        ccprintf(os, "  %s : %s   ", instMnemonic, mnemonic);
-    }
+void
+X86StaticInst::printMnemonic(std::ostream &os, const char *mnemonic)
+{
+    ccprintf(os, "  %s   ", mnemonic);
+}
 
-    void X86StaticInst::printSegment(std::ostream &os, int segment) const
+void
+X86StaticInst::printMnemonic(std::ostream &os, const char *instMnemonic,
+        const char *mnemonic)
+{
+    ccprintf(os, "  %s : %s   ", instMnemonic, mnemonic);
+}
+
+void X86StaticInst::printSegment(std::ostream &os, int segment)
+{
+    switch (segment)
     {
-        switch (segment)
+      case segment_idx::Es:
+        ccprintf(os, "ES");
+        break;
+      case segment_idx::Cs:
+        ccprintf(os, "CS");
+        break;
+      case segment_idx::Ss:
+        ccprintf(os, "SS");
+        break;
+      case segment_idx::Ds:
+        ccprintf(os, "DS");
+        break;
+      case segment_idx::Fs:
+        ccprintf(os, "FS");
+        break;
+      case segment_idx::Gs:
+        ccprintf(os, "GS");
+        break;
+      case segment_idx::Hs:
+        ccprintf(os, "HS");
+        break;
+      case segment_idx::Tsl:
+        ccprintf(os, "TSL");
+        break;
+      case segment_idx::Tsg:
+        ccprintf(os, "TSG");
+        break;
+      case segment_idx::Ls:
+        ccprintf(os, "LS");
+        break;
+      case segment_idx::Ms:
+        ccprintf(os, "MS");
+        break;
+      case segment_idx::Tr:
+        ccprintf(os, "TR");
+        break;
+      case segment_idx::Idtr:
+        ccprintf(os, "IDTR");
+        break;
+      default:
+        panic("Unrecognized segment %d\n", segment);
+    }
+}
+
+void
+X86StaticInst::divideStep(uint64_t dividend, uint64_t divisor,
+        uint64_t &quotient, uint64_t &remainder)
+{
+    // Check for divide by zero.
+    assert(divisor != 0);
+    // If the divisor is bigger than the dividend, don't do anything.
+    if (divisor <= dividend) {
+        // Shift the divisor so it's msb lines up with the dividend.
+        int dividendMsb = findMsbSet(dividend);
+        int divisorMsb = findMsbSet(divisor);
+        int shift = dividendMsb - divisorMsb;
+        divisor <<= shift;
+        // Compute what we'll add to the quotient if the divisor isn't
+        // now larger than the dividend.
+        uint64_t quotientBit = 1;
+        quotientBit <<= shift;
+        // If we need to step back a bit (no pun intended) because the
+        // divisor got too to large, do that here. This is the "or two"
+        // part of one or two bit division.
+        if (divisor > dividend) {
+            quotientBit >>= 1;
+            divisor >>= 1;
+        }
+        // Decrement the remainder and increment the quotient.
+        quotient += quotientBit;
+        remainder -= divisor;
+    }
+}
+
+void
+X86StaticInst::printReg(std::ostream &os, RegId reg, int size)
+{
+    if (reg.classValue() == RegClassType::FloatRegClass) {
+        // We allow xmm registers to have 128, 256 and 512.
+        // assert(size == 1 || size == 2 || size == 4 || size == 8 ||
+        //        size == 16 || size == 32 || size == 48 || size == 64);
+    } else {
+    // assert(size == 1 || size == 2 || size == 4 || size == 8);
+    }
+    static const char * abcdFormats[9] =
+        {"", "%s",  "%sx",  "", "e%sx", "", "", "", "r%sx"};
+    static const char * piFormats[9] =
+        {"", "%s",  "%s",   "", "e%s",  "", "", "", "r%s"};
+    static const char * longFormats[9] =
+        {"", "r%sb", "r%sw", "", "r%sd", "", "", "", "r%s"};
+    static const char * microFormats[9] =
+        {"", "t%db", "t%dw", "", "t%dd", "", "", "", "t%d"};
+
+    RegIndex reg_idx = reg.index();
+
+    switch (reg.classValue()) {
+      case IntRegClass:
         {
-          case SEGMENT_REG_ES:
-            ccprintf(os, "ES");
-            break;
-          case SEGMENT_REG_CS:
-            ccprintf(os, "CS");
-            break;
-          case SEGMENT_REG_SS:
-            ccprintf(os, "SS");
-            break;
-          case SEGMENT_REG_DS:
-            ccprintf(os, "DS");
-            break;
-          case SEGMENT_REG_FS:
-            ccprintf(os, "FS");
-            break;
-          case SEGMENT_REG_GS:
-            ccprintf(os, "GS");
-            break;
-          case SEGMENT_REG_HS:
-            ccprintf(os, "HS");
-            break;
-          case SEGMENT_REG_TSL:
-            ccprintf(os, "TSL");
-            break;
-          case SEGMENT_REG_TSG:
-            ccprintf(os, "TSG");
-            break;
-          case SEGMENT_REG_LS:
-            ccprintf(os, "LS");
-            break;
-          case SEGMENT_REG_MS:
-            ccprintf(os, "MS");
-            break;
-          case SYS_SEGMENT_REG_TR:
-            ccprintf(os, "TR");
-            break;
-          case SYS_SEGMENT_REG_IDTR:
-            ccprintf(os, "IDTR");
-            break;
-          default:
-            panic("Unrecognized segment %d\n", segment);
-        }
-    }
-
-    void
-    X86StaticInst::printSrcReg(std::ostream &os, int reg, int size) const
-    {
-        if (_numSrcRegs > reg)
-            printReg(os, _srcRegIdx[reg], size);
-    }
-
-    void
-    X86StaticInst::printDestReg(std::ostream &os, int reg, int size) const
-    {
-        if (_numDestRegs > reg)
-            printReg(os, _destRegIdx[reg], size);
-    }
-
-    void
-    X86StaticInst::printReg(std::ostream &os, RegId reg, int size) const
-    {
-        if (reg.isFloatReg()) {
-          // We allow xmm registers to have 128, 256 and 512.
-            // assert(size == 1 || size == 2 || size == 4 || size == 8 ||
-            //        size == 16 || size == 32 || size == 48 || size == 64);
-        } else {
-        }
-        static const char * abcdFormats[9] =
-            {"", "%s",  "%sx",  "", "e%sx", "", "", "", "r%sx"};
-        static const char * piFormats[9] =
-            {"", "%s",  "%s",   "", "e%s",  "", "", "", "r%s"};
-        static const char * longFormats[9] =
-            {"", "r%sb", "r%sw", "", "r%sd", "", "", "", "r%s"};
-        static const char * microFormats[9] =
-            {"", "t%db", "t%dw", "", "t%dd", "", "", "", "t%d"};
-
-        RegIndex reg_idx = reg.index();
-
-        if (reg.isIntReg()) {
             const char * suffix = "";
             bool fold = reg_idx & IntFoldBit;
             reg_idx &= ~IntFoldBit;
@@ -154,159 +178,164 @@ namespace X86ISA
             }
 
             switch (reg_idx) {
-              case INTREG_RAX:
+              case int_reg::Rax:
                 ccprintf(os, abcdFormats[size], "a");
                 break;
-              case INTREG_RBX:
+              case int_reg::Rbx:
                 ccprintf(os, abcdFormats[size], "b");
                 break;
-              case INTREG_RCX:
+              case int_reg::Rcx:
                 ccprintf(os, abcdFormats[size], "c");
                 break;
-              case INTREG_RDX:
+              case int_reg::Rdx:
                 ccprintf(os, abcdFormats[size], "d");
                 break;
-              case INTREG_RSP:
+              case int_reg::Rsp:
                 ccprintf(os, piFormats[size], "sp");
                 break;
-              case INTREG_RBP:
+              case int_reg::Rbp:
                 ccprintf(os, piFormats[size], "bp");
                 break;
-              case INTREG_RSI:
+              case int_reg::Rsi:
                 ccprintf(os, piFormats[size], "si");
                 break;
-              case INTREG_RDI:
+              case int_reg::Rdi:
                 ccprintf(os, piFormats[size], "di");
                 break;
-              case INTREG_R8W:
+              case int_reg::R8:
                 ccprintf(os, longFormats[size], "8");
                 break;
-              case INTREG_R9W:
+              case int_reg::R9:
                 ccprintf(os, longFormats[size], "9");
                 break;
-              case INTREG_R10W:
+              case int_reg::R10:
                 ccprintf(os, longFormats[size], "10");
                 break;
-              case INTREG_R11W:
+              case int_reg::R11:
                 ccprintf(os, longFormats[size], "11");
                 break;
-              case INTREG_R12W:
+              case int_reg::R12:
                 ccprintf(os, longFormats[size], "12");
                 break;
-              case INTREG_R13W:
+              case int_reg::R13:
                 ccprintf(os, longFormats[size], "13");
                 break;
-              case INTREG_R14W:
+              case int_reg::R14:
                 ccprintf(os, longFormats[size], "14");
                 break;
-              case INTREG_R15W:
+              case int_reg::R15:
                 ccprintf(os, longFormats[size], "15");
                 break;
-              case MASKREG_K0:
+              case int_reg::K0:
                 ccprintf(os, longFormats[size], "k0");
                 break;
-              case MASKREG_K1:
+              case int_reg::K1:
                 ccprintf(os, longFormats[size], "k1");
                 break;
-              case MASKREG_K2:
+              case int_reg::K2:
                 ccprintf(os, longFormats[size], "k2");
                 break;
-              case MASKREG_K3:
+              case int_reg::K3:
                 ccprintf(os, longFormats[size], "k3");
                 break;
-              case MASKREG_K4:
+              case int_reg::K4:
                 ccprintf(os, longFormats[size], "k4");
                 break;
-              case MASKREG_K5:
+              case int_reg::K5:
                 ccprintf(os, longFormats[size], "k5");
                 break;
-              case MASKREG_K6:
+              case int_reg::K6:
                 ccprintf(os, longFormats[size], "k6");
                 break;
-              case MASKREG_K7:
+              case int_reg::K7:
                 ccprintf(os, longFormats[size], "k7");
                 break;
               default:
-                ccprintf(os, microFormats[size], reg_idx - NUM_INTREGS);
+                ccprintf(os, microFormats[size],
+                        reg_idx - int_reg::MicroBegin);
             }
             ccprintf(os, suffix);
-
-        } else if (reg.isFloatReg()) {
-            if (reg_idx < NumMMXRegs) {
-                ccprintf(os, "%%mmx%d", reg_idx);
-                return;
-            }
-            reg_idx -= NumMMXRegs;
-            if (reg_idx < NumXMMRegs * NumXMMSubRegs) {
-                ccprintf(os, "%%xmm%d_%d(%d)", reg_idx / NumXMMSubRegs,
-                         reg_idx % NumXMMSubRegs, size);
-                return;
-            }
-            reg_idx -= NumXMMRegs * NumXMMSubRegs;
-            if (reg_idx < NumMicroFpRegs) {
-                ccprintf(os, "%%ufp%d", reg_idx);
-                return;
-            }
-            reg_idx -= NumMicroFpRegs;
-            ccprintf(os, "%%st(%d)", reg_idx);
-
-        } else if (reg.isCCReg()) {
-            ccprintf(os, "%%cc%d", reg_idx);
-
-        } else if (reg.isMiscReg()) {
-            switch (reg_idx) {
-              default:
-                ccprintf(os, "%%ctrl%d", reg_idx);
-            }
         }
-    }
-
-    void X86StaticInst::printMem(std::ostream &os, uint8_t segment,
-            uint8_t scale, RegIndex index, RegIndex base,
-            uint64_t disp, uint8_t addressSize, bool rip) const
-    {
-        bool someAddr = false;
-        printSegment(os, segment);
-        os << ":[";
-        if (rip) {
-            os << "rip";
-            someAddr = true;
-        } else {
-            if (scale != 0 && index != ZeroReg)
-            {
-                if (scale != 1)
-                    ccprintf(os, "%d*", scale);
-                printReg(os, InstRegIndex(index), addressSize);
-                someAddr = true;
-            }
-            if (base != ZeroReg)
-            {
-                if (someAddr)
-                    os << " + ";
-                printReg(os, InstRegIndex(base), addressSize);
-                someAddr = true;
-            }
+        break;
+      case FloatRegClass:
+        if (reg_idx < NumMMXRegs) {
+            ccprintf(os, "%%mmx%d", reg_idx);
+            return;
         }
-        if (disp != 0)
-        {
-            if (someAddr)
-                os << " + ";
-            ccprintf(os, "%#x", disp);
-            someAddr = true;
+        reg_idx -= NumMMXRegs;
+        if (reg_idx < NumXMMRegs * NumXMMSubRegs) {
+            ccprintf(os, "%%xmm%d_%d(%d)", reg_idx / NumXMMSubRegs,
+                     reg_idx % NumXMMSubRegs, size);
+            return;
         }
-        if (!someAddr)
-            os << "0";
-        os << "]";
-    }
-
-    std::string
-    X86StaticInst::generateDisassembly(
-            Addr pc, const Loader::SymbolTable *symtab) const
-    {
-        std::stringstream ss;
-
-        printMnemonic(ss, mnemonic);
-
-        return ss.str();
+        reg_idx -= NumXMMRegs * NumXMMSubRegs;
+        if (reg_idx < NumMicroFpRegs) {
+            ccprintf(os, "%%ufp%d", reg_idx);
+            return;
+        }
+        reg_idx -= NumMicroFpRegs;
+        ccprintf(os, "%%st(%d)", reg_idx);
+        break;
+      case CCRegClass:
+        ccprintf(os, "%%cc%d", reg_idx);
+        break;
+      case MiscRegClass:
+        switch (reg_idx) {
+          default:
+            ccprintf(os, "%%ctrl%d", reg_idx);
+        }
+        break;
+      default:
+        panic("Unrecognized register class.");
     }
 }
+
+void
+X86StaticInst::printMem(std::ostream &os, uint8_t segment,
+        uint8_t scale, RegIndex index, RegIndex base,
+        uint64_t disp, uint8_t addressSize, bool rip)
+{
+    bool someAddr = false;
+    printSegment(os, segment);
+    os << ":[";
+    if (rip) {
+        os << "rip";
+        someAddr = true;
+    } else {
+        if (scale != 0 && index != int_reg::NumRegs) {
+            if (scale != 1)
+                ccprintf(os, "%d*", scale);
+            printReg(os, intRegClass[index], addressSize);
+            someAddr = true;
+        }
+        if (base != int_reg::NumRegs) {
+            if (someAddr)
+                os << " + ";
+            printReg(os, intRegClass[base], addressSize);
+            someAddr = true;
+        }
+    }
+    if (disp != 0) {
+        if (someAddr)
+            os << " + ";
+        ccprintf(os, "%#x", disp);
+        someAddr = true;
+    }
+    if (!someAddr)
+        os << "0";
+    os << "]";
+}
+
+std::string
+X86StaticInst::generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+
+    printMnemonic(ss, mnemonic);
+
+    return ss.str();
+}
+
+} // namespace X86ISA
+} // namespace gem5

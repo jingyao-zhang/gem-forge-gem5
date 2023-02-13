@@ -7,12 +7,14 @@
 
 #include <unordered_map>
 
+namespace gem5 {
+
 class MLCStreamNDCController {
 public:
   MLCStreamNDCController(MLCStreamEngine *_mlcSE);
 
   void receiveStreamNDCRequest(PacketPtr pkt);
-  void receiveStreamNDCResponse(const ResponseMsg &msg);
+  void receiveStreamNDCResponse(const ruby::ResponseMsg &msg);
 
 private:
   MLCStreamEngine *mlcSE;
@@ -25,5 +27,7 @@ private:
   void addNDCPacket(StreamNDCPacketPtr &ndc);
   NDCPacketMapIter getNDCPacket(const DynStreamSliceId &sliceId);
 };
+
+} // namespace gem5
 
 #endif

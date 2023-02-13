@@ -1,4 +1,16 @@
 /*
+ * Copyright (c) 2020,2021 ARM Limited
+ * All rights reserved.
+ *
+ * The license below extends only to copyright in the software and shall
+ * not be construed as granting a license to any other intellectual
+ * property including but not limited to intellectual property relating
+ * to a hardware implementation of the functionality of the software
+ * licensed hereunder.  You may use the software subject to the license
+ * terms below provided that you ensure that this notice is replicated
+ * unmodified and in its entirety in all distributions of the software,
+ * modified or unmodified, in source code or in binary form.
+ *
  * Copyright (c) 2012-15 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
@@ -34,18 +46,22 @@
 #include <iostream>
 #include <vector>
 
+#include "base/amo.hh"
+#include "mem/ruby/common/DataBlock.hh"
 #include "mem/ruby/common/TypeDefines.hh"
-#include "mem/ruby/system/RubySystem.hh"
+
+namespace gem5
+{
+
+namespace ruby
+{
 
 class WriteMask
 {
   public:
     typedef std::vector<std::pair<int, AtomicOpFunctor* >> AtomicOpVector;
 
-    WriteMask()
-      : mSize(RubySystem::getBlockSizeBytes()), mMask(mSize, false),
-        mAtomic(false)
-    {}
+    WriteMask();
 
     WriteMask(int size)
       : mSize(size), mMask(size, false), mAtomic(false)
@@ -69,18 +85,18 @@ class WriteMask
     }
 
     bool
-    test(int offset)
+    test(int offset) const
     {
         assert(offset < mSize);
         return mMask[offset];
     }
 
     void
-    setMask(int offset, int len)
+    setMask(int offset, int len, bool val = true)
     {
         assert(mSize >= (offset + len));
         for (int i = 0; i < len; i++) {
-            mMask[offset + i] = true;
+            mMask[offset + i] = val;
         }
     }
     void
@@ -116,7 +132,7 @@ class WriteMask
     }
 
     bool
-    cmpMask(const WriteMask &readMask) const
+    containsMask(const WriteMask &readMask) const
     {
         bool tmp = true;
         assert(mSize == readMask.mSize);
@@ -150,17 +166,58 @@ class WriteMask
     }
 
     void
-    orMask(const WriteMask & writeMask)
+    andMask(const WriteMask & writeMask)
     {
         assert(mSize == writeMask.mSize);
         for (int i = 0; i < mSize; i++) {
-            mMask[i] = (mMask.at(i)) | (writeMask.mMask.at(i));
+            mMask[i] = (mMask.at(i)) && (writeMask.mMask.at(i));
         }
 
         if (writeMask.mAtomic) {
             mAtomic = true;
             mAtomicOp = writeMask.mAtomicOp;
         }
+    }
+
+    void
+    orMask(const WriteMask & writeMask)
+    {
+        assert(mSize == writeMask.mSize);
+        for (int i = 0; i < mSize; i++) {
+            mMask[i] = (mMask.at(i)) || (writeMask.mMask.at(i));
+        }
+
+        if (writeMask.mAtomic) {
+            mAtomic = true;
+            mAtomicOp = writeMask.mAtomicOp;
+        }
+    }
+
+    void
+    setInvertedMask(const WriteMask & writeMask)
+    {
+        assert(mSize == writeMask.mSize);
+        for (int i = 0; i < mSize; i++) {
+            mMask[i] = !writeMask.mMask.at(i);
+        }
+    }
+
+    int
+    firstBitSet(bool val, int offset = 0) const
+    {
+        for (int i = offset; i < mSize; ++i)
+            if (mMask[i] == val)
+                return i;
+        return mSize;
+    }
+
+    int
+    count(int offset = 0) const
+    {
+        int count = 0;
+        for (int i = offset; i < mSize; ++i)
+            count += mMask[i];
+        return count;
     }
 
     void print(std::ostream& out) const;
@@ -213,5 +270,8 @@ operator<<(std::ostream& out, const WriteMask& obj)
     out << std::flush;
     return out;
 }
+
+} // namespace ruby
+} // namespace gem5
 
 #endif // __MEM_RUBY_COMMON_WRITEMASK_HH__

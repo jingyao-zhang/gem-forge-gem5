@@ -4,6 +4,10 @@
 
 #include <unordered_set>
 
+namespace gem5 {
+
+namespace ruby {
+
 std::queue<IdealSequencer::IdealRubyRequest> IdealSequencer::globalQueue;
 std::unordered_map<Addr, IdealSequencer *> IdealSequencer::globalLockedMap;
 std::unordered_map<Addr, std::queue<IdealSequencer::IdealRubyRequest>>
@@ -113,3 +117,7 @@ void IdealSequencer::IdealDrainEvent::process() {
     seq->schedule(drainEvent, seq->clockEdge(Cycles(1)));
   }
 }
+
+} // namespace ruby
+
+} // namespace gem5

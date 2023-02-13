@@ -50,26 +50,39 @@
 
 #include "cpu/kvm/base.hh"
 #include "debug/Kvm.hh"
+#include "mem/physical.hh"
 #include "params/KvmVM.hh"
 #include "sim/system.hh"
 
-#define EXPECTED_KVM_API_VERSION 12
+namespace gem5
+{
 
-#if EXPECTED_KVM_API_VERSION != KVM_API_VERSION
-#error Unsupported KVM version
-#endif
+namespace
+{
+
+constexpr int ExpectedKvmApiVersion = 12;
+static_assert(KVM_API_VERSION == ExpectedKvmApiVersion,
+        "Unsupported KVM version");
+
+} // anonymous namespace
 
 Kvm *Kvm::instance = NULL;
 
 Kvm::Kvm()
     : kvmFD(-1), apiVersion(-1), vcpuMMapSize(0)
 {
+    static bool created = false;
+    if (created)
+        warn_once("Use of multiple KvmVMs is currently untested!");
+
+    created = true;
+
     kvmFD = ::open("/dev/kvm", O_RDWR);
     if (kvmFD == -1)
         fatal("KVM: Failed to open /dev/kvm\n");
 
     apiVersion = ioctl(KVM_GET_API_VERSION);
-    if (apiVersion != EXPECTED_KVM_API_VERSION)
+    if (apiVersion != ExpectedKvmApiVersion)
         fatal("KVM: Incompatible API version\n");
 
     vcpuMMapSize = ioctl(KVM_GET_VCPU_MMAP_SIZE);
@@ -191,6 +204,15 @@ Kvm::capXSave() const
 #endif
 }
 
+bool
+Kvm::capIRQLineLayout2() const
+{
+#if defined(KVM_CAP_ARM_IRQ_LINE_LAYOUT_2)
+    return checkExtension(KVM_CAP_ARM_IRQ_LINE_LAYOUT_2) != 0;
+#else
+    return false;
+#endif
+}
 
 #if defined(__i386__) || defined(__x86_64__)
 bool
@@ -209,7 +231,8 @@ const Kvm::CPUIDVector &
 Kvm::getSupportedCPUID() const
 {
     if (supportedCPUIDCache.empty()) {
-        std::unique_ptr<struct kvm_cpuid2> cpuid;
+        std::unique_ptr<struct kvm_cpuid2, void(*)(void *p)>
+            cpuid(nullptr, [](void *p) { operator delete(p); });
         int i(1);
         do {
             cpuid.reset((struct kvm_cpuid2 *)operator new(
@@ -241,7 +264,8 @@ const Kvm::MSRIndexVector &
 Kvm::getSupportedMSRs() const
 {
     if (supportedMSRCache.empty()) {
-        std::unique_ptr<struct kvm_msr_list> msrs;
+        std::unique_ptr<struct kvm_msr_list, void(*)(void *p)>
+            msrs(nullptr, [](void *p) { operator delete(p); });
         int i(0);
         do {
             msrs.reset((struct kvm_msr_list *)operator new(
@@ -289,21 +313,22 @@ Kvm::createVM()
 }
 
 
-KvmVM::KvmVM(KvmVMParams *params)
+KvmVM::KvmVM(const KvmVMParams &params)
     : SimObject(params),
-      kvm(new Kvm()), system(nullptr),
+      kvm(new Kvm()), system(params.system),
       vmFD(kvm->createVM()),
       started(false),
       _hasKernelIRQChip(false),
       nextVCPUID(0)
 {
+    system->setKvmVM(this);
     maxMemorySlot = kvm->capNumMemSlots();
     /* If we couldn't determine how memory slots there are, guess 32. */
     if (!maxMemorySlot)
         maxMemorySlot = 32;
     /* Setup the coalesced MMIO regions */
-    for (int i = 0; i < params->coalescedMMIO.size(); ++i)
-        coalesceMMIO(params->coalescedMMIO[i]);
+    for (int i = 0; i < params.coalescedMMIO.size(); ++i)
+        coalesceMMIO(params.coalescedMMIO[i]);
 }
 
 KvmVM::~KvmVM()
@@ -342,8 +367,7 @@ KvmVM::cpuStartup()
 void
 KvmVM::delayedStartup()
 {
-    assert(system); // set by the system during its construction
-    const std::vector<BackingStoreEntry> &memories(
+    const std::vector<memory::BackingStoreEntry> &memories(
         system->getPhysMem().getBackingStore());
 
     DPRINTF(Kvm, "Mapping %i memory region(s)\n", memories.size());
@@ -527,18 +551,20 @@ KvmVM::createDevice(uint32_t type, uint32_t flags)
 #endif
 }
 
-void
-KvmVM::setSystem(System *s)
+bool
+KvmVM::validEnvironment() const
 {
-    panic_if(system != nullptr, "setSystem() can only be called once");
-    panic_if(s == nullptr, "setSystem() called with null System*");
-    system = s;
+    for (auto *tc: system->threads) {
+        if (!dynamic_cast<BaseKvmCPU *>(tc->getCpuPtr()))
+            return false;
+    }
+
+    return true;
 }
 
 long
 KvmVM::contextIdToVCpuId(ContextID ctx) const
 {
-    assert(system != nullptr);
     return dynamic_cast<BaseKvmCPU*>
         (system->threads[ctx]->getCpuPtr())->getVCpuID();
 }
@@ -580,15 +606,4 @@ KvmVM::ioctl(int request, long p1) const
     return ::ioctl(vmFD, request, p1);
 }
 
-
-KvmVM *
-KvmVMParams::create()
-{
-    static bool created = false;
-    if (created)
-        warn_once("Use of multiple KvmVMs is currently untested!\n");
-
-    created = true;
-
-    return new KvmVM(this);
-}
+} // namespace gem5

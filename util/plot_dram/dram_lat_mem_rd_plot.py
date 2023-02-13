@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 
 # Copyright (c) 2015 ARM Limited
 # All rights reserved
@@ -40,7 +40,7 @@ try:
     import matplotlib as mpl
     import numpy as np
 except ImportError:
-    print "Failed to import matplotlib and numpy"
+    print("Failed to import matplotlib and numpy")
     exit(-1)
 
 import sys
@@ -52,19 +52,19 @@ import re
 def main():
 
     if len(sys.argv) != 2:
-        print "Usage: ", sys.argv[0], "<simout directory>"
+        print("Usage: ", sys.argv[0], "<simout directory>")
         exit(-1)
 
     try:
-        stats = open(sys.argv[1] + '/stats.txt', 'r')
+        stats = open(sys.argv[1] + "/stats.txt", "r")
     except IOError:
-        print "Failed to open ", sys.argv[1] + '/stats.txt', " for reading"
+        print("Failed to open ", sys.argv[1] + "/stats.txt", " for reading")
         exit(-1)
 
     try:
-        simout = open(sys.argv[1] + '/simout', 'r')
+        simout = open(sys.argv[1] + "/simout", "r")
     except IOError:
-        print "Failed to open ", sys.argv[1] + '/simout', " for reading"
+        print("Failed to open ", sys.argv[1] + "/simout", " for reading")
         exit(-1)
 
     # Get the address ranges
@@ -85,7 +85,7 @@ def main():
     simout.close()
 
     if not got_ranges:
-        print "Failed to get address ranges, ensure simout is up-to-date"
+        print("Failed to get address ranges, ensure simout is up-to-date")
         exit(-1)
 
     # Now parse the stats
@@ -112,16 +112,18 @@ def main():
     for i in range(iterations):
         rd_lat.append(filtered_rd_lat[i::iterations])
 
-    final_rd_lat = map(lambda p: min(p), zip(*rd_lat))
+    final_rd_lat = [min(p) for p in zip(*rd_lat)]
 
     # Sanity check
     if not (len(ranges) == len(final_rd_lat)):
-        print "Address ranges (%d) and read latency (%d) do not match" % \
-            (len(ranges), len(final_rd_lat))
+        print(
+            "Address ranges (%d) and read latency (%d) do not match"
+            % (len(ranges), len(final_rd_lat))
+        )
         exit(-1)
 
     for (r, l) in zip(ranges, final_rd_lat):
-        print r, round(l, 2)
+        print(r, round(l, 2))
 
     # lazy version to check if an integer is a power of two
     def is_pow2(num):
@@ -134,9 +136,9 @@ def main():
     xticks_labels = []
     for x in xticks_locations:
         if x < 1024:
-            xticks_labels.append('%d kB' % x)
+            xticks_labels.append("%d kB" % x)
         else:
-            xticks_labels.append('%d MB' % (x / 1024))
+            xticks_labels.append("%d MB" % (x / 1024))
     plt.xticks(xticks_locations, xticks_labels, rotation=-45)
 
     plt.minorticks_off()
@@ -144,6 +146,7 @@ def main():
     plt.ylabel("Latency (ns)")
     plt.grid(True)
     plt.show()
+
 
 if __name__ == "__main__":
     main()

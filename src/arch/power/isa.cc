@@ -37,27 +37,57 @@
 
 #include "arch/power/isa.hh"
 
+#include "arch/power/regs/float.hh"
+#include "arch/power/regs/int.hh"
+#include "arch/power/regs/misc.hh"
+#include "cpu/thread_context.hh"
 #include "params/PowerISA.hh"
+
+namespace gem5
+{
 
 namespace PowerISA
 {
 
-ISA::ISA(Params *p) : BaseISA(p)
+namespace
 {
+
+RegClass vecRegClass(VecRegClass, VecRegClassName, 1, debug::IntRegs);
+RegClass vecElemClass(VecElemClass, VecElemClassName, 2, debug::IntRegs);
+RegClass vecPredRegClass(VecPredRegClass, VecPredRegClassName, 1,
+        debug::IntRegs);
+RegClass ccRegClass(CCRegClass, CCRegClassName, 0, debug::IntRegs);
+
+} // anonymous namespace
+
+ISA::ISA(const Params &p) : BaseISA(p)
+{
+    _regClasses.push_back(&intRegClass);
+    _regClasses.push_back(&floatRegClass);
+    _regClasses.push_back(&vecRegClass);
+    _regClasses.push_back(&vecElemClass);
+    _regClasses.push_back(&vecPredRegClass);
+    _regClasses.push_back(&ccRegClass);
+    _regClasses.push_back(&miscRegClass);
     clear();
 }
 
-const PowerISAParams *
-ISA::params() const
+void
+ISA::copyRegsFrom(ThreadContext *src)
 {
-    return dynamic_cast<const Params *>(_params);
+    // First loop through the integer registers.
+    for (auto &id: intRegClass)
+        tc->setReg(id, src->getReg(id));
+
+    // Then loop through the floating point registers.
+    for (auto &id: floatRegClass)
+        tc->setReg(id, src->getReg(id));
+
+    //TODO Copy misc. registers
+
+    // Lastly copy PC/NPC
+    tc->pcState(src->pcState());
 }
 
-}
-
-PowerISA::ISA *
-PowerISAParams::create()
-{
-    return new PowerISA::ISA(this);
-}
-
+} // namespace PowerISA
+} // namespace gem5

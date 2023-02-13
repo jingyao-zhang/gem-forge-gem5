@@ -42,37 +42,48 @@ from m5.proxy import *
 
 from m5.objects.System import System
 
+
 class RubyPrefetcher(SimObject):
-    type = 'RubyPrefetcher'
-    cxx_class = 'RubyPrefetcher'
+    type = "RubyPrefetcher"
+    cxx_class = "gem5::ruby::RubyPrefetcher"
     cxx_header = "mem/ruby/structures/RubyPrefetcher.hh"
 
-    num_streams = Param.UInt32(4,
-        "Number of prefetch streams to be allocated")
-    unit_filter  = Param.UInt32(8,
-        "Number of entries in the unit filter array")
-    nonunit_filter = Param.UInt32(8,
-        "Number of entries in the non-unit filter array")
+    num_streams = Param.UInt32(4, "Number of prefetch streams to be allocated")
+    unit_filter = Param.UInt32(8, "Number of entries in the unit filter array")
+    nonunit_filter = Param.UInt32(
+        8, "Number of entries in the non-unit filter array"
+    )
     train_misses = Param.UInt32(4, "")
     num_startup_pfs = Param.UInt32(1, "")
-    cross_page = Param.Bool(False, """True if prefetched address can be on a
-            page different from the observed address""")
+    cross_page = Param.Bool(
+        False,
+        """True if prefetched address can be on a
+            page different from the observed address""",
+    )
+    page_shift = Param.UInt32(
+        12, "Number of bits to mask to get a page number"
+    )
     bulk_prefetch_size = Param.UInt32(1,
         "Set to >= 2 to enable buld prefetch")
     sys = Param.System(Parent.any, "System this prefetcher belongs to")
 
+
 class Prefetcher(RubyPrefetcher):
     """DEPRECATED"""
+
     pass
 
 
 class RubyBingoPrefetcher(SimObject):
     type = 'RubyBingoPrefetcher'
-    cxx_class = 'RubyBingoPrefetcher'
+    cxx_class = 'gem5::ruby::RubyBingoPrefetcher'
     cxx_header = 'mem/ruby/structures/RubyBingoPrefetcher.hh'
 
     sys = Param.System(Parent.any, "System this prefetcher belongs to")
 
+    page_shift = Param.UInt32(
+        12, "Number of bits to mask to get a page number"
+    )
     enabled = Param.Bool(False, 'Enable this prefetcher')
     region_size = Param.UInt32(2 * 1024, 'Size of spatial region, default 2kB')
     pc_width = Param.UInt32(16, '# of PC bits used in PHT')

@@ -45,7 +45,11 @@
 #include "mem/port.hh"
 
 #include "base/trace.hh"
+#include "debug/ResponsePort.hh"
 #include "sim/sim_object.hh"
+
+namespace gem5
+{
 
 namespace
 {
@@ -194,8 +198,11 @@ Tick
 ResponsePort::recvAtomicBackdoor(PacketPtr pkt, MemBackdoorPtr &backdoor)
 {
     if (!defaultBackdoorWarned) {
-        warn("Port %s doesn't support requesting a back door.", name());
+        DPRINTF(ResponsePort,
+                "Port %s doesn't support requesting a back door.", name());
         defaultBackdoorWarned = true;
     }
     return recvAtomic(pkt);
 }
+
+} // namespace gem5

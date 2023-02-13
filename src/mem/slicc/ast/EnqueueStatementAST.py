@@ -30,9 +30,10 @@ from slicc.ast.StatementAST import StatementAST
 from slicc.symbols import Var
 from slicc.symbols import Type
 
+
 class EnqueueStatementAST(StatementAST):
     def __init__(self, slicc, queue_name, type_ast, lexpr, cond, statements):
-        super(EnqueueStatementAST, self).__init__(slicc)
+        super().__init__(slicc)
 
         self.queue_name = queue_name
         self.type_ast = type_ast
@@ -41,10 +42,13 @@ class EnqueueStatementAST(StatementAST):
         self.statements = statements
 
     def __repr__(self):
-        return "[EnqueueStatementAst: %s %s %s]" % \
-               (self.queue_name, self.type_ast.ident, self.statements)
+        return "[EnqueueStatementAst: %s %s %s]" % (
+            self.queue_name,
+            self.type_ast.ident,
+            self.statements,
+        )
 
-    def generate(self, code, return_type):
+    def generate(self, code, return_type, **kwargs):
         code("{")
         code.indent()
         self.symtab.pushFrame()
@@ -52,8 +56,14 @@ class EnqueueStatementAST(StatementAST):
         msg_type = self.type_ast.type
 
         # Add new local var to symbol table
-        v = Var(self.symtab, "out_msg", self.location, msg_type, "*out_msg",
-                self.pairs)
+        v = Var(
+            self.symtab,
+            "out_msg",
+            self.location,
+            msg_type,
+            "*out_msg",
+            self.pairs,
+        )
         self.symtab.newSymbol(v)
         v_ptr = Var(self.symtab, "out_msg_ptr", self.location,
                     self.symtab.find("MsgPtr", Type),
@@ -62,8 +72,10 @@ class EnqueueStatementAST(StatementAST):
         self.symtab.newSymbol(v_ptr)
 
         # Declare message
-        code("std::shared_ptr<${{msg_type.c_ident}}> out_msg = "\
-             "std::make_shared<${{msg_type.c_ident}}>(clockEdge());")
+        code(
+            "std::shared_ptr<${{msg_type.c_ident}}> out_msg = "
+            "std::make_shared<${{msg_type.c_ident}}>(clockEdge());"
+        )
 
         # The other statements
         t = self.statements.generate(code, None)
@@ -74,11 +86,15 @@ class EnqueueStatementAST(StatementAST):
             code.indent()
         if self.latexpr != None:
             ret_type, rcode = self.latexpr.inline(True)
-            code("(${{self.queue_name.var.code}}).enqueue(" \
-                 "out_msg, clockEdge(), cyclesToTicks(Cycles($rcode)));")
+            code(
+                "(${{self.queue_name.var.code}}).enqueue("
+                "out_msg, clockEdge(), cyclesToTicks(Cycles($rcode)));"
+            )
         else:
-            code("(${{self.queue_name.var.code}}).enqueue(out_msg, "\
-                 "clockEdge(), cyclesToTicks(Cycles(1)));")
+            code(
+                "(${{self.queue_name.var.code}}).enqueue(out_msg, "
+                "clockEdge(), cyclesToTicks(Cycles(1)));"
+            )
         if self.condvar is not None:
             code.dedent()
 

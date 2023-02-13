@@ -14,6 +14,8 @@
 #define SE_PANIC(format, args...)                                              \
   panic("[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 
+namespace gem5 {
+
 bool StreamRegionController::canDispatchStreamEnd(const EndArgs &args) {
   const auto &streamRegion = this->se->getStreamRegion(args.infoRelativePath);
   auto &staticRegion = this->getStaticRegion(streamRegion.region());
@@ -454,4 +456,5 @@ StreamRegionController::getDynRegionByEndSeqNum(StaticRegion &staticRegion,
     }
   }
   SE_PANIC("No Ended DynRegion.");
-}
+}} // namespace gem5
+

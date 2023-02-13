@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2015, 2017-2018,2020 ARM Limited
+ * Copyright (c) 2013, 2015, 2017-2018,2020,2022 Arm Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -38,10 +38,17 @@
 #include "dev/arm/generic_timer.hh"
 
 #include <cmath>
+#include <string_view>
 
+#include "arch/arm/page_size.hh"
 #include "arch/arm/system.hh"
 #include "arch/arm/utility.hh"
+#include "base/logging.hh"
+#include "base/trace.hh"
+#include "config/kvm_isa.hh"
+#include "config/use_kvm.hh"
 #include "cpu/base.hh"
+#include "cpu/kvm/vm.hh"
 #include "debug/Timer.hh"
 #include "dev/arm/base_gic.hh"
 #include "mem/packet_access.hh"
@@ -49,15 +56,20 @@
 #include "params/GenericTimerFrame.hh"
 #include "params/GenericTimerMem.hh"
 #include "params/SystemCounter.hh"
+#include "sim/core.hh"
+#include "sim/cur_tick.hh"
+
+namespace gem5
+{
 
 using namespace ArmISA;
 
-SystemCounter::SystemCounter(SystemCounterParams *const p)
+SystemCounter::SystemCounter(const SystemCounterParams &p)
     : SimObject(p),
       _enabled(true),
       _value(0),
       _increment(1),
-      _freqTable(p->freqs),
+      _freqTable(p.freqs),
       _activeFreqEntry(0),
       _updateTick(0),
       _freqUpdateEvent([this]{ freqUpdateCallback(); }, name()),
@@ -72,7 +84,7 @@ SystemCounter::SystemCounter(SystemCounterParams *const p)
         "frequency table entries, limit surpassed\n");
     // Set the active frequency to be the base
     _freq = _freqTable.front();
-    _period = (1.0 / _freq) * SimClock::Frequency;
+    _period = (1.0 / _freq) * sim_clock::Frequency;
 }
 
 void
@@ -185,7 +197,7 @@ SystemCounter::freqUpdateCallback()
     _activeFreqEntry = _nextFreqEntry;
     _freq = _freqTable[_activeFreqEntry];
     _increment = _freqTable[0] / _freq;
-    _period = (1.0 / _freq) * SimClock::Frequency;
+    _period = (1.0 / _freq) * sim_clock::Frequency;
     notifyListeners();
 }
 
@@ -242,7 +254,7 @@ SystemCounter::unserialize(CheckpointIn &cp)
     }
     UNSERIALIZE_SCALAR(_nextFreqEntry);
 
-    _period = (1.0 / _freq) * SimClock::Frequency;
+    _period = (1.0 / _freq) * sim_clock::Frequency;
 }
 
 ArchTimer::ArchTimer(const std::string &name,
@@ -395,21 +407,27 @@ ArchTimer::drainResume()
     updateCounter();
 }
 
-GenericTimer::GenericTimer(GenericTimerParams *const p)
-    : SimObject(p),
-      systemCounter(*p->counter),
-      system(*p->system)
+bool
+ArchTimerKvm::scheduleEvents()
 {
-    SystemCounter::validateCounterRef(p->counter);
-    fatal_if(!p->system, "GenericTimer::GenericTimer: No system specified, "
-             "can't instantiate architected timers\n");
-    system.setGenericTimer(this);
+    if constexpr (USE_KVM &&
+            std::string_view(KVM_ISA) == std::string_view("arm")) {
+        auto *vm = system.getKvmVM();
+        return !vm || !vm->validEnvironment();
+    } else {
+        return true;
+    }
 }
 
-const GenericTimerParams *
-GenericTimer::params() const
+GenericTimer::GenericTimer(const GenericTimerParams &p)
+    : SimObject(p),
+      systemCounter(*p.counter),
+      system(*p.system)
 {
-    return dynamic_cast<const GenericTimerParams *>(_params);
+    SystemCounter::validateCounterRef(p.counter);
+    fatal_if(!p.system, "GenericTimer::GenericTimer: No system specified, "
+             "can't instantiate architected timers\n");
+    system.setGenericTimer(this);
 }
 
 void
@@ -467,7 +485,7 @@ void
 GenericTimer::createTimers(unsigned cpus)
 {
     assert(timers.size() < cpus);
-    auto p = static_cast<const GenericTimerParams *>(_params);
+    auto &p = params();
 
     const unsigned old_cpu_count(timers.size());
     timers.resize(cpus);
@@ -477,10 +495,13 @@ GenericTimer::createTimers(unsigned cpus)
 
         timers[i].reset(
             new CoreTimers(*this, system, i,
-                           p->int_phys_s->get(tc),
-                           p->int_phys_ns->get(tc),
-                           p->int_virt->get(tc),
-                           p->int_hyp->get(tc)));
+                           p.int_el3_phys->get(tc),
+                           p.int_el1_phys->get(tc),
+                           p.int_el1_virt->get(tc),
+                           p.int_el2_ns_phys->get(tc),
+                           p.int_el2_ns_virt->get(tc),
+                           p.int_el2_s_phys->get(tc),
+                           p.int_el2_s_virt->get(tc)));
     }
 }
 
@@ -514,7 +535,6 @@ void
 GenericTimer::setMiscReg(int reg, unsigned cpu, RegVal val)
 {
     CoreTimers &core(getTimers(cpu));
-    ThreadContext *tc = system.threads[cpu];
 
     switch (reg) {
       case MISCREG_CNTFRQ:
@@ -526,14 +546,10 @@ GenericTimer::setMiscReg(int reg, unsigned cpu, RegVal val)
       case MISCREG_CNTKCTL:
       case MISCREG_CNTKCTL_EL1:
       {
-        if (ELIsInHost(tc, currEL(tc))) {
-            tc->setMiscReg(MISCREG_CNTHCTL_EL2, val);
-            return;
-        }
         RegVal old_cnt_ctl = core.cntkctl;
         core.cntkctl = val;
 
-        ArchTimer *timer = &core.virt;
+        ArchTimer *timer = &core.virtEL1;
         CoreTimers::EventStream *ev_stream = &core.virtEvStream;
 
         handleStream(ev_stream, timer, old_cnt_ctl, val);
@@ -545,26 +561,26 @@ GenericTimer::setMiscReg(int reg, unsigned cpu, RegVal val)
         RegVal old_cnt_ctl = core.cnthctl;
         core.cnthctl = val;
 
-        ArchTimer *timer = &core.physNS;
+        ArchTimer *timer = &core.physEL1;
         CoreTimers::EventStream *ev_stream = &core.physEvStream;
 
         handleStream(ev_stream, timer, old_cnt_ctl, val);
         return;
       }
-      // Physical timer (NS)
+      // EL1 physical timer
       case MISCREG_CNTP_CVAL_NS:
       case MISCREG_CNTP_CVAL_EL0:
-        core.physNS.setCompareValue(val);
+        core.physEL1.setCompareValue(val);
         return;
 
       case MISCREG_CNTP_TVAL_NS:
       case MISCREG_CNTP_TVAL_EL0:
-        core.physNS.setTimerValue(val);
+        core.physEL1.setTimerValue(val);
         return;
 
       case MISCREG_CNTP_CTL_NS:
       case MISCREG_CNTP_CTL_EL0:
-        core.physNS.setControl(val);
+        core.physEL1.setControl(val);
         return;
 
       // Count registers
@@ -576,57 +592,96 @@ GenericTimer::setMiscReg(int reg, unsigned cpu, RegVal val)
              miscRegName[reg]);
         return;
 
-      // Virtual timer
+      // EL1 virtual timer
       case MISCREG_CNTVOFF:
       case MISCREG_CNTVOFF_EL2:
-        core.virt.setOffset(val);
+        core.virtEL1.setOffset(val);
         return;
 
       case MISCREG_CNTV_CVAL:
       case MISCREG_CNTV_CVAL_EL0:
-        core.virt.setCompareValue(val);
+        core.virtEL1.setCompareValue(val);
         return;
 
       case MISCREG_CNTV_TVAL:
       case MISCREG_CNTV_TVAL_EL0:
-        core.virt.setTimerValue(val);
+        core.virtEL1.setTimerValue(val);
         return;
 
       case MISCREG_CNTV_CTL:
       case MISCREG_CNTV_CTL_EL0:
-        core.virt.setControl(val);
+        core.virtEL1.setControl(val);
         return;
 
-      // Physical timer (S)
+      // EL3 physical timer
       case MISCREG_CNTP_CTL_S:
       case MISCREG_CNTPS_CTL_EL1:
-        core.physS.setControl(val);
+        core.physEL3.setControl(val);
         return;
 
       case MISCREG_CNTP_CVAL_S:
       case MISCREG_CNTPS_CVAL_EL1:
-        core.physS.setCompareValue(val);
+        core.physEL3.setCompareValue(val);
         return;
 
       case MISCREG_CNTP_TVAL_S:
       case MISCREG_CNTPS_TVAL_EL1:
-        core.physS.setTimerValue(val);
+        core.physEL3.setTimerValue(val);
         return;
 
-      // Hyp phys. timer, non-secure
+      // EL2 Non-secure physical timer
       case MISCREG_CNTHP_CTL:
       case MISCREG_CNTHP_CTL_EL2:
-        core.hyp.setControl(val);
+        core.physNsEL2.setControl(val);
         return;
 
       case MISCREG_CNTHP_CVAL:
       case MISCREG_CNTHP_CVAL_EL2:
-        core.hyp.setCompareValue(val);
+        core.physNsEL2.setCompareValue(val);
         return;
 
       case MISCREG_CNTHP_TVAL:
       case MISCREG_CNTHP_TVAL_EL2:
-        core.hyp.setTimerValue(val);
+        core.physNsEL2.setTimerValue(val);
+        return;
+
+      // EL2 Non-secure virtual timer
+      case MISCREG_CNTHV_CTL_EL2:
+        core.virtNsEL2.setControl(val);
+        return;
+
+      case MISCREG_CNTHV_CVAL_EL2:
+        core.virtNsEL2.setCompareValue(val);
+        return;
+
+      case MISCREG_CNTHV_TVAL_EL2:
+        core.virtNsEL2.setTimerValue(val);
+        return;
+
+      // EL2 Secure physical timer
+      case MISCREG_CNTHPS_CTL_EL2:
+        core.physSEL2.setControl(val);
+        return;
+
+      case MISCREG_CNTHPS_CVAL_EL2:
+        core.physSEL2.setCompareValue(val);
+        return;
+
+      case MISCREG_CNTHPS_TVAL_EL2:
+        core.physSEL2.setTimerValue(val);
+        return;
+
+      // EL2 Secure virtual timer
+      case MISCREG_CNTHVS_CTL_EL2:
+        core.virtSEL2.setControl(val);
+        return;
+
+      case MISCREG_CNTHVS_CVAL_EL2:
+        core.virtSEL2.setCompareValue(val);
+        return;
+
+      case MISCREG_CNTHVS_TVAL_EL2:
+        core.virtSEL2.setTimerValue(val);
         return;
 
       default:
@@ -651,70 +706,100 @@ GenericTimer::readMiscReg(int reg, unsigned cpu)
       case MISCREG_CNTHCTL:
       case MISCREG_CNTHCTL_EL2:
         return core.cnthctl & 0x00000000ffffffff;
-      // Physical timer
+      // EL1 physical timer
       case MISCREG_CNTP_CVAL_NS:
       case MISCREG_CNTP_CVAL_EL0:
-        return core.physNS.compareValue();
+        return core.physEL1.compareValue();
 
       case MISCREG_CNTP_TVAL_NS:
       case MISCREG_CNTP_TVAL_EL0:
-        return core.physNS.timerValue();
+        return core.physEL1.timerValue();
 
       case MISCREG_CNTP_CTL_EL0:
       case MISCREG_CNTP_CTL_NS:
-        return core.physNS.control();
+        return core.physEL1.control();
 
       case MISCREG_CNTPCT:
       case MISCREG_CNTPCT_EL0:
-        return core.physNS.value();
+        return core.physEL1.value();
 
 
-      // Virtual timer
+      // EL1 virtual timer
       case MISCREG_CNTVCT:
       case MISCREG_CNTVCT_EL0:
-        return core.virt.value();
+        return core.virtEL1.value();
 
       case MISCREG_CNTVOFF:
       case MISCREG_CNTVOFF_EL2:
-        return core.virt.offset();
+        return core.virtEL1.offset();
 
       case MISCREG_CNTV_CVAL:
       case MISCREG_CNTV_CVAL_EL0:
-        return core.virt.compareValue();
+        return core.virtEL1.compareValue();
 
       case MISCREG_CNTV_TVAL:
       case MISCREG_CNTV_TVAL_EL0:
-        return core.virt.timerValue();
+        return core.virtEL1.timerValue();
 
       case MISCREG_CNTV_CTL:
       case MISCREG_CNTV_CTL_EL0:
-        return core.virt.control();
+        return core.virtEL1.control();
 
-      // PL1 phys. timer, secure
+      // EL3 physical timer
       case MISCREG_CNTP_CTL_S:
       case MISCREG_CNTPS_CTL_EL1:
-        return core.physS.control();
+        return core.physEL3.control();
 
       case MISCREG_CNTP_CVAL_S:
       case MISCREG_CNTPS_CVAL_EL1:
-        return core.physS.compareValue();
+        return core.physEL3.compareValue();
 
       case MISCREG_CNTP_TVAL_S:
       case MISCREG_CNTPS_TVAL_EL1:
-        return core.physS.timerValue();
+        return core.physEL3.timerValue();
 
-      // HYP phys. timer (NS)
+      // EL2 Non-secure physical timer
       case MISCREG_CNTHP_CTL:
       case MISCREG_CNTHP_CTL_EL2:
-        return core.hyp.control();
+        return core.physNsEL2.control();
 
       case MISCREG_CNTHP_CVAL:
       case MISCREG_CNTHP_CVAL_EL2:
-        return core.hyp.compareValue();
+        return core.physNsEL2.compareValue();
 
       case MISCREG_CNTHP_TVAL:
       case MISCREG_CNTHP_TVAL_EL2:
-        return core.hyp.timerValue();
+        return core.physNsEL2.timerValue();
+
+      // EL2 Non-secure virtual timer
+      case MISCREG_CNTHV_CTL_EL2:
+        return core.virtNsEL2.control();
+
+      case MISCREG_CNTHV_CVAL_EL2:
+        return core.virtNsEL2.compareValue();
+
+      case MISCREG_CNTHV_TVAL_EL2:
+        return core.virtNsEL2.timerValue();
+
+      // EL2 Secure physical timer
+      case MISCREG_CNTHPS_CTL_EL2:
+        return core.physSEL2.control();
+
+      case MISCREG_CNTHPS_CVAL_EL2:
+        return core.physSEL2.compareValue();
+
+      case MISCREG_CNTHPS_TVAL_EL2:
+        return core.physSEL2.timerValue();
+
+      // EL2 Secure virtual timer
+      case MISCREG_CNTHVS_CTL_EL2:
+        return core.virtSEL2.control();
+
+      case MISCREG_CNTHVS_CVAL_EL2:
+        return core.virtSEL2.compareValue();
+
+      case MISCREG_CNTHVS_TVAL_EL2:
+        return core.virtSEL2.timerValue();
 
       default:
         warn("Reading from unknown register: %s\n", miscRegName[reg]);
@@ -724,29 +809,42 @@ GenericTimer::readMiscReg(int reg, unsigned cpu)
 
 GenericTimer::CoreTimers::CoreTimers(GenericTimer &_parent,
     ArmSystem &system, unsigned cpu,
-    ArmInterruptPin *_irqPhysS, ArmInterruptPin *_irqPhysNS,
-    ArmInterruptPin *_irqVirt, ArmInterruptPin *_irqHyp)
+    ArmInterruptPin *irq_el3_phys, ArmInterruptPin *irq_el1_phys,
+    ArmInterruptPin *irq_el1_virt, ArmInterruptPin *irq_el2_ns_phys,
+    ArmInterruptPin *irq_el2_ns_virt, ArmInterruptPin *irq_el2_s_phys,
+    ArmInterruptPin *irq_el2_s_virt)
       : parent(_parent),
-        cntfrq(parent.params()->cntfrq),
+        cntfrq(parent.params().cntfrq),
+        cntkctl(0), cnthctl(0),
         threadContext(system.threads[cpu]),
-        irqPhysS(_irqPhysS),
-        irqPhysNS(_irqPhysNS),
-        irqVirt(_irqVirt),
-        irqHyp(_irqHyp),
-        physS(csprintf("%s.phys_s_timer%d", parent.name(), cpu),
-              system, parent, parent.systemCounter,
-              _irqPhysS),
-        // This should really be phys_timerN, but we are stuck with
-        // arch_timer for backwards compatibility.
-        physNS(csprintf("%s.arch_timer%d", parent.name(), cpu),
-             system, parent, parent.systemCounter,
-             _irqPhysNS),
-        virt(csprintf("%s.virt_timer%d", parent.name(), cpu),
-           system, parent, parent.systemCounter,
-           _irqVirt),
-        hyp(csprintf("%s.hyp_timer%d", parent.name(), cpu),
-           system, parent, parent.systemCounter,
-           _irqHyp),
+        irqPhysEL3(irq_el3_phys),
+        irqPhysEL1(irq_el1_phys),
+        irqVirtEL1(irq_el1_virt),
+        irqPhysNsEL2(irq_el2_ns_phys),
+        irqVirtNsEL2(irq_el2_ns_virt),
+        irqPhysSEL2(irq_el2_s_phys),
+        irqVirtSEL2(irq_el2_s_virt),
+        physEL3(csprintf("%s.el3_phys_timer%d", parent.name(), cpu),
+                system, parent, parent.systemCounter,
+                irq_el3_phys),
+        physEL1(csprintf("%s.el1_phys_timer%d", parent.name(), cpu),
+                system, parent, parent.systemCounter,
+                irq_el1_phys),
+        virtEL1(csprintf("%s.el1_virt_timer%d", parent.name(), cpu),
+                system, parent, parent.systemCounter,
+                irq_el1_virt),
+        physNsEL2(csprintf("%s.el2_ns_phys_timer%d", parent.name(), cpu),
+                  system, parent, parent.systemCounter,
+                  irq_el2_ns_phys),
+        virtNsEL2(csprintf("%s.el2_ns_virt_timer%d", parent.name(), cpu),
+                  system, parent, parent.systemCounter,
+                  irq_el2_ns_virt),
+        physSEL2(csprintf("%s.el2_s_phys_timer%d", parent.name(), cpu),
+                 system, parent, parent.systemCounter,
+                 irq_el2_s_phys),
+        virtSEL2(csprintf("%s.el2_s_virt_timer%d", parent.name(), cpu),
+                 system, parent, parent.systemCounter,
+                 irq_el2_s_virt),
         physEvStream{
            EventFunctionWrapper([this]{ physEventStreamCallback(); },
            csprintf("%s.phys_event_gen%d", parent.name(), cpu)), 0, 0
@@ -762,14 +860,14 @@ void
 GenericTimer::CoreTimers::physEventStreamCallback()
 {
     eventStreamCallback();
-    schedNextEvent(physEvStream, physNS);
+    schedNextEvent(physEvStream, physEL1);
 }
 
 void
 GenericTimer::CoreTimers::virtEventStreamCallback()
 {
     eventStreamCallback();
-    schedNextEvent(virtEvStream, virt);
+    schedNextEvent(virtEvStream, virtEL1);
 }
 
 void
@@ -790,8 +888,8 @@ GenericTimer::CoreTimers::schedNextEvent(EventStream &ev_stream,
 void
 GenericTimer::CoreTimers::notify()
 {
-    schedNextEvent(virtEvStream, virt);
-    schedNextEvent(physEvStream, physNS);
+    schedNextEvent(virtEvStream, virtEL1);
+    schedNextEvent(physEvStream, physEL1);
 }
 
 void
@@ -819,10 +917,13 @@ GenericTimer::CoreTimers::serialize(CheckpointOut &cp) const
     SERIALIZE_SCALAR(virtEvStream.transitionTo);
     SERIALIZE_SCALAR(virtEvStream.transitionBit);
 
-    physS.serializeSection(cp, "phys_s_timer");
-    physNS.serializeSection(cp, "phys_ns_timer");
-    virt.serializeSection(cp, "virt_timer");
-    hyp.serializeSection(cp, "hyp_timer");
+    physEL3.serializeSection(cp, "phys_el3_timer");
+    physEL1.serializeSection(cp, "phys_el1_timer");
+    virtEL1.serializeSection(cp, "virt_el1_timer");
+    physNsEL2.serializeSection(cp, "phys_ns_el2_timer");
+    virtNsEL2.serializeSection(cp, "virt_ns_el2_timer");
+    physSEL2.serializeSection(cp, "phys_s_el2_timer");
+    virtSEL2.serializeSection(cp, "virt_s_el2_timer");
 }
 
 void
@@ -852,10 +953,13 @@ GenericTimer::CoreTimers::unserialize(CheckpointIn &cp)
     UNSERIALIZE_SCALAR(virtEvStream.transitionTo);
     UNSERIALIZE_SCALAR(virtEvStream.transitionBit);
 
-    physS.unserializeSection(cp, "phys_s_timer");
-    physNS.unserializeSection(cp, "phys_ns_timer");
-    virt.unserializeSection(cp, "virt_timer");
-    hyp.unserializeSection(cp, "hyp_timer");
+    physEL3.unserializeSection(cp, "phys_el3_timer");
+    physEL1.unserializeSection(cp, "phys_el1_timer");
+    virtEL1.unserializeSection(cp, "virt_el1_timer");
+    physNsEL2.unserializeSection(cp, "phys_ns_el2_timer");
+    virtNsEL2.unserializeSection(cp, "virt_ns_el2_timer");
+    physSEL2.unserializeSection(cp, "phys_s_el2_timer");
+    virtSEL2.unserializeSection(cp, "virt_s_el2_timer");
 }
 
 void
@@ -873,23 +977,23 @@ GenericTimerISA::readMiscReg(int reg)
     return value;
 }
 
-GenericTimerFrame::GenericTimerFrame(GenericTimerFrameParams *const p)
+GenericTimerFrame::GenericTimerFrame(const GenericTimerFrameParams &p)
     : PioDevice(p),
-      timerRange(RangeSize(p->cnt_base, ArmSystem::PageBytes)),
+      timerRange(RangeSize(p.cnt_base, ArmSystem::PageBytes)),
       addrRanges({timerRange}),
-      systemCounter(*p->counter),
+      systemCounter(*p.counter),
       physTimer(csprintf("%s.phys_timer", name()),
-                *this, systemCounter, p->int_phys->get()),
+                *this, systemCounter, p.int_phys->get()),
       virtTimer(csprintf("%s.virt_timer", name()),
                 *this, systemCounter,
-                p->int_virt->get()),
+                p.int_virt->get()),
       accessBits(0x3f),
       system(*dynamic_cast<ArmSystem *>(sys))
 {
-    SystemCounter::validateCounterRef(p->counter);
+    SystemCounter::validateCounterRef(p.counter);
     // Expose optional CNTEL0Base register frame
-    if (p->cnt_el0_base != MaxAddr) {
-        timerEl0Range = RangeSize(p->cnt_el0_base, ArmSystem::PageBytes);
+    if (p.cnt_el0_base != MaxAddr) {
+        timerEl0Range = RangeSize(p.cnt_el0_base, ArmSystem::PageBytes);
         accessBitsEl0 = 0x303;
         addrRanges.push_back(timerEl0Range);
     }
@@ -1244,18 +1348,18 @@ GenericTimerFrame::timerWrite(Addr addr, size_t size, uint64_t data,
     }
 }
 
-GenericTimerMem::GenericTimerMem(GenericTimerMemParams *const p)
+GenericTimerMem::GenericTimerMem(const GenericTimerMemParams &p)
     : PioDevice(p),
-      counterCtrlRange(RangeSize(p->cnt_control_base, ArmSystem::PageBytes)),
-      counterStatusRange(RangeSize(p->cnt_read_base, ArmSystem::PageBytes)),
-      timerCtrlRange(RangeSize(p->cnt_ctl_base, ArmSystem::PageBytes)),
+      counterCtrlRange(RangeSize(p.cnt_control_base, ArmSystem::PageBytes)),
+      counterStatusRange(RangeSize(p.cnt_read_base, ArmSystem::PageBytes)),
+      timerCtrlRange(RangeSize(p.cnt_ctl_base, ArmSystem::PageBytes)),
       cnttidr(0x0),
       addrRanges{counterCtrlRange, counterStatusRange, timerCtrlRange},
-      systemCounter(*p->counter),
-      frames(p->frames),
+      systemCounter(*p.counter),
+      frames(p.frames),
       system(*dynamic_cast<ArmSystem *>(sys))
 {
-    SystemCounter::validateCounterRef(p->counter);
+    SystemCounter::validateCounterRef(p.counter);
     for (auto &range : addrRanges)
         GenericTimerMem::validateFrameRange(range);
     fatal_if(frames.size() > MAX_TIMER_FRAMES,
@@ -1284,7 +1388,7 @@ GenericTimerMem::validateFrameRange(const AddrRange &range)
 bool
 GenericTimerMem::validateAccessPerm(ArmSystem &sys, bool is_sec)
 {
-    return !sys.haveSecurity() || is_sec;
+    return !sys.has(ArmExtension::SECURITY) || is_sec;
 }
 
 AddrRangeList
@@ -1585,26 +1689,4 @@ GenericTimerMem::timerCtrlWrite(Addr addr, size_t size, uint64_t data,
     }
 }
 
-SystemCounter *
-SystemCounterParams::create()
-{
-    return new SystemCounter(this);
-}
-
-GenericTimer *
-GenericTimerParams::create()
-{
-    return new GenericTimer(this);
-}
-
-GenericTimerFrame *
-GenericTimerFrameParams::create()
-{
-    return new GenericTimerFrame(this);
-}
-
-GenericTimerMem *
-GenericTimerMemParams::create()
-{
-    return new GenericTimerMem(this);
-}
+} // namespace gem5

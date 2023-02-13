@@ -8,6 +8,8 @@
 #include "mem/ruby/structures/CacheMemory.hh"
 #include "params/RubyStreamAwareController.hh"
 
+namespace gem5 {
+
 /**
  * ! Sean: StreamAwareCache.
  * ! An abstract cache controller with stream information.
@@ -17,10 +19,12 @@ class MLCStreamEngine;
 class LLCStreamEngine;
 class PUMTransposeUnit;
 
+namespace ruby {
+
 class AbstractStreamAwareController : public AbstractController {
 public:
-  typedef RubyStreamAwareControllerParams Params;
-  AbstractStreamAwareController(const Params *p);
+  PARAMS(RubyStreamAwareController)
+  AbstractStreamAwareController(const Params &p);
   ~AbstractStreamAwareController();
 
   void init() override;
@@ -223,7 +227,7 @@ public:
     return pkt->req->getStatistic();
   }
 
-  void addToStat(Stats::Scalar &s, int v) const { s += v; }
+  void addToStat(statistics::Scalar &s, int v) const { s += v; }
 
   GemForgeCPUDelegator *getCPUDelegator();
 
@@ -291,82 +295,85 @@ private:
 
 protected:
   // Stats exposed to the controller.
-  Stats::Scalar m_statCoreReq;
-  Stats::Scalar m_statCoreLoadReq;
-  Stats::Scalar m_statCoreStreamReq;
-  Stats::Scalar m_statCoreStreamLoadReq;
-  Stats::Scalar m_statLLCStreamReq;
-  Stats::Scalar m_statLLCIndStreamReq;
-  Stats::Scalar m_statLLCMulticastStreamReq;
+  statistics::Scalar m_statCoreReq;
+  statistics::Scalar m_statCoreLoadReq;
+  statistics::Scalar m_statCoreStreamReq;
+  statistics::Scalar m_statCoreStreamLoadReq;
+  statistics::Scalar m_statLLCStreamReq;
+  statistics::Scalar m_statLLCIndStreamReq;
+  statistics::Scalar m_statLLCMulticastStreamReq;
 
 public:
   Stats::Distribution m_statLLCNumDirectStreams;
   // Stats for cycles when streams are offloaded.
-  Stats::Scalar m_statMLCStreamCycles;
+  statistics::Scalar m_statMLCStreamCycles;
   // Stats for stream computing.
-  Stats::Scalar m_statLLCScheduledComputation;
-  Stats::Scalar m_statLLCScheduledComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledAffineLoadComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledAffineReduceMicroOps;
-  Stats::Scalar m_statLLCScheduledAffineUpdateMicroOps;
-  Stats::Scalar m_statLLCScheduledAffineStoreComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledAffineAtomicComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledIndirectLoadComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledIndirectReduceMicroOps;
-  Stats::Scalar m_statLLCScheduledIndirectUpdateMicroOps;
-  Stats::Scalar m_statLLCScheduledIndirectStoreComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledIndirectAtomicComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledPointerChaseLoadComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledPointerChaseReduceMicroOps;
-  Stats::Scalar m_statLLCScheduledPointerChaseUpdateMicroOps;
-  Stats::Scalar m_statLLCScheduledPointerChaseStoreComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledPointerChaseAtomicComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledMultiAffineLoadComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledMultiAffineReduceMicroOps;
-  Stats::Scalar m_statLLCScheduledMultiAffineUpdateMicroOps;
-  Stats::Scalar m_statLLCScheduledMultiAffineStoreComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledMultiAffineAtomicComputeMicroOps;
+  statistics::Scalar m_statLLCScheduledComputation;
+  statistics::Scalar m_statLLCScheduledComputeMicroOps;
+  statistics::Scalar m_statLLCScheduledAffineLoadComputeMicroOps;
+  statistics::Scalar m_statLLCScheduledAffineReduceMicroOps;
+  statistics::Scalar m_statLLCScheduledAffineUpdateMicroOps;
+  statistics::Scalar m_statLLCScheduledAffineStoreComputeMicroOps;
+  statistics::Scalar m_statLLCScheduledAffineAtomicComputeMicroOps;
+  statistics::Scalar m_statLLCScheduledIndirectLoadComputeMicroOps;
+  statistics::Scalar m_statLLCScheduledIndirectReduceMicroOps;
+  statistics::Scalar m_statLLCScheduledIndirectUpdateMicroOps;
+  statistics::Scalar m_statLLCScheduledIndirectStoreComputeMicroOps;
+  statistics::Scalar m_statLLCScheduledIndirectAtomicComputeMicroOps;
+  statistics::Scalar m_statLLCScheduledPointerChaseLoadComputeMicroOps;
+  statistics::Scalar m_statLLCScheduledPointerChaseReduceMicroOps;
+  statistics::Scalar m_statLLCScheduledPointerChaseUpdateMicroOps;
+  statistics::Scalar m_statLLCScheduledPointerChaseStoreComputeMicroOps;
+  statistics::Scalar m_statLLCScheduledPointerChaseAtomicComputeMicroOps;
+  statistics::Scalar m_statLLCScheduledMultiAffineLoadComputeMicroOps;
+  statistics::Scalar m_statLLCScheduledMultiAffineReduceMicroOps;
+  statistics::Scalar m_statLLCScheduledMultiAffineUpdateMicroOps;
+  statistics::Scalar m_statLLCScheduledMultiAffineStoreComputeMicroOps;
+  statistics::Scalar m_statLLCScheduledMultiAffineAtomicComputeMicroOps;
 
-  Stats::Scalar m_statLLCPerformedAtomics;
-  Stats::Scalar m_statLLCCommittedAtomics;
-  Stats::Scalar m_statLLCLockedAtomics;
-  Stats::Scalar m_statLLCUnlockedAtomics;
-  Stats::Scalar m_statLLCLineConflictAtomics;
-  Stats::Scalar m_statLLCRealConflictAtomics;
-  Stats::Scalar m_statLLCXAWConflictAtomics;
-  Stats::Scalar m_statLLCRealXAWConflictAtomics;
-  Stats::Scalar m_statLLCDeadlockAtomics;
+  statistics::Scalar m_statLLCPerformedAtomics;
+  statistics::Scalar m_statLLCCommittedAtomics;
+  statistics::Scalar m_statLLCLockedAtomics;
+  statistics::Scalar m_statLLCUnlockedAtomics;
+  statistics::Scalar m_statLLCLineConflictAtomics;
+  statistics::Scalar m_statLLCRealConflictAtomics;
+  statistics::Scalar m_statLLCXAWConflictAtomics;
+  statistics::Scalar m_statLLCRealXAWConflictAtomics;
+  statistics::Scalar m_statLLCDeadlockAtomics;
   Stats::Distribution m_statLLCNumInflyComputations;
   Stats::Distribution m_statLLCNumReadyComputations;
 
-  Stats::Scalar m_statPUMTotalCycles;
-  Stats::Scalar m_statPUMPrefetchCycles;
-  Stats::Scalar m_statPUMCompileCycles;
-  Stats::Scalar m_statPUMComputeReadBits;
-  Stats::Scalar m_statPUMComputeWriteBits;
-  Stats::Scalar m_statPUMComputeCycles;
-  Stats::Scalar m_statPUMDataMoveCycles;
-  Stats::Scalar m_statPUMReduceCycles;
-  Stats::Scalar m_statPUMMixCycles;
-  Stats::Scalar m_statPUMComputeCmds;
-  Stats::Scalar m_statPUMComputeOps;
-  Stats::Scalar m_statPUMInterArrayCmds;
-  Stats::Scalar m_statPUMIntraArrayCmds;
-  Stats::Scalar m_statPUMSyncCmds;
-  Stats::Scalar m_statPUMNormalAccesses;
-  Stats::Scalar m_statPUMNormalAccessConflicts;
-  Stats::Scalar m_statPUMNormalAccessDelayCycles;
-  Stats::Formula m_statPUMNormalAccessAvgDelayCycles;
+  statistics::Scalar m_statPUMTotalCycles;
+  statistics::Scalar m_statPUMPrefetchCycles;
+  statistics::Scalar m_statPUMCompileCycles;
+  statistics::Scalar m_statPUMComputeReadBits;
+  statistics::Scalar m_statPUMComputeWriteBits;
+  statistics::Scalar m_statPUMComputeCycles;
+  statistics::Scalar m_statPUMDataMoveCycles;
+  statistics::Scalar m_statPUMReduceCycles;
+  statistics::Scalar m_statPUMMixCycles;
+  statistics::Scalar m_statPUMComputeCmds;
+  statistics::Scalar m_statPUMComputeOps;
+  statistics::Scalar m_statPUMInterArrayCmds;
+  statistics::Scalar m_statPUMIntraArrayCmds;
+  statistics::Scalar m_statPUMSyncCmds;
+  statistics::Scalar m_statPUMNormalAccesses;
+  statistics::Scalar m_statPUMNormalAccessConflicts;
+  statistics::Scalar m_statPUMNormalAccessDelayCycles;
+  statistics::Formula m_statPUMNormalAccessAvgDelayCycles;
 
-  Stats::Scalar m_statPUMIntraArrayShiftCycles;
-  Stats::Scalar m_statPUMInterArrayShiftCycles;
-  Stats::Scalar m_statPUMInterBankShiftCycles;
-  Stats::Scalar m_statPUMIntraArrayShiftBits;
-  Stats::Scalar m_statPUMInterArrayShiftBits;
-  Stats::Scalar m_statPUMIntraArrayShiftBitHops;
-  Stats::Scalar m_statPUMInterArrayShiftBitHops;
-  Stats::Scalar m_statPUMInterBankShiftBits;
-  Stats::Scalar m_statPUMInterBankShiftReuseBits;
+  statistics::Scalar m_statPUMIntraArrayShiftCycles;
+  statistics::Scalar m_statPUMInterArrayShiftCycles;
+  statistics::Scalar m_statPUMInterBankShiftCycles;
+  statistics::Scalar m_statPUMIntraArrayShiftBits;
+  statistics::Scalar m_statPUMInterArrayShiftBits;
+  statistics::Scalar m_statPUMIntraArrayShiftBitHops;
+  statistics::Scalar m_statPUMInterArrayShiftBitHops;
+  statistics::Scalar m_statPUMInterBankShiftBits;
+  statistics::Scalar m_statPUMInterBankShiftReuseBits;
 };
+
+} // namespace ruby
+} // namespace gem5
 
 #endif

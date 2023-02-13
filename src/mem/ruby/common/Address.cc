@@ -31,6 +31,12 @@
 #include "base/bitfield.hh"
 #include "mem/ruby/system/RubySystem.hh"
 
+namespace gem5
+{
+
+namespace ruby
+{
+
 Addr
 maskLowOrderBits(Addr addr, unsigned int number)
 {
@@ -71,3 +77,21 @@ printAddress(Addr addr)
        << makeLineAddress(addr) << std::dec << "]";
     return out.str();
 }
+
+Addr
+bitSelect(Addr addr, unsigned int small, unsigned int big)
+{
+    assert(big >= small);
+
+    if (big >= ADDRESS_WIDTH - 1) {
+        return (addr >> small);
+    } else {
+        Addr mask = ~((Addr)~0 << (big + 1));
+        // FIXME - this is slow to manipulate a 64-bit number using 32-bits
+        Addr partial = (addr & mask);
+        return (partial >> small);
+    }
+}
+
+} // namespace ruby
+} // namespace gem5

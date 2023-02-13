@@ -50,6 +50,9 @@
 #include "debug/Bridge.hh"
 #include "params/Bridge.hh"
 
+namespace gem5
+{
+
 Bridge::BridgeResponsePort::BridgeResponsePort(const std::string& _name,
                                          Bridge& _bridge,
                                          BridgeRequestPort& _memSidePort,
@@ -74,12 +77,12 @@ Bridge::BridgeRequestPort::BridgeRequestPort(const std::string& _name,
 {
 }
 
-Bridge::Bridge(Params *p)
+Bridge::Bridge(const Params &p)
     : ClockedObject(p),
-      cpuSidePort(p->name + ".cpu_side_port", *this, memSidePort,
-                ticksToCycles(p->delay), p->resp_size, p->ranges),
-      memSidePort(p->name + ".mem_side_port", *this, cpuSidePort,
-                 ticksToCycles(p->delay), p->req_size)
+      cpuSidePort(p.name + ".cpu_side_port", *this, memSidePort,
+                ticksToCycles(p.delay), p.resp_size, p.ranges),
+      memSidePort(p.name + ".mem_side_port", *this, cpuSidePort,
+                 ticksToCycles(p.delay), p.req_size)
 {
 }
 
@@ -391,8 +394,4 @@ Bridge::BridgeResponsePort::getAddrRanges() const
     return ranges;
 }
 
-Bridge *
-BridgeParams::create()
-{
-    return new Bridge(this);
-}
+} // namespace gem5

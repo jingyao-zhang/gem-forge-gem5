@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2013,2018 ARM Limited
+ * Copyright (c) 2011-2013,2018, 2021-2022 Arm Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -41,13 +41,14 @@
 #include "base/loader/symtab.hh"
 #include "mem/request.hh"
 
-using namespace std;
+namespace gem5
+{
 
 namespace ArmISA
 {
 
 std::string
-SysDC64::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
+SysDC64::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss, "", false);
@@ -57,6 +58,12 @@ SysDC64::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 }
 
 
+uint32_t
+SysDC64::iss() const
+{
+    const MiscRegNum64 &misc_reg = encodeAArch64SysReg(dest);
+    return _iss(misc_reg, base);
+}
 
 void
 Memory64::startDisassembly(std::ostream &os) const
@@ -77,9 +84,8 @@ Memory64::setExcAcRel(bool exclusive, bool acrel)
     if (exclusive)
         memAccessFlags |= Request::LLSC;
     else
-        memAccessFlags |= ArmISA::TLB::AllowUnaligned;
+        memAccessFlags |= ArmISA::MMU::AllowUnaligned;
     if (acrel) {
-        flags[IsMemBarrier] = true;
         flags[IsWriteBarrier] = true;
         flags[IsReadBarrier] = true;
     }
@@ -87,7 +93,7 @@ Memory64::setExcAcRel(bool exclusive, bool acrel)
 
 std::string
 MemoryImm64::generateDisassembly(
-        Addr pc, const Loader::SymbolTable *symtab) const
+        Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     startDisassembly(ss);
@@ -99,7 +105,7 @@ MemoryImm64::generateDisassembly(
 
 std::string
 MemoryDImm64::generateDisassembly(
-        Addr pc, const Loader::SymbolTable *symtab) const
+        Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss, "", false);
@@ -116,7 +122,7 @@ MemoryDImm64::generateDisassembly(
 
 std::string
 MemoryDImmEx64::generateDisassembly(
-        Addr pc, const Loader::SymbolTable *symtab) const
+        Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss, "", false);
@@ -135,7 +141,7 @@ MemoryDImmEx64::generateDisassembly(
 
 std::string
 MemoryPreIndex64::generateDisassembly(
-        Addr pc, const Loader::SymbolTable *symtab) const
+        Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     startDisassembly(ss);
@@ -145,7 +151,7 @@ MemoryPreIndex64::generateDisassembly(
 
 std::string
 MemoryPostIndex64::generateDisassembly(
-        Addr pc, const Loader::SymbolTable *symtab) const
+        Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     startDisassembly(ss);
@@ -157,7 +163,7 @@ MemoryPostIndex64::generateDisassembly(
 
 std::string
 MemoryReg64::generateDisassembly(
-        Addr pc, const Loader::SymbolTable *symtab) const
+        Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     startDisassembly(ss);
@@ -168,7 +174,7 @@ MemoryReg64::generateDisassembly(
 
 std::string
 MemoryRaw64::generateDisassembly(
-        Addr pc, const Loader::SymbolTable *symtab) const
+        Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     startDisassembly(ss);
@@ -178,7 +184,7 @@ MemoryRaw64::generateDisassembly(
 
 std::string
 MemoryEx64::generateDisassembly(
-        Addr pc, const Loader::SymbolTable *symtab) const
+        Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss, "", false);
@@ -193,7 +199,7 @@ MemoryEx64::generateDisassembly(
 
 std::string
 MemoryLiteral64::generateDisassembly(
-        Addr pc, const Loader::SymbolTable *symtab) const
+        Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss, "", false);
@@ -201,4 +207,25 @@ MemoryLiteral64::generateDisassembly(
     ccprintf(ss, ", #%d", pc + imm);
     return ss.str();
 }
+
+std::string
+MemoryAtomicPair64::generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    printMnemonic(ss, "", false);
+    printIntReg(ss, result);
+    ccprintf(ss, ", ");
+    printIntReg(ss, result2);
+    ccprintf(ss, ", ");
+    printIntReg(ss, dest);
+    ccprintf(ss, ", ");
+    printIntReg(ss, dest2);
+    ccprintf(ss, ", [");
+    printIntReg(ss, base);
+    ccprintf(ss, "]");
+    return ss.str();
 }
+
+} // namespace ArmISA
+} // namespace gem5

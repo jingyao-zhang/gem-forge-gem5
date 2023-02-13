@@ -12,6 +12,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+namespace gem5 {
+
 /**
  * This class collects statistics for regions.
  * Each region contains a list of basic blocks. When we enter a region, we take
@@ -137,5 +139,7 @@ private:
 
   void initializeStatsVecTemplate();
 };
+
+} // namespace gem5
 
 #endif

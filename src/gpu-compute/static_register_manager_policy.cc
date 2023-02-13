@@ -2,8 +2,6 @@
  * Copyright (c) 2016 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -29,8 +27,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Mark Wyse
  */
 
 #include "gpu-compute/static_register_manager_policy.hh"
@@ -43,6 +39,9 @@
 #include "gpu-compute/shader.hh"
 #include "gpu-compute/vector_register_file.hh"
 #include "gpu-compute/wavefront.hh"
+
+namespace gem5
+{
 
 StaticRegisterManagerPolicy::StaticRegisterManagerPolicy()
 {
@@ -152,13 +151,13 @@ StaticRegisterManagerPolicy::freeRegisters(Wavefront *w)
              w->simdId,
              w->computeUnit->scalarRegsReserved[w->simdId]);
 
-    int endIndex = (w->startVgprIndex + w->reservedVectorRegs - 1) %
-        w->computeUnit->vrf[w->simdId]->numRegs();
+    // Current dynamic register allocation does not handle wraparound
+    int endIndex = w->startVgprIndex + w->reservedVectorRegs;
 
     w->computeUnit->registerManager->vrfPoolMgrs[w->simdId]->
         freeRegion(w->startVgprIndex, endIndex);
 
-    // mark/pre-mark all registers as not busy
+    // mark/pre-mark all registers are not busy
     for (int i = 0; i < w->reservedVectorRegs; i++) {
         uint32_t physVgprIdx = mapVgpr(w, i);
         w->computeUnit->vrf[w->simdId]->markReg(physVgprIdx, false);
@@ -167,12 +166,11 @@ StaticRegisterManagerPolicy::freeRegisters(Wavefront *w)
     w->reservedVectorRegs = 0;
     w->startVgprIndex = 0;
 
-    endIndex = (w->startSgprIndex + w->reservedScalarRegs - 1) %
-        w->computeUnit->srf[w->simdId]->numRegs();
+    endIndex = w->startSgprIndex + w->reservedScalarRegs;
     w->computeUnit->registerManager->srfPoolMgrs[w->simdId]->
         freeRegion(w->startSgprIndex, endIndex);
 
-    // mark/pre-mark all registers as not busy
+    // mark/pre-mark all registers are not busy
     for (int i = 0; i < w->reservedScalarRegs; i++) {
         uint32_t physSgprIdx = mapSgpr(w, i);
         w->computeUnit->srf[w->simdId]->markReg(physSgprIdx, false);
@@ -182,7 +180,4 @@ StaticRegisterManagerPolicy::freeRegisters(Wavefront *w)
     w->startSgprIndex = 0;
 }
 
-void
-StaticRegisterManagerPolicy::regStats()
-{
-}
+} // namespace gem5

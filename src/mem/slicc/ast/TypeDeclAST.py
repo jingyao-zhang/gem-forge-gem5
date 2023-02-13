@@ -28,9 +28,10 @@
 from slicc.ast.DeclAST import DeclAST
 from slicc.symbols.Type import Type
 
+
 class TypeDeclAST(DeclAST):
     def __init__(self, slicc, type_ast, pairs, field_asts):
-        super(TypeDeclAST, self).__init__(slicc, pairs)
+        super().__init__(slicc, pairs)
 
         self.type_ast = type_ast
         self.field_asts = field_asts
@@ -53,8 +54,9 @@ class TypeDeclAST(DeclAST):
         machine = self.symtab.state_machine
 
         # Make the new type
-        new_type = Type(self.symtab, ident, self.location, self.pairs,
-                        self.state_machine)
+        new_type = Type(
+            self.symtab, ident, self.location, self.pairs, self.state_machine
+        )
 
         if machine:
             machine.addType(new_type)

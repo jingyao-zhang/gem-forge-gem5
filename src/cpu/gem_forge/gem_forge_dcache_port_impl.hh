@@ -4,6 +4,8 @@
 #include "cpu/base.hh"
 #include "mem/port.hh"
 
+namespace gem5 {
+
 namespace GemForge {
 /**
  * GemForgeDcachePort uses a queue in the CPUPort to buffer the requests
@@ -46,5 +48,7 @@ protected:
   const std::string name() const { return this->port->name(); }
 };
 } // namespace GemForge
+
+} // namespace gem5
 
 #endif

@@ -2,8 +2,6 @@
  * Copyright (c) 2013-2015 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -50,12 +48,18 @@
 #include "mem/ruby/system/Sequencer.hh"
 #include "mem/token_port.hh"
 
+namespace gem5
+{
+
+struct RubyGPUCoalescerParams;
+
+namespace ruby
+{
+
 class DataBlock;
 class CacheMsg;
-class MachineID;
+struct MachineID;
 class CacheMemory;
-
-class RubyGPUCoalescerParams;
 
 // List of packets that belongs to a specific instruction.
 typedef std::list<PacketPtr> PerInstPackets;
@@ -70,12 +74,18 @@ class UncoalescedTable
     bool packetAvailable();
     void printRequestTable(std::stringstream& ss);
 
+    // Modify packets remaining map. Init sets value iff the seqNum has not
+    // yet been seen before. get/set act as a regular getter/setter.
+    void initPacketsRemaining(InstSeqNum seqNum, int count);
+    int getPacketsRemaining(InstSeqNum seqNum);
+    void setPacketsRemaining(InstSeqNum seqNum, int count);
+
     // Returns a pointer to the list of packets corresponding to an
     // instruction in the instruction map or nullptr if there are no
     // instructions at the offset.
     PerInstPackets* getInstPackets(int offset);
     void updateResources();
-    bool areRequestsDone(const uint64_t instSeqNum);
+    bool areRequestsDone(const InstSeqNum instSeqNum);
 
     // Check if a packet hasn't been removed from instMap in too long.
     // Panics if a deadlock is detected and returns nothing otherwise.
@@ -88,7 +98,9 @@ class UncoalescedTable
     // which need responses. This data structure assumes the sequence number
     // is monotonically increasing (which is true for CU class) in order to
     // issue packets in age order.
-    std::map<uint64_t, PerInstPackets> instMap;
+    std::map<InstSeqNum, PerInstPackets> instMap;
+
+    std::map<InstSeqNum, int> instPktsRemaining;
 };
 
 class CoalescedRequest
@@ -222,7 +234,7 @@ class GPUCoalescer : public RubyPort
     };
 
     typedef RubyGPUCoalescerParams Params;
-    GPUCoalescer(const Params *);
+    GPUCoalescer(const Params &);
     ~GPUCoalescer();
 
     Port &getPort(const std::string &if_name,
@@ -235,7 +247,6 @@ class GPUCoalescer : public RubyPort
     void printProgress(std::ostream& out) const;
     void resetStats() override;
     void collateStats();
-    void regStats() override;
 
     // each store request needs two callbacks:
     //  (1) writeCallback is called when the store is received and processed
@@ -326,36 +337,36 @@ class GPUCoalescer : public RubyPort
 
     GMTokenPort& getGMTokenPort() { return gmTokenPort; }
 
-    Stats::Histogram& getOutstandReqHist() { return m_outstandReqHist; }
+    statistics::Histogram& getOutstandReqHist() { return m_outstandReqHist; }
 
-    Stats::Histogram& getLatencyHist() { return m_latencyHist; }
-    Stats::Histogram& getTypeLatencyHist(uint32_t t)
+    statistics::Histogram& getLatencyHist() { return m_latencyHist; }
+    statistics::Histogram& getTypeLatencyHist(uint32_t t)
     { return *m_typeLatencyHist[t]; }
 
-    Stats::Histogram& getMissLatencyHist()
+    statistics::Histogram& getMissLatencyHist()
     { return m_missLatencyHist; }
-    Stats::Histogram& getMissTypeLatencyHist(uint32_t t)
+    statistics::Histogram& getMissTypeLatencyHist(uint32_t t)
     { return *m_missTypeLatencyHist[t]; }
 
-    Stats::Histogram& getMissMachLatencyHist(uint32_t t) const
+    statistics::Histogram& getMissMachLatencyHist(uint32_t t) const
     { return *m_missMachLatencyHist[t]; }
 
-    Stats::Histogram&
+    statistics::Histogram&
     getMissTypeMachLatencyHist(uint32_t r, uint32_t t) const
     { return *m_missTypeMachLatencyHist[r][t]; }
 
-    Stats::Histogram& getIssueToInitialDelayHist(uint32_t t) const
+    statistics::Histogram& getIssueToInitialDelayHist(uint32_t t) const
     { return *m_IssueToInitialDelayHist[t]; }
 
-    Stats::Histogram&
+    statistics::Histogram&
     getInitialToForwardDelayHist(const MachineType t) const
     { return *m_InitialToForwardDelayHist[t]; }
 
-    Stats::Histogram&
+    statistics::Histogram&
     getForwardRequestToFirstResponseHist(const MachineType t) const
     { return *m_ForwardToFirstResponseDelayHist[t]; }
 
-    Stats::Histogram&
+    statistics::Histogram&
     getFirstResponseToCompletionDelayHist(const MachineType t) const
     { return *m_FirstResponseToCompletionDelayHist[t]; }
 
@@ -389,6 +400,8 @@ class GPUCoalescer : public RubyPort
 
     virtual RubyRequestType getRequestType(PacketPtr pkt);
 
+    GPUDynInstPtr getDynInst(PacketPtr pkt) const;
+
     // Attempt to remove a packet from the uncoalescedTable and coalesce
     // with a previous request from the same instruction. If there is no
     // previous instruction and the max number of outstanding requests has
@@ -420,6 +433,10 @@ class GPUCoalescer : public RubyPort
     // (typically the number of blocks in TCP). If there are duplicates of
     // an address, the are serviced in age order.
     std::map<Addr, std::deque<CoalescedRequest*>> coalescedTable;
+    // Map of instruction sequence number to coalesced requests that get
+    // created in coalescePacket, used in completeIssue to send the fully
+    // coalesced request
+    std::unordered_map<uint64_t, std::deque<CoalescedRequest*>> coalescedReqs;
 
     // a map btw an instruction sequence number and PendingWriteInst
     // this is used to do a final call back for each write when it is
@@ -445,63 +462,64 @@ class GPUCoalescer : public RubyPort
 // TODO - Need to update the following stats once the VIPER protocol
 //        is re-integrated.
 //    // m5 style stats for TCP hit/miss counts
-//    Stats::Scalar GPU_TCPLdHits;
-//    Stats::Scalar GPU_TCPLdTransfers;
-//    Stats::Scalar GPU_TCCLdHits;
-//    Stats::Scalar GPU_LdMiss;
+//    statistics::Scalar GPU_TCPLdHits;
+//    statistics::Scalar GPU_TCPLdTransfers;
+//    statistics::Scalar GPU_TCCLdHits;
+//    statistics::Scalar GPU_LdMiss;
 //
-//    Stats::Scalar GPU_TCPStHits;
-//    Stats::Scalar GPU_TCPStTransfers;
-//    Stats::Scalar GPU_TCCStHits;
-//    Stats::Scalar GPU_StMiss;
+//    statistics::Scalar GPU_TCPStHits;
+//    statistics::Scalar GPU_TCPStTransfers;
+//    statistics::Scalar GPU_TCCStHits;
+//    statistics::Scalar GPU_StMiss;
 //
-//    Stats::Scalar CP_TCPLdHits;
-//    Stats::Scalar CP_TCPLdTransfers;
-//    Stats::Scalar CP_TCCLdHits;
-//    Stats::Scalar CP_LdMiss;
+//    statistics::Scalar CP_TCPLdHits;
+//    statistics::Scalar CP_TCPLdTransfers;
+//    statistics::Scalar CP_TCCLdHits;
+//    statistics::Scalar CP_LdMiss;
 //
-//    Stats::Scalar CP_TCPStHits;
-//    Stats::Scalar CP_TCPStTransfers;
-//    Stats::Scalar CP_TCCStHits;
-//    Stats::Scalar CP_StMiss;
+//    statistics::Scalar CP_TCPStHits;
+//    statistics::Scalar CP_TCPStTransfers;
+//    statistics::Scalar CP_TCCStHits;
+//    statistics::Scalar CP_StMiss;
 
     //! Histogram for number of outstanding requests per cycle.
-    Stats::Histogram m_outstandReqHist;
+    statistics::Histogram m_outstandReqHist;
 
     //! Histogram for holding latency profile of all requests.
-    Stats::Histogram m_latencyHist;
-    std::vector<Stats::Histogram *> m_typeLatencyHist;
+    statistics::Histogram m_latencyHist;
+    std::vector<statistics::Histogram *> m_typeLatencyHist;
 
     //! Histogram for holding latency profile of all requests that
     //! miss in the controller connected to this sequencer.
-    Stats::Histogram m_missLatencyHist;
-    std::vector<Stats::Histogram *> m_missTypeLatencyHist;
+    statistics::Histogram m_missLatencyHist;
+    std::vector<statistics::Histogram *> m_missTypeLatencyHist;
 
     //! Histograms for profiling the latencies for requests that
     //! required external messages.
-    std::vector<Stats::Histogram *> m_missMachLatencyHist;
-    std::vector< std::vector<Stats::Histogram *> > m_missTypeMachLatencyHist;
+    std::vector<statistics::Histogram *> m_missMachLatencyHist;
+    std::vector<std::vector<statistics::Histogram *>>
+        m_missTypeMachLatencyHist;
 
     //! Histograms for recording the breakdown of miss latency
-    std::vector<Stats::Histogram *> m_IssueToInitialDelayHist;
-    std::vector<Stats::Histogram *> m_InitialToForwardDelayHist;
-    std::vector<Stats::Histogram *> m_ForwardToFirstResponseDelayHist;
-    std::vector<Stats::Histogram *> m_FirstResponseToCompletionDelayHist;
+    std::vector<statistics::Histogram *> m_IssueToInitialDelayHist;
+    std::vector<statistics::Histogram *> m_InitialToForwardDelayHist;
+    std::vector<statistics::Histogram *> m_ForwardToFirstResponseDelayHist;
+    std::vector<statistics::Histogram *> m_FirstResponseToCompletionDelayHist;
 
 // TODO - Need to update the following stats once the VIPER protocol
 //        is re-integrated.
-//    Stats::Distribution numHopDelays;
-//    Stats::Distribution tcpToTccDelay;
-//    Stats::Distribution tccToSdDelay;
-//    Stats::Distribution sdToSdDelay;
-//    Stats::Distribution sdToTccDelay;
-//    Stats::Distribution tccToTcpDelay;
+//    statistics::Distribution numHopDelays;
+//    statistics::Distribution tcpToTccDelay;
+//    statistics::Distribution tccToSdDelay;
+//    statistics::Distribution sdToSdDelay;
+//    statistics::Distribution sdToTccDelay;
+//    statistics::Distribution tccToTcpDelay;
 //
-//    Stats::Average avgTcpToTcc;
-//    Stats::Average avgTccToSd;
-//    Stats::Average avgSdToSd;
-//    Stats::Average avgSdToTcc;
-//    Stats::Average avgTccToTcp;
+//    statistics::Average avgTcpToTcc;
+//    statistics::Average avgTccToSd;
+//    statistics::Average avgSdToSd;
+//    statistics::Average avgSdToTcc;
+//    statistics::Average avgTccToTcp;
 
   private:
     // Token port is used to send/receive tokens to/from GPU's global memory
@@ -521,5 +539,8 @@ operator<<(std::ostream& out, const GPUCoalescer& obj)
     out << std::flush;
     return out;
 }
+
+} // namespace ruby
+} // namespace gem5
 
 #endif // __MEM_RUBY_SYSTEM_GPU_COALESCER_HH__

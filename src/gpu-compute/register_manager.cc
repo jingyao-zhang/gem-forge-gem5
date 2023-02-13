@@ -2,8 +2,6 @@
  * Copyright (c) 2016, 2017 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -44,11 +42,14 @@
 #include "gpu-compute/wavefront.hh"
 #include "params/RegisterManager.hh"
 
-RegisterManager::RegisterManager(const RegisterManagerParams *p)
-    : SimObject(p), srfPoolMgrs(p->srf_pool_managers),
-      vrfPoolMgrs(p->vrf_pool_managers)
+namespace gem5
 {
-    if (p->policy == "static") {
+
+RegisterManager::RegisterManager(const RegisterManagerParams &p)
+    : SimObject(p), srfPoolMgrs(p.srf_pool_managers),
+      vrfPoolMgrs(p.vrf_pool_managers)
+{
+    if (p.policy == "static") {
         policy = new StaticRegisterManagerPolicy();
     } else {
         fatal("Unimplemented Register Manager Policy");
@@ -130,14 +131,4 @@ RegisterManager::freeRegisters(Wavefront* w)
     policy->freeRegisters(w);
 }
 
-void
-RegisterManager::regStats()
-{
-    policy->regStats();
-}
-
-RegisterManager*
-RegisterManagerParams::create()
-{
-    return new RegisterManager(this);
-}
+} // namespace gem5

@@ -29,13 +29,17 @@
 
 #include "cpu/o3/scoreboard.hh"
 
-#include "config/the_isa.hh"
-#include "debug/Scoreboard.hh"
+namespace gem5
+{
+
+namespace o3
+{
 
 Scoreboard::Scoreboard(const std::string &_my_name,
-                       unsigned _numPhysicalRegs)
-    : _name(_my_name),
-      regScoreBoard(_numPhysicalRegs, true),
-      numPhysRegs(_numPhysicalRegs)
-{
-}
+        unsigned _numPhysicalRegs) :
+    _name(_my_name), regScoreBoard(_numPhysicalRegs, true),
+    numPhysRegs(_numPhysicalRegs)
+{}
+
+} // namespace o3
+} // namespace gem5

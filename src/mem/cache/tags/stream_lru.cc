@@ -4,6 +4,8 @@
 #include "debug/CacheRepl.hh"
 #include "mem/cache/base.hh"
 
+namespace gem5 {
+
 StreamLRU::StreamLRU(const Params *p) : BaseSetAssoc(p) {}
 
 CacheBlk *StreamLRU::accessBlock(Addr addr, bool is_secure, Cycles &lat) {
@@ -63,3 +65,5 @@ void StreamLRU::invalidate(CacheBlk *blk) {
 }
 
 StreamLRU *StreamLRUParams::create() { return new StreamLRU(this); }
+} // namespace gem5
+

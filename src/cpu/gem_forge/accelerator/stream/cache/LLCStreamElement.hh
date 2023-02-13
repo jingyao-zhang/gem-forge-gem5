@@ -9,6 +9,8 @@
 
 #include <memory>
 
+namespace gem5 {
+
 struct LLCStreamElement;
 using LLCStreamElementPtr = std::shared_ptr<LLCStreamElement>;
 using ConstLLCStreamElementPtr = std::shared_ptr<const LLCStreamElement>;
@@ -23,7 +25,7 @@ public:
    * remote LLCDynStream sending here, we do not remember LLCDynStream
    * in the element, but just the DynStreamId and the StaticStream.
    */
-  LLCStreamElement(Stream *_S, AbstractStreamAwareController *_mlcController,
+  LLCStreamElement(Stream *_S, ruby::AbstractStreamAwareController *_mlcController,
                    const DynStrandId &_strandId, uint64_t _idx, Addr _vaddr,
                    int _size, bool _isNDCElement);
 
@@ -37,7 +39,7 @@ public:
   static void releaseDeferredElements();
 
   Stream *S;
-  AbstractStreamAwareController *mlcController;
+  ruby::AbstractStreamAwareController *mlcController;
   const DynStrandId strandId;
   const uint64_t idx;
   const int size;
@@ -129,7 +131,7 @@ public:
 
   void extractElementDataFromSlice(GemForgeCPUDelegator *cpuDelegator,
                                    const DynStreamSliceId &sliceId,
-                                   const DataBlock &dataBlock);
+                                   const ruby::DataBlock &dataBlock);
 
   /**
    * Helper function to compute the overlap between the a range and the element.
@@ -312,5 +314,7 @@ private:
 public:
   static uint64_t getAliveElems() { return aliveElems; }
 };
+
+} // namespace gem5
 
 #endif

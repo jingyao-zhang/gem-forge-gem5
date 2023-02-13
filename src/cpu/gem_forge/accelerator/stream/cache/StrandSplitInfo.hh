@@ -6,6 +6,8 @@
 #include <cassert>
 #include <vector>
 
+namespace gem5 {
+
 struct StrandElemSplitIdx {
   /**
    * Represent an element within one strand.
@@ -169,5 +171,7 @@ private:
   std::vector<StrandElemSplitIdx>
   mapStreamToPrevStrandByElem(StreamElemIdx streamElemIdx) const;
 };
+
+} // namespace gem5
 
 #endif

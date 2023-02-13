@@ -58,6 +58,8 @@
     return se.stage##StreamStore(dynInfo, ##xc);                               \
   }
 
+namespace gem5 {
+
 bool GemForgeISAHandler::shouldCountInPipeline(
     const GemForgeDynInstInfo &dynInfo) {
   if (!dynInfo.staticInst->isGemForge()) {
@@ -178,7 +180,8 @@ void GemForgeISAHandler::storeTo(InstSeqNum seqNum, Addr vaddr, int size) {
 GemForgeISAHandler::GemForgeStaticInstInfo &
 GemForgeISAHandler::getStaticInstInfo(const GemForgeDynInstInfo &dynInfo) {
 
-  auto pcKey = std::make_pair<Addr, MicroPC>(dynInfo.pc.pc(), dynInfo.pc.upc());
+  auto pcKey = std::make_pair<Addr, MicroPC>(dynInfo.pc.instAddr(),
+                                             dynInfo.pc.microPC());
 
   auto &infoMap = dynInfo.staticInst->isMicroop()
                       ? this->cachedStaticMicroInstInfo
@@ -223,3 +226,4 @@ void GemForgeISAHandler::takeOverBy(GemForgeCPUDelegator *newDelegator) {
   this->cpuDelegator = newDelegator;
   this->se.takeOverBy(newDelegator);
 }
+} // namespace gem5

@@ -32,21 +32,18 @@
 #include "arch/generic/interrupts.hh"
 #include "params/IrisInterrupts.hh"
 
+namespace gem5
+{
+
 namespace Iris
 {
 
 class Interrupts : public BaseInterrupts
 {
   public:
-    typedef IrisInterruptsParams Params;
+    using Params = IrisInterruptsParams;
 
-    const Params *
-    params() const
-    {
-        return dynamic_cast<const Params *>(_params);
-    }
-
-    Interrupts(Params *p) : BaseInterrupts(p) {}
+    Interrupts(const Params &p) : BaseInterrupts(p) {}
 
     bool checkInterrupts() const override { return false; }
     Fault getInterrupt() override { return NoFault; }
@@ -59,5 +56,6 @@ class Interrupts : public BaseInterrupts
 };
 
 } // namespace Iris
+} // namespace gem5
 
 #endif // __ARCH_ARM_FASTMODEL_IRIS_INTERRUPTS_HH__

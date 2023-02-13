@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 ARM Limited
+ * Copyright (c) 2020-2021 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -48,7 +48,15 @@
 // undefined declaration error.
 //
 
-external_type(MessageBuffer, buffer="yes", inport="yes", outport="yes");
+structure(MessageBuffer, buffer="yes", inport="yes", outport="yes",
+                         external = "yes", primitive="yes") {
+  // NOTE: it's recommended to use SLICC's built in resource stall management.
+  // These functions are mostly for including resource utilization info
+  // in debug traces dumped by the protocol.
+  bool areNSlotsAvailable(int n, Tick curTime);
+  int getSize(Tick curTime);
+}
+
 external_type(Scalar, primitive="yes");
 external_type(MsgPtr, primitive="yes");
 
@@ -112,6 +120,7 @@ structure (NetDest, external = "yes", non_obj="yes") {
   bool isEmpty();
   bool intersectionIsEmpty(Set);
   bool intersectionIsEmpty(NetDest);
+  MachineID smallestElement();
   MachineID smallestElement(MachineType);
   MachineID singleElement();
   NetDest OR(NetDest);
@@ -130,6 +139,12 @@ structure (Sequencer, external = "yes") {
   void writeCallback(Addr, DataBlock, bool, MachineType);
   void writeCallback(Addr, DataBlock, bool, MachineType,
                      Cycles, Cycles, Cycles);
+  void writeUniqueCallback(Addr, DataBlock);
+
+  void unaddressedCallback(Addr, RubyRequestType);
+  void unaddressedCallback(Addr, RubyRequestType, MachineType);
+  void unaddressedCallback(Addr, RubyRequestType, MachineType,
+                    Cycles, Cycles, Cycles);
 
   // ll/sc support
   void writeCallbackScFail(Addr, DataBlock);
@@ -177,6 +192,10 @@ structure(RubyRequest, desc="...", interface="Message", external="yes") {
   RubyAddressBulk addrBulk,  desc="Address bulk with this request";
   bool htmFromTransaction,   desc="Memory request originates within a HTM transaction";
   int htmTransactionUid,     desc="Used to identify the unique HTM transaction that produced this request";
+  bool isTlbi,               desc="Memory request is a TLB shootdown (invalidation) operation";
+  Addr tlbiTransactionUid,   desc="Unique identifier of the TLB shootdown operation that produced this request";
+
+  RequestPtr getRequestPtr();
 }
 
 structure(AbstractCacheEntry, primitive="yes", external = "yes") {
@@ -218,17 +237,14 @@ structure (CacheMemory, external = "yes") {
   int getNumBlocks();
   Addr getAddressAtIdx(int);
 
-  Scalar demand_misses;
-  Scalar demand_hits;
-  Scalar demand_hits_prefetched;
-  Scalar deallocated;
-  Scalar deallocated_no_reuse;
-  Scalar deallocated_no_reuse_no_req_stat;
-  Scalar deallocated_no_reuse_noc_control_message;
-  Scalar deallocated_no_reuse_noc_data_message;
-  Scalar deallocated_no_reuse_stream;
-  Scalar deallocated_no_reuse_stream_noc_control_message;
-  Scalar deallocated_no_reuse_stream_noc_data_message;
+  void profileDemandHit();
+  void profileDemandMiss();
+  void profilePrefetchHit();
+  void profilePrefetchMiss();
+  void profileDemandHitPrefetched();
+  void profileDealloc();
+  void profileDeallocNoReuse();
+  void profileDeallocNoReuseNoReqStat();
 }
 
 structure (WireBuffer, inport="yes", outport="yes", external = "yes") {
@@ -238,6 +254,7 @@ structure (WireBuffer, inport="yes", outport="yes", external = "yes") {
 structure (DMASequencer, external = "yes") {
   void ackCallback(Addr);
   void dataCallback(DataBlock,Addr);
+  void atomicCallback(DataBlock,Addr);
   void recordRequestType(CacheRequestType);
 }
 

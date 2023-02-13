@@ -8,6 +8,8 @@
 
 #include "base/logging.hh"
 
+namespace gem5 {
+
 /**
  * Implements a template of mapped tile pattern among LLC banks.
  *
@@ -302,5 +304,7 @@ LLCTilePatternInitAligned(3);
 
 #undef LLCTilePatternInit
 #undef LLCTilePatternInitAligned
+
+} // namespace gem5
 
 #endif

@@ -42,6 +42,9 @@
 
 #include "sim/sim_object.hh"
 
+namespace gem5
+{
+
 struct SerialDeviceParams;
 struct SerialNullDeviceParams;
 
@@ -91,7 +94,7 @@ struct SerialNullDeviceParams;
 class SerialDevice : public SimObject
 {
   public:
-    SerialDevice(const SerialDeviceParams *p);
+    SerialDevice(const SerialDeviceParams &p);
     ~SerialDevice();
 
   public: // Serial device API (UART->Device)
@@ -146,12 +149,14 @@ class SerialDevice : public SimObject
 class SerialNullDevice : public SerialDevice
 {
   public:
-    SerialNullDevice(const SerialNullDeviceParams *p);
+    SerialNullDevice(const SerialNullDeviceParams &p);
 
   public:
     bool dataAvailable() const override { return false; }
     void writeData(uint8_t c) override {};
     uint8_t readData() override;
 };
+
+} // namespace gem5
 
 #endif // __DEV_SERIAL_HH__

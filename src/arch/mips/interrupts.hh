@@ -38,6 +38,9 @@
 #include "params/MipsInterrupts.hh"
 #include "sim/serialize.hh"
 
+namespace gem5
+{
+
 class BaseCPU;
 class Checkpoint;
 
@@ -47,15 +50,9 @@ namespace MipsISA
 class Interrupts : public BaseInterrupts
 {
   public:
-    typedef MipsInterruptsParams Params;
+    using Params = MipsInterruptsParams;
 
-    const Params *
-    params() const
-    {
-        return dynamic_cast<const Params *>(_params);
-    }
-
-    Interrupts(Params * p) : BaseInterrupts(p) {}
+    Interrupts(const Params &p) : BaseInterrupts(p) {}
 
     //  post(int int_num, int index) is responsible
     //  for posting an interrupt. It sets a bit
@@ -113,7 +110,7 @@ class Interrupts : public BaseInterrupts
     }
 };
 
-}
+} // namespace MipsISA
+} // namespace gem5
 
 #endif
-

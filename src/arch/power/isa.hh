@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2009 The Regents of The University of Michigan
  * Copyright (c) 2009 The University of Edinburgh
+ * Copyright (c) 2021 IBM Corporation
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,11 +32,15 @@
 #define __ARCH_POWER_ISA_HH__
 
 #include "arch/generic/isa.hh"
-#include "arch/power/registers.hh"
+#include "arch/power/pcstate.hh"
+#include "arch/power/regs/misc.hh"
 #include "arch/power/types.hh"
 #include "base/logging.hh"
 #include "cpu/reg_class.hh"
 #include "sim/sim_object.hh"
+
+namespace gem5
+{
 
 struct PowerISAParams;
 class ThreadContext;
@@ -48,91 +53,53 @@ namespace PowerISA
 class ISA : public BaseISA
 {
   protected:
-    RegVal dummy;
-    RegVal miscRegs[NumMiscRegs];
+    RegVal miscRegs[NUM_MISCREGS];
 
   public:
-    typedef PowerISAParams Params;
-
-    void clear() {}
-
-  public:
-    RegVal
-    readMiscRegNoEffect(int misc_reg) const
+    PCStateBase *
+    newPCState(Addr new_inst_addr=0) const override
     {
-        fatal("Power does not currently have any misc regs defined\n");
-        return dummy;
+        return new PCState(new_inst_addr);
     }
 
     RegVal
-    readMiscReg(int misc_reg)
+    readMiscRegNoEffect(RegIndex idx) const override
     {
         fatal("Power does not currently have any misc regs defined\n");
-        return dummy;
     }
 
-    void
-    setMiscRegNoEffect(int misc_reg, RegVal val)
+    RegVal
+    readMiscReg(RegIndex idx) override
     {
         fatal("Power does not currently have any misc regs defined\n");
     }
 
     void
-    setMiscReg(int misc_reg, RegVal val)
+    setMiscRegNoEffect(RegIndex idx, RegVal val) override
     {
         fatal("Power does not currently have any misc regs defined\n");
     }
 
-    RegId flattenRegId(const RegId& regId) const { return regId; }
-
-    int
-    flattenIntIndex(int reg) const
+    void
+    setMiscReg(RegIndex idx, RegVal val) override
     {
-        return reg;
+        fatal("Power does not currently have any misc regs defined\n");
     }
 
-    int
-    flattenFloatIndex(int reg) const
+    bool
+    inUserMode() const override
     {
-        return reg;
+        return false;
     }
 
-    int
-    flattenVecIndex(int reg) const
-    {
-        return reg;
-    }
+    void copyRegsFrom(ThreadContext *src) override;
 
-    int
-    flattenVecElemIndex(int reg) const
-    {
-        return reg;
-    }
+    using Params = PowerISAParams;
 
-    int
-    flattenVecPredIndex(int reg) const
-    {
-        return reg;
-    }
-
-    // dummy
-    int
-    flattenCCIndex(int reg) const
-    {
-        return reg;
-    }
-
-    int
-    flattenMiscIndex(int reg) const
-    {
-        return reg;
-    }
-
-    const Params *params() const;
-
-    ISA(Params *p);
+    ISA(const Params &p);
 };
 
 } // namespace PowerISA
+} // namespace gem5
 
 #endif // __ARCH_POWER_ISA_HH__

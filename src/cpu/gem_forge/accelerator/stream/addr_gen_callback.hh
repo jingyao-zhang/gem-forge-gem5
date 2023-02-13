@@ -8,6 +8,8 @@
 #include <memory>
 #include <vector>
 
+namespace gem5 {
+
 using StreamValue = TheISA::ExecFunc::RegisterValue;
 using DynStreamParamV = std::vector<StreamValue>;
 using GetStreamValueFunc = std::function<StreamValue(uint64_t)>;
@@ -112,5 +114,7 @@ private:
 std::ostream &operator<<(std::ostream &os, const DynStreamFormalParamV &params);
 std::string to_string(const DynStreamFormalParamV &params);
 std::string printAffinePatternParams(const DynStreamFormalParamV &params);
+
+} // namespace gem5
 
 #endif

@@ -7,6 +7,8 @@
 #define DEBUG_TYPE StreamBase
 #include "stream_log.hh"
 
+namespace gem5 {
+
 bool StreamLQCallback::getAddrSize(Addr &addr, uint32_t &size) const {
   assert(this->FIFOIdx == this->element->FIFOIdx &&
          "Element already released.");
@@ -185,4 +187,5 @@ void StreamSQDeprecatedCallback::writebacked() {
   assert(status == LLVMTraceCPU::InstStatus::COMMITTING &&
          "Writebacked instructions should be committing.");
   cpu->updateInflyInstStatus(storeInstId, LLVMTraceCPU::InstStatus::COMMITTED);
-}
+}} // namespace gem5
+

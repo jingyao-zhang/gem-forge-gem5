@@ -5,6 +5,8 @@
 
 #include <vector>
 
+namespace gem5 {
+
 /**
  * This is a simple helper structure that represents a range of elements
  * from [lhsElementIdx, rhsElementIdx].
@@ -64,5 +66,7 @@ struct DynStreamAddressRange {
 };
 
 std::ostream &operator<<(std::ostream &os, const DynStreamAddressRange &range);
+
+} // namespace gem5
 
 #endif

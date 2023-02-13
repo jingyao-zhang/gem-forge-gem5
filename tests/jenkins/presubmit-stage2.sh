@@ -37,6 +37,10 @@
 
 set -e
 
+# Run pre-commit style checks
+PRE_COMMIT_HOME=/tmp/pre-commit-cache pre-commit run \
+               --from-ref HEAD~ --to-ref HEAD
+
 # Use ccache with the default directory for caching
 #XXX Not available in docker image.
 #export PATH="/usr/lib/ccache:$PATH"
@@ -46,4 +50,5 @@ set -e
 # Look for tests in the gem5 subdirectory
 # Once complete, run the Google Tests
 cd tests
-./main.py run -j4 -t4 gem5 && scons -C .. build/NULL/unittests.opt
+./main.py run -j4 -t4 gem5 -vv && scons -C .. --no-compress-debug \
+    --ignore-style build/ARM/unittests.opt

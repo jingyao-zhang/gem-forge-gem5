@@ -1,7 +1,7 @@
 #include "o3_cpu_delegator.hh"
 
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
-#include "cpu/o3/impl.hh"
 #include "debug/O3CPUDelegator.hh"
 #include "debug/O3CPUDelegatorDump.hh"
 #include "debug/StreamAlias.hh"
@@ -11,15 +11,17 @@
 #define INST_PANIC(inst, format, args...)                                      \
   panic("[%s]: " format, *(inst), ##args)
 
-template <class CPUImpl> class DefaultO3CPUDelegator<CPUImpl>::Impl {
-public:
-  using GFLoadReq = typename DefaultO3CPUDelegator<CPUImpl>::GFLoadReq;
+namespace gem5 {
 
-  Impl(O3CPU *_cpu, DefaultO3CPUDelegator *_cpuDelegator)
+class O3CPUDelegator::Impl {
+public:
+  using GFLoadReq = O3CPUDelegator::GFLoadReq;
+
+  Impl(O3CPU *_cpu, O3CPUDelegator *_cpuDelegator)
       : cpu(_cpu), cpuDelegator(_cpuDelegator) {}
 
   O3CPU *cpu;
-  DefaultO3CPUDelegator<CPUImpl> *cpuDelegator;
+  O3CPUDelegator *cpuDelegator;
 
   // Cache of the traceExtraFolder.
   std::string traceExtraFolder;
@@ -155,14 +157,14 @@ public:
  * O3CPUDelegator.
  *********************************************************************/
 
-template <class CPUImpl>
-DefaultO3CPUDelegator<CPUImpl>::DefaultO3CPUDelegator(O3CPU *_cpu)
-    : GemForgeCPUDelegator(CPUTypeE::O3, _cpu), pimpl(new Impl(_cpu, this)) {}
+O3CPUDelegator::O3CPUDelegator(O3CPU *_cpu)
+    : GemForgeCPUDelegator(CPUTypeE::O3, _cpu), pimpl(new Impl(_cpu, this)) {
+  this->regStats();
+}
 
-template <class CPUImpl>
-DefaultO3CPUDelegator<CPUImpl>::~DefaultO3CPUDelegator() = default;
+O3CPUDelegator::~O3CPUDelegator() = default;
 
-template <class CPUImpl> void DefaultO3CPUDelegator<CPUImpl>::regStats() {
+void O3CPUDelegator::regStats() {
 #define scalar(stat, describe)                                                 \
   this->stat.name(pimpl->cpu->name() + ("." #stat))                            \
       .desc(describe)                                                          \
@@ -183,8 +185,7 @@ template <class CPUImpl> void DefaultO3CPUDelegator<CPUImpl>::regStats() {
 /*********************************************************************
  * Interface to GemForge.
  *********************************************************************/
-template <class CPUImpl>
-const std::string &DefaultO3CPUDelegator<CPUImpl>::getTraceExtraFolder() const {
+const std::string &O3CPUDelegator::getTraceExtraFolder() const {
   // Always assume that the binary is in the TraceExtraFolder.
   if (pimpl->traceExtraFolder.empty()) {
     auto process = pimpl->getProcess();
@@ -200,9 +201,7 @@ const std::string &DefaultO3CPUDelegator<CPUImpl>::getTraceExtraFolder() const {
   return pimpl->traceExtraFolder;
 }
 
-template <class CPUImpl>
-bool DefaultO3CPUDelegator<CPUImpl>::translateVAddrOracle(Addr vaddr,
-                                                          Addr &paddr) {
+bool O3CPUDelegator::translateVAddrOracle(Addr vaddr, Addr &paddr) {
   auto process = pimpl->getProcess();
   auto pTable = process->pTable;
   if (!pTable->translate(vaddr, paddr)) {
@@ -218,8 +217,7 @@ bool DefaultO3CPUDelegator<CPUImpl>::translateVAddrOracle(Addr vaddr,
   return true;
 }
 
-template <class CPUImpl>
-void DefaultO3CPUDelegator<CPUImpl>::sendRequest(PacketPtr pkt) {
+void O3CPUDelegator::sendRequest(PacketPtr pkt) {
   auto lineBytes = this->cacheLineSize();
   if ((pkt->getAddr() % lineBytes) + pkt->getSize() > lineBytes) {
     panic("Multi-line packet paddr %#x size %d.", pkt->getAddr(),
@@ -229,8 +227,7 @@ void DefaultO3CPUDelegator<CPUImpl>::sendRequest(PacketPtr pkt) {
   assert(lsq.getDataPortPtr()->sendTimingReqVirtual(pkt, false /* isCore */));
 }
 
-template <class CPUImpl>
-bool DefaultO3CPUDelegator<CPUImpl>::canDispatch(DynInstPtr &dynInstPtr) {
+bool O3CPUDelegator::canDispatch(DynInstPtr &dynInstPtr) {
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
   auto ret = isaHandler->canDispatch(dynInfo);
   if (!ret) {
@@ -239,8 +236,7 @@ bool DefaultO3CPUDelegator<CPUImpl>::canDispatch(DynInstPtr &dynInstPtr) {
   return ret;
 }
 
-template <class CPUImpl>
-void DefaultO3CPUDelegator<CPUImpl>::dispatch(DynInstPtr &dynInstPtr) {
+void O3CPUDelegator::dispatch(DynInstPtr &dynInstPtr) {
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
   INST_DPRINTF(dynInstPtr, "Dispatch.\n");
   GemForgeLSQCallbackList extraLSQCallbacks;
@@ -260,8 +256,7 @@ void DefaultO3CPUDelegator<CPUImpl>::dispatch(DynInstPtr &dynInstPtr) {
   }
 }
 
-template <class CPUImpl>
-bool DefaultO3CPUDelegator<CPUImpl>::canExecute(DynInstPtr &dynInstPtr) {
+bool O3CPUDelegator::canExecute(DynInstPtr &dynInstPtr) {
   /**
    * Special case for GemForgeLoad/Atomic (inPreLSQ):
    * Can execute when addr/size is ready. Their GemForgeExecute hook is actually
@@ -283,8 +278,7 @@ bool DefaultO3CPUDelegator<CPUImpl>::canExecute(DynInstPtr &dynInstPtr) {
   return ret;
 }
 
-template <class CPUImpl>
-void DefaultO3CPUDelegator<CPUImpl>::execute(DynInstPtr &dynInstPtr) {
+void O3CPUDelegator::execute(DynInstPtr &dynInstPtr) {
   if (pimpl->isSquashedInGemForge(dynInstPtr)) {
     // Already squashed, not exposed to GemForge.
     return;
@@ -299,9 +293,7 @@ void DefaultO3CPUDelegator<CPUImpl>::execute(DynInstPtr &dynInstPtr) {
   isaHandler->execute(dynInfo, *dynInstPtr);
 }
 
-template <class CPUImpl>
-bool DefaultO3CPUDelegator<CPUImpl>::canWriteback(
-    const DynInstPtr &dynInstPtr) {
+bool O3CPUDelegator::canWriteback(const DynInstPtr &dynInstPtr) {
   if (pimpl->isSquashedInGemForge(dynInstPtr)) {
     // Already squashed, not exposed to GemForge.
     return true;
@@ -317,8 +309,7 @@ bool DefaultO3CPUDelegator<CPUImpl>::canWriteback(
   return true;
 }
 
-template <class CPUImpl>
-void DefaultO3CPUDelegator<CPUImpl>::writeback(const DynInstPtr &dynInstPtr) {
+void O3CPUDelegator::writeback(const DynInstPtr &dynInstPtr) {
   if (pimpl->isSquashedInGemForge(dynInstPtr)) {
     // Already squashed, not exposed to GemForge.
     return;
@@ -330,8 +321,7 @@ void DefaultO3CPUDelegator<CPUImpl>::writeback(const DynInstPtr &dynInstPtr) {
   }
 }
 
-template <class CPUImpl>
-bool DefaultO3CPUDelegator<CPUImpl>::canCommit(const DynInstPtr &dynInstPtr) {
+bool O3CPUDelegator::canCommit(const DynInstPtr &dynInstPtr) {
   if (pimpl->isSquashedInGemForge(dynInstPtr)) {
     // Already squashed, not exposed to GemForge.
     return true;
@@ -344,8 +334,7 @@ bool DefaultO3CPUDelegator<CPUImpl>::canCommit(const DynInstPtr &dynInstPtr) {
   return ret;
 }
 
-template <class CPUImpl>
-void DefaultO3CPUDelegator<CPUImpl>::commit(const DynInstPtr &dynInstPtr) {
+void O3CPUDelegator::commit(const DynInstPtr &dynInstPtr) {
   INST_DPRINTF(dynInstPtr, "Commit.\n");
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
   assert(!pimpl->inflyInstQueue.empty() &&
@@ -374,7 +363,8 @@ void DefaultO3CPUDelegator<CPUImpl>::commit(const DynInstPtr &dynInstPtr) {
 
   // Record committed stats.
   this->statCoreCommitMicroOps++;
-  if (this->dataTrafficAcc.shouldIgnoreTraffic(dynInstPtr->pcState().pc())) {
+  if (this->dataTrafficAcc.shouldIgnoreTraffic(
+          dynInstPtr->pcState().instAddr())) {
     this->statCoreCommitMicroOpsIgnored++;
   }
   if (dynInstPtr->staticInst->isGemForge()) {
@@ -389,9 +379,7 @@ void DefaultO3CPUDelegator<CPUImpl>::commit(const DynInstPtr &dynInstPtr) {
   isaHandler->commit(dynInfo);
 }
 
-template <class CPUImpl>
-bool DefaultO3CPUDelegator<CPUImpl>::shouldCountInPipeline(
-    const DynInstPtr &dynInstPtr) {
+bool O3CPUDelegator::shouldCountInPipeline(const DynInstPtr &dynInstPtr) {
   if (dynInstPtr->isSquashed()) {
     return true;
   }
@@ -399,8 +387,7 @@ bool DefaultO3CPUDelegator<CPUImpl>::shouldCountInPipeline(
   return isaHandler->shouldCountInPipeline(dynInfo);
 }
 
-template <class CPUImpl>
-void DefaultO3CPUDelegator<CPUImpl>::squash(InstSeqNum squashSeqNum) {
+void O3CPUDelegator::squash(InstSeqNum squashSeqNum) {
   auto &inflyInstQueue = pimpl->inflyInstQueue;
   auto &preLSQ = pimpl->preLSQ;
   auto &inLSQ = pimpl->inLSQ;
@@ -438,9 +425,7 @@ void DefaultO3CPUDelegator<CPUImpl>::squash(InstSeqNum squashSeqNum) {
   }
 }
 
-template <class CPUImpl>
-void DefaultO3CPUDelegator<CPUImpl>::storeTo(InstSeqNum seqNum, Addr vaddr,
-                                             int size) {
+void O3CPUDelegator::storeTo(InstSeqNum seqNum, Addr vaddr, int size) {
   // 1. Notify GemForge.
   isaHandler->storeTo(seqNum, vaddr, size);
 
@@ -533,9 +518,8 @@ void DefaultO3CPUDelegator<CPUImpl>::storeTo(InstSeqNum seqNum, Addr vaddr,
   }
 }
 
-template <class CPUImpl>
-void DefaultO3CPUDelegator<CPUImpl>::foundRAWMisspeculationInLSQ(
-    InstSeqNum checkSeqNum, Addr vaddr, int size) {
+void O3CPUDelegator::foundRAWMisspeculationInLSQ(InstSeqNum checkSeqNum,
+                                                 Addr vaddr, int size) {
   // Check for all callbacks in LSQ that is >= aliasSeqNum.
   if (pimpl->inflyInstQueue.empty()) {
     return;
@@ -588,8 +572,7 @@ void DefaultO3CPUDelegator<CPUImpl>::foundRAWMisspeculationInLSQ(
   }
 }
 
-template <class CPUImpl>
-Fault DefaultO3CPUDelegator<CPUImpl>::initiateGemForgeLoadOrAtomic(
+Fault O3CPUDelegator::initiateGemForgeLoadOrAtomic(
     const DynInstPtr &dynInstPtr) {
   assert(pimpl->isGemForgeLoadOrAtomic(dynInstPtr) &&
          "Should be a GemForgeLoad/Atomic.");
@@ -617,9 +600,7 @@ Fault DefaultO3CPUDelegator<CPUImpl>::initiateGemForgeLoadOrAtomic(
                                  nullptr, nullptr, byteEnable);
 }
 
-template <class CPUImpl>
-Fault DefaultO3CPUDelegator<CPUImpl>::initiateGemForgeStore(
-    const DynInstPtr &dynInstPtr) {
+Fault O3CPUDelegator::initiateGemForgeStore(const DynInstPtr &dynInstPtr) {
   assert(dynInstPtr->isGemForge() && dynInstPtr->isStore() &&
          "Should be a GemForgeStore.");
   auto &preLSQ = pimpl->preLSQ;
@@ -655,10 +636,9 @@ Fault DefaultO3CPUDelegator<CPUImpl>::initiateGemForgeStore(
                                  0 /* flags */, nullptr, nullptr, byteEnable);
 }
 
-template <class CPUImpl>
-typename DefaultO3CPUDelegator<CPUImpl>::GFLoadReq *
-DefaultO3CPUDelegator<CPUImpl>::allocateGemForgeLoadRequest(
-    LSQUnit *lsq, const DynInstPtr &dynInstPtr) {
+O3CPUDelegator::GFLoadReq *
+O3CPUDelegator::allocateGemForgeLoadRequest(LSQUnit *lsq,
+                                            const DynInstPtr &dynInstPtr) {
   auto &preLSQ = pimpl->preLSQ;
   auto &inLSQ = pimpl->inLSQ;
   auto seqNum = pimpl->getInstSeqNum(dynInstPtr);
@@ -695,9 +675,8 @@ DefaultO3CPUDelegator<CPUImpl>::allocateGemForgeLoadRequest(
   }
 }
 
-template <class CPUImpl>
-void DefaultO3CPUDelegator<CPUImpl>::discardGemForgeLoad(
-    const DynInstPtr &dynInstPtr, GemForgeLSQCallbackPtr callback) {
+void O3CPUDelegator::discardGemForgeLoad(const DynInstPtr &dynInstPtr,
+                                         GemForgeLSQCallbackPtr callback) {
   assert(!dynInstPtr->isSquashed());
   INST_DPRINTF(dynInstPtr, "GFReq %s Back to PreLSQ.\n", *callback);
   auto &preLSQ = pimpl->preLSQ;
@@ -716,19 +695,16 @@ void DefaultO3CPUDelegator<CPUImpl>::discardGemForgeLoad(
   inLSQ.erase(inLSQIter);
 }
 
-template <class CPUImpl>
-InstSeqNum DefaultO3CPUDelegator<CPUImpl>::getInstSeqNum() const {
+InstSeqNum O3CPUDelegator::getInstSeqNum() const {
   return pimpl->cpu->getGlobalInstSeq();
 }
 
-template <class CPUImpl>
-void DefaultO3CPUDelegator<CPUImpl>::setInstSeqNum(InstSeqNum seqNum) {
+void O3CPUDelegator::setInstSeqNum(InstSeqNum seqNum) {
   pimpl->cpu->setGlobalInstSeq(seqNum);
 }
 
-template <class CPUImpl>
-void DefaultO3CPUDelegator<CPUImpl>::recordCoreDataTraffic(
-    const DynInstPtr &dynInstPtr, Addr vaddr, int size) {
+void O3CPUDelegator::recordCoreDataTraffic(const DynInstPtr &dynInstPtr,
+                                           Addr vaddr, int size) {
   if (dynInstPtr->staticInst->isGemForge()) {
     // Ignore GemForgeLoad/Store.
     return;
@@ -753,15 +729,15 @@ void DefaultO3CPUDelegator<CPUImpl>::recordCoreDataTraffic(
   int missFlits = CoreDataTrafficAccumulator::getNumFlits(missSize);
   this->statCoreDataHops += distance * flits;
   this->statCoreCachedDataHops += distance * missFlits;
-  if (this->dataTrafficAcc.shouldIgnoreTraffic(dynInstPtr->pcState().pc())) {
+  if (this->dataTrafficAcc.shouldIgnoreTraffic(
+          dynInstPtr->pcState().instAddr())) {
     this->statCoreDataHopsIgnored += distance * flits;
     this->statCoreCachedDataHopsIgnored += distance * missFlits;
   }
 }
 
-template <class CPUImpl>
 std::vector<std::string>
-    DefaultO3CPUDelegator<CPUImpl>::CoreDataTrafficAccumulator::ignoredFuncs{
+    O3CPUDelegator::CoreDataTrafficAccumulator::ignoredFuncs{
         // "__kmp_hyper_barrier_release",
         // "__kmp_hardware_timestamp",
         // "__kmp_join_barrier",
@@ -771,17 +747,15 @@ std::vector<std::string>
         "__kmpc_",
     };
 
-template <class CPUImpl>
-bool DefaultO3CPUDelegator<
-    CPUImpl>::CoreDataTrafficAccumulator::shouldIgnoreTraffic(Addr pc) {
+bool O3CPUDelegator ::CoreDataTrafficAccumulator::shouldIgnoreTraffic(Addr pc) {
   auto iter = this->pcIgnoredMap.find(pc);
   if (iter == this->pcIgnoredMap.end()) {
     bool ignore = false;
     Addr funcStart = 0;
     Addr funcEnd = 0;
     std::string symbol;
-    bool found = Loader::debugSymbolTable.findNearestSymbol(
-        pc, symbol, funcStart, funcEnd);
+    bool found = Loader::debugSymbolTable.findNearestSymbol(pc, symbol,
+                                                            funcStart, funcEnd);
     if (!found) {
       symbol = csprintf("0x%x", pc);
     }
@@ -797,9 +771,7 @@ bool DefaultO3CPUDelegator<
   return iter->second;
 }
 
-template <class CPUImpl>
-void DefaultO3CPUDelegator<CPUImpl>::recordStatsForFakeExecutedInst(
-    const StaticInstPtr &inst) {
+void O3CPUDelegator::recordStatsForFakeExecutedInst(const StaticInstPtr &inst) {
   pimpl->cpu->decode.stats.decodedInsts++;
   pimpl->cpu->rename.stats.renamedOperands += inst->numDestRegs();
   pimpl->cpu->rename.stats.lookups += inst->numSrcRegs();
@@ -808,25 +780,25 @@ void DefaultO3CPUDelegator<CPUImpl>::recordStatsForFakeExecutedInst(
   pimpl->cpu->commit.stats.opsCommitted[0]++;
   if (inst->isInteger()) {
     pimpl->cpu->commit.stats.integer[0]++;
-    pimpl->cpu->iew.instQueue.intAluAccesses++;
-    pimpl->cpu->intRegfileReads += inst->numSrcRegs();
-    pimpl->cpu->intRegfileWrites += inst->numDestRegs();
+    pimpl->cpu->iew.instQueue.iqIOStats.intAluAccesses++;
+    pimpl->cpu->cpuStats.intRegfileReads += inst->numSrcRegs();
+    pimpl->cpu->cpuStats.intRegfileWrites += inst->numDestRegs();
   }
   if (inst->isFloating()) {
     pimpl->cpu->commit.stats.floating[0]++;
-    pimpl->cpu->iew.instQueue.fpAluAccesses++;
-    pimpl->cpu->fpRegfileReads += inst->numSrcRegs();
-    pimpl->cpu->fpRegfileWrites += inst->numDestRegs();
+    pimpl->cpu->iew.instQueue.iqIOStats.fpAluAccesses++;
+    pimpl->cpu->cpuStats.fpRegfileReads += inst->numSrcRegs();
+    pimpl->cpu->cpuStats.fpRegfileWrites += inst->numDestRegs();
   }
   if (inst->isVector()) {
     pimpl->cpu->commit.stats.vector[0]++;
-    pimpl->cpu->iew.instQueue.vecAluAccesses++;
-    pimpl->cpu->vecRegfileReads += inst->numSrcRegs();
-    pimpl->cpu->vecRegfileWrites += inst->numDestRegs();
+    pimpl->cpu->iew.instQueue.iqIOStats.vecAluAccesses++;
+    pimpl->cpu->cpuStats.vecRegfileReads += inst->numSrcRegs();
+    pimpl->cpu->cpuStats.vecRegfileWrites += inst->numDestRegs();
   }
 }
 
 #undef INST_PANIC
 #undef INST_DPRINTF
 
-template class DefaultO3CPUDelegator<O3CPUImpl>;
+} // namespace gem5

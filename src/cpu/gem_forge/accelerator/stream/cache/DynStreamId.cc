@@ -2,6 +2,8 @@
 
 #include <sstream>
 
+namespace gem5 {
+
 std::ostream &operator<<(std::ostream &os, const DynStreamId &streamId) {
   os << streamId.streamName << " -" << streamId.coreId << '-'
      << streamId.staticId << '-' << streamId.streamInstance << "-";
@@ -13,3 +15,5 @@ std::string to_string(const DynStreamId &streamId) {
   ss << streamId;
   return ss.str();
 }
+} // namespace gem5
+

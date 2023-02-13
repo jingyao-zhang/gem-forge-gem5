@@ -3,6 +3,8 @@
 
 #include "stream_engine.hh"
 
+namespace gem5 {
+
 class StreamRangeSyncController {
 public:
   StreamRangeSyncController(StreamEngine *_se);
@@ -29,5 +31,7 @@ private:
   void checkAliasBetweenRanges(DynStreamVec &dynStreams,
                                const DynStreamAddressRangePtr &newRange);
 };
+
+} // namespace gem5
 
 #endif

@@ -2,8 +2,6 @@
  * Copyright (c) 2011-2015,2018 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -48,9 +46,13 @@
 #include <vector>
 
 #include "base/statistics.hh"
+#include "base/stats/group.hh"
 #include "dev/hsa/hsa_packet.hh"
 #include "params/GPUDispatcher.hh"
 #include "sim/sim_object.hh"
+
+namespace gem5
+{
 
 class GPUCommandProcessor;
 class HSAQueueEntry;
@@ -62,12 +64,11 @@ class GPUDispatcher : public SimObject
   public:
     typedef GPUDispatcherParams Params;
 
-    GPUDispatcher(const Params *p);
+    GPUDispatcher(const Params &p);
     ~GPUDispatcher();
 
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
-    void regStats() override;
     void setCommandProcessor(GPUCommandProcessor *gpu_cmd_proc);
     void setShader(Shader *new_shader);
     void exec();
@@ -91,9 +92,17 @@ class GPUDispatcher : public SimObject
     std::queue<int> doneIds;
     // is there a kernel in execution?
     bool dispatchActive;
-    /*statistics*/
-    Stats::Scalar numKernelLaunched;
-    Stats::Scalar cyclesWaitingForDispatch;
+
+  protected:
+    struct GPUDispatcherStats : public statistics::Group
+    {
+        GPUDispatcherStats(statistics::Group *parent);
+
+        statistics::Scalar numKernelLaunched;
+        statistics::Scalar cyclesWaitingForDispatch;
+    } stats;
 };
+
+} // namespace gem5
 
 #endif // __GPU_COMPUTE_DISPATCHER_HH__

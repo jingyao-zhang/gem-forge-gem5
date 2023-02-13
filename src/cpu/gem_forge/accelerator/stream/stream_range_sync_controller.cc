@@ -4,6 +4,8 @@
 #define DEBUG_TYPE StreamRangeSync
 #include "stream_log.hh"
 
+namespace gem5 {
+
 StreamRangeSyncController::StreamRangeSyncController(StreamEngine *_se)
     : se(_se) {}
 
@@ -156,4 +158,5 @@ uint64_t StreamRangeSyncController::getCheckElemIdx(DynStream *dynS) {
 
   // There is no element allocated. Simply return the next one.
   return dynS->FIFOIdx.entryIdx;
-}
+}} // namespace gem5
+

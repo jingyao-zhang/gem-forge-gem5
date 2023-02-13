@@ -49,11 +49,16 @@
 #include <sstream>
 #include <string>
 
-#include "arch/riscv/registers.hh"
+#include "arch/riscv/regs/float.hh"
+#include "arch/riscv/regs/int.hh"
 #include "base/types.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
+#include "rvk.hh"
+
+namespace gem5
+{
 
 namespace RiscvISA
 {
@@ -98,48 +103,11 @@ issignalingnan<double>(double val)
         && (reinterpret_cast<uint64_t&>(val)&0x0004000000000000ULL);
 }
 
-inline PCState
-buildRetPC(const PCState &curPC, const PCState &callPC)
-{
-    PCState retPC = callPC;
-    retPC.advance();
-    retPC.pc(curPC.npc());
-    return retPC;
-}
-
-inline uint64_t
-getArgument(ThreadContext *tc, int &number, uint16_t size, bool fp)
-{
-    panic_if(fp, "getArgument(): Floating point arguments not implemented");
-    panic_if(size != 8, "getArgument(): Can only handle 64-bit arguments.");
-    panic_if(number >= ArgumentRegs.size(),
-             "getArgument(): Don't know how to handle stack arguments");
-
-    // The first 8 integer arguments are passed in registers, the rest
-    // are passed on the stack.
-    return tc->readIntReg(ArgumentRegs[number]);
-}
-
-inline void
-copyRegs(ThreadContext *src, ThreadContext *dest)
-{
-    // First loop through the integer registers.
-    for (int i = 0; i < NumIntRegs; ++i)
-        dest->setIntReg(i, src->readIntReg(i));
-
-    // Second loop through the float registers.
-    for (int i = 0; i < NumFloatRegs; ++i)
-        dest->setFloatReg(i, src->readFloatReg(i));
-
-    // Lastly copy PC/NPC
-    dest->pcState(src->pcState());
-}
-
 inline std::string
 registerName(RegId reg)
 {
-    if (reg.isIntReg()) {
-        if (reg.index() >= NumIntArchRegs) {
+    if (reg.is(IntRegClass)) {
+        if (reg.index() >= int_reg::NumArchRegs) {
             /*
              * This should only happen if a instruction is being speculatively
              * executed along a not-taken branch, and if that instruction's
@@ -153,35 +121,23 @@ registerName(RegId reg)
             str << "?? (x" << reg.index() << ')';
             return str.str();
         }
-        return IntRegNames[reg.index()];
-    } else {
-        if (reg.index() >= NumFloatRegs) {
+        return int_reg::RegNames[reg.index()];
+    } else if (reg.is(FloatRegClass)) {
+        if (reg.index() >= float_reg::NumRegs) {
             std::stringstream str;
             str << "?? (f" << reg.index() << ')';
             return str.str();
         }
-        return FloatRegNames[reg.index()];
+        return float_reg::RegNames[reg.index()];
+    } else {
+        /* It must be an InvalidRegClass, in RISC-V we should treat it as a
+         * zero register for the disassembler to work correctly.
+         */
+        return int_reg::RegNames[reg.index()];
     }
 }
 
-inline void
-advancePC(PCState &pc, const StaticInstPtr &inst)
-{
-    inst->advancePC(pc);
-}
-
-static inline bool
-inUserMode(ThreadContext *tc)
-{
-    return true;
-}
-
-inline uint64_t
-getExecutingAsid(ThreadContext *tc)
-{
-    return 0;
-}
-
 } // namespace RiscvISA
+} // namespace gem5
 
 #endif // __ARCH_RISCV_UTILITY_HH__

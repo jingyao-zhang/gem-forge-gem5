@@ -3,6 +3,7 @@
 
 #include "debug/TLB.hh"
 
+namespace gem5 {
 namespace X86ISA {
 
 SEPageWalker::SEPageWalker(const std::string &_name, Cycles _latency,
@@ -78,3 +79,4 @@ Cycles SEPageWalker::walk(Addr pageVAddr, Cycles curCycle) {
 }
 
 } // namespace X86ISA
+} // namespace gem5

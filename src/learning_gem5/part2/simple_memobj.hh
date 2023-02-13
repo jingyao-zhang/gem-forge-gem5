@@ -33,6 +33,9 @@
 #include "params/SimpleMemobj.hh"
 #include "sim/sim_object.hh"
 
+namespace gem5
+{
+
 /**
  * A very simple memory object. Current implementation doesn't even cache
  * anything it just forwards requests and responses.
@@ -231,7 +234,7 @@ class SimpleMemobj : public SimObject
 
     /** constructor
      */
-    SimpleMemobj(SimpleMemobjParams *params);
+    SimpleMemobj(const SimpleMemobjParams &params);
 
     /**
      * Get a port with a given name and index. This is used at
@@ -247,5 +250,6 @@ class SimpleMemobj : public SimObject
                   PortID idx=InvalidPortID) override;
 };
 
+} // namespace gem5
 
 #endif // __LEARNING_GEM5_PART2_SIMPLE_MEMOBJ_HH__

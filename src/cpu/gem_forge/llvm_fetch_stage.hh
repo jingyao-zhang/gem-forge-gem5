@@ -11,6 +11,8 @@
 #include "cpu/timebuf.hh"
 #include "params/LLVMTraceCPU.hh"
 
+namespace gem5 {
+
 class LLVMTraceCPU;
 class LLVMTraceThreadContext;
 
@@ -18,7 +20,7 @@ class LLVMFetchStage {
 public:
   using FetchStruct = std::vector<LLVMDynamicInstId>;
 
-  LLVMFetchStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
+  LLVMFetchStage(const LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
   LLVMFetchStage(const LLVMFetchStage &fs) = delete;
   LLVMFetchStage(LLVMFetchStage &&fs) = delete;
 
@@ -32,19 +34,19 @@ public:
 
   std::string name();
 
-  Stats::Scalar blockedCycles;
-  Stats::Scalar branchInsts;
-  Stats::Scalar branchPredMisses;
+  statistics::Scalar blockedCycles;
+  statistics::Scalar branchInsts;
+  statistics::Scalar branchPredMisses;
   /** Stat for total number of fetched instructions. */
-  Stats::Scalar fetchedInsts;
+  statistics::Scalar fetchedInsts;
   /** Total number of fetched branches. */
-  Stats::Scalar fetchedBranches;
+  statistics::Scalar fetchedBranches;
   /** Stat for total number of predicted branches. */
-  Stats::Scalar predictedBranches;
+  statistics::Scalar predictedBranches;
   /** Total number of our original 2-bit prediction miss. */
-  Stats::Scalar branchPredMissesLLVM;
+  statistics::Scalar branchPredMissesLLVM;
   /** Total number of gem5 prediction miss. */
-  Stats::Scalar branchPredMissesGem5;
+  statistics::Scalar branchPredMissesGem5;
 
 private:
   LLVMTraceCPU *cpu;
@@ -82,9 +84,11 @@ private:
 
   LLVMBranchPredictor *predictor;
 
-  BPredUnit *branchPredictor;
+  branch_prediction::BPredUnit *branchPredictor;
 
   int lastFetchedThreadId;
 };
+
+} // namespace gem5
 
 #endif

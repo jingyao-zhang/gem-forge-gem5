@@ -58,6 +58,10 @@
 #ifndef __SYSTEMC_TLM_BRIDGE_TLM_TO_GEM5_HH__
 #define __SYSTEMC_TLM_BRIDGE_TLM_TO_GEM5_HH__
 
+#include <functional>
+#include <unordered_set>
+#include <utility>
+
 #include "mem/port.hh"
 #include "params/TlmToGem5BridgeBase.hh"
 #include "systemc/ext/core/sc_module.hh"
@@ -71,31 +75,31 @@
 namespace sc_gem5
 {
 
+using PayloadToPacketConversionStep =
+    std::function<void(gem5::PacketPtr pkt, tlm::tlm_generic_payload &trans)>;
+
+void addPayloadToPacketConversionStep(PayloadToPacketConversionStep step);
+
+std::pair<gem5::PacketPtr, bool> payload2packet(gem5::RequestorID _id,
+    tlm::tlm_generic_payload &trans);
+
 class TlmToGem5BridgeBase : public sc_core::sc_module
 {
   protected:
     using sc_core::sc_module::sc_module;
 };
 
-PacketPtr payload2packet(tlm::tlm_generic_payload &trans);
-
 template <unsigned int BITWIDTH>
 class TlmToGem5Bridge : public TlmToGem5BridgeBase
 {
   private:
-    struct TlmSenderState : public Packet::SenderState
-    {
-        tlm::tlm_generic_payload &trans;
-        TlmSenderState(tlm::tlm_generic_payload &trans) : trans(trans) {}
-    };
-
-    class BridgeRequestPort : public RequestPort
+    class BridgeRequestPort : public gem5::RequestPort
     {
       protected:
         TlmToGem5Bridge<BITWIDTH> &bridge;
 
         bool
-        recvTimingResp(PacketPtr pkt) override
+        recvTimingResp(gem5::PacketPtr pkt) override
         {
             return bridge.recvTimingResp(pkt);
         }
@@ -113,18 +117,20 @@ class TlmToGem5Bridge : public TlmToGem5BridgeBase
 
     bool waitForRetry;
     tlm::tlm_generic_payload *pendingRequest;
-    PacketPtr pendingPacket;
+    gem5::PacketPtr pendingPacket;
 
     bool needToSendRetry;
 
     bool responseInProgress;
+
+    std::unordered_set<gem5::MemBackdoorPtr> requestedBackdoors;
 
     BridgeRequestPort bmp;
     tlm_utils::simple_target_socket<
         TlmToGem5Bridge<BITWIDTH>, BITWIDTH> socket;
     sc_gem5::TlmTargetWrapper<BITWIDTH> wrapper;
 
-    System *system;
+    gem5::System *system;
 
     void sendEndReq(tlm::tlm_generic_payload &trans);
     void sendBeginResp(tlm::tlm_generic_payload &trans,
@@ -133,11 +139,9 @@ class TlmToGem5Bridge : public TlmToGem5BridgeBase
     void handleBeginReq(tlm::tlm_generic_payload &trans);
     void handleEndResp(tlm::tlm_generic_payload &trans);
 
-    void destroyPacket(PacketPtr pkt);
+    void destroyPacket(gem5::PacketPtr pkt);
 
-    void checkTransaction(tlm::tlm_generic_payload &trans);
-
-    void invalidateDmi(const ::MemBackdoor &backdoor);
+    void invalidateDmi(const gem5::MemBackdoor &backdoor);
 
   protected:
     // payload event call back
@@ -153,15 +157,15 @@ class TlmToGem5Bridge : public TlmToGem5BridgeBase
                             tlm::tlm_dmi &dmi_data);
 
     // Gem5 port interface.
-    bool recvTimingResp(PacketPtr pkt);
+    bool recvTimingResp(gem5::PacketPtr pkt);
     void recvReqRetry();
     void recvRangeChange();
 
   public:
-    ::Port &gem5_getPort(const std::string &if_name, int idx=-1) override;
+    gem5::Port &gem5_getPort(const std::string &if_name, int idx=-1) override;
 
-    typedef TlmToGem5BridgeBaseParams Params;
-    TlmToGem5Bridge(Params *p, const sc_core::sc_module_name &mn);
+    typedef gem5::TlmToGem5BridgeBaseParams Params;
+    TlmToGem5Bridge(const Params &p, const sc_core::sc_module_name &mn);
 
     tlm_utils::simple_target_socket<TlmToGem5Bridge<BITWIDTH>, BITWIDTH> &
     getSocket()
@@ -171,7 +175,7 @@ class TlmToGem5Bridge : public TlmToGem5BridgeBase
 
     void before_end_of_elaboration() override;
 
-    const RequestorID _id;
+    const gem5::RequestorID _id;
 };
 
 } // namespace sc_gem5

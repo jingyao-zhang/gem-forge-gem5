@@ -48,20 +48,20 @@ output header {{
             }
 
             Fault
-            execute(ExecContext *xc, Trace::InstRecord *traceData) const
+            execute(ExecContext *xc, trace::InstRecord *traceData) const
             {
                 return NoFault;
             }
 
             std::string generateDisassembly(Addr pc,
-                    const Loader::SymbolTable *symtab) const override;
+                    const loader::SymbolTable *symtab) const override;
         };
 }};
 
 output decoder {{
         std::string
         Nop::generateDisassembly(
-                Addr pc, const Loader::SymbolTable *symtab) const
+                Addr pc, const loader::SymbolTable *symtab) const
         {
             std::stringstream response;
             printMnemonic(response, mnemonic);
@@ -71,7 +71,7 @@ output decoder {{
 
 def template NopExecute {{
         Fault %(class_name)s::execute(ExecContext *xc,
-                Trace::InstRecord *traceData) const
+                trace::InstRecord *traceData) const
         {
             // Nothing to see here, move along
             return NoFault;

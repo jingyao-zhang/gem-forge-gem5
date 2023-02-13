@@ -46,9 +46,14 @@
 #include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/queued.hh"
 
+namespace gem5
+{
+
 struct IndirectMemoryPrefetcherParams;
 
-namespace Prefetcher {
+GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
+namespace prefetch
+{
 
 class IndirectMemory : public Queued
 {
@@ -77,7 +82,7 @@ class IndirectMemory : public Queued
         /** Whether this address is in the secure region */
         bool secure;
         /** Confidence counter of the stream */
-        SatCounter streamCounter;
+        SatCounter32 streamCounter;
 
         /* Indirect table fields */
 
@@ -99,7 +104,7 @@ class IndirectMemory : public Queued
         /** Index width in bytes */
         unsigned int indexWidth;
         /** Confidence counter of the indirect fields */
-        SatCounter indirectCounter;
+        SatCounter8 indirectCounter;
         /**
          * This variable is set to indicate that there has been at least one
          * match with the current index value. This information is later used
@@ -108,7 +113,8 @@ class IndirectMemory : public Queued
          */
         bool increasedIndirectCounter;
 
-        PrefetchTableEntry(unsigned stream_counter_bits, unsigned indirect_counter_bits)
+        PrefetchTableEntry(
+            unsigned stream_counter_bits, unsigned indirect_counter_bits)
             : TaggedEntry(), address(0), stride(0), secure(false),
               streamCounter(stream_counter_bits),
               enabled(false), baseAddr(0), shift(0), indexWidth(0),
@@ -215,7 +221,7 @@ class IndirectMemory : public Queued
     void insertIndex(int64_t index, PrefetchTableEntry &entry);
 
   public:
-    IndirectMemory(const IndirectMemoryPrefetcherParams *p);
+    IndirectMemory(const IndirectMemoryPrefetcherParams &p);
     ~IndirectMemory() = default;
 
     void calculatePrefetch(const PrefetchInfo &pfi,
@@ -228,19 +234,20 @@ class IndirectMemory : public Queued
      */
     void notifyFill(const PacketPtr &pkt) override;
 
-    Stats::Scalar ptAllocations;
-    Stats::Scalar ptHits;
-    Stats::Scalar ptHitsWithCacheMiss;
-    Stats::Scalar streamPfPushed;
-    Stats::Scalar ipdAllocations;
-    Stats::Scalar ipdSecondAccess;
-    Stats::Scalar ipdThirdAccessNoPattern;
-    Stats::Scalar ipdTrackMiss1;
-    Stats::Scalar ipdTrackMiss2;
-    Stats::Scalar ipdFindPattern;
-    Stats::Scalar indirectPfPushed;
+    statistics::Scalar ptAllocations;
+    statistics::Scalar ptHits;
+    statistics::Scalar ptHitsWithCacheMiss;
+    statistics::Scalar streamPfPushed;
+    statistics::Scalar ipdAllocations;
+    statistics::Scalar ipdSecondAccess;
+    statistics::Scalar ipdThirdAccessNoPattern;
+    statistics::Scalar ipdTrackMiss1;
+    statistics::Scalar ipdTrackMiss2;
+    statistics::Scalar ipdFindPattern;
+    statistics::Scalar indirectPfPushed;
 };
 
-} // namespace Prefetcher
+} // namespace prefetch
+} // namespace gem5
 
 #endif//__MEM_CACHE_PREFETCH_INDIRECT_MEMORY_HH__

@@ -6,6 +6,8 @@
 #include "base/statistics.hh"
 #include "sim/core.hh"
 
+namespace gem5 {
+
 void FunctionTracer::enableFunctionTrace() {
   assert(!this->functionTracingEnabled);
   const std::string fname = csprintf("ftrace.%s", this->name);
@@ -22,9 +24,9 @@ void FunctionTracer::enableFunctionAccumulateTick() {
 
   // Register stats callback.
   Stats::registerResetCallback(
-    [this]() -> void { this->resetFuncAccumulateTick(); });
+      [this]() -> void { this->resetFuncAccumulateTick(); });
   Stats::registerDumpCallback(
-    [this]() -> void { this->dumpFuncAccumulateTick(); });
+      [this]() -> void { this->dumpFuncAccumulateTick(); });
 }
 
 void FunctionTracer::traceFunctions(Addr pc) {
@@ -151,3 +153,4 @@ void FunctionTracer::dumpFuncAccumulateTick() {
              percentage, tick / 500, microOps, symbol);
   }
 }
+} // namespace gem5

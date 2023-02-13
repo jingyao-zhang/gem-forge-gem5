@@ -1,4 +1,6 @@
 #include "tlb_cache.hh"
+
+namespace gem5 {
 namespace X86ISA {
 TLBCache::TLBCache(uint32_t _size, uint32_t _assoc)
     : size(_size), assoc(_assoc), numSet(_size / _assoc) {
@@ -49,3 +51,4 @@ void TLBCache::unserialize(CheckpointIn &cp) {
   }
 }
 } // namespace X86ISA
+}

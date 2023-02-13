@@ -33,7 +33,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-microcode = '''
+microcode = """
 def macroop JZ_I
 {
     # Make the defualt data size of jumps 64 bits in 64 bit mode
@@ -210,12 +210,14 @@ def macroop JNO_I
     wrip t1, t2, flags=(nCOF,)
 };
 
-def macroop JRCX_I
+def macroop JRCXZ_I
 {
+    # Make the default data size of jumps 64 bits in 64 bit mode
+    .adjust_env oszIn64Override
     .control_direct
 
     rdip t1
     add t0, t0, rcx, flags=(EZF,), dataSize=asz
     wripi t1, imm, flags=(CEZF,)
 };
-'''
+"""

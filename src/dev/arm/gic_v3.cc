@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020 ARM Limited
+ * Copyright (c) 2019-2022 Arm Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -40,7 +40,7 @@
 
 #include "dev/arm/gic_v3.hh"
 
-#include "cpu/intr_control.hh"
+#include "cpu/base.hh"
 #include "debug/GIC.hh"
 #include "debug/Interrupt.hh"
 #include "dev/arm/gic_v3_cpu_interface.hh"
@@ -51,7 +51,84 @@
 #include "mem/packet.hh"
 #include "mem/packet_access.hh"
 
-Gicv3::Gicv3(const Params * p)
+namespace gem5
+{
+
+void
+Gicv3Registers::copyDistRegister(Gicv3Registers* from,
+                                 Gicv3Registers* to,
+                                 Addr daddr)
+{
+    auto val = from->readDistributor(daddr);
+    DPRINTF(GIC, "copy dist 0x%x 0x%08x\n", daddr, val);
+    to->writeDistributor(daddr, val);
+}
+
+void
+Gicv3Registers::copyRedistRegister(Gicv3Registers* from,
+                                   Gicv3Registers* to,
+                                   const ArmISA::Affinity &aff, Addr daddr)
+{
+    auto val = from->readRedistributor(aff, daddr);
+    DPRINTF(GIC,
+            "copy redist (aff3: %d, aff2: %d, aff1: %d, aff0: %d) "
+            "0x%x 0x%08x\n",
+            aff.aff3, aff.aff2, aff.aff1, aff.aff0, daddr, val);
+
+    to->writeRedistributor(aff, daddr, val);
+}
+
+void
+Gicv3Registers::copyCpuRegister(Gicv3Registers* from,
+                                Gicv3Registers* to,
+                                const ArmISA::Affinity &aff,
+                                ArmISA::MiscRegIndex misc_reg)
+{
+    auto val = from->readCpu(aff, misc_reg);
+    DPRINTF(GIC,
+            "copy cpu (aff3: %d, aff2: %d, aff1: %d, aff0: %d) "
+            "%s 0x%08x\n",
+            aff.aff3, aff.aff2, aff.aff1, aff.aff0,
+            ArmISA::miscRegName[misc_reg], val);
+
+    to->writeCpu(aff, misc_reg, val);
+}
+
+void
+Gicv3Registers::clearRedistRegister(Gicv3Registers* to,
+                                    const ArmISA::Affinity &aff, Addr daddr)
+{
+    to->writeRedistributor(aff, daddr, 0xFFFFFFFF);
+}
+
+void
+Gicv3Registers::copyRedistRange(Gicv3Registers* from,
+                                Gicv3Registers* to,
+                                const ArmISA::Affinity &aff,
+                                Addr daddr, size_t size)
+{
+    for (auto a = daddr; a < daddr + size; a += 4)
+        copyRedistRegister(from, to, aff, a);
+}
+
+void
+Gicv3Registers::copyDistRange(Gicv3Registers *from,
+                              Gicv3Registers *to,
+                              Addr daddr, size_t size)
+{
+    for (auto a = daddr; a < daddr + size; a += 4)
+        copyDistRegister(from, to, a);
+}
+
+void
+Gicv3Registers::clearDistRange(Gicv3Registers *to, Addr daddr, size_t size)
+{
+    for (auto a = daddr; a < daddr + size; a += 4)
+        to->writeDistributor(a, 0xFFFFFFFF);
+}
+
+
+Gicv3::Gicv3(const Params &p)
     : BaseGic(p)
 {
 }
@@ -59,25 +136,25 @@ Gicv3::Gicv3(const Params * p)
 void
 Gicv3::init()
 {
-    distributor = new Gicv3Distributor(this, params()->it_lines);
+    distributor = new Gicv3Distributor(this, params().it_lines);
     int threads = sys->threads.size();
     redistributors.resize(threads, nullptr);
     cpuInterfaces.resize(threads, nullptr);
 
-    panic_if(threads > params()->cpu_max,
+    panic_if(threads > params().cpu_max,
         "Exceeding maximum number of PEs supported by GICv3: "
-        "using %u while maximum is %u.", threads, params()->cpu_max);
+        "using %u while maximum is %u.", threads, params().cpu_max);
 
     for (int i = 0; i < threads; i++) {
         redistributors[i] = new Gicv3Redistributor(this, i);
-        cpuInterfaces[i] = new Gicv3CPUInterface(this, i);
+        cpuInterfaces[i] = new Gicv3CPUInterface(this, sys->threads[i]);
     }
 
-    distRange = RangeSize(params()->dist_addr,
-        Gicv3Distributor::ADDR_RANGE_SIZE - 1);
+    distRange = RangeSize(params().dist_addr,
+        Gicv3Distributor::ADDR_RANGE_SIZE);
 
     redistSize = redistributors[0]->addrRangeSize;
-    redistRange = RangeSize(params()->redist_addr, redistSize * threads - 1);
+    redistRange = RangeSize(params().redist_addr, redistSize * threads);
 
     addrRanges = {distRange, redistRange};
 
@@ -88,7 +165,7 @@ Gicv3::init()
         cpuInterfaces[i]->init();
     }
 
-    Gicv3Its *its = params()->its;
+    Gicv3Its *its = params().its;
     if (its)
         its->setGIC(this);
 
@@ -108,7 +185,7 @@ Gicv3::read(PacketPtr pkt)
         const Addr daddr = addr - distRange.start();
         panic_if(!distributor, "Distributor is null!");
         resp = distributor->read(daddr, size, is_secure_access);
-        delay = params()->dist_pio_delay;
+        delay = params().dist_pio_delay;
         DPRINTF(GIC, "Gicv3::read(): (distributor) context_id %d register %#x "
                 "size %d is_secure_access %d (value %#x)\n",
                 pkt->req->contextId(), daddr, size, is_secure_access, resp);
@@ -118,7 +195,7 @@ Gicv3::read(PacketPtr pkt)
         Gicv3Redistributor *redist = getRedistributorByAddr(addr);
         resp = redist->read(daddr, size, is_secure_access);
 
-        delay = params()->redist_pio_delay;
+        delay = params().redist_pio_delay;
         DPRINTF(GIC, "Gicv3::read(): (redistributor %d) context_id %d "
                 "register %#x size %d is_secure_access %d (value %#x)\n",
                 redist->processorNumber(), pkt->req->contextId(), daddr, size,
@@ -148,7 +225,7 @@ Gicv3::write(PacketPtr pkt)
                 "register %#x size %d is_secure_access %d value %#x\n",
                 pkt->req->contextId(), daddr, size, is_secure_access, data);
         distributor->write(daddr, data, size, is_secure_access);
-        delay = params()->dist_pio_delay;
+        delay = params().dist_pio_delay;
     } else if (redistRange.contains(addr)) {
         Addr daddr = (addr - redistRange.start()) % redistSize;
 
@@ -160,7 +237,7 @@ Gicv3::write(PacketPtr pkt)
 
         redist->write(daddr, data, size, is_secure_access);
 
-        delay = params()->redist_pio_delay;
+        delay = params().redist_pio_delay;
     } else {
         panic("Gicv3::write(): unknown address %#x\n", addr);
     }
@@ -204,40 +281,50 @@ Gicv3::clearPPInt(uint32_t int_id, uint32_t cpu)
 void
 Gicv3::postInt(uint32_t cpu, ArmISA::InterruptTypes int_type)
 {
-    platform->intrctrl->post(cpu, int_type, 0);
-    ArmSystem::callClearStandByWfi(sys->threads[cpu]);
+    auto tc = sys->threads[cpu];
+    tc->getCpuPtr()->postInterrupt(tc->threadId(), int_type, 0);
+    ArmSystem::callClearStandByWfi(tc);
 }
 
 bool
 Gicv3::supportsVersion(GicVersion version)
 {
     return (version == GicVersion::GIC_V3) ||
-           (version == GicVersion::GIC_V4 && params()->gicv4);
+           (version == GicVersion::GIC_V4 && params().gicv4);
 }
 
 void
 Gicv3::deassertInt(uint32_t cpu, ArmISA::InterruptTypes int_type)
 {
-    platform->intrctrl->clear(cpu, int_type, 0);
+    auto tc = sys->threads[cpu];
+    tc->getCpuPtr()->clearInterrupt(tc->threadId(), int_type, 0);
 }
 
 void
 Gicv3::deassertAll(uint32_t cpu)
 {
-    platform->intrctrl->clearAll(cpu);
+    auto tc = sys->threads[cpu];
+    tc->getCpuPtr()->clearInterrupts(tc->threadId());
 }
 
 bool
 Gicv3::haveAsserted(uint32_t cpu) const
 {
-    return platform->intrctrl->havePosted(cpu);
+    auto tc = sys->threads[cpu];
+    return tc->getCpuPtr()->checkInterrupts(tc->threadId());
+}
+
+Gicv3CPUInterface *
+Gicv3::getCPUInterfaceByAffinity(const ArmISA::Affinity &aff) const
+{
+    return getRedistributorByAffinity(aff)->getCPUInterface();
 }
 
 Gicv3Redistributor *
-Gicv3::getRedistributorByAffinity(uint32_t affinity) const
+Gicv3::getRedistributorByAffinity(const ArmISA::Affinity &aff) const
 {
     for (auto & redistributor : redistributors) {
-        if (redistributor->getAffinity() == affinity) {
+        if (redistributor->getAffinity() == aff) {
             return redistributor;
         }
     }
@@ -259,6 +346,63 @@ Gicv3::getRedistributorByAddr(Addr addr) const
     panic_if(!redistributors[redistributor_id], "Redistributor is null!");
 
     return redistributors[redistributor_id];
+}
+
+uint32_t
+Gicv3::readDistributor(Addr daddr)
+{
+    return distributor->read(daddr, 4, false);
+}
+
+uint32_t
+Gicv3::readRedistributor(const ArmISA::Affinity &aff, Addr daddr)
+{
+    auto redistributor = getRedistributorByAffinity(aff);
+    assert(redistributor);
+    return redistributor->read(daddr, 4, false);
+}
+
+RegVal
+Gicv3::readCpu(const ArmISA::Affinity &aff, ArmISA::MiscRegIndex misc_reg)
+{
+    auto cpu_interface = getCPUInterfaceByAffinity(aff);
+    assert(cpu_interface);
+    return cpu_interface->readMiscReg(misc_reg);
+}
+
+void
+Gicv3::writeDistributor(Addr daddr, uint32_t data)
+{
+    distributor->write(daddr, data, sizeof(data), false);
+}
+
+void
+Gicv3::writeRedistributor(const ArmISA::Affinity &aff, Addr daddr, uint32_t data)
+{
+    auto redistributor = getRedistributorByAffinity(aff);
+    assert(redistributor);
+    redistributor->write(daddr, data, sizeof(data), false);
+}
+
+void
+Gicv3::writeCpu(const ArmISA::Affinity &aff, ArmISA::MiscRegIndex misc_reg,
+                RegVal data)
+{
+    auto cpu_interface = getCPUInterfaceByAffinity(aff);
+    assert(cpu_interface);
+    cpu_interface->setMiscReg(misc_reg, data);
+}
+
+void
+Gicv3::copyGicState(Gicv3Registers* from, Gicv3Registers* to)
+{
+    distributor->copy(from, to);
+    for (auto& redistributor : redistributors) {
+        redistributor->copy(from, to);
+    }
+    for (auto& cpu_interface : cpuInterfaces) {
+        cpu_interface->copy(from, to);
+    }
 }
 
 void
@@ -295,8 +439,4 @@ Gicv3::unserialize(CheckpointIn & cp)
             csprintf("cpuInterface.%i", cpu_interface_id));
 }
 
-Gicv3 *
-Gicv3Params::create()
-{
-    return new Gicv3(this);
-}
+} // namespace gem5

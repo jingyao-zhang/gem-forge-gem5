@@ -27,13 +27,14 @@
 
 from slicc.ast.ExprAST import ExprAST
 
+
 class MethodCallExprAST(ExprAST):
     def __init__(self, slicc, proc_name, expr_ast_vec):
-        super(MethodCallExprAST, self).__init__(slicc)
+        super().__init__(slicc)
         self.proc_name = proc_name
         self.expr_ast_vec = expr_ast_vec
 
-    def generate(self, code):
+    def generate(self, code, **kwargs):
         tmp = self.slicc.codeFormatter()
         paramTypes = []
         for expr_ast in self.expr_ast_vec:
@@ -45,7 +46,7 @@ class MethodCallExprAST(ExprAST):
         # generate code
         params = []
         for expr_ast in self.expr_ast_vec:
-            return_type,tcode = expr_ast.inline(True)
+            return_type, tcode = expr_ast.inline(True)
             params.append(str(tcode))
         fix = code.nofix()
         code("$prefix${{self.proc_name}}(${{', '.join(params)}}))")
@@ -53,8 +54,11 @@ class MethodCallExprAST(ExprAST):
 
         # Verify that this is a method of the object
         if methodId not in obj_type.methods:
-            self.error("Invalid method call: Type '%s' does not have a method '%s'",
-                       obj_type, methodId)
+            self.error(
+                "Invalid method call: Type '%s' does not have a method '%s'",
+                obj_type,
+                methodId,
+            )
 
         func = obj_type.methods[methodId]
         func.checkArguments(self.expr_ast_vec)
@@ -65,16 +69,20 @@ class MethodCallExprAST(ExprAST):
     def findResources(self, resources):
         pass
 
+
 class MemberMethodCallExprAST(MethodCallExprAST):
     def __init__(self, slicc, obj_expr_ast, func_call):
-        s = super(MemberMethodCallExprAST, self)
+        s = super()
         s.__init__(slicc, func_call.proc_name, func_call.exprs)
         self.obj_expr_ast = obj_expr_ast
 
     def __repr__(self):
-        return "[MethodCallExpr: %r%r %r]" % (self.proc_name,
-                                              self.obj_expr_ast,
-                                              self.expr_ast_vec)
+        return "[MethodCallExpr: %r%r %r]" % (
+            self.proc_name,
+            self.obj_expr_ast,
+            self.expr_ast_vec,
+        )
+
     def generate_prefix(self, paramTypes):
         code = self.slicc.codeFormatter()
 
@@ -92,72 +100,87 @@ class MemberMethodCallExprAST(MethodCallExprAST):
             #
             # Check whether the method is implemented by the super class
             if "interface" in obj_type:
-                interface_type = self.symtab.find(obj_type["interface"]);
+                interface_type = self.symtab.find(obj_type["interface"])
 
                 if methodId in interface_type.methods:
                     return_type = interface_type.methods[methodId].return_type
                     obj_type = interface_type
 
                 else:
-                    self.error("Invalid method call: " \
-                               "Type '%s' does not have a method %s, '%s'",
-                               obj_type, self.proc_name, methodId)
+                    self.error(
+                        "Invalid method call: "
+                        "Type '%s' does not have a method %s, '%s'",
+                        obj_type,
+                        self.proc_name,
+                        methodId,
+                    )
 
             else:
-                  #
-                  # The initial method check has failed, but before generating an
-                  # error we must check whether any of the paramTypes implement
-                  # an interface.  If so, we must check if the method ids using
-                  # the inherited types exist.
-                  #
-                  # This code is a temporary fix and only checks for the methodId
-                  # where all paramTypes are converted to their inherited type.  The
-                  # right way to do this is to replace slicc's simple string
-                  # comparison for determining the correct overloaded method, with a
-                  # more robust param by param check.
-                  #
-                  implemented_paramTypes = []
-                  for paramType in paramTypes:
-                      implemented_paramType = paramType
-                      if paramType.isInterface:
-                          implements_interface = True
-                          implemented_paramType.abstract_ident = paramType["interface"]
-                      else:
-                          implemented_paramType.abstract_ident = paramType.c_ident
+                #
+                # The initial method check has failed, but before generating an
+                # error we must check whether any of the paramTypes implement
+                # an interface.  If so, we must check if the method ids using
+                # the inherited types exist.
+                #
+                # This code is a temporary fix and only checks for the methodId
+                # where all paramTypes are converted to their inherited type.  The
+                # right way to do this is to replace slicc's simple string
+                # comparison for determining the correct overloaded method, with a
+                # more robust param by param check.
+                #
+                implemented_paramTypes = []
+                for paramType in paramTypes:
+                    implemented_paramType = paramType
+                    if paramType.isInterface:
+                        implements_interface = True
+                        implemented_paramType.abstract_ident = paramType[
+                            "interface"
+                        ]
+                    else:
+                        implemented_paramType.abstract_ident = (
+                            paramType.c_ident
+                        )
 
-                      implemented_paramTypes.append(implemented_paramType)
+                    implemented_paramTypes.append(implemented_paramType)
 
-                  implementedMethodId = ""
-                  if implements_interface:
-                      implementedMethodId = obj_type.methodIdAbstract(
-                              self.proc_name, implemented_paramTypes)
+                implementedMethodId = ""
+                if implements_interface:
+                    implementedMethodId = obj_type.methodIdAbstract(
+                        self.proc_name, implemented_paramTypes
+                    )
 
-                  if implementedMethodId not in obj_type.methods:
-                      self.error("Invalid method call: Type '%s' " \
-                                 "does not have a method %s, '%s' nor '%s'",
-                                 obj_type, self.proc_name, methodId,
-                                 implementedMethodId)
+                if implementedMethodId not in obj_type.methods:
+                    self.error(
+                        "Invalid method call: Type '%s' "
+                        "does not have a method %s, '%s' nor '%s'",
+                        obj_type,
+                        self.proc_name,
+                        methodId,
+                        implementedMethodId,
+                    )
 
-                  # Replace the methodId with the implementedMethodId
-                  # found in the method list.
-                  methodId = implementedMethodId
-                  return_type = obj_type.methods[methodId].return_type
+                # Replace the methodId with the implementedMethodId
+                # found in the method list.
+                methodId = implementedMethodId
+                return_type = obj_type.methods[methodId].return_type
 
         # Check object type or interface of entries by checking
         # AbstractCacheEntry since AbstractCacheEntry is used in
         # protocol files.
-        if str(obj_type) == "AbstractCacheEntry" or \
-           ("interface" in obj_type and (
-            obj_type["interface"] == "AbstractCacheEntry")):
+        if str(obj_type) == "AbstractCacheEntry" or (
+            "interface" in obj_type
+            and (obj_type["interface"] == "AbstractCacheEntry")
+        ):
             prefix = "%s((*(%s))." % (prefix, code)
         else:
             prefix = "%s((%s)." % (prefix, code)
 
         return obj_type, methodId, prefix
 
+
 class ClassMethodCallExprAST(MethodCallExprAST):
     def __init__(self, slicc, type_ast, proc_name, expr_ast_vec):
-        s = super(ClassMethodCallExprAST, self)
+        s = super()
         s.__init__(slicc, proc_name, expr_ast_vec)
 
         self.type_ast = type_ast
@@ -174,4 +197,5 @@ class ClassMethodCallExprAST(MethodCallExprAST):
 
         return obj_type, methodId, prefix
 
-__all__ = [ "MemberMethodCallExprAST", "ClassMethodCallExprAST" ]
+
+__all__ = ["MemberMethodCallExprAST", "ClassMethodCallExprAST"]

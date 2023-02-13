@@ -10,20 +10,22 @@
 
 #include <unordered_map>
 
+namespace gem5 {
+
 /**
  * This class buffers issued stream requests. It will try to
  * limit the maximum number of inqueue requests per stream and
  * buffers overflowed requests. This is mainly used for fairness
  * and avoid unbalanced case.
- * NOTE: This is currently coupled with RequestMsg type.
+ * NOTE: This is currently coupled with ruby::RequestMsg type.
  */
 
 class StreamRequestBuffer {
 public:
-  using RequestPtr = std::shared_ptr<RequestMsg>;
+  using RequestPtr = std::shared_ptr<ruby::RequestMsg>;
 
-  StreamRequestBuffer(AbstractStreamAwareController *_controller,
-                      MessageBuffer *_outBuffer, Cycles _latency,
+  StreamRequestBuffer(ruby::AbstractStreamAwareController *_controller,
+                      ruby::MessageBuffer *_outBuffer, Cycles _latency,
                       bool _enableIndMulticast,
                       int _maxInqueueRequestsPerStream,
                       int _maxMulticastReqPerMsg, int _multicastBankGroupSize);
@@ -37,8 +39,8 @@ public:
   int getTotalBufferedRequests() const { return this->totalBufferedRequests; }
 
 private:
-  AbstractStreamAwareController *controller;
-  MessageBuffer *outBuffer;
+  ruby::AbstractStreamAwareController *controller;
+  ruby::MessageBuffer *outBuffer;
   const Cycles latency;
   const bool enableIndMulticast;
   const int maxInqueueRequestsPerStream;
@@ -68,7 +70,7 @@ private:
   using InqueueStreamMapIter = InqueueStreamMapT::iterator;
   InqueueStreamMapT inqueueStreamMap;
 
-  void dequeue(MsgPtr msg);
+  void dequeue(ruby::MsgPtr msg);
 
   /**
    * Get or initialize the inqueue stream map entry.
@@ -119,5 +121,7 @@ private:
    */
   bool tryMulticast(const RequestPtr &req);
 };
+
+} // namespace gem5
 
 #endif

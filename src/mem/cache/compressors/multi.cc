@@ -42,7 +42,12 @@
 #include "debug/CacheComp.hh"
 #include "params/MultiCompressor.hh"
 
-namespace Compressor {
+namespace gem5
+{
+
+GEM5_DEPRECATED_NAMESPACE(Compressor, compression);
+namespace compression
+{
 
 Multi::MultiCompData::MultiCompData(unsigned index,
     std::unique_ptr<Base::CompressionData> comp_data)
@@ -57,11 +62,10 @@ Multi::MultiCompData::getIndex() const
     return index;
 }
 
-Multi::Multi(const Params *p)
-  : Base(p), compressors(p->compressors),
-    numEncodingBits(p->encoding_in_tags ? 0 :
+Multi::Multi(const Params &p)
+  : Base(p), compressors(p.compressors),
+    numEncodingBits(p.encoding_in_tags ? 0 :
         std::log2(alignToPowerOfTwo(compressors.size()))),
-    extraDecompressionLatency(p->extra_decomp_lat),
     multiStats(stats, *this)
 {
     fatal_if(compressors.size() == 0, "There must be at least one compressor");
@@ -71,6 +75,15 @@ Multi::~Multi()
 {
     for (auto& compressor : compressors) {
         delete compressor;
+    }
+}
+
+void
+Multi::setCache(BaseCache *_cache)
+{
+    Base::setCache(_cache);
+    for (auto& compressor : compressors) {
+        compressor->setCache(_cache);
     }
 }
 
@@ -153,7 +166,7 @@ Multi::compress(const std::vector<Chunk>& chunks, Cycles& comp_lat,
     DPRINTF(CacheComp, "Best compressor: %d\n", best_index);
 
     // Set decompression latency of the best compressor
-    decomp_lat = results.top()->decompLat + extraDecompressionLatency;
+    decomp_lat = results.top()->decompLat + decompExtraLatency;
 
     // Update compressor ranking stats
     for (int rank = 0; rank < compressors.size(); rank++) {
@@ -163,7 +176,7 @@ Multi::compress(const std::vector<Chunk>& chunks, Cycles& comp_lat,
 
     // Set compression latency (compression latency of the slowest compressor
     // and 1 cycle to pack)
-    comp_lat = Cycles(max_comp_lat + 1);
+    comp_lat = Cycles(max_comp_lat + compExtraLatency);
 
     return multi_comp_data;
 }
@@ -179,16 +192,16 @@ Multi::decompress(const CompressionData* comp_data,
 }
 
 Multi::MultiStats::MultiStats(BaseStats& base_group, Multi& _compressor)
-  : Stats::Group(&base_group), compressor(_compressor),
-    ranks(this, "ranks",
-        "Number of times each compressor had the nth best compression")
+  : statistics::Group(&base_group), compressor(_compressor),
+    ADD_STAT(ranks, statistics::units::Count::get(),
+             "Number of times each compressor had the nth best compression")
 {
 }
 
 void
 Multi::MultiStats::regStats()
 {
-    Stats::Group::regStats();
+    statistics::Group::regStats();
 
     const std::size_t num_compressors = compressor.compressors.size();
     ranks.init(num_compressors, num_compressors);
@@ -202,10 +215,5 @@ Multi::MultiStats::regStats()
     }
 }
 
-} // namespace Compressor
-
-Compressor::Multi*
-MultiCompressorParams::create()
-{
-    return new Compressor::Multi(this);
-}
+} // namespace compression
+} // namespace gem5

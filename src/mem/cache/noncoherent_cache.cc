@@ -56,9 +56,14 @@
 #include "mem/cache/mshr.hh"
 #include "params/NoncoherentCache.hh"
 
-NoncoherentCache::NoncoherentCache(const NoncoherentCacheParams *p)
-    : BaseCache(p, p->system->cacheLineSize())
+namespace gem5
 {
+
+NoncoherentCache::NoncoherentCache(const NoncoherentCacheParams &p)
+    : BaseCache(p, p.system->cacheLineSize())
+{
+    assert(p.tags);
+    assert(p.replacement_policy);
 }
 
 void
@@ -83,7 +88,7 @@ NoncoherentCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         // referenced block was not present or it was invalid. If that
         // is the case, make sure that the new block is marked as
         // writable
-        blk->status |= BlkWritable;
+        blk->setCoherenceBits(CacheBlk::WritableBit);
     }
 
     return success;
@@ -240,6 +245,9 @@ NoncoherentCache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
     // First offset for critical word first calculations
     const int initial_offset = mshr->getTarget()->pkt->getOffset(blkSize);
 
+    bool from_core = false;
+    bool from_pref = false;
+
     MSHR::TargetList targets = mshr->extractServiceableTargets(pkt);
     for (auto &target: targets) {
         Packet *tgt_pkt = target.pkt;
@@ -248,6 +256,8 @@ NoncoherentCache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
           case MSHR::Target::FromCPU:
             // handle deferred requests comming from a cache or core
             // above
+
+            from_core = true;
 
             Tick completion_time;
             // Here we charge on completion_time the delay of the xbar if the
@@ -287,8 +297,7 @@ NoncoherentCache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
             // attached to this cache
             assert(tgt_pkt->cmd == MemCmd::HardPFReq);
 
-            if (blk)
-                blk->status |= BlkHWPrefetched;
+            from_pref = true;
 
             // We have filled the block and the prefetcher does not
             // require responses.
@@ -300,6 +309,10 @@ NoncoherentCache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
             // non-coherent cache
             panic("Illegal target->source enum %d\n", target.source);
         }
+    }
+
+    if (blk && !from_core && from_pref) {
+        blk->setPrefetched();
     }
 
     // Reponses are filling and bring in writable blocks, therefore
@@ -340,7 +353,7 @@ NoncoherentCache::evictBlock(CacheBlk *blk)
     // If we clean writebacks are not enabled, we do not take any
     // further action for evictions of clean blocks (i.e., CleanEvicts
     // are unnecessary).
-    PacketPtr pkt = (blk->isDirty() || writebackClean) ?
+    PacketPtr pkt = (blk->isSet(CacheBlk::DirtyBit) || writebackClean) ?
         writebackBlk(blk) : nullptr;
 
     invalidateBlock(blk);
@@ -348,11 +361,4 @@ NoncoherentCache::evictBlock(CacheBlk *blk)
     return pkt;
 }
 
-NoncoherentCache*
-NoncoherentCacheParams::create()
-{
-    assert(tags);
-    assert(replacement_policy);
-
-    return new NoncoherentCache(this);
-}
+} // namespace gem5

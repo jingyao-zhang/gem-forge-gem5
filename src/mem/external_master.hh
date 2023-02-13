@@ -60,6 +60,9 @@
 #include "params/ExternalMaster.hh"
 #include "sim/sim_object.hh"
 
+namespace gem5
+{
+
 class ExternalMaster : public SimObject
 {
   public:
@@ -115,7 +118,7 @@ class ExternalMaster : public SimObject
     static std::map<std::string, Handler *> portHandlers;
 
   public:
-    ExternalMaster(ExternalMasterParams *params);
+    ExternalMaster(const ExternalMasterParams &params);
 
     /** Port interface.  Responds only to port "port" */
     Port &getPort(const std::string &if_name,
@@ -131,5 +134,6 @@ class ExternalMaster : public SimObject
     const RequestorID id;
 };
 
+} // namespace gem5
 
 #endif //__MEM_EXTERNAL_MASTER_HH__

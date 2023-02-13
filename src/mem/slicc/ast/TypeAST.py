@@ -29,9 +29,10 @@ from slicc.ast.AST import AST
 
 from slicc.symbols import Type
 
+
 class TypeAST(AST):
     def __init__(self, slicc, ident):
-        super(TypeAST, self).__init__(slicc)
+        super().__init__(slicc)
 
         self.ident = ident
 

@@ -12,6 +12,8 @@
 #define DEBUG_TYPE StreamNearDataComputing
 #include "stream_log.hh"
 
+namespace gem5 {
+
 StreamNDCController::StreamNDCController(StreamEngine *_se) : se(_se) {}
 
 void StreamNDCController::offloadStreams(
@@ -184,4 +186,5 @@ void StreamNDCController::issueNDCPacket(StreamElement *element) {
       initPAddr, this->se->cpuDelegator->dataRequestorId(), 0,
       MemCmd::Command::StreamNDCReq, reinterpret_cast<uint64_t>(NDCPacketVec));
   this->se->cpuDelegator->sendRequest(pkt);
-}
+}} // namespace gem5
+

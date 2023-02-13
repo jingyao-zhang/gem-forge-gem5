@@ -8,6 +8,8 @@
 #include <array>
 #include <unordered_set>
 
+namespace gem5 {
+
 /**
  * This is used to limit the migration bandwidth to avoid overwhelming
  * neighboring LLC SE and severe contention.
@@ -15,12 +17,12 @@
 
 class LLCStreamMigrationController {
 public:
-  LLCStreamMigrationController(AbstractStreamAwareController *_controller,
+  LLCStreamMigrationController(ruby::AbstractStreamAwareController *_controller,
                                int _neighborStreamsThreshold, Cycles _delay);
 
-  void startMigrateTo(LLCDynStreamPtr dynS, MachineID machineId);
-  bool canMigrateTo(LLCDynStreamPtr dynS, MachineID machineId);
-  void migratedTo(LLCDynStreamPtr dynS, MachineID machineId);
+  void startMigrateTo(LLCDynStreamPtr dynS, ruby::MachineID machineId);
+  bool canMigrateTo(LLCDynStreamPtr dynS, ruby::MachineID machineId);
+  void migratedTo(LLCDynStreamPtr dynS, ruby::MachineID machineId);
 
   int curRemoteBank() const {
     return this->controller->getMachineID().getNum();
@@ -30,7 +32,7 @@ public:
   }
 
 private:
-  AbstractStreamAwareController *controller;
+  ruby::AbstractStreamAwareController *controller;
   const int neighborStreamsThreshold;
   const Cycles delay;
 
@@ -50,21 +52,23 @@ private:
   /**
    * @return -1 if not neighboring.
    */
-  int getNeighborIndex(MachineID machineId) const;
+  int getNeighborIndex(ruby::MachineID machineId) const;
 
   /**
    * Get LLC or MC NeighborIndex.
    * @return -1 if not neighboring.
    */
-  int getLLCNeighborIndex(MachineID machineId) const;
-  int getMCCNeighborIndex(MachineID machineId) const;
+  int getLLCNeighborIndex(ruby::MachineID machineId) const;
+  int getMCCNeighborIndex(ruby::MachineID machineId) const;
 
   /**
    * Count the number of migrating and migrated streams with the same StaticId
    * at the destination.
    */
   int countStreamsWithSameStaticId(LLCDynStreamPtr dynS,
-                                   MachineID machineId) const;
+                                   ruby::MachineID machineId) const;
 };
+
+} // namespace gem5
 
 #endif

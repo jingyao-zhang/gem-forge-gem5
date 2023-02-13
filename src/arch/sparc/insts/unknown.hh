@@ -31,6 +31,9 @@
 
 #include "arch/sparc/insts/static_inst.hh"
 
+namespace gem5
+{
+
 namespace SparcISA
 {
 
@@ -47,20 +50,21 @@ class Unknown : public SparcStaticInst
     {}
 
     Fault
-    execute(ExecContext *, Trace::InstRecord *) const override
+    execute(ExecContext *, trace::InstRecord *) const override
     {
         return std::make_shared<IllegalInstruction>();
     }
 
     std::string
     generateDisassembly(
-            Addr pc, const Loader::SymbolTable *symtab) const override
+            Addr pc, const loader::SymbolTable *symtab) const override
     {
         return "Unknown instruction";
     }
 
 };
 
-}
+} // namespace SparcISA
+} // namespace gem5
 
 #endif // __ARCH_SPARC_INSTS_UNKNOWN_HH__

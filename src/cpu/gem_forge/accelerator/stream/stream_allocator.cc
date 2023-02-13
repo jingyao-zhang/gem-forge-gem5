@@ -12,6 +12,8 @@
 #define SE_PANIC(format, args...)                                              \
   panic("[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 
+namespace gem5 {
+
 bool StreamRegionController::canSkipAllocatingDynS(StaticRegion &staticRegion,
                                                    DynStream &stepRootDynS) {
 
@@ -326,3 +328,5 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
     }
   }
 }
+} // namespace gem5
+

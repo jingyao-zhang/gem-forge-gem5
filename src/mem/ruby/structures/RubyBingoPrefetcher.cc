@@ -689,7 +689,7 @@ public:
     Super::set_mru(key);
   }
 
-  int prefetch(RubyBingoPrefetcher *pf, uint64_t block_address) {
+  int prefetch(gem5::ruby::RubyBingoPrefetcher *pf, uint64_t block_address) {
     if (this->debug_level >= 2) {
       //   cerr << "PrefetchStreamer::prefetch(cache=" << cache->NAME
       //        << ", block_address=0x" << hex << block_address << ")" << dec
@@ -700,7 +700,8 @@ public:
       //   "/"
       //        << cache->MSHR.SIZE << " MSHR entries occupied." << dec << endl;
     }
-    uint64_t base_addr = block_address << RubySystem::getBlockSizeBytesLog2();
+    uint64_t base_addr = block_address
+                         << gem5::ruby::RubySystem::getBlockSizeBytesLog2();
     int region_offset = block_address % this->pattern_len;
     uint64_t region_number = block_address / this->pattern_len;
     uint64_t key = this->build_key(region_number);
@@ -723,8 +724,9 @@ public:
         pf_offset = region_offset + sgn * d;
         if (0 <= pf_offset && pf_offset < this->pattern_len &&
             pattern[pf_offset] > 0) {
-          uint64_t pf_address = (region_number * this->pattern_len + pf_offset)
-                                << RubySystem::getBlockSizeBytesLog2();
+          uint64_t pf_address =
+              (region_number * this->pattern_len + pf_offset)
+              << gem5::ruby::RubySystem::getBlockSizeBytesLog2();
           //   if (cache->PQ.occupancy + cache->MSHR.occupancy <
           //           cache->MSHR.SIZE - 1 &&
           //       cache->PQ.occupancy < cache->PQ.SIZE) {
@@ -859,7 +861,7 @@ public:
     }
   }
 
-  int prefetch(RubyBingoPrefetcher *pf, uint64_t block_number) {
+  int prefetch(gem5::ruby::RubyBingoPrefetcher *pf, uint64_t block_number) {
     // if (this->debug_level >= 2)
     //   cerr << "Bingo::prefetch(cache=" << cache->NAME
     //        << ", block_number=" << hex << block_number << ")" << dec <<
@@ -1137,17 +1139,17 @@ const int DEBUG_LEVEL = 0;
 
 } // namespace L1D_PREF
 
-RubyBingoPrefetcher *RubyBingoPrefetcherParams::create() {
-  return new RubyBingoPrefetcher(this);
-}
+namespace gem5 {
 
-RubyBingoPrefetcher::RubyBingoPrefetcher(const Params *p)
-    : SimObject(p), enabled(p->enabled), m_page_shift(p->sys->getPageShift()),
-      m_pf_queue_size(p->pf_queue_size) {
-  this->bingo = m5::make_unique<L1D_PREF::Bingo>(
-      p->region_size >> RubySystem::getBlockSizeBytesLog2(), p->min_addr_width,
-      p->max_addr_width, p->pc_width, p->ft_size, p->at_size, p->pht_size,
-      p->pht_ways, p->pf_streamer_size, L1D_PREF::DEBUG_LEVEL);
+namespace ruby {
+
+RubyBingoPrefetcher::RubyBingoPrefetcher(const Params &p)
+    : SimObject(p), enabled(p.enabled), m_page_shift(p.page_shift),
+      m_pf_queue_size(p.pf_queue_size) {
+  this->bingo = std::make_unique<L1D_PREF::Bingo>(
+      p.region_size >> RubySystem::getBlockSizeBytesLog2(), p.min_addr_width,
+      p.max_addr_width, p.pc_width, p.ft_size, p.at_size, p.pht_size,
+      p.pht_ways, p.pf_streamer_size, L1D_PREF::DEBUG_LEVEL);
 }
 
 RubyBingoPrefetcher::~RubyBingoPrefetcher() {}
@@ -1230,3 +1232,5 @@ int RubyBingoPrefetcher::prefetchLine(Addr pc, Addr baseAddr, Addr pfAddr,
   // We always succeed.
   return 1;
 }
+} // namespace ruby
+} // namespace gem5

@@ -3,6 +3,8 @@
 #include "debug/SpeculativePrecomputation.hh"
 #include "insts.hh"
 
+namespace gem5 {
+
 SpeculativePrecomputationThread::SpeculativePrecomputationThread(
     ContextID _contextId, const std::string &_traceFileName, Addr _criticalPC)
     : LLVMTraceThreadContext(_contextId, _traceFileName,
@@ -47,7 +49,7 @@ void SpeculativePrecomputationThread::skipOneSlice() {
 }
 
 SpeculativePrecomputationManager::SpeculativePrecomputationManager(
-    Params *params)
+    const Params &params)
     : GemForgeAccelerator(params) {}
 
 SpeculativePrecomputationManager::~SpeculativePrecomputationManager() {
@@ -126,7 +128,4 @@ void SpeculativePrecomputationManager::handleTrigger(
   }
 }
 
-SpeculativePrecomputationManager *
-SpeculativePrecomputationManagerParams::create() {
-  return new SpeculativePrecomputationManager(this);
-}
+} // namespace gem5

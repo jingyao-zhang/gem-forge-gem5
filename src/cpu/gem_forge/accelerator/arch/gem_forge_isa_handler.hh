@@ -9,6 +9,8 @@
 
 #include <unordered_map>
 
+namespace gem5 {
+
 class GemForgeCPUDelegator;
 
 class GemForgeISAHandler {
@@ -74,5 +76,7 @@ private:
 
   ISAStreamEngine se;
 };
+
+} // namespace gem5
 
 #endif

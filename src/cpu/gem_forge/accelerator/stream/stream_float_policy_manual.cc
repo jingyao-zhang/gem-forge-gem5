@@ -9,6 +9,8 @@
 #define DEBUG_TYPE StreamFloatPolicy
 #include "stream_log.hh"
 
+namespace gem5 {
+
 const std::unordered_map<std::string, std::string>
     StreamFloatPolicy::streamToRegionMap = {
         {"rodinia.srad_v2.Jc.ld", "rodinia.srad_v2.J"},
@@ -56,10 +58,10 @@ void StreamFloatPolicy::setFloatPlanManual(DynStream &dynS) {
 
   if (manualFloatToMemSet.count(streamName)) {
     if (this->enabledFloatMem) {
-      floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+      floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_Directory);
     } else {
       // By default we float to L2 cache (LLC in MESI_Three_Level).
-      floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+      floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_L2Cache);
     }
     return;
   }
@@ -76,7 +78,7 @@ void StreamFloatPolicy::setFloatPlanManual(DynStream &dynS) {
     if (region.cachedElements == 0 && this->enabledFloatMem) {
       DYN_S_DPRINTF(dynS.dynStreamId,
                     "Directly float to Mem as zero cached elements.\n");
-      floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+      floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_Directory);
       return;
     }
   }
@@ -106,7 +108,7 @@ void StreamFloatPolicy::setFloatPlanManual(DynStream &dynS) {
   }
 
   // Default just offload to LLC.
-  floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+  floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_L2Cache);
   return;
 }
 
@@ -159,16 +161,16 @@ void StreamFloatPolicy::setFloatPlanForRodiniaSrad(DynStream &dynS) {
 
   if (myEndVAddr <= llcEndVAddr) {
     // We are accessing rows cached in LLC.
-    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+    floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_L2Cache);
     return;
   }
 
   if (myStartVAddr >= llcEndVAddr) {
     // We accessing rows not cached in LLC.
     if (this->enabledFloatMem) {
-      floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+      floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_Directory);
     } else {
-      floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+      floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_L2Cache);
     }
     return;
   }
@@ -179,9 +181,9 @@ void StreamFloatPolicy::setFloatPlanForRodiniaSrad(DynStream &dynS) {
    */
   auto myLLCTripCount =
       (llcEndVAddr - myStartVAddr + elementSize - 1) / elementSize;
-  floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+  floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_L2Cache);
   if (this->enabledFloatMem) {
-    floatPlan.addFloatChangePoint(myLLCTripCount, MachineType_Directory);
+    floatPlan.addFloatChangePoint(myLLCTripCount, ruby::MachineType_Directory);
   }
   return;
 }
@@ -222,10 +224,11 @@ void StreamFloatPolicy::setFloatPlanForBinTree(DynStream &dynS) {
    * We start from core to LLC to mem.
    */
   dynS.setNextCacheDoneElemIdx(logPrivateCachedElements);
-  floatPlan.addFloatChangePoint(0, MachineType_NULL);
-  floatPlan.addFloatChangePoint(logPrivateCachedElements, MachineType_L2Cache);
+  floatPlan.addFloatChangePoint(0, ruby::MachineType_NULL);
+  floatPlan.addFloatChangePoint(logPrivateCachedElements, ruby::MachineType_L2Cache);
   if (this->enabledFloatMem) {
-    floatPlan.addFloatChangePoint(logCachedElements, MachineType_Directory);
+    floatPlan.addFloatChangePoint(logCachedElements, ruby::MachineType_Directory);
   }
   return;
-}
+}} // namespace gem5
+

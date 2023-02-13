@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017,2019 ARM Limited
+ * Copyright (c) 2017,2019-2022 ARM Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -44,8 +44,10 @@
 #include <exception>
 #include <iostream>
 #include <string>
+#include <unordered_map>
 
 #include "base/addr_range.hh"
+#include "base/addr_range_map.hh"
 #include "base/callback.hh"
 #include "mem/packet.hh"
 #include "mem/qport.hh"
@@ -61,6 +63,12 @@
 #include "params/RubyController.hh"
 #include "sim/clocked_object.hh"
 
+namespace gem5
+{
+
+namespace ruby
+{
+
 class Network;
 class GPUCoalescer;
 class DMASequencer;
@@ -75,10 +83,9 @@ class RejectException: public std::exception
 class AbstractController : public ClockedObject, public Consumer
 {
   public:
-    typedef RubyControllerParams Params;
-    AbstractController(const Params *p);
+    PARAMS(RubyController);
+    AbstractController(const Params &p);
     void init();
-    const Params *params() const { return (const Params *)_params; }
 
     NodeID getVersion() const { return m_machineID.getNum(); }
     MachineType getType() const { return m_machineID.getType(); }
@@ -116,7 +123,16 @@ class AbstractController : public ClockedObject, public Consumer
     //! These functions are used by ruby system to read/write the data blocks
     //! that exist with in the controller.
     virtual bool functionalReadBuffers(PacketPtr&) = 0;
-    virtual void functionalRead(const Addr &addr, PacketPtr) = 0;
+    virtual void functionalRead(const Addr &addr, PacketPtr)
+    { panic("functionalRead(Addr,PacketPtr) not implemented"); }
+
+    //! Functional read that reads only blocks not present in the mask.
+    //! Return number of bytes read.
+    virtual bool functionalReadBuffers(PacketPtr&, WriteMask &mask) = 0;
+    virtual void functionalRead(const Addr &addr, PacketPtr pkt,
+                               WriteMask &mask)
+    { panic("functionalRead(Addr,PacketPtr,WriteMask) not implemented"); }
+
     void functionalMemoryRead(PacketPtr);
     //! The return value indicates the number of messages written with the
     //! data from the packet.
@@ -130,6 +146,15 @@ class AbstractController : public ClockedObject, public Consumer
     virtual void enqueueBulkPrefetch(const Addr &, const RubyRequestType&,
       const RubyAddressBulk&)
     { fatal("Bulk Prefetches not implemented!");}
+
+    //! Notifies controller of a request coalesced at the sequencer.
+    //! By default, it does nothing. Behavior is protocol-specific
+    virtual void notifyCoalesced(const Addr& addr,
+                                 const RubyRequestType& type,
+                                 const RequestPtr& req,
+                                 const DataBlock& data_blk,
+                                 const bool& was_miss)
+    { }
 
     //! Function for collating statistics from all the controllers of this
     //! particular type. This function should only be called from the
@@ -161,9 +186,16 @@ class AbstractController : public ClockedObject, public Consumer
     MachineID getMachineID() const { return m_machineID; }
     RequestorID getRequestorId() const { return m_id; }
 
-    Stats::Histogram& getDelayHist() { return m_delayHistogram; }
-    Stats::Histogram& getDelayVCHist(uint32_t index)
-    { return *(m_delayVCHistogram[index]); }
+    statistics::Histogram& getDelayHist() { return stats.delayHistogram; }
+    statistics::Histogram& getDelayVCHist(uint32_t index)
+    { return *(stats.delayVCHistogram[index]); }
+
+    bool respondsTo(Addr addr)
+    {
+        for (auto &range: addrRanges)
+            if (range.contains(addr)) return true;
+        return false;
+    }
 
     /**
      * Map an address to the correct MachineID
@@ -204,13 +236,140 @@ class AbstractController : public ClockedObject, public Consumer
       panic("AbstractController::hasBeenPrefetched() not implemented.");
     }
 
+    /**
+     * Maps an address to the correct dowstream MachineID (i.e. the component
+     * in the next level of the cache hierarchy towards memory)
+     *
+     * This function uses the local list of possible destinations instead of
+     * querying the network.
+     *
+     * @param the destination address
+     * @param the type of the destination (optional)
+     * @return the MachineID of the destination
+     */
+    MachineID mapAddressToDownstreamMachine(Addr addr,
+                                    MachineType mtype = MachineType_NUM) const;
+
+    /** List of downstream destinations (towards memory) */
+    const NetDest& allDownstreamDest() const { return downstreamDestinations; }
+
+    /** List of upstream destinations (towards the CPU) */
+    const NetDest& allUpstreamDest() const { return upstreamDestinations; }
+
   protected:
     //! Profiles original cache requests including PUTs
     void profileRequest(const std::string &request);
     //! Profiles the delay associated with messages.
     void profileMsgDelay(uint32_t virtualNetwork, Cycles delay);
 
+    // Tracks outstanding transactions for latency profiling
+    struct TransMapPair { unsigned transaction; unsigned state; Tick time; };
+    std::unordered_map<Addr, TransMapPair> m_inTransAddressed;
+    std::unordered_map<Addr, TransMapPair> m_outTransAddressed;
+
+    std::unordered_map<Addr, TransMapPair> m_inTransUnaddressed;
+    std::unordered_map<Addr, TransMapPair> m_outTransUnaddressed;
+
+    /**
+     * Profiles an event that initiates a protocol transactions for a specific
+     * line (e.g. events triggered by incoming request messages).
+     * A histogram with the latency of the transactions is generated for
+     * all combinations of trigger event, initial state, and final state.
+     * This function also supports "unaddressed" transactions,
+     * those not associated with an address in memory but
+     * instead associated with a unique ID.
+     *
+     * @param addr address of the line, or unique transaction ID
+     * @param type event that started the transaction
+     * @param initialState state of the line before the transaction
+     * @param isAddressed is addr a line address or a unique ID
+     */
+    template<typename EventType, typename StateType>
+    void incomingTransactionStart(Addr addr,
+        EventType type, StateType initialState, bool retried,
+        bool isAddressed=true)
+    {
+        auto& m_inTrans =
+          isAddressed ? m_inTransAddressed : m_inTransUnaddressed;
+        assert(m_inTrans.find(addr) == m_inTrans.end());
+        m_inTrans[addr] = {type, initialState, curTick()};
+        if (retried)
+          ++(*stats.inTransLatRetries[type]);
+    }
+
+    /**
+     * Profiles an event that ends a transaction.
+     * This function also supports "unaddressed" transactions,
+     * those not associated with an address in memory but
+     * instead associated with a unique ID.
+     *
+     * @param addr address or unique ID with an outstanding transaction
+     * @param finalState state of the line after the transaction
+     * @param isAddressed is addr a line address or a unique ID
+     */
+    template<typename StateType>
+    void incomingTransactionEnd(Addr addr, StateType finalState,
+        bool isAddressed=true)
+    {
+        auto& m_inTrans =
+          isAddressed ? m_inTransAddressed : m_inTransUnaddressed;
+        auto iter = m_inTrans.find(addr);
+        assert(iter != m_inTrans.end());
+        stats.inTransLatHist[iter->second.transaction]
+                              [iter->second.state]
+                              [(unsigned)finalState]->sample(
+                                ticksToCycles(curTick() - iter->second.time));
+        ++(*stats.inTransLatTotal[iter->second.transaction]);
+       m_inTrans.erase(iter);
+    }
+
+    /**
+     * Profiles an event that initiates a transaction in a peer controller
+     * (e.g. an event that sends a request message)
+     * This function also supports "unaddressed" transactions,
+     * those not associated with an address in memory but
+     * instead associated with a unique ID.
+     *
+     * @param addr address of the line or a unique transaction ID
+     * @param type event that started the transaction
+     * @param isAddressed is addr a line address or a unique ID
+     */
+    template<typename EventType>
+    void outgoingTransactionStart(Addr addr, EventType type,
+        bool isAddressed=true)
+    {
+        auto& m_outTrans =
+          isAddressed ? m_outTransAddressed : m_outTransUnaddressed;
+        assert(m_outTrans.find(addr) == m_outTrans.end());
+        m_outTrans[addr] = {type, 0, curTick()};
+    }
+
+    /**
+     * Profiles the end of an outgoing transaction.
+     * (e.g. receiving the response for a requests)
+     * This function also supports "unaddressed" transactions,
+     * those not associated with an address in memory but
+     * instead associated with a unique ID.
+     *
+     * @param addr address of the line with an outstanding transaction
+     * @param isAddressed is addr a line address or a unique ID
+     */
+    void outgoingTransactionEnd(Addr addr, bool retried,
+        bool isAddressed=true)
+    {
+        auto& m_outTrans =
+          isAddressed ? m_outTransAddressed : m_outTransUnaddressed;
+        auto iter = m_outTrans.find(addr);
+        assert(iter != m_outTrans.end());
+        stats.outTransLatHist[iter->second.transaction]->sample(
+            ticksToCycles(curTick() - iter->second.time));
+        if (retried)
+          ++(*stats.outTransLatHistRetries[iter->second.transaction]);
+        m_outTrans.erase(iter);
+    }
+
     void stallBuffer(MessageBuffer* buf, Addr addr);
+    void wakeUpBuffer(MessageBuffer* buf, Addr addr);
     void wakeUpBuffers(Addr addr);
     void wakeUpAllBuffers(Addr addr);
     void wakeUpAllBuffers();
@@ -241,15 +400,7 @@ class AbstractController : public ClockedObject, public Consumer
     const unsigned int m_buffer_size;
     Cycles m_recycle_latency;
     const Cycles m_mandatory_queue_latency;
-
-    //! Counter for the number of cycles when the transitions carried out
-    //! were equal to the maximum allowed
-    Stats::Scalar m_fully_busy_cycles;
-
-    //! Histogram for profiling delay for the messages this controller
-    //! cares for
-    Stats::Histogram m_delayHistogram;
-    std::vector<Stats::Histogram *> m_delayVCHistogram;
+    bool m_waiting_mem_retry;
 
     /**
      * Port that forwards requests and receives responses from the
@@ -290,6 +441,43 @@ class AbstractController : public ClockedObject, public Consumer
   private:
     /** The address range to which the controller responds on the CPU side. */
     const AddrRangeList addrRanges;
+
+    std::unordered_map<MachineType, AddrRangeMap<MachineID, 3>>
+      downstreamAddrMap;
+
+    NetDest downstreamDestinations;
+    NetDest upstreamDestinations;
+
+  public:
+    struct ControllerStats : public statistics::Group
+    {
+        ControllerStats(statistics::Group *parent);
+
+        // Initialized by the SLICC compiler for all combinations of event and
+        // states. Only histograms with samples will appear in the stats
+        std::vector<std::vector<std::vector<statistics::Histogram*>>>
+          inTransLatHist;
+        std::vector<statistics::Scalar*> inTransLatRetries;
+        std::vector<statistics::Scalar*> inTransLatTotal;
+
+        // Initialized by the SLICC compiler for all events.
+        // Only histograms with samples will appear in the stats.
+        std::vector<statistics::Histogram*> outTransLatHist;
+        std::vector<statistics::Scalar*> outTransLatHistRetries;
+
+        //! Counter for the number of cycles when the transitions carried out
+        //! were equal to the maximum allowed
+        statistics::Scalar fullyBusyCycles;
+
+        //! Histogram for profiling delay for the messages this controller
+        //! cares for
+        statistics::Histogram delayHistogram;
+        std::vector<statistics::Histogram *> delayVCHistogram;
+    } stats;
+
 };
+
+} // namespace ruby
+} // namespace gem5
 
 #endif // __MEM_RUBY_SLICC_INTERFACE_ABSTRACTCONTROLLER_HH__

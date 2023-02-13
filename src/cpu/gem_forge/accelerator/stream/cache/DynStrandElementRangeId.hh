@@ -5,6 +5,8 @@
 
 #include "base/types.hh"
 
+namespace gem5 {
+
 /**
  * This is a simple helper structure that represents a range of elements
  * from [lhsElementIdx, rhsElementIdx].
@@ -54,5 +56,7 @@ struct DynStrandElementRangeIdHasher {
            std::hash<uint64_t>()(key.rhsElementIdx);
   }
 };
+
+} // namespace gem5
 
 #endif

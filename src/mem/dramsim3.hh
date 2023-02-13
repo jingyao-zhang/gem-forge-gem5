@@ -52,6 +52,12 @@
 #include "mem/qport.hh"
 #include "params/DRAMsim3.hh"
 
+namespace gem5
+{
+
+namespace memory
+{
+
 class DRAMsim3 : public AbstractMemory
 {
   private:
@@ -66,7 +72,7 @@ class DRAMsim3 : public AbstractMemory
 
       private:
 
-        DRAMsim3& memory;
+        DRAMsim3& mem;
 
       public:
 
@@ -176,7 +182,7 @@ class DRAMsim3 : public AbstractMemory
   public:
 
     typedef DRAMsim3Params Params;
-    DRAMsim3(const Params *p);
+    DRAMsim3(const Params &p);
 
     /**
      * Read completion callback.
@@ -214,5 +220,8 @@ class DRAMsim3 : public AbstractMemory
     void recvRespRetry();
 
 };
+
+} // namespace memory
+} // namespace gem5
 
 #endif // __MEM_DRAMSIM3_HH__

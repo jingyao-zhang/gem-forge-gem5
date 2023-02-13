@@ -38,12 +38,15 @@
 #include "debug/CacheComp.hh"
 #include "params/PerfectCompressor.hh"
 
-namespace Compressor {
+namespace gem5
+{
 
-Perfect::Perfect(const Params *p)
-  : Base(p), compressedSize(8 * blkSize / p->max_compression_ratio),
-    compressionLatency(p->compression_latency),
-    decompressionLatency(p->decompression_latency)
+GEM5_DEPRECATED_NAMESPACE(Compressor, compression);
+namespace compression
+{
+
+Perfect::Perfect(const Params &p)
+  : Base(p), compressedSize(8 * blkSize / p.max_compression_ratio)
 {
 }
 
@@ -56,8 +59,12 @@ Perfect::compress(const std::vector<Chunk>& chunks,
 
     // Set relevant metadata
     comp_data->setSizeBits(compressedSize);
-    comp_lat = compressionLatency;
-    decomp_lat = decompressionLatency;
+
+    // Set latencies based on the degree of parallelization, and any extra
+    // latencies due to shifting or packaging
+    comp_lat = Cycles((chunks.size() / compChunksPerCycle) + compExtraLatency);
+    decomp_lat = Cycles((chunks.size() / decompChunksPerCycle) +
+        decompExtraLatency);
 
     return comp_data;
 }
@@ -70,10 +77,5 @@ Perfect::decompress(const CompressionData* comp_data,
     fromChunks(static_cast<const CompData*>(comp_data)->chunks, data);
 }
 
-} // namespace Compressor
-
-Compressor::Perfect*
-PerfectCompressorParams::create()
-{
-    return new Compressor::Perfect(this);
-}
+} // namespace compression
+} // namespace gem5

@@ -12,15 +12,19 @@
 
 #include <list>
 
+namespace gem5 {
+
+namespace ruby {
 class AbstractStreamAwareController;
 class MessageBuffer;
+}
 
 class MLCDynStream {
 public:
   MLCDynStream(CacheStreamConfigureDataPtr _configData,
-               AbstractStreamAwareController *_controller,
-               MessageBuffer *_responseMsgBuffer,
-               MessageBuffer *_requestToLLCMsgBuffer, bool _isMLCDirect);
+               ruby::AbstractStreamAwareController *_controller,
+               ruby::MessageBuffer *_responseMsgBuffer,
+               ruby::MessageBuffer *_requestToLLCMsgBuffer, bool _isMLCDirect);
 
   virtual ~MLCDynStream();
 
@@ -56,13 +60,13 @@ public:
   /**
    * Get where is the RemoteStream is at the end of current allocated credits.
    */
-  virtual std::pair<Addr, MachineType>
+  virtual std::pair<Addr, ruby::MachineType>
   getRemoteTailPAddrAndMachineType() const {
     panic("Should only call this on direct stream.");
   }
 
   virtual void receiveStreamData(const DynStreamSliceId &sliceId,
-                                 const DataBlock &dataBlock,
+                                 const ruby::DataBlock &dataBlock,
                                  Addr paddrLine) = 0;
   void recvCoreReq(const DynStreamSliceId &sliceId);
   void recvCoreReqHit(const DynStreamSliceId &sliceId);
@@ -99,7 +103,7 @@ public:
   virtual int64_t getInnerTripCount() const = 0;
   virtual bool hasInnerTripCount() const = 0;
   virtual void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr,
-                                 MachineType brokenMachineType) = 0;
+                                 ruby::MachineType brokenMachineType) = 0;
 
   bool isWaitingAck() const { return this->isWaiting == WaitType::Ack; }
   bool isWaitingData() const { return this->isWaiting == WaitType::Data; }
@@ -123,9 +127,9 @@ protected:
 
   std::vector<CacheStreamConfigureData::DepEdge> sendToEdges;
 
-  AbstractStreamAwareController *controller;
-  MessageBuffer *responseMsgBuffer;
-  MessageBuffer *requestToLLCMsgBuffer;
+  ruby::AbstractStreamAwareController *controller;
+  ruby::MessageBuffer *responseMsgBuffer;
+  ruby::MessageBuffer *requestToLLCMsgBuffer;
   uint64_t maxNumSlices;
 
   /**
@@ -135,7 +139,7 @@ protected:
    */
   struct MLCStreamSlice {
     DynStreamSliceId sliceId;
-    DataBlock dataBlock;
+    ruby::DataBlock dataBlock;
     // Whether the core's request is already here.
     bool dataReady;
     enum CoreStatusE {
@@ -157,7 +161,7 @@ protected:
         : sliceId(_sliceId), dataBlock(), dataReady(false),
           coreStatus(CoreStatusE::NONE) {}
 
-    void setData(const DataBlock &dataBlock, Cycles currentCycle) {
+    void setData(const ruby::DataBlock &dataBlock, Cycles currentCycle) {
       assert(!this->dataReady && "Data already ready.");
       this->dataBlock = dataBlock;
       this->dataReady = true;
@@ -248,5 +252,7 @@ public:
    */
   void panicDump() const;
 };
+
+} // namespace gem5
 
 #endif

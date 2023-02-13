@@ -4,6 +4,8 @@
 
 #include <sstream>
 
+namespace gem5 {
+
 std::string GemForgeUtils::dataToString(const uint8_t *data, int size) {
   std::stringstream ss;
   ss << "size " << size;
@@ -36,4 +38,5 @@ uint64_t GemForgeUtils::rebuildData(const uint8_t *data, int size) {
   default:
     panic("Unsupported element size %d.\n", size);
   }
-}
+}} // namespace gem5
+

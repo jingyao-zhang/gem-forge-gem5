@@ -42,12 +42,6 @@
 #
 #####################################################################
 
-from __future__ import print_function
-from __future__ import absolute_import
-import six
-if six.PY3:
-    long = int
-
 import copy
 
 
@@ -55,46 +49,68 @@ class BaseProxy(object):
     def __init__(self, search_self, search_up):
         self._search_self = search_self
         self._search_up = search_up
-        self._multipliers = []
+        self._ops = []
 
     def __str__(self):
         if self._search_self and not self._search_up:
-            s = 'Self'
+            s = "Self"
         elif not self._search_self and self._search_up:
-            s = 'Parent'
+            s = "Parent"
         else:
-            s = 'ConfusedProxy'
-        return s + '.' + self.path()
+            s = "ConfusedProxy"
+        return s + "." + self.path()
 
     def __setattr__(self, attr, value):
-        if not attr.startswith('_'):
+        if not attr.startswith("_"):
             raise AttributeError(
-                "cannot set attribute '%s' on proxy object" % attr)
-        super(BaseProxy, self).__setattr__(attr, value)
+                "cannot set attribute '%s' on proxy object" % attr
+            )
+        super().__setattr__(attr, value)
 
-    # support for multiplying proxies by constants or other proxies to
-    # other params
-    def __mul__(self, other):
-        if not (isinstance(other, (int, long, float)) or isproxy(other)):
-            raise TypeError(
-                "Proxy multiplier must be a constant or a proxy to a param")
-        self._multipliers.append(other)
-        return self
+    def _gen_op(operation):
+        def op(self, operand):
+            if not (isinstance(operand, (int, float)) or isproxy(operand)):
+                raise TypeError(
+                    "Proxy operand must be a constant or a proxy to a param"
+                )
+            self._ops.append((operation, operand))
+            return self
 
+        return op
+
+    # Support for multiplying proxies by either constants or other proxies
+    __mul__ = _gen_op(lambda operand_a, operand_b: operand_a * operand_b)
     __rmul__ = __mul__
 
-    def _mulcheck(self, result, base):
+    # Support for dividing proxies by either constants or other proxies
+    __truediv__ = _gen_op(lambda operand_a, operand_b: operand_a / operand_b)
+    __floordiv__ = _gen_op(lambda operand_a, operand_b: operand_a // operand_b)
+
+    # Support for dividing constants by proxies
+    __rtruediv__ = _gen_op(
+        lambda operand_a, operand_b: operand_b / operand_a.getValue()
+    )
+    __rfloordiv__ = _gen_op(
+        lambda operand_a, operand_b: operand_b // operand_a.getValue()
+    )
+
+    # After all the operators and operands have been defined, this function
+    # should be called to perform the actual operation
+    def _opcheck(self, result, base):
         from . import params
-        for multiplier in self._multipliers:
-            if isproxy(multiplier):
-                multiplier = multiplier.unproxy(base)
-                # assert that we are multiplying with a compatible
-                # param
-                if not isinstance(multiplier, params.NumericParamValue):
-                    raise TypeError(
-                        "Proxy multiplier must be a numerical param")
-                multiplier = multiplier.getValue()
-            result = result * multiplier
+
+        for operation, operand in self._ops:
+            # Get the operand's value
+            if isproxy(operand):
+                operand = operand.unproxy(base)
+                # assert that we are operating with a compatible param
+                if not isinstance(operand, params.NumericParamValue):
+                    raise TypeError("Proxy operand must be a numerical param")
+                operand = operand.getValue()
+
+            # Apply the operation
+            result = operation(result, operand)
+
         return result
 
     def unproxy(self, base):
@@ -120,15 +136,16 @@ class BaseProxy(object):
 
         if not done:
             raise AttributeError(
-                "Can't resolve proxy '%s' of type '%s' from '%s'" % \
-                  (self.path(), self._pdesc.ptype_str, base.path()))
+                "Can't resolve proxy '%s' of type '%s' from '%s'"
+                % (self.path(), self._pdesc.ptype_str, base.path())
+            )
 
         if isinstance(result, BaseProxy):
             if result == self:
                 raise RuntimeError("Cycle in unproxy")
             result = result.unproxy(obj)
 
-        return self._mulcheck(result, base)
+        return self._opcheck(result, base)
 
     def getindex(obj, index):
         if index == None:
@@ -141,6 +158,7 @@ class BaseProxy(object):
             # if index is 0 and item is not subscriptable, just
             # use item itself (so cpu[0] works on uniprocessors)
         return obj
+
     getindex = staticmethod(getindex)
 
     # This method should be called once the proxy is assigned to a
@@ -149,18 +167,21 @@ class BaseProxy(object):
     def set_param_desc(self, pdesc):
         self._pdesc = pdesc
 
+
 class AttrProxy(BaseProxy):
     def __init__(self, search_self, search_up, attr):
-        super(AttrProxy, self).__init__(search_self, search_up)
+        super().__init__(search_self, search_up)
         self._attr = attr
         self._modifiers = []
 
     def __getattr__(self, attr):
         # python uses __bases__ internally for inheritance
-        if attr.startswith('_'):
-            return super(AttrProxy, self).__getattr__(self, attr)
-        if hasattr(self, '_pdesc'):
-            raise AttributeError("Attribute reference on bound proxy")
+        if attr.startswith("_"):
+            return super().__getattr__(self, attr)
+        if hasattr(self, "_pdesc"):
+            raise AttributeError(
+                "Attribute reference on bound proxy " f"({self}.{attr})"
+            )
         # Return a copy of self rather than modifying self in place
         # since self could be an indirect reference via a variable or
         # parameter
@@ -172,7 +193,7 @@ class AttrProxy(BaseProxy):
     def __getitem__(self, key):
         if not isinstance(key, int):
             raise TypeError("Proxy object requires integer index")
-        if hasattr(self, '_pdesc'):
+        if hasattr(self, "_pdesc"):
             raise AttributeError("Index operation on bound proxy")
         new_self = copy.deepcopy(self)
         new_self._modifiers.append(key)
@@ -182,8 +203,8 @@ class AttrProxy(BaseProxy):
         try:
             val = getattr(obj, self._attr)
             visited = False
-            if hasattr(val, '_visited'):
-                visited = getattr(val, '_visited')
+            if hasattr(val, "_visited"):
+                visited = getattr(val, "_visited")
 
             if visited:
                 return None, False
@@ -204,7 +225,7 @@ class AttrProxy(BaseProxy):
             elif isinstance(m, int):
                 val = val[m]
             else:
-                assert("Item must be string or integer")
+                assert "Item must be string or integer"
             while isproxy(val):
                 val = val.unproxy(obj)
         return val, True
@@ -213,19 +234,21 @@ class AttrProxy(BaseProxy):
         p = self._attr
         for m in self._modifiers:
             if isinstance(m, str):
-                p += '.%s' % m
+                p += ".%s" % m
             elif isinstance(m, int):
-                p += '[%d]' % m
+                p += "[%d]" % m
             else:
-                assert("Item must be string or integer")
+                assert "Item must be string or integer"
         return p
+
 
 class AnyProxy(BaseProxy):
     def find(self, obj):
         return obj.find_any(self._pdesc.ptype)
 
     def path(self):
-        return 'any'
+        return "any"
+
 
 # The AllProxy traverses the entire sub-tree (not only the children)
 # and adds all objects of a specific type
@@ -234,10 +257,12 @@ class AllProxy(BaseProxy):
         return obj.find_all(self._pdesc.ptype)
 
     def path(self):
-        return 'all'
+        return "all"
+
 
 def isproxy(obj):
     from . import params
+
     if isinstance(obj, (BaseProxy, params.EthernetAddr)):
         return True
     elif isinstance(obj, (list, tuple)):
@@ -246,24 +271,26 @@ def isproxy(obj):
                 return True
     return False
 
+
 class ProxyFactory(object):
     def __init__(self, search_self, search_up):
         self.search_self = search_self
         self.search_up = search_up
 
     def __getattr__(self, attr):
-        if attr == 'any':
+        if attr == "any":
             return AnyProxy(self.search_self, self.search_up)
-        elif attr == 'all':
+        elif attr == "all":
             if self.search_up:
-                assert("Parant.all is not supported")
+                assert "Parant.all is not supported"
             return AllProxy(self.search_self, self.search_up)
         else:
             return AttrProxy(self.search_self, self.search_up, attr)
 
+
 # global objects for handling proxies
-Parent = ProxyFactory(search_self = False, search_up = True)
-Self = ProxyFactory(search_self = True, search_up = False)
+Parent = ProxyFactory(search_self=False, search_up=True)
+Self = ProxyFactory(search_self=True, search_up=False)
 
 # limit exports on 'from proxy import *'
-__all__ = ['Parent', 'Self']
+__all__ = ["Parent", "Self"]

@@ -2,9 +2,12 @@
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "debug/LLVMTraceCPU.hh"
 
+namespace gem5 {
+
 using InstStatus = LLVMTraceCPU::InstStatus;
 
-LLVMRenameStage::LLVMRenameStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
+LLVMRenameStage::LLVMRenameStage(const LLVMTraceCPUParams *params,
+                                 LLVMTraceCPU *_cpu)
     : cpu(_cpu), renameWidth(params->renameWidth),
       maxRenameQueueSize(params->renameBufferSize),
       fromDecodeDelay(params->decodeToRenameDelay),
@@ -183,3 +186,4 @@ size_t LLVMRenameStage::getTotalRenameQueueSize() const {
   }
   return totalRenameQueueSize;
 }
+} // namespace gem5

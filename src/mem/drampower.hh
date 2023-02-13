@@ -46,6 +46,9 @@
 #include "libdrampower/LibDRAMPower.h"
 #include "params/DRAMInterface.hh"
 
+namespace gem5
+{
+
 /**
  * DRAMPower is a standalone tool which calculates the power consumed by a
  * DRAM in the system. This class wraps the DRAMPower library.
@@ -60,43 +63,44 @@ class DRAMPower
      * DRAMInterfaceParams to the memSpec of DRAMPower
      */
     static Data::MemArchitectureSpec getArchParams(
-                                     const DRAMInterfaceParams* p);
+                                     const DRAMInterfaceParams &p);
 
     /**
      * Transforms the timing parameters defined in DRAMInterfaceParams to
      * the memSpec of DRAMPower
      */
-    static Data::MemTimingSpec getTimingParams(const DRAMInterfaceParams* p);
+    static Data::MemTimingSpec getTimingParams(const DRAMInterfaceParams &p);
 
     /**
      * Transforms the power and current parameters defined in
      * DRAMInterfaceParams to the memSpec of DRAMPower
      */
-    static Data::MemPowerSpec getPowerParams(const DRAMInterfaceParams* p);
+    static Data::MemPowerSpec getPowerParams(const DRAMInterfaceParams &p);
 
     /**
      * Determine data rate, either one or two.
      */
-    static uint8_t getDataRate(const DRAMInterfaceParams* p);
+    static uint8_t getDataRate(const DRAMInterfaceParams &p);
 
     /**
      * Determine if DRAM has two voltage domains (or one)
      */
-    static bool hasTwoVDD(const DRAMInterfaceParams* p);
+    static bool hasTwoVDD(const DRAMInterfaceParams &p);
 
     /**
      * Return an instance of MemSpec based on the DRAMInterfaceParams
      */
-    static Data::MemorySpecification getMemSpec(const DRAMInterfaceParams* p);
+    static Data::MemorySpecification getMemSpec(const DRAMInterfaceParams &p);
 
  public:
 
     // Instance of DRAMPower Library
     libDRAMPower powerlib;
 
-    DRAMPower(const DRAMInterfaceParams* p, bool include_io);
+    DRAMPower(const DRAMInterfaceParams &p, bool include_io);
 
 };
 
-#endif //__MEM_DRAM_POWER_HH__
+} // namespace gem5
 
+#endif //__MEM_DRAM_POWER_HH__

@@ -30,22 +30,25 @@
 from m5.params import *
 
 from m5.objects.System import System
-from m5.objects.Workload import Workload
-
-class RiscvFsWorkload(Workload):
-    type = 'RiscvFsWorkload'
-    cxx_class = 'RiscvISA::FsWorkload'
-    cxx_header = 'arch/riscv/fs_workload.hh'
-    abstract = True
-
-    bare_metal = Param.Bool(False, "Using Bare Metal Application?")
-    reset_vect = Param.Addr(0x0, 'Reset vector')
+from m5.objects.Workload import Workload, KernelWorkload
 
 
-class RiscvBareMetal(RiscvFsWorkload):
-    type = 'RiscvBareMetal'
-    cxx_class = 'RiscvISA::BareMetal'
-    cxx_header = 'arch/riscv/bare_metal/fs_workload.hh'
+class RiscvBareMetal(Workload):
+    type = "RiscvBareMetal"
+    cxx_class = "gem5::RiscvISA::BareMetal"
+    cxx_header = "arch/riscv/bare_metal/fs_workload.hh"
+
     bootloader = Param.String("File, that contains the bootloader code")
+    bare_metal = Param.Bool(True, "Using Bare Metal Application?")
+    reset_vect = Param.Addr(0x0, "Reset vector")
 
-    bare_metal = True
+
+class RiscvLinux(KernelWorkload):
+    type = "RiscvLinux"
+    cxx_class = "gem5::RiscvISA::FsLinux"
+    cxx_header = "arch/riscv/linux/fs_workload.hh"
+
+    dtb_filename = Param.String(
+        "", "File that contains the Device Tree Blob. Don't use DTB if empty."
+    )
+    dtb_addr = Param.Addr(0x87E00000, "DTB address")

@@ -28,11 +28,14 @@ from m5.SimObject import SimObject
 from m5.params import *
 from m5.proxy import *
 
+
 class Platform(SimObject):
-    type = 'Platform'
+    type = "Platform"
     abstract = True
     cxx_header = "dev/platform.hh"
-    intrctrl = Param.IntrControl(Parent.any, "interrupt controller")
+    cxx_class = "gem5::Platform"
+
+    system = Param.System(Parent.any, "system")
 
     # for platforms using device trees to set properties of CPU nodes
     def annotateCpuDeviceNode(self, cpu, state):

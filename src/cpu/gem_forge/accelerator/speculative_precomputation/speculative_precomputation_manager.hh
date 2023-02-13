@@ -11,6 +11,10 @@ class SpeculativePrecomputationTriggerInst;
 
 #include <unordered_map>
 
+namespace gem5 {
+
+class SpeculativePrecomputationTriggerInst;
+
 class SpeculativePrecomputationThread : public LLVMTraceThreadContext {
 public:
   SpeculativePrecomputationThread(ContextID _contextId,
@@ -45,8 +49,8 @@ private:
 
 class SpeculativePrecomputationManager : public GemForgeAccelerator {
 public:
-  using Params = SpeculativePrecomputationManagerParams;
-  SpeculativePrecomputationManager(Params *params);
+  PARAMS(SpeculativePrecomputationManager)
+  SpeculativePrecomputationManager(const Params &params);
   ~SpeculativePrecomputationManager() override;
 
   void handshake(GemForgeCPUDelegator *_cpuDelegator,
@@ -58,14 +62,16 @@ public:
 
   void regStats() override;
 
-  Stats::Scalar numTriggeredSlices;
-  Stats::Scalar numSkippedSlices;
-  Stats::Scalar numTriggeredChainSlices;
+  statistics::Scalar numTriggeredSlices;
+  statistics::Scalar numSkippedSlices;
+  statistics::Scalar numTriggeredChainSlices;
 
 private:
   LLVMTraceCPU *cpu;
   std::unordered_map<Addr, SpeculativePrecomputationThread *>
       criticalPCThreadMap;
 };
+
+} // namespace gem5
 
 #endif

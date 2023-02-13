@@ -6,6 +6,8 @@
 #include <map>
 #include <ostream>
 
+namespace gem5 {
+
 /**
  * Separate the stream statistic from Stream to a separate structure.
  */
@@ -237,5 +239,7 @@ public:
    */
   uint64_t curCycle = 0;
 };
+
+} // namespace gem5
 
 #endif

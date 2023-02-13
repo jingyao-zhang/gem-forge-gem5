@@ -40,14 +40,19 @@
 #include "params/BasicLink.hh"
 #include "sim/sim_object.hh"
 
+namespace gem5
+{
+
+namespace ruby
+{
+
 class Topology;
 
 class BasicLink : public SimObject
 {
   public:
-    typedef BasicLinkParams Params;
-    BasicLink(const Params *p);
-    const Params *params() const { return (const Params *)_params; }
+    PARAMS(BasicLink);
+    BasicLink(const Params &p);
 
     void init();
 
@@ -70,9 +75,8 @@ operator<<(std::ostream& out, const BasicLink& obj)
 class BasicExtLink : public BasicLink
 {
   public:
-    typedef BasicExtLinkParams Params;
-    BasicExtLink(const Params *p);
-    const Params *params() const { return (const Params *)_params; }
+    PARAMS(BasicExtLink);
+    BasicExtLink(const Params &p);
 
     friend class Topology;
 };
@@ -80,11 +84,13 @@ class BasicExtLink : public BasicLink
 class BasicIntLink : public BasicLink
 {
   public:
-    typedef BasicIntLinkParams Params;
-    BasicIntLink(const Params *p);
-    const Params *params() const { return (const Params *)_params; }
+    PARAMS(BasicIntLink);
+    BasicIntLink(const Params &p);
 
     friend class Topology;
 };
+
+} // namespace ruby
+} // namespace gem5
 
 #endif //__MEM_RUBY_NETWORK_BASICLINK_HH__

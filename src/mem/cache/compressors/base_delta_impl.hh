@@ -37,10 +37,15 @@
 #include "mem/cache/compressors/base_delta.hh"
 #include "mem/cache/compressors/dictionary_compressor_impl.hh"
 
-namespace Compressor {
+namespace gem5
+{
+
+GEM5_DEPRECATED_NAMESPACE(Compressor, compression);
+namespace compression
+{
 
 template <class BaseType, std::size_t DeltaSizeBits>
-BaseDelta<BaseType, DeltaSizeBits>::BaseDelta(const Params *p)
+BaseDelta<BaseType, DeltaSizeBits>::BaseDelta(const Params &p)
     : DictionaryCompressor<BaseType>(p)
 {
 }
@@ -72,7 +77,7 @@ BaseDelta<BaseType, DeltaSizeBits>::compress(
     Cycles& decomp_lat)
 {
     std::unique_ptr<Base::CompressionData> comp_data =
-        DictionaryCompressor<BaseType>::compress(chunks);
+        DictionaryCompressor<BaseType>::compress(chunks, comp_lat, decomp_lat);
 
     // If there are more bases than the maximum, the compressor failed.
     // Otherwise, we have to take into account all bases that have not
@@ -89,18 +94,11 @@ BaseDelta<BaseType, DeltaSizeBits>::compress(
             8 * sizeof(BaseType) * diff);
     }
 
-    // Set compression latency (Assumes 1 cycle per entry and 1 cycle for
-    // packing)
-    comp_lat = Cycles(1 + (DictionaryCompressor<BaseType>::blkSize /
-        sizeof(BaseType)));
-
-    // Set decompression latency
-    decomp_lat = Cycles(1);
-
     // Return compressed line
     return comp_data;
 }
 
-} // namespace Compressor
+} // namespace compression
+} // namespace gem5
 
 #endif //__MEM_CACHE_COMPRESSORS_BASE_DELTA_IMPL_HH__

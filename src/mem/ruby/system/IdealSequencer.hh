@@ -3,8 +3,14 @@
 
 #include "mem/ruby/slicc_interface/RubyRequest.hh"
 
+#include "sim/eventq.hh"
+
 #include <queue>
 #include <unordered_map>
+
+namespace gem5 {
+
+namespace ruby {
 
 /**
  * A helper class to implement the ideal memory in sequencer.
@@ -69,5 +75,9 @@ private:
   // fails, and I am not sure about the reason.
   static IdealDrainEvent *drainEvent;
 };
+
+} // namespace ruby
+
+} // namespace gem5
 
 #endif

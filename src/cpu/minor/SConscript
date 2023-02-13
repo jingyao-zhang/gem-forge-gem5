@@ -40,8 +40,11 @@
 
 Import('*')
 
-if 'MinorCPU' in env['CPU_MODELS']:
-    SimObject('MinorCPU.py')
+if not env['CONF']['USE_NULL_ISA']:
+    SimObject('BaseMinorCPU.py', sim_objects=[
+        'MinorOpClass', 'MinorOpClassSet', 'MinorFUTiming', 'MinorFU',
+        'MinorFUPool', 'BaseMinorCPU'],
+        enums=['ThreadPolicy'])
 
     Source('activity.cc')
     Source('cpu.cc')
@@ -76,3 +79,6 @@ if 'MinorCPU' in env['CPU_MODELS']:
     CompoundFlag('Minor', [
         'MinorCPU', 'MinorExecute', 'MinorInterrupt', 'MinorMem',
         'MinorScoreboard'])
+
+    # For backwards compatibility
+    SimObject('MinorCPU.py', sim_objects=[])

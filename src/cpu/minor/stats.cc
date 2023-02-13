@@ -40,11 +40,12 @@
 #include "base/output.hh"
 #include <cassert>
 
-namespace Minor
+namespace gem5
 {
 
-MinorStats::MinorStats()
-{ }
+GEM5_DEPRECATED_NAMESPACE(Minor, minor);
+namespace minor
+{
 
 void MinorStats::updateLoadBlockedStat(Addr pc, int upc, uint64_t cycles)
 {
@@ -89,10 +90,86 @@ void MinorStats::dumpLoadBlockedStat()
     this->dumped++;
 }
 
-void
-MinorStats::regStats(const std::string &name, BaseCPU &baseCpu)
+MinorStats::MinorStats(BaseCPU *base_cpu)
+    : statistics::Group(base_cpu),
+    ADD_STAT(numInsts, statistics::units::Count::get(),
+             "Number of instructions committed"),
+    ADD_STAT(numOps, statistics::units::Count::get(),
+             "Number of ops (including micro ops) committed"),
+    ADD_STAT(numDiscardedOps, statistics::units::Count::get(),
+             "Number of ops (including micro ops) which were discarded before "
+             "commit"),
+    ADD_STAT(numFetchSuspends, statistics::units::Count::get(),
+             "Number of times Execute suspended instruction fetching"),
+    ADD_STAT(quiesceCycles, statistics::units::Cycle::get(),
+             "Total number of cycles that CPU has spent quiesced or waiting "
+             "for an interrupt"),
+    ADD_STAT(cpi, statistics::units::Rate<
+                statistics::units::Cycle, statistics::units::Count>::get(),
+             "CPI: cycles per instruction"),
+    ADD_STAT(ipc, statistics::units::Rate<
+                statistics::units::Count, statistics::units::Cycle>::get(),
+             "IPC: instructions per cycle"),
+    ADD_STAT(committedInstType, statistics::units::Count::get(),
+             "Class of committed instruction"),
+    ADD_STAT(committedControl, statistics::units::Count::get(),
+             "Class of control type instructions committed")
+
 {
-    this->cpuId = baseCpu.cpuId();
+    quiesceCycles.prereq(quiesceCycles);
+
+    loadBlockedIssueCycles
+        .name(name() + ".loadBlockedIssueCycles")
+        .desc("Total number of cycles that CPU has blocked issue waiting "
+              "for a load")
+        .prereq(loadBlockedIssueCycles);
+    loadBlockedIssueInsts
+        .name(name() + ".loadBlockedIssueInsts")
+        .desc("Total number of insts that CPU has blocked issue waiting "
+              "for a load")
+        .prereq(loadBlockedIssueInsts);
+    loadBlockedIssueCPI
+        .name(name() + ".loadBlockedCPI")
+        .desc("LoadBlockedCPI: cycles per instruction")
+        .precision(6);
+    loadBlockedIssueCPI = loadBlockedIssueCycles / loadBlockedIssueInsts;
+    loadBlockedIssueCyclesPercentage
+        .name(name() + ".loadBlockedCyclesPercengate")
+        .desc("Percentage of cycles issue blocked by a load")
+        .precision(6);
+    loadBlockedIssueCyclesPercentage =
+        loadBlockedIssueCycles / base_cpu->baseStats.numCycles;
+
+    ideaCycles
+        .name(name() + ".ideaCycles")
+        .desc("Ideal inorder cpu cycles")
+        .prereq(ideaCycles);
+    ideaCyclesNoFUTiming
+        .name(name() + ".ideaCyclesNoFUTiming")
+        .desc("Ideal inorder cpu cycles without FUTiming")
+        .prereq(ideaCyclesNoFUTiming);
+    ideaCyclesNoLDTiming
+        .name(name() + ".ideaCyclesNoLDTiming")
+        .desc("Ideal inorder cpu cycles without LDTiming")
+        .prereq(ideaCyclesNoLDTiming);
+
+    cpi.precision(6);
+    cpi = base_cpu->baseStats.numCycles / numInsts;
+
+    ipc.precision(6);
+    ipc = numInsts / base_cpu->baseStats.numCycles;
+
+    committedInstType
+        .init(base_cpu->numThreads, enums::Num_OpClass)
+        .flags(statistics::total | statistics::pdf | statistics::dist);
+    committedInstType.ysubnames(enums::OpClassStrings);
+
+    committedControl
+        .init(base_cpu->numThreads, StaticInstFlags::Flags::Num_Flags)
+        .flags(statistics::nozero);
+    committedControl.ysubnames(StaticInstFlags::FlagsStrings);
+
+    this->cpuId = base_cpu->cpuId();
     this->loadBlockedDir = simout.createSubdirectory("loadBlocked");
 
     Stats::registerDumpCallback(
@@ -101,141 +178,78 @@ MinorStats::regStats(const std::string &name, BaseCPU &baseCpu)
         [this]() -> void { this->resetLoadBlockedStat(); });
 
     numFetch2Branches
-        .name(name + ".fetch2.branches")
+        .name(name() + ".fetch2.branches")
         .desc("Number of branches fetched");
 
     numDecodedInsts
-        .name(name + ".decode.insts")
+        .name(name() + ".decode.insts")
         .desc("Number of instructions decoded");
     numDecodedOps
-        .name(name + ".decode.ops")
+        .name(name() + ".decode.ops")
         .desc("Number of ops (including micro ops) decoded");
 
     numLSQLoadOps
-        .name(name + ".lsq.loads")
+        .name(name() + ".lsq.loads")
         .desc("Number of load ops executed");
     numLSQStoreOps
-        .name(name + ".lsq.stores")
+        .name(name() + ".lsq.stores")
         .desc("Number of store ops executed");
 
     numIQIntReads
-        .name(name + ".execute.iqIntReads")
+        .name(name() + ".execute.iqIntReads")
         .desc("Number of reads to int iq");
     numIQIntWrites
-        .name(name + ".execute.iqIntWrites")
+        .name(name() + ".execute.iqIntWrites")
         .desc("Number of writes to int iq");
     numIQIntWakeups
-        .name(name + ".execute.iqIntWakeups")
+        .name(name() + ".execute.iqIntWakeups")
         .desc("Number of wakeups to int iq");
     numIQFpReads
-        .name(name + ".execute.iqFpReads")
+        .name(name() + ".execute.iqFpReads")
         .desc("Number of reads to fp iq");
     numIQFpWrites
-        .name(name + ".execute.iqFpWrites")
+        .name(name() + ".execute.iqFpWrites")
         .desc("Number of writes to fp iq");
     numIQFpWakeups
-        .name(name + ".execute.iqFpWakeups")
+        .name(name() + ".execute.iqFpWakeups")
         .desc("Number of wakeups to fp iq");
 
     numIntRegReads
-        .name(name + ".execute.intRegReads")
+        .name(name() + ".execute.intRegReads")
         .desc("Number of reads to int regs");
     numIntRegWrites
-        .name(name + ".execute.intRegWrites")
+        .name(name() + ".execute.intRegWrites")
         .desc("Number of writes to int regs");
     numFpRegReads
-        .name(name + ".execute.fpRegReads")
+        .name(name() + ".execute.fpRegReads")
         .desc("Number of reads to fp regs");
     numFpRegWrites
-        .name(name + ".execute.fpRegWrites")
+        .name(name() + ".execute.fpRegWrites")
         .desc("Number of writes to fp regs");
 
     numCommittedIntOps
-        .name(name + ".commit.intOps")
+        .name(name() + ".commit.intOps")
         .desc("Number of int ops committed");
     numCommittedFpOps
-        .name(name + ".commit.fpOps")
+        .name(name() + ".commit.fpOps")
         .desc("Number of fp ops committed");
     numCommittedCallInsts
-        .name(name + ".commit.callInsts")
+        .name(name() + ".commit.callInsts")
         .desc("Number of call insts committed");
 
     numInsts
-        .name(name + ".committedInsts")
+        .name(name() + ".committedInsts")
         .desc("Number of instructions committed");
 
     numOps
-        .name(name + ".committedOps")
+        .name(name() + ".committedOps")
         .desc("Number of ops (including micro ops) committed");
 
     numDiscardedOps
-        .name(name + ".discardedOps")
+        .name(name() + ".discardedOps")
         .desc("Number of ops (including micro ops) which were discarded "
             "before commit");
-
-    numFetchSuspends
-        .name(name + ".numFetchSuspends")
-        .desc("Number of times Execute suspended instruction fetching");
-
-    quiesceCycles
-        .name(name + ".quiesceCycles")
-        .desc("Total number of cycles that CPU has spent quiesced or waiting "
-              "for an interrupt")
-        .prereq(quiesceCycles);
-
-    loadBlockedIssueCycles
-        .name(name + ".loadBlockedIssueCycles")
-        .desc("Total number of cycles that CPU has blocked issue waiting "
-              "for a load")
-        .prereq(loadBlockedIssueCycles);
-    loadBlockedIssueInsts
-        .name(name + ".loadBlockedIssueInsts")
-        .desc("Total number of insts that CPU has blocked issue waiting "
-              "for a load")
-        .prereq(loadBlockedIssueInsts);
-    loadBlockedIssueCPI
-        .name(name + ".loadBlockedCPI")
-        .desc("LoadBlockedCPI: cycles per instruction")
-        .precision(6);
-    loadBlockedIssueCPI = loadBlockedIssueCycles / loadBlockedIssueInsts;
-    loadBlockedIssueCyclesPercentage
-        .name(name + ".loadBlockedCyclesPercengate")
-        .desc("Percentage of cycles issue blocked by a load")
-        .precision(6);
-    loadBlockedIssueCyclesPercentage =
-        loadBlockedIssueCycles / baseCpu.numCycles;
-
-    ideaCycles
-        .name(name + ".ideaCycles")
-        .desc("Ideal inorder cpu cycles")
-        .prereq(ideaCycles);
-    ideaCyclesNoFUTiming
-        .name(name + ".ideaCyclesNoFUTiming")
-        .desc("Ideal inorder cpu cycles without FUTiming")
-        .prereq(ideaCyclesNoFUTiming);
-    ideaCyclesNoLDTiming
-        .name(name + ".ideaCyclesNoLDTiming")
-        .desc("Ideal inorder cpu cycles without LDTiming")
-        .prereq(ideaCyclesNoLDTiming);
-
-    cpi
-        .name(name + ".cpi")
-        .desc("CPI: cycles per instruction")
-        .precision(6);
-    cpi = baseCpu.numCycles / numInsts;
-
-    ipc
-        .name(name + ".ipc")
-        .desc("IPC: instructions per cycle")
-        .precision(6);
-    ipc = numInsts / baseCpu.numCycles;
-
-    committedInstType
-        .init(baseCpu.numThreads, Enums::Num_OpClass)
-        .name(name + ".op_class")
-        .desc("Class of committed instruction")
-        .flags(Stats::total | Stats::pdf | Stats::dist);
-    committedInstType.ysubnames(Enums::OpClassStrings);
 }
 
-};
+} // namespace minor
+} // namespace gem5

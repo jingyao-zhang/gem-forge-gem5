@@ -1,7 +1,7 @@
-
 #ifndef __GEM_FORGE_CPU_DELEGATOR_HH__
 #define __GEM_FORGE_CPU_DELEGATOR_HH__
 
+#include "arch/generic/mmu.hh"
 #include "cpu/gem_forge/accelerator/arch/gem_forge_isa_handler.hh"
 #include "gem_forge_idea_cache.hh"
 #include "gem_forge_idea_inorder_cpu.hh"
@@ -9,6 +9,8 @@
 
 #include "cpu/base.hh"
 #include "params/BaseCPU.hh"
+
+namespace gem5 {
 
 /**
  * Originally, these accelerators are implemented assuming a LLVMTraceCPU.
@@ -56,7 +58,9 @@ public:
   /** Reads this CPU's ID. */
   int cpuId() const { return this->baseCPU->cpuId(); }
   /** Reads this CPU's unique data requestor ID. */
-  RequestorID dataRequestorId() const { return this->baseCPU->dataRequestorId(); }
+  RequestorID dataRequestorId() const {
+    return this->baseCPU->dataRequestorId();
+  }
 
   /**
    * The accelerators are implemented as SimObject, not ClockedObject,
@@ -79,7 +83,9 @@ public:
     return this->baseCPU->getContext(0);
   }
 
-  BaseTLB *getDataTLB() { return this->baseCPU->params()->dtb; }
+  BaseTLB *getDataTLB() {
+    return this->baseCPU->params().mmu->getTlb(BaseMMU::Mode::Read);
+  }
 
   /**
    * Read a zero-terminated string from the memory.
@@ -145,5 +151,7 @@ protected:
   virtual InstSeqNum getInstSeqNum() const = 0;
   virtual void setInstSeqNum(InstSeqNum seqNum) = 0;
 };
+
+} // namespace gem5
 
 #endif

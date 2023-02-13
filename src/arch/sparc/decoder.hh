@@ -31,14 +31,19 @@
 
 #include "arch/generic/decode_cache.hh"
 #include "arch/generic/decoder.hh"
-#include "arch/sparc/registers.hh"
-#include "arch/types.hh"
+#include "arch/sparc/types.hh"
 #include "cpu/static_inst.hh"
+#include "debug/Decode.hh"
+#include "params/SparcDecoder.hh"
+
+namespace gem5
+{
+
+class BaseISA;
 
 namespace SparcISA
 {
 
-class ISA;
 class Decoder : public InstDecoder
 {
   protected:
@@ -47,52 +52,30 @@ class Decoder : public InstDecoder
     const std::string &name() const { return _name; }
     // The extended machine instruction being generated
     ExtMachInst emi;
-    bool instDone;
-    RegVal asi;
+    uint32_t machInst;
+    RegVal asi = 0;
 
   public:
-    Decoder(ISA* isa = nullptr, int thread_id = 0)
-        : _name(std::string("decoder") + std::to_string(thread_id)), instDone(false),
-        asi(0) {}
-
-    void process() {}
-
-    void
-    reset()
-    {
-        instDone = false;
-    }
+    Decoder(const SparcDecoderParams &p) : InstDecoder(p, &machInst) {}
 
     // Use this to give data to the predecoder. This should be used
     // when there is control flow.
     void
-    moreBytes(const PCState &pc, Addr fetchPC, MachInst inst)
+    moreBytes(const PCStateBase &pc, Addr fetchPC) override
     {
-        emi = betoh(inst);
+        emi = betoh(machInst);
         // The I bit, bit 13, is used to figure out where the ASI
         // should come from. Use that in the ExtMachInst. This is
         // slightly redundant, but it removes the need to put a condition
         // into all the execute functions
         if (emi & (1 << 13)) {
             emi |= (static_cast<ExtMachInst>(
-                        asi << (sizeof(MachInst) * 8)));
+                        asi << (sizeof(machInst) * 8)));
         } else {
             emi |= (static_cast<ExtMachInst>(bits(emi, 12, 5))
-                    << (sizeof(MachInst) * 8));
+                    << (sizeof(machInst) * 8));
         }
         instDone = true;
-    }
-
-    bool
-    needMoreBytes()
-    {
-        return true;
-    }
-
-    bool
-    instReady()
-    {
-        return instDone;
     }
 
     void
@@ -101,13 +84,11 @@ class Decoder : public InstDecoder
         asi = _asi;
     }
 
-    void takeOverFrom(Decoder *old) {}
-
   protected:
     /// A cache of decoded instruction objects.
-    static GenericISA::BasicDecodeCache defaultCache;
+    static GenericISA::BasicDecodeCache<Decoder, ExtMachInst> defaultCache;
+    friend class GenericISA::BasicDecodeCache<Decoder, ExtMachInst>;
 
-  public:
     StaticInstPtr decodeInst(ExtMachInst mach_inst);
 
     /// Decode a machine instruction.
@@ -116,19 +97,24 @@ class Decoder : public InstDecoder
     StaticInstPtr
     decode(ExtMachInst mach_inst, Addr addr)
     {
-        return defaultCache.decode(this, mach_inst, addr);
+        StaticInstPtr si = defaultCache.decode(this, mach_inst, addr);
+        DPRINTF(Decode, "Decode: Decoded %s instruction: %#x\n",
+                si->getName(), mach_inst);
+        return si;
     }
 
+  public:
     StaticInstPtr
-    decode(SparcISA::PCState &nextPC)
+    decode(PCStateBase &next_pc) override
     {
         if (!instDone)
             return NULL;
         instDone = false;
-        return decode(emi, nextPC.instAddr());
+        return decode(emi, next_pc.instAddr());
     }
 };
 
 } // namespace SparcISA
+} // namespace gem5
 
 #endif // __ARCH_SPARC_DECODER_HH__

@@ -4,6 +4,8 @@
 
 #include "DynStreamId.hh"
 
+namespace gem5 {
+
 /**
  * Represent a strand of a DynStreamId. Used to auto parallelize streams across
  * banks.
@@ -78,5 +80,7 @@ struct DynStrandIdHasher {
     return DynStreamIdHasher::mergeTwoHashes(x, y);
   }
 };
+
+} // namespace gem5
 
 #endif

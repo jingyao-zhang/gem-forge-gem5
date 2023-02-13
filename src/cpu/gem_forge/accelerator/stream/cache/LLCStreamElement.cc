@@ -9,12 +9,14 @@
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
 
+namespace gem5 {
+
 std::list<LLCStreamElementPtr> LLCStreamElement::deferredReleaseElems;
 
 uint64_t LLCStreamElement::aliveElems = 0;
 
 LLCStreamElement::LLCStreamElement(
-    Stream *_S, AbstractStreamAwareController *_mlcController,
+    Stream *_S, ruby::AbstractStreamAwareController *_mlcController,
     const DynStrandId &_strandId, uint64_t _idx, Addr _vaddr, int _size,
     bool _isNDCElement)
     : S(_S), mlcController(_mlcController), strandId(_strandId), idx(_idx),
@@ -190,7 +192,7 @@ int LLCStreamElement::computeOverlapImpl(int elemSize, Addr rangeVAddr,
     rangeOffset = rangeSize;
     return 0;
   }
-  assert(makeLineAddress(overlapLHS) == makeLineAddress(overlapRHS - 1) &&
+  assert(ruby::makeLineAddress(overlapLHS) == ruby::makeLineAddress(overlapRHS - 1) &&
          "Illegal overlap.");
   auto overlapSize = overlapRHS - overlapLHS;
   rangeOffset = overlapLHS - rangeVAddr;
@@ -200,7 +202,7 @@ int LLCStreamElement::computeOverlapImpl(int elemSize, Addr rangeVAddr,
 
 void LLCStreamElement::extractElementDataFromSlice(
     GemForgeCPUDelegator *cpuDelegator, const DynStreamSliceId &sliceId,
-    const DataBlock &dataBlock) {
+    const ruby::DataBlock &dataBlock) {
   /**
    * Extract the element data and update the LLCStreamElement.
    */
@@ -231,7 +233,7 @@ void LLCStreamElement::extractElementDataFromSlice(
                     sliceOffset, sliceOffset + overlapSize);
 
   // Get the data from the cache line.
-  auto data = dataBlock.getData(overlapLHS % RubySystem::getBlockSizeBytes(),
+  auto data = dataBlock.getData(overlapLHS % ruby::RubySystem::getBlockSizeBytes(),
                                 overlapSize);
   memcpy(this->getUInt8Ptr(elemOffset), data, overlapSize);
 
@@ -256,4 +258,5 @@ void LLCStreamElement::addSlice(LLCStreamSlicePtr &slice) {
   LLC_ELEMENT_DPRINTF(this, "Register slice %s.\n", slice->getSliceId());
   this->slices[this->numSlices] = slice;
   this->numSlices++;
-}
+}} // namespace gem5
+

@@ -6,6 +6,8 @@
 
 #include "../LLCStreamEngine.hh"
 
+namespace gem5 {
+
 /**
  * This represents the PUM engine at each LLC bank.
  * It is in charge of simulating the PUM commands and intereacts with
@@ -16,8 +18,8 @@ class PUMEngine {
 public:
   PUMEngine(LLCStreamEngine *_se);
 
-  void receiveKick(const RequestMsg &msg);
-  void receiveData(const RequestMsg &msg);
+  void receiveKick(const ruby::RequestMsg &msg);
+  void receiveData(const ruby::RequestMsg &msg);
   void setPUMManager(MLCPUMManager *pumManager);
   void configure(MLCPUMManager *pumManager, int64_t pumContextId,
                  const PUMCommandVecT &commands);
@@ -35,10 +37,10 @@ public:
   }
 
   void sendPUMDataToLLC(const DynStreamSliceId &sliceId,
-                        const NetDest &recvBanks, int bytes,
+                        const ruby::NetDest &recvBanks, int bytes,
                         bool isPUMPrefetch = false);
 
-  using SentPktMapT = std::map<NodeID, int>;
+  using SentPktMapT = std::map<ruby::NodeID, int>;
   void sendSyncToLLCs(const SentPktMapT &sentMap,
                       const DynStreamSliceId &sliceId);
 
@@ -48,7 +50,7 @@ private:
   friend class MLCPUMManager;
 
   LLCStreamEngine *se;
-  AbstractStreamAwareController *controller;
+  ruby::AbstractStreamAwareController *controller;
 
   std::unique_ptr<PUMHWConfiguration> hwConfig;
 
@@ -68,14 +70,14 @@ private:
   int sentPUMDataPkts = 0;
   int recvDataPkts = 0;
   SentPktMapT sentInterBankPacketMap;
-  std::map<NodeID, std::pair<int, int>> recvPUMDataPktMap;
+  std::map<ruby::NodeID, std::pair<int, int>> recvPUMDataPktMap;
   std::map<DynStrandId, std::pair<int, int>> recvStreamDataPktMap;
   bool acked = false;
 
   int getBankIdx() const { return this->controller->getMachineID().num; }
 
   int curRemoteBank() const { return this->se->curRemoteBank(); }
-  MachineType myMachineType() const { return this->se->myMachineType(); }
+  ruby::MachineType myMachineType() const { return this->se->myMachineType(); }
   const char *curRemoteMachineType() const {
     return this->se->curRemoteMachineType();
   }
@@ -87,12 +89,14 @@ private:
   void synced();
 
   void sendDoneToMLC(int recvPackets);
-  void sendAckToMLC(CoherenceResponseType type, int ackCount);
-  void sendSyncToLLC(MachineID recvBank, int sentPackets,
+  void sendAckToMLC(ruby::CoherenceResponseType type, int ackCount);
+  void sendSyncToLLC(ruby::MachineID recvBank, int sentPackets,
                      const DynStreamSliceId &sliceId);
 
-  void receiveDataFromPUM(const RequestMsg &msg);
-  void receiveDataFromStream(const RequestMsg &msg);
+  void receiveDataFromPUM(const ruby::RequestMsg &msg);
+  void receiveDataFromStream(const ruby::RequestMsg &msg);
 };
+
+} // namespace gem5
 
 #endif

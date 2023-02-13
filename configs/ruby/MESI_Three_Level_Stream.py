@@ -45,16 +45,16 @@ class L1Cache(RubyCache): pass
 class L2Cache(RubyCache): pass
 
 def define_options(parser):
-    parser.add_option("--num-clusters", type="int", default=1,
+    parser.add_argument("--num-clusters", type=int, default=1,
             help="number of clusters in a design in which there are shared\
             caches private to clusters")
-    parser.add_option("--l0-transitions-per-cycle", type="int", default=32)
-    parser.add_option("--l1-transitions-per-cycle", type="int", default=32)
-    parser.add_option("--l2-transitions-per-cycle", type="int", default=4)
+    parser.add_argument("--l0-transitions-per-cycle", type=int, default=32)
+    parser.add_argument("--l1-transitions-per-cycle", type=int, default=32)
+    parser.add_argument("--l2-transitions-per-cycle", type=int, default=4)
     return
 
 def create_system(options, full_system, system, dma_ports, bootmem,
-                  ruby_system):
+                  ruby_system, cpus):
 
     if buildEnv['PROTOCOL'] != 'MESI_Three_Level_Stream':
         fatal("This script requires the MESI_Three_Level_Stream protocol to be\
@@ -133,9 +133,9 @@ def create_system(options, full_system, system, dma_ports, bootmem,
             # we use system.cpu[0] to set the clk_domain, thereby ensuring
             # we don't index off the end of the cpu list.
             if len(system.cpu) == 1:
-                clk_domain = system.cpu[0].clk_domain
+                clk_domain = cpus[0].clk_domain
             else:
-                clk_domain = system.cpu[i].clk_domain
+                clk_domain = cpus[i].clk_domain
 
             l0_cntrl = L0Cache_Controller(
                 version=i * num_cpus_per_cluster + j, Icache=l0i_cache,

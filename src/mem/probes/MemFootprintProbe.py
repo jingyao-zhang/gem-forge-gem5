@@ -39,9 +39,13 @@ from m5.proxy import *
 
 from m5.objects.BaseMemProbe import BaseMemProbe
 
+
 class MemFootprintProbe(BaseMemProbe):
     type = "MemFootprintProbe"
     cxx_header = "mem/probes/mem_footprint.hh"
-    system = Param.System(Parent.any,
-                          "System pointer to get cache line and mem size")
+    cxx_class = "gem5::MemFootprintProbe"
+
+    system = Param.System(
+        Parent.any, "System pointer to get cache line and mem size"
+    )
     page_size = Param.Unsigned(4096, "Page size for page-level footprint")

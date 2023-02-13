@@ -2,8 +2,6 @@
  * Copyright (c) 2018 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -29,8 +27,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Anthony Gutierrez
  */
 
 #ifndef __GPU_COMPUTE_COMM_HH__
@@ -41,6 +37,9 @@
 
 #include "gpu-compute/exec_stage.hh"
 #include "gpu-compute/misc.hh"
+
+namespace gem5
+{
 
 struct ComputeUnitParams;
 class Wavefront;
@@ -64,7 +63,7 @@ class ScoreboardCheckToSchedule : public PipeStageIFace
 {
   public:
     ScoreboardCheckToSchedule() = delete;
-    ScoreboardCheckToSchedule(const ComputeUnitParams *p);
+    ScoreboardCheckToSchedule(const ComputeUnitParams &p);
     void reset() override;
     /**
      * Mark the WF as ready for execution on a particular functional
@@ -100,7 +99,7 @@ class ScheduleToExecute : public PipeStageIFace
 {
   public:
     ScheduleToExecute() = delete;
-    ScheduleToExecute(const ComputeUnitParams *p);
+    ScheduleToExecute(const ComputeUnitParams &p);
     void reset() override;
     GPUDynInstPtr& readyInst(int func_unit_id);
     /**
@@ -119,5 +118,7 @@ class ScheduleToExecute : public PipeStageIFace
     std::vector<GPUDynInstPtr> _readyInsts;
     std::vector<DISPATCH_STATUS> _dispatchStatus;
 };
+
+} // namespace gem5
 
 #endif // __GPU_COMPUTE_COMM_HH__

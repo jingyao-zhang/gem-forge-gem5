@@ -7,6 +7,8 @@
 
 #include "debug/NUMAPageAllocator.hh"
 
+namespace gem5 {
+
 bool NUMAPageAllocator::initialized = false;
 System *NUMAPageAllocator::system = nullptr;
 int NUMAPageAllocator::pageBytes = 0;
@@ -61,9 +63,16 @@ void NUMAPageAllocator::initialize(System *system) {
            "NUMAPageAllocator only works with single system.");
     return;
   }
-  NUMAPageAllocator::initialized = true;
-  NUMAPageAllocator::system = system;
-  NUMAPageAllocator::pageBytes = system->getPageBytes();
+
+  /**
+   * We definitely need a new implementation cause now system is not in charge
+   * of allocating more PhysPages.
+   */
+  assert(false && "This is not used anymore.");
+
+  // NUMAPageAllocator::initialized = true;
+  // NUMAPageAllocator::system = system;
+  // NUMAPageAllocator::pageBytes = system->getPageBytes();
 
   const auto &numaNodes = StreamNUCAMap::getNUMANodes();
   assert(!numaNodes.empty() && "Missing NUMANodes for NUMAPageAllocator.");
@@ -93,7 +102,9 @@ int NUMAPageAllocator::allocateOneRound() {
   const auto &numaNodes = StreamNUCAMap::getNUMANodes();
 
   auto pagesPerRound = freePages.size() / nodesPerPage;
-  auto startPAddr = system->allocPhysPages(pagesPerRound);
+  assert(false && "Fix this before using it.");
+  // auto startPAddr = system->allocPhysPages(pagesPerRound);
+  Addr startPAddr = 0;
 
   for (int i = 0; i < pagesPerRound; ++i) {
     auto pagePAddr = startPAddr + i * pageBytes;
@@ -117,3 +128,4 @@ int NUMAPageAllocator::allocateOneRound() {
   }
   return pagesPerRound;
 }
+} // namespace gem5

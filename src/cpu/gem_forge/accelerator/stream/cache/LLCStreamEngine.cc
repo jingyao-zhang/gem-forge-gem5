@@ -37,12 +37,15 @@
   DPRINTF(LLCRubyStreamBase, "[%s_SE%d]: " format,                             \
           this->curRemoteMachineType(), this->curRemoteBank(), ##args)
 
-LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
-                                 MessageBuffer *_streamMigrateMsgBuffer,
-                                 MessageBuffer *_streamIssueMsgBuffer,
-                                 MessageBuffer *_streamIndirectIssueMsgBuffer,
-                                 MessageBuffer *_streamResponseMsgBuffer)
-    : Consumer(_controller), controller(_controller),
+namespace gem5 {
+
+LLCStreamEngine::LLCStreamEngine(
+    ruby::AbstractStreamAwareController *_controller,
+    ruby::MessageBuffer *_streamMigrateMsgBuffer,
+    ruby::MessageBuffer *_streamIssueMsgBuffer,
+    ruby::MessageBuffer *_streamIndirectIssueMsgBuffer,
+    ruby::MessageBuffer *_streamResponseMsgBuffer)
+    : ruby::Consumer(_controller), controller(_controller),
       streamMigrateMsgBuffer(_streamMigrateMsgBuffer),
       streamIssueMsgBuffer(_streamIssueMsgBuffer),
       streamIndirectIssueMsgBuffer(_streamIndirectIssueMsgBuffer),
@@ -51,27 +54,27 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
       migrateWidth(_controller->getLLCStreamEngineMigrateWidth()),
       maxInflyRequests(8), maxInqueueRequests(2), translationBuffer(nullptr) {
   this->controller->registerLLCStreamEngine(this);
-  this->commitController = m5::make_unique<LLCStreamCommitController>(this);
-  this->atomicLockManager = m5::make_unique<LLCStreamAtomicLockManager>(this);
-  this->ndcController = m5::make_unique<LLCStreamNDCController>(this);
-  this->indReqBuffer = m5::make_unique<StreamRequestBuffer>(
+  this->commitController = std::make_unique<LLCStreamCommitController>(this);
+  this->atomicLockManager = std::make_unique<LLCStreamAtomicLockManager>(this);
+  this->ndcController = std::make_unique<LLCStreamNDCController>(this);
+  this->indReqBuffer = std::make_unique<StreamRequestBuffer>(
       this->controller, this->streamIndirectIssueMsgBuffer, Cycles(1),
       false /* For now disable indirect multicast */,
       4 /* Max Inqueue Requests Per Stream */,
       this->controller->myParams->ind_stream_req_max_per_multicast_msg,
       this->controller->myParams->ind_stream_req_multicast_group_size);
-  this->migrateController = m5::make_unique<LLCStreamMigrationController>(
+  this->migrateController = std::make_unique<LLCStreamMigrationController>(
       this->controller,
       this->controller->myParams
           ->neighbor_stream_threshold /* NeighborStreamsThreshold */,
       Cycles(this->controller->myParams->neighbor_migration_delay) /* Delay */
   );
-  this->reuseBuffer = m5::make_unique<StreamReuseBuffer>(
+  this->reuseBuffer = std::make_unique<StreamReuseBuffer>(
       this->controller->getMachineID(),
       this->controller->myParams->reuse_buffer_lines_per_core,
       true /* PerCoreMode */
   );
-  this->pumEngine = m5::make_unique<PUMEngine>(this);
+  this->pumEngine = std::make_unique<PUMEngine>(this);
 }
 
 LLCStreamEngine::~LLCStreamEngine() { this->streams.clear(); }
@@ -102,7 +105,7 @@ int LLCStreamEngine::curRemoteBank() const {
   return this->controller->getMachineID().num;
 }
 
-MachineType LLCStreamEngine::myMachineType() const {
+ruby::MachineType LLCStreamEngine::myMachineType() const {
   return this->controller->getMachineID().getType();
 }
 
@@ -239,7 +242,7 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynStreamPtr dynS,
   Addr paddr;
   assert(dynS->translateToPAddr(vaddr, paddr) &&
          "Paddr should always be valid to migrate a stream.");
-  Addr paddrLine = makeLineAddress(paddr);
+  Addr paddrLine = ruby::makeLineAddress(paddr);
   assert(this->isPAddrHandledByMe(paddrLine, machineType) &&
          "Stream migrated to wrong remote bank.\n");
 
@@ -290,18 +293,17 @@ void LLCStreamEngine::receiveStreamCommit(const DynStreamSliceId &sliceId) {
   dynS->addCommitMessage(sliceId);
 }
 
-void LLCStreamEngine::receiveStreamDataVec(Cycles delayCycle, Addr paddrLine,
-                                           const DynStreamSliceIdVec &sliceIds,
-                                           const DataBlock &dataBlock,
-                                           const DataBlock &storeValueBlock) {
+void LLCStreamEngine::receiveStreamDataVec(
+    Cycles delayCycle, Addr paddrLine, const DynStreamSliceIdVec &sliceIds,
+    const ruby::DataBlock &dataBlock, const ruby::DataBlock &storeValueBlock) {
   auto readyCycle = this->controller->curCycle() + delayCycle;
 
   /**
    * Notice that we replace the data block here if we are using
    * back storage.
    */
-  DataBlock loadValueBlock = dataBlock;
-  auto rubySystem = this->controller->params()->ruby_system;
+  ruby::DataBlock loadValueBlock = dataBlock;
+  auto rubySystem = this->controller->params().ruby_system;
   if (rubySystem->getAccessBackingStore()) {
     // Get the data from backing store.
     RequestPtr req =
@@ -322,7 +324,7 @@ void LLCStreamEngine::receiveStreamDataVec(Cycles delayCycle, Addr paddrLine,
 
 void LLCStreamEngine::notifyStreamRequestMiss(
     const DynStreamSliceIdVec &sliceIds) {
-  if (this->myMachineType() == MachineType::MachineType_L2Cache) {
+  if (this->myMachineType() == ruby::MachineType_L2Cache) {
     for (const auto &sliceId : sliceIds.sliceIds) {
       auto llcS = LLCDynStream::getLLCStream(sliceId.getDynStrandId());
       if (llcS) {
@@ -339,7 +341,7 @@ void LLCStreamEngine::receiveStreamNDCRequest(PacketPtr pkt) {
 
 void LLCStreamEngine::enqueueIncomingStreamDataMsg(
     Cycles readyCycle, Addr paddrLine, const DynStreamSliceId &sliceId,
-    const DataBlock &dataBlock, const DataBlock &storeValueBlock) {
+    const ruby::DataBlock &dataBlock, const ruby::DataBlock &storeValueBlock) {
   auto iter = this->incomingStreamDataQueue.rbegin();
   for (auto end = this->incomingStreamDataQueue.rend(); iter != end; ++iter) {
     if (iter->readyCycle <= readyCycle) {
@@ -370,10 +372,9 @@ void LLCStreamEngine::drainIncomingStreamDataMsg() {
   }
 }
 
-void LLCStreamEngine::receiveStreamData(Addr paddrLine,
-                                        const DynStreamSliceId &sliceId,
-                                        const DataBlock &dataBlock,
-                                        const DataBlock &storeValueBlock) {
+void LLCStreamEngine::receiveStreamData(
+    Addr paddrLine, const DynStreamSliceId &sliceId,
+    const ruby::DataBlock &dataBlock, const ruby::DataBlock &storeValueBlock) {
   /**
    * Since we notify the stream engine for all stream data,
    * it is possible that we don't find the stream if it is not direct
@@ -394,7 +395,7 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
       dynS->getLLCController() != this->controller) {
     this->issueNonMigrateStreamDataToLLC(
         dynS, sliceId, dataBlock, storeValueBlock,
-        RubySystem::getBlockSizeBytes() /* PayloadSize */);
+        ruby::RubySystem::getBlockSizeBytes() /* PayloadSize */);
     return;
   }
 
@@ -486,15 +487,15 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
     for (const auto &edge : dynS->sendToEdges) {
       this->issueStreamDataToLLC(
           dynS, sliceId, dataBlock, edge,
-          RubySystem::getBlockSizeBytes() /* PayloadSize */);
+          ruby::RubySystem::getBlockSizeBytes() /* PayloadSize */);
     }
     for (const auto &edge : dynS->sendToPUMEdges) {
       this->issueStreamDataToPUM(
           dynS, sliceId, dataBlock, edge,
-          RubySystem::getBlockSizeBytes() /* PayloadSize */);
+          ruby::RubySystem::getBlockSizeBytes() /* PayloadSize */);
     }
     if (dynS->configData->isPUMPrefetch &&
-        this->myMachineType() == MachineType_Directory) {
+        this->myMachineType() == ruby::MachineType_Directory) {
       // We need to send back the prefetched line to LLC.
       this->issuePUMPrefetchStreamDataToLLC(dynS, sliceId, dataBlock);
     }
@@ -606,9 +607,9 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
   return;
 }
 
-void LLCStreamEngine::receiveStoreStreamData(LLCDynStreamPtr dynS,
-                                             const DynStreamSliceId &sliceId,
-                                             const DataBlock &storeValueBlock) {
+void LLCStreamEngine::receiveStoreStreamData(
+    LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId,
+    const ruby::DataBlock &storeValueBlock) {
   /**
    * We received the response for the StoreStream, we now perform the
    * store. And issue Ack back here if this is DirectStream and no
@@ -633,9 +634,9 @@ void LLCStreamEngine::receiveStoreStreamData(LLCDynStreamPtr dynS,
                     "Failed to translate StoreStream slice vaddr %#x to paddr.",
                     sliceId.vaddr);
   }
-  auto sliceLineVAddr = makeLineAddress(sliceId.vaddr);
-  auto sliceLinePAddr = makeLineAddress(paddr);
-  auto blockSize = RubySystem::getBlockSizeBytes();
+  auto sliceLineVAddr = ruby::makeLineAddress(sliceId.vaddr);
+  auto sliceLinePAddr = ruby::makeLineAddress(paddr);
+  auto blockSize = ruby::RubySystem::getBlockSizeBytes();
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     assert(dynS->idxToElementMap.count(idx) &&
            "Missing element for StoreStream.");
@@ -867,7 +868,7 @@ void LLCStreamEngine::wakeup() {
 void LLCStreamEngine::initializeTranslationBuffer() {
   if (!this->translationBuffer) {
     this->translationBuffer =
-        m5::make_unique<StreamTranslationBuffer<RequestQueueIter>>(
+        std::make_unique<StreamTranslationBuffer<RequestQueueIter>>(
             this->controller->getCPUDelegator()->getDataTLB(),
             [this](PacketPtr pkt, ThreadContext *tc, RequestQueueIter reqIter)
                 -> void { this->translationCallback(pkt, tc, reqIter); },
@@ -1053,9 +1054,10 @@ bool LLCStreamEngine::canIssueByMulticastPolicy(LLCDynStreamPtr dynS) const {
 
   const auto policy = this->controller->getStreamMulticastIssuePolicy();
   switch (policy) {
-  case AbstractStreamAwareController::MulticastIssuePolicy::Any:
+  case ruby::AbstractStreamAwareController::MulticastIssuePolicy::Any:
     return true;
-  case AbstractStreamAwareController::MulticastIssuePolicy::FirstAllocated:
+  case ruby::AbstractStreamAwareController::MulticastIssuePolicy::
+      FirstAllocated:
     for (const auto &S : group) {
       if (!S->isNextSliceCredited()) {
         continue;
@@ -1065,7 +1067,7 @@ bool LLCStreamEngine::canIssueByMulticastPolicy(LLCDynStreamPtr dynS) const {
     }
     // Should never happen.
     assert(false && "DynS not found in MulticastGroup.");
-  case AbstractStreamAwareController::MulticastIssuePolicy::First:
+  case ruby::AbstractStreamAwareController::MulticastIssuePolicy::First:
     return group.front() == dynS;
   default:
     return true;
@@ -1168,7 +1170,7 @@ void LLCStreamEngine::generateMulticastRequest(RequestQueueIter reqIter,
       LLC_SLICE_PANIC(sliceId, "Multicast ReqType Mismatch Target %s, Ours %s.",
                       reqIter->requestType, reqType);
     }
-    if (reqType == CoherenceRequestType_GETU) {
+    if (reqType == ruby::CoherenceRequestType_GETU) {
       SS->statistic.numLLCSentSlice++;
       SS->se->numLLCSentSlice++;
       SS->statistic.numLLCMulticastSlice++;
@@ -1732,8 +1734,8 @@ void LLCStreamEngine::issueStreamDirect(LLCDynStream *dynS) {
   if (dynS->translateToPAddr(vaddr, paddr)) {
 
     // The paddr is valid. We issue request to the LLC.
-    Addr vaddrLine = makeLineAddress(vaddr);
-    Addr paddrLine = makeLineAddress(paddr);
+    Addr vaddrLine = ruby::makeLineAddress(vaddr);
+    Addr paddrLine = ruby::makeLineAddress(paddr);
 
     // Remember that the slice has issued.
     slice->issue();
@@ -1748,7 +1750,7 @@ void LLCStreamEngine::issueStreamDirect(LLCDynStream *dynS) {
 
     // Push to the request queue.
     auto reqType = this->getDirectStreamReqType(dynS);
-    if (reqType == CoherenceRequestType_GETU) {
+    if (reqType == ruby::CoherenceRequestType_GETU) {
       statistic.numLLCSentSlice++;
       S->se->numLLCSentSlice++;
       if (this->hasMergedAsMulticast(dynS)) {
@@ -1827,7 +1829,7 @@ void LLCStreamEngine::issueStreamDirect(LLCDynStream *dynS) {
 
   // If this is PUMPrefetchStream, release the slice.
   if (dynS->configData->isPUMPrefetch) {
-    slice->responded(DataBlock(), DataBlock());
+    slice->responded(ruby::DataBlock(), ruby::DataBlock());
     auto sliceIter = this->tryGetSliceIter(sliceId);
     assert(sliceIter != this->allocatedSlices.end());
     while (!dynS->idxToElementMap.empty()) {
@@ -1842,26 +1844,26 @@ void LLCStreamEngine::issueStreamDirect(LLCDynStream *dynS) {
   }
 }
 
-CoherenceRequestType
+ruby::CoherenceRequestType
 LLCStreamEngine::getDirectStreamReqType(LLCDynStream *stream) const {
-  auto reqType = CoherenceRequestType_GETH;
+  auto reqType = ruby::CoherenceRequestType_GETH;
   auto SS = stream->getStaticS();
   switch (SS->getStreamType()) {
   case ::LLVM::TDG::StreamInfo_Type_AT:
   case ::LLVM::TDG::StreamInfo_Type_ST:
-    reqType = CoherenceRequestType_STREAM_STORE;
+    reqType = ruby::CoherenceRequestType_STREAM_STORE;
     break;
   case ::LLVM::TDG::StreamInfo_Type_LD: {
     if (SS->isUpdateStream()) {
-      reqType = CoherenceRequestType_STREAM_STORE;
+      reqType = ruby::CoherenceRequestType_STREAM_STORE;
     } else if (SS->isLoadComputeStream()) {
       // LoadComputeStream sends back the computed value.
-      reqType = CoherenceRequestType_GETH;
+      reqType = ruby::CoherenceRequestType_GETH;
     } else {
       if (auto dynS = stream->getCoreDynS()) {
         if (dynS->shouldCoreSEIssue()) {
           // We have to send back the data.
-          reqType = CoherenceRequestType_GETU;
+          reqType = ruby::CoherenceRequestType_GETU;
         }
       } else {
         // The dynamic stream is already released, we don't really
@@ -1876,7 +1878,7 @@ LLCStreamEngine::getDirectStreamReqType(LLCDynStream *stream) const {
 
   // (Override) Prefetch streams are always uncached.
   if (stream->configData->isPUMPrefetch) {
-    reqType = CoherenceRequestType_GETH;
+    reqType = ruby::CoherenceRequestType_GETH;
   }
 
   return reqType;
@@ -1945,12 +1947,12 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynStream *dynIS,
   Addr elementVAddr = element->vaddr;
   auto elementMachineType = dynIS->getFloatMachineTypeAtElem(elementIdx);
 
-  const auto blockBytes = RubySystem::getBlockSizeBytes();
+  const auto blockBytes = ruby::RubySystem::getBlockSizeBytes();
 
   auto IS = dynIS->getStaticS();
   auto dynCoreIS = dynIS->getCoreDynS();
 
-  auto reqType = CoherenceRequestType_GETH;
+  auto reqType = ruby::CoherenceRequestType_GETH;
   if (dynCoreIS && dynCoreIS->shouldCoreSEIssue()) {
     /**
      * For LoadComputeStream, we issue GETH and send back the compute
@@ -1958,14 +1960,14 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynStream *dynIS,
      * value.
      */
     if (!IS->isLoadComputeStream() && !IS->isUpdateStream()) {
-      reqType = CoherenceRequestType_GETU;
+      reqType = ruby::CoherenceRequestType_GETU;
     }
   }
   LLC_SLICE_DPRINTF(sliceId,
                     "Issue IndirectLoad InflyReq %d %s VAddr %#x CoreDynS %d "
                     "ShouldCoreSEIssue %d IsLoadCompute %d.\n",
                     dynIS->inflyRequests,
-                    CoherenceRequestType_to_string(reqType), elementVAddr,
+                    ruby::CoherenceRequestType_to_string(reqType), elementVAddr,
                     dynCoreIS != nullptr,
                     dynCoreIS ? dynCoreIS->shouldCoreSEIssue() : -1,
                     IS->isLoadComputeStream());
@@ -1985,10 +1987,10 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynStream *dynIS,
     sliceId.size = curSliceSize;
     Addr curSlicePAddr;
     if (dynIS->translateToPAddr(curSliceVAddr, curSlicePAddr)) {
-      Addr curSliceVAddrLine = makeLineAddress(curSliceVAddr);
-      Addr curSlicePAddrLine = makeLineAddress(curSlicePAddr);
+      Addr curSliceVAddrLine = ruby::makeLineAddress(curSliceVAddr);
+      Addr curSlicePAddrLine = ruby::makeLineAddress(curSlicePAddr);
       this->incrementIssueSlice(IS->statistic);
-      if (reqType == CoherenceRequestType_GETU) {
+      if (reqType == ruby::CoherenceRequestType_GETU) {
         IS->statistic.numLLCSentSlice++;
         IS->se->numLLCSentSlice++;
       }
@@ -2029,7 +2031,7 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
   LLC_SLICE_DPRINTF(sliceId, "Issue IndStore/Atomic VAddr %#x At %s.\n",
                     elemVAddr, elemMachineType);
 
-  const auto blockBytes = RubySystem::getBlockSizeBytes();
+  const auto blockBytes = ruby::RubySystem::getBlockSizeBytes();
 
   auto IS = dynIS->getStaticS();
   const auto &indirectConfig = dynIS->configData;
@@ -2050,8 +2052,8 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
   Addr elemPAddr;
   if (dynIS->translateToPAddr(elemVAddr, elemPAddr)) {
     this->incrementIssueSlice(IS->statistic);
-    auto vaddrLine = makeLineAddress(elemVAddr);
-    auto paddrLine = makeLineAddress(elemPAddr);
+    auto vaddrLine = ruby::makeLineAddress(elemVAddr);
+    auto paddrLine = ruby::makeLineAddress(elemPAddr);
     /**
      * Compute the store value.
      * If this is a MergededPedicatedStream, it is a constant value.
@@ -2097,7 +2099,7 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
       } else {
         // As an overhead, we set StoreSize to 64 due to compaction.
         if (IS->isDirectMemStream()) {
-          storeSize = RubySystem::getBlockSizeBytes();
+          storeSize = ruby::RubySystem::getBlockSizeBytes();
         }
       }
     }
@@ -2118,11 +2120,11 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
         this->scheduleEvent(Cycles(1));
       }
     } else {
-      auto reqIter = this->enqueueRequest(IS, sliceId, vaddrLine, paddrLine,
-                                          elemMachineType,
-                                          CoherenceRequestType_STREAM_STORE);
+      auto reqIter = this->enqueueRequest(
+          IS, sliceId, vaddrLine, paddrLine, elemMachineType,
+          ruby::CoherenceRequestType_STREAM_STORE);
       dynIS->inflyRequests++;
-      auto lineOffset = sliceId.vaddr % RubySystem::getBlockSizeBytes();
+      auto lineOffset = sliceId.vaddr % ruby::RubySystem::getBlockSizeBytes();
       reqIter->dataBlock.setData(reinterpret_cast<uint8_t *>(&storeValue),
                                  lineOffset, sliceId.size);
       reqIter->storeSize = storeSize;
@@ -2148,7 +2150,7 @@ void LLCStreamEngine::issueIndirectAtomicUnlockRequest(
                      "Issue IndirectStore/Atomic VAddr %#x At %s.\n",
                      elementVAddr, elementMachineType);
 
-  const auto blockBytes = RubySystem::getBlockSizeBytes();
+  const auto blockBytes = ruby::RubySystem::getBlockSizeBytes();
 
   auto IS = dynIS->getStaticS();
 
@@ -2172,8 +2174,8 @@ void LLCStreamEngine::issueIndirectAtomicUnlockRequest(
   Addr elementPAddr;
   if (dynIS->translateToPAddr(elementVAddr, elementPAddr)) {
     this->incrementIssueSlice(IS->statistic);
-    auto vaddrLine = makeLineAddress(elementVAddr);
-    auto paddrLine = makeLineAddress(elementPAddr);
+    auto vaddrLine = ruby::makeLineAddress(elementVAddr);
+    auto paddrLine = ruby::makeLineAddress(elementPAddr);
 
     LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
                        "StreamUnlock -> RequestQueue.\n");
@@ -2182,7 +2184,7 @@ void LLCStreamEngine::issueIndirectAtomicUnlockRequest(
      * For the second request of AtomicStream, we need to issue StreamUnlock.
      * Push to the request queue.
      */
-    auto reqType = CoherenceRequestType_STREAM_UNLOCK;
+    auto reqType = ruby::CoherenceRequestType_STREAM_UNLOCK;
     this->enqueueRequest(IS, sliceId, vaddrLine, paddrLine, elementMachineType,
                          reqType);
     dynIS->inflyRequests++;
@@ -2194,7 +2196,7 @@ void LLCStreamEngine::issueIndirectAtomicUnlockRequest(
 
 LLCStreamEngine::RequestQueueIter LLCStreamEngine::enqueueRequest(
     Stream *S, const DynStreamSliceId &sliceId, Addr vaddrLine, Addr paddrLine,
-    MachineType destMachineType, CoherenceRequestType type) {
+    ruby::MachineType destMachineType, ruby::CoherenceRequestType type) {
   this->requestQueue.emplace_back(S, sliceId, paddrLine, destMachineType, type);
   auto requestQueueIter = std::prev(this->requestQueue.end());
   // To match with TLB interface, we first create a fake packet.
@@ -2211,7 +2213,7 @@ LLCStreamEngine::RequestQueueIter LLCStreamEngine::enqueueRequest(
   pkt->dataStatic(pktData);
   // Start the translation.
   LLC_SLICE_DPRINTF(sliceId, "Enqueue %s Req: Start Translation.\n",
-                    CoherenceRequestType_to_string(type));
+                    ruby::CoherenceRequestType_to_string(type));
   this->translationBuffer->addTranslation(pkt, tc, requestQueueIter);
   // Since this generates a request, we schedule a wakeup.
   this->scheduleEvent(Cycles(1));
@@ -2223,7 +2225,7 @@ void LLCStreamEngine::translationCallback(PacketPtr pkt, ThreadContext *tc,
   assert(!reqIter->translationDone && "Translation already done.");
   reqIter->translationDone = true;
   LLC_SLICE_DPRINTF(reqIter->sliceId, "Translated %s Req.\n",
-                    CoherenceRequestType_to_string(reqIter->requestType));
+                    ruby::CoherenceRequestType_to_string(reqIter->requestType));
   // Remember to release the pkt.
   delete pkt;
 }
@@ -2235,9 +2237,9 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
   auto selfMachineId = this->controller->getMachineID();
 
   auto destMachineType = req.destMachineType;
-  if (destMachineType != MachineType::MachineType_L2Cache &&
-      destMachineType != MachineType::MachineType_Directory) {
-    LLC_SLICE_PANIC(sliceId, "Issue to Unsupported MachineType %s.\n",
+  if (destMachineType != ruby::MachineType_L2Cache &&
+      destMachineType != ruby::MachineType_Directory) {
+    LLC_SLICE_PANIC(sliceId, "Issue to Unsupported ruby::MachineType %s.\n",
                     destMachineType);
   }
 
@@ -2253,7 +2255,7 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
     /**
      * Check if the data is cached in reuse buffer.
      */
-    if (req.requestType == CoherenceRequestType_GETH) {
+    if (req.requestType == ruby::CoherenceRequestType_GETH) {
       const auto &dynSId = sliceId.getDynStreamId();
       if (this->reuseBuffer->shouldCheckReuse(req.S, dynSId) &&
           this->reuseBuffer->contains(sliceId, paddrLine)) {
@@ -2272,7 +2274,7 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
         Cycles reuseDelayCycles(4);
         DynStreamSliceIdVec sliceIds;
         sliceIds.add(sliceId);
-        DataBlock fakeStoreValueBlock;
+        ruby::DataBlock fakeStoreValueBlock;
         this->receiveStreamDataVec(reuseDelayCycles, paddrLine, sliceIds,
                                    reuseDataBlock, fakeStoreValueBlock);
 
@@ -2292,23 +2294,23 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
         this->indReqBuffer->getTotalBufferedRequests(), req.dataBlock);
   }
 
-  auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
+  auto msg = std::make_shared<ruby::RequestMsg>(this->controller->clockEdge());
   msg->m_addr = paddrLine;
   msg->m_Type = req.requestType;
-  msg->m_Requestors.add(MachineID(MachineType::MachineType_L1Cache,
-                                  sliceId.getDynStreamId().coreId));
+  msg->m_Requestors.add(ruby::MachineID(ruby::MachineType_L1Cache,
+                                        sliceId.getDynStreamId().coreId));
   msg->m_Destination.add(destMachineId);
-  msg->m_MessageSize = MessageSizeType_Control;
+  msg->m_MessageSize = ruby::MessageSizeType_Control;
   msg->m_sliceIds.add(sliceId);
 
   // We need to set hold the store value.
-  if (req.requestType == CoherenceRequestType_STREAM_STORE) {
+  if (req.requestType == ruby::CoherenceRequestType_STREAM_STORE) {
     msg->m_streamStoreBlk = req.dataBlock;
     if (req.storeSize > 8) {
       // We model this as a whole cache line put back.
-      msg->m_MessageSize = MessageSizeType_Response_Data;
+      msg->m_MessageSize = ruby::MessageSizeType_Response_Data;
     }
-  } else if (req.requestType == CoherenceRequestType_STREAM_FORWARD) {
+  } else if (req.requestType == ruby::CoherenceRequestType_STREAM_FORWARD) {
     msg->m_DataBlk = req.dataBlock;
     // Only used for NonMigrate stream.
     msg->m_streamStoreBlk = req.storeValueBlock;
@@ -2322,9 +2324,9 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
   if (Debug::LLCRubyStreamMulticast && !req.multicastSliceIds.empty()) {
     std::stringstream ss;
     for (const auto &multicastSliceId : req.multicastSliceIds) {
-      auto mlcMachineID =
-          MachineID(static_cast<MachineType>(selfMachineId.type - 1),
-                    multicastSliceId.getDynStreamId().coreId);
+      auto mlcMachineID = ruby::MachineID(
+          static_cast<ruby::MachineType>(selfMachineId.type - 1),
+          multicastSliceId.getDynStreamId().coreId);
       ss << ' ' << mlcMachineID;
     }
     LLC_SLICE_DPRINTF_(LLCRubyStreamMulticast, sliceId, "Multicast to %s.\n",
@@ -2334,14 +2336,14 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
   for (const auto &multicastSliceId : req.multicastSliceIds) {
     // TODO: We should really also pass on the sliceId.
     auto mlcMachineID =
-        MachineID(static_cast<MachineType>(selfMachineId.type - 1),
-                  multicastSliceId.getDynStreamId().coreId);
+        ruby::MachineID(static_cast<ruby::MachineType>(selfMachineId.type - 1),
+                        multicastSliceId.getDynStreamId().coreId);
     msg->m_Requestors.add(mlcMachineID);
     msg->m_sliceIds.add(multicastSliceId);
   }
 
-  if (req.requestType == CoherenceRequestType_STREAM_FORWARD ||
-      req.requestType == CoherenceRequestType_STREAM_STORE) {
+  if (req.requestType == ruby::CoherenceRequestType_STREAM_FORWARD ||
+      req.requestType == ruby::CoherenceRequestType_STREAM_STORE) {
     /**
      * Due to broadcast strand, we may not have the DynS.
      * Always find the first strand for recording this statistic.
@@ -2353,7 +2355,7 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
     auto dynS = LLCDynStream::getLLCStream(sendStrandId);
     if (dynS) {
       auto totalNodesBeforeLLC =
-          MachineType_base_number(MachineType::MachineType_L2Cache);
+          ruby::MachineType_base_number(ruby::MachineType_L2Cache);
       dynS->getStaticS()->statistic.sampleLLCSendTo(
           selfMachineId.getRawNodeID() - totalNodesBeforeLLC,
           destMachineId.getRawNodeID() - totalNodesBeforeLLC);
@@ -2362,7 +2364,7 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
 
   if (handledHere) {
     // Quick path for StreamForward to myself.
-    if (req.requestType == CoherenceRequestType_STREAM_FORWARD) {
+    if (req.requestType == ruby::CoherenceRequestType_STREAM_FORWARD) {
       this->receiveStreamFwdReq(*msg);
       return;
     }
@@ -2382,9 +2384,9 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
      * Issue to StreamRequestBuffer to enforce
      * MaxInqueueRequestPerStream.
      */
-    if (req.requestType == CoherenceRequestType_STREAM_FORWARD) {
+    if (req.requestType == ruby::CoherenceRequestType_STREAM_FORWARD) {
       if (this->controller->myParams->enable_stream_idea_forward) {
-        auto recvCtrl = AbstractStreamAwareController::getController(
+        auto recvCtrl = ruby::AbstractStreamAwareController::getController(
             msg->getDestination().singleElement());
         auto recvSE = recvCtrl->getLLCStreamEngine();
         recvSE->receiveStreamFwdReq(*msg);
@@ -2396,23 +2398,24 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
 }
 
 LLCStreamEngine::ResponseMsgPtr LLCStreamEngine::createStreamMsgToMLC(
-    const DynStreamSliceId &sliceId, CoherenceResponseType type, Addr paddrLine,
-    const uint8_t *data, int dataSize, int payloadSize, int lineOffset) {
+    const DynStreamSliceId &sliceId, ruby::CoherenceResponseType type,
+    Addr paddrLine, const uint8_t *data, int dataSize, int payloadSize,
+    int lineOffset) {
   auto selfMachineId = this->controller->getMachineID();
-  MachineID mlcMachineId(MachineType::MachineType_L1Cache,
-                         sliceId.getDynStreamId().coreId);
+  ruby::MachineID mlcMachineId(ruby::MachineType_L1Cache,
+                               sliceId.getDynStreamId().coreId);
 
-  auto msg = std::make_shared<ResponseMsg>(this->controller->clockEdge());
+  auto msg = std::make_shared<ruby::ResponseMsg>(this->controller->clockEdge());
   // For StreamAck, we do not care about the address?
   msg->m_addr = paddrLine;
   msg->m_Type = type;
   msg->m_Sender = selfMachineId;
   msg->m_Destination.add(mlcMachineId);
-  msg->m_MessageSize = MessageSizeType_Response_Control;
+  msg->m_MessageSize = ruby::MessageSizeType_Response_Control;
   msg->m_sliceIds.add(sliceId);
   // Try to copy data.
   if (data) {
-    assert(lineOffset + dataSize <= RubySystem::getBlockSizeBytes());
+    assert(lineOffset + dataSize <= ruby::RubySystem::getBlockSizeBytes());
     msg->m_DataBlk.setData(data, lineOffset, dataSize);
     msg->m_MessageSize = this->controller->getMessageSizeType(payloadSize);
   }
@@ -2426,12 +2429,12 @@ void LLCStreamEngine::issueStreamMsgToMLC(ResponseMsgPtr msg, bool forceIdea) {
 
   if (forceIdea) {
     auto mlcController =
-        AbstractStreamAwareController::getController(mlcMachineId);
+        ruby::AbstractStreamAwareController::getController(mlcMachineId);
     auto mlcSE = mlcController->getMLCStreamEngine();
     // StreamAck is also disguised as StreamData.
     mlcSE->receiveStreamData(*msg);
     LLC_SLICE_DPRINTF(sliceId, "Send ideal %s to MLC.\n",
-                      CoherenceResponseType_to_string(msg->m_Type));
+                      ruby::CoherenceResponseType_to_string(msg->m_Type));
   } else {
     /**
      * This should match with LLC controller l2_response_latency.
@@ -2442,7 +2445,7 @@ void LLCStreamEngine::issueStreamMsgToMLC(ResponseMsgPtr msg, bool forceIdea) {
         msg, this->controller->clockEdge(),
         this->controller->cyclesToTicks(latency));
     LLC_SLICE_DPRINTF(sliceId, "Send %s to MLC.\n",
-                      CoherenceResponseType_to_string(msg->m_Type));
+                      ruby::CoherenceResponseType_to_string(msg->m_Type));
   }
 }
 
@@ -2451,8 +2454,9 @@ void LLCStreamEngine::issueStreamAckToMLC(const DynStreamSliceId &sliceId,
 
   // For StreamAck, we do not care about the address?
   auto paddrLine = 0;
-  auto msg = this->createStreamMsgToMLC(
-      sliceId, CoherenceResponseType_STREAM_ACK, paddrLine, nullptr, 0, 0, 0);
+  auto msg = this->createStreamMsgToMLC(sliceId,
+                                        ruby::CoherenceResponseType_STREAM_ACK,
+                                        paddrLine, nullptr, 0, 0, 0);
   if (this->controller->isStreamIdeaAckEnabled()) {
     forceIdea = true;
   }
@@ -2464,8 +2468,9 @@ void LLCStreamEngine::issueStreamDoneToMLC(const DynStreamSliceId &sliceId,
 
   // For StreamDone, we do not care about the address?
   auto paddrLine = 0;
-  auto msg = this->createStreamMsgToMLC(
-      sliceId, CoherenceResponseType_STREAM_DONE, paddrLine, nullptr, 0, 0, 0);
+  auto msg = this->createStreamMsgToMLC(sliceId,
+                                        ruby::CoherenceResponseType_STREAM_DONE,
+                                        paddrLine, nullptr, 0, 0, 0);
   this->issueStreamMsgToMLC(msg, forceIdea);
 }
 
@@ -2504,7 +2509,8 @@ void LLCStreamEngine::issueStreamRangeToMLC(DynStreamAddressRangePtr &range,
   DynStreamSliceId sliceId;
   sliceId.elementRange = range->elementRange;
   auto msg = this->createStreamMsgToMLC(
-      sliceId, CoherenceResponseType_STREAM_RANGE, paddrLine, nullptr, 0, 0, 0);
+      sliceId, ruby::CoherenceResponseType_STREAM_RANGE, paddrLine, nullptr, 0,
+      0, 0);
   msg->m_range = range;
   this->issueStreamMsgToMLC(msg, forceIdea);
 }
@@ -2514,14 +2520,14 @@ void LLCStreamEngine::issueStreamDataToMLC(const DynStreamSliceId &sliceId,
                                            int dataSize, int payloadSize,
                                            int lineOffset, bool forceIdea) {
   auto msg = this->createStreamMsgToMLC(
-      sliceId, CoherenceResponseType_DATA_EXCLUSIVE, paddrLine, data, dataSize,
-      payloadSize, lineOffset);
+      sliceId, ruby::CoherenceResponseType_DATA_EXCLUSIVE, paddrLine, data,
+      dataSize, payloadSize, lineOffset);
   this->issueStreamMsgToMLC(msg, forceIdea);
 }
 
 void LLCStreamEngine::issueStreamDataToLLC(
     LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId,
-    const DataBlock &dataBlock,
+    const ruby::DataBlock &dataBlock,
     const CacheStreamConfigureData::DepEdge &sendToEdge, int payloadSize) {
   /**
    * Unlike sending data to MLC, we have to calculate the virtual
@@ -2608,8 +2614,8 @@ void LLCStreamEngine::issueStreamDataToLLC(
       recvElemVAddrEnd = std::max(recvElemVAddrEnd, vaddrEnd);
     }
 
-    auto recvElemVAddrLine = makeLineAddress(recvElemVAddr);
-    auto recvElemVAddrEndLine = makeLineAddress(recvElemVAddr);
+    auto recvElemVAddrLine = ruby::makeLineAddress(recvElemVAddr);
+    auto recvElemVAddrEndLine = ruby::makeLineAddress(recvElemVAddr);
     if (recvElemVAddrLine != recvElemVAddrEndLine) {
       LLC_SLICE_PANIC(sliceId, "Multiline StreamForward Receiver: %s.",
                       recvConfig->dynamicId);
@@ -2629,7 +2635,7 @@ void LLCStreamEngine::issueStreamDataToLLC(
        */
       if (auto recvDynS = LLCDynStream::getLLCStream(recvStrandId)) {
         if (recvDynS->isMigrationDisabled()) {
-          recvElemPAddrLine = makeLineAddress(
+          recvElemPAddrLine = ruby::makeLineAddress(
               recvDynS->getLLCController()->getAddressToOurLLC());
         }
       }
@@ -2639,7 +2645,7 @@ void LLCStreamEngine::issueStreamDataToLLC(
           recvConfig->floatPlan.getMachineTypeAtElem(recvStreamElemIdx);
       auto reqIter = this->enqueueRequest(
           dynS->getStaticS(), sendSliceId, recvElemVAddrLine, recvElemPAddrLine,
-          recvElemMachineType, CoherenceRequestType_STREAM_FORWARD);
+          recvElemMachineType, ruby::CoherenceRequestType_STREAM_FORWARD);
 
       // Remember the receiver StrandId and forwarded data block.
       reqIter->forwardToStrandId =
@@ -2656,21 +2662,21 @@ void LLCStreamEngine::issueStreamDataToLLC(
 
 void LLCStreamEngine::issueNonMigrateStreamDataToLLC(
     LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId,
-    const DataBlock &dataBlock, const DataBlock &storeValueBlock,
+    const ruby::DataBlock &dataBlock, const ruby::DataBlock &storeValueBlock,
     int payloadSize) {
 
   LLC_SLICE_DPRINTF(sliceId, "[NoMigrate] Send back to %s.\n",
                     dynS->getLLCController()->getMachineID());
 
   // Should just send back to the dynS's LLC SE.
-  auto recvElemMachineType = MachineType_L2Cache;
-  auto recvElemVAddrLine = makeLineAddress(sliceId.vaddr);
+  auto recvElemMachineType = ruby::MachineType_L2Cache;
+  auto recvElemVAddrLine = ruby::makeLineAddress(sliceId.vaddr);
   auto recvElemPAddrLine =
-      makeLineAddress(dynS->getLLCController()->getAddressToOurLLC());
+      ruby::makeLineAddress(dynS->getLLCController()->getAddressToOurLLC());
 
   auto reqIter = this->enqueueRequest(
       dynS->getStaticS(), sliceId, recvElemVAddrLine, recvElemPAddrLine,
-      recvElemMachineType, CoherenceRequestType_STREAM_FORWARD);
+      recvElemMachineType, ruby::CoherenceRequestType_STREAM_FORWARD);
 
   // Remember the receiver StrandId and forwarded data block.
   reqIter->forwardToStrandId = dynS->getDynStrandId();
@@ -2681,7 +2687,7 @@ void LLCStreamEngine::issueNonMigrateStreamDataToLLC(
 
 void LLCStreamEngine::issueStreamDataToPUM(
     LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId,
-    const DataBlock &dataBlock,
+    const ruby::DataBlock &dataBlock,
     const CacheStreamConfigureData::DepEdge &sendToEdge, int payloadSize) {
   /**
    * Unlike sending Data to another Stream, sending Data to PUM usually involves
@@ -2730,7 +2736,7 @@ void LLCStreamEngine::issueStreamDataToPUM(
   LLC_SLICE_DPRINTF(sliceId, "[PUMSendTo] ---- Intersect with LLCSubRegion.\n");
   for (auto maskIdx = 0; maskIdx < bitline_masks.size(); ++maskIdx) {
 
-    NetDest recvBanks;
+    ruby::NetDest recvBanks;
 
     for (auto bankIdx = 0; bankIdx < numLLCBanks; ++bankIdx) {
       bool hasIntersection = false;
@@ -2750,7 +2756,7 @@ void LLCStreamEngine::issueStreamDataToPUM(
       }
 
       if (hasIntersection) {
-        MachineID recvMachineId(MachineType_L2Cache, bankIdx);
+        ruby::MachineID recvMachineId(ruby::MachineType_L2Cache, bankIdx);
         recvBanks.add(recvMachineId);
       }
     }
@@ -2815,25 +2821,25 @@ void LLCStreamEngine::issueStreamDataToPUM(
 
 void LLCStreamEngine::issuePUMPrefetchStreamDataToLLC(
     LLCDynStreamPtr stream, const DynStreamSliceId &sliceId,
-    const DataBlock &dataBlock) {
+    const ruby::DataBlock &dataBlock) {
 
   auto vaddr = sliceId.vaddr;
   Addr paddr;
   assert(stream->translateToPAddr(vaddr, paddr) &&
          "Failed to Translate PUMPrefetchStream.");
 
-  auto paddrLine = makeLineAddress(paddr);
-  auto destLLCBank =
-      this->controller->mapAddressToLLCOrMem(paddrLine, MachineType_L2Cache);
+  auto paddrLine = ruby::makeLineAddress(paddr);
+  auto destLLCBank = this->controller->mapAddressToLLCOrMem(
+      paddrLine, ruby::MachineType_L2Cache);
 
   LLC_SLICE_DPRINTF(sliceId, "[PUMPrefetch] Send PUMPrefetchData to %s.\n",
                     destLLCBank);
 
-  NetDest recvBanks;
+  ruby::NetDest recvBanks;
   recvBanks.add(destLLCBank);
   bool isPUMPrefetch = true;
   this->pumEngine->sendPUMDataToLLC(
-      sliceId, recvBanks, RubySystem::getBlockSizeBytes(), isPUMPrefetch);
+      sliceId, recvBanks, ruby::RubySystem::getBlockSizeBytes(), isPUMPrefetch);
   for (const auto &dstNodeId : recvBanks.getAllDest()) {
     stream->sentPUMDataPacketMap.emplace(dstNodeId, 0).first->second++;
   }
@@ -2850,8 +2856,10 @@ bool LLCStreamEngine::tryFinishPUMPrefetchStream(
 
   if (dynS->getPUMPrefetchDoneSlices() >= tc) {
     LLC_SLICE_DPRINTF(sliceId, "PUM prefetch done.\n");
-    MachineID mlcMachineID(MachineType_L1Cache, dynS->getDynStreamId().coreId);
-    auto mlcCtrl = AbstractStreamAwareController::getController(mlcMachineID);
+    ruby::MachineID mlcMachineID(ruby::MachineType_L1Cache,
+                                 dynS->getDynStreamId().coreId);
+    auto mlcCtrl =
+        ruby::AbstractStreamAwareController::getController(mlcMachineID);
     auto mlcSE = mlcCtrl->getMLCStreamEngine();
 
     assert(mlcSE);
@@ -2912,7 +2920,7 @@ void LLCStreamEngine::migrateStreams() {
       LLC_S_PANIC(stream->getDynStrandId(), "Fault on migrating stream.");
     }
     auto nextMachineId = this->controller->mapAddressToLLCOrMem(
-        makeLineAddress(nextPAddr), nextMachineType);
+        ruby::makeLineAddress(nextPAddr), nextMachineType);
     if (!this->migrateController->canMigrateTo(stream, nextMachineId)) {
       ++streamIter;
       continue;
@@ -2933,7 +2941,7 @@ void LLCStreamEngine::migrateStream(LLCDynStream *stream) {
   Addr paddr;
   assert(stream->translateToPAddr(vaddr, paddr) &&
          "Migrating streams should have valid paddr.");
-  Addr paddrLine = makeLineAddress(paddr);
+  Addr paddrLine = ruby::makeLineAddress(paddr);
   auto selfMachineId = this->controller->getMachineID();
   auto addrMachineId =
       this->controller->mapAddressToLLCOrMem(paddrLine, machineType);
@@ -2945,13 +2953,13 @@ void LLCStreamEngine::migrateStream(LLCDynStream *stream) {
                 this->controller->isStreamAdvanceMigrateEnabled(),
                 stream->getIndStreams().size(), this->streams.size());
 
-  auto msg =
-      std::make_shared<StreamMigrateRequestMsg>(this->controller->clockEdge());
+  auto msg = std::make_shared<ruby::StreamMigrateRequestMsg>(
+      this->controller->clockEdge());
   msg->m_addr = paddrLine;
-  msg->m_Type = CoherenceRequestType_STREAM_MIGRATE;
+  msg->m_Type = ruby::CoherenceRequestType_STREAM_MIGRATE;
   msg->m_Requestor = selfMachineId;
   msg->m_Destination.add(addrMachineId);
-  msg->m_MessageSize = MessageSizeType_Data;
+  msg->m_MessageSize = ruby::MessageSizeType_Data;
   msg->m_Stream = stream;
 
   Cycles latency(1); // Just use 1 cycle latency here.
@@ -2966,9 +2974,9 @@ void LLCStreamEngine::migrateStream(LLCDynStream *stream) {
 }
 
 void LLCStreamEngine::migrateStreamCommit(LLCDynStream *stream, Addr paddr,
-                                          MachineType machineType) {
+                                          ruby::MachineType machineType) {
   // Create the migrate request.
-  Addr paddrLine = makeLineAddress(paddr);
+  Addr paddrLine = ruby::makeLineAddress(paddr);
   auto selfMachineId = this->controller->getMachineID();
   auto addrMachineId =
       this->controller->mapAddressToLLCOrMem(paddrLine, machineType);
@@ -2976,14 +2984,14 @@ void LLCStreamEngine::migrateStreamCommit(LLCDynStream *stream, Addr paddr,
   LLC_S_DPRINTF_(StreamRangeSync, stream->getDynStrandId(),
                  "[Commit] Migrate to LLC%d.\n", addrMachineId.num);
 
-  auto msg =
-      std::make_shared<StreamMigrateRequestMsg>(this->controller->clockEdge());
+  auto msg = std::make_shared<ruby::StreamMigrateRequestMsg>(
+      this->controller->clockEdge());
   msg->m_addr = paddrLine;
-  msg->m_Type = CoherenceRequestType_STREAM_MIGRATE;
+  msg->m_Type = ruby::CoherenceRequestType_STREAM_MIGRATE;
   msg->m_Requestor = selfMachineId;
   msg->m_Destination.add(addrMachineId);
   // Migrating CommitHead is just a control message.
-  msg->m_MessageSize = MessageSizeType_Control;
+  msg->m_MessageSize = ruby::MessageSizeType_Control;
   msg->m_IsCommit = true;
   msg->m_Stream = stream;
 
@@ -2994,7 +3002,7 @@ void LLCStreamEngine::migrateStreamCommit(LLCDynStream *stream, Addr paddr,
       this->controller->cyclesToTicks(latency));
 }
 
-MachineID LLCStreamEngine::mapPaddrToSameLevelBank(Addr paddr) const {
+ruby::MachineID LLCStreamEngine::mapPaddrToSameLevelBank(Addr paddr) const {
   auto selfMachineId = this->controller->getMachineID();
   auto addrMachineId =
       this->controller->mapAddressToLLCOrMem(paddr, selfMachineId.type);
@@ -3002,7 +3010,7 @@ MachineID LLCStreamEngine::mapPaddrToSameLevelBank(Addr paddr) const {
 }
 
 bool LLCStreamEngine::isPAddrHandledByMe(Addr paddr,
-                                         MachineType machineType) const {
+                                         ruby::MachineType machineType) const {
   auto selfMachineId = this->controller->getMachineID();
   auto addrMachineId =
       this->controller->mapAddressToLLCOrMem(paddr, machineType);
@@ -3011,13 +3019,14 @@ bool LLCStreamEngine::isPAddrHandledByMe(Addr paddr,
 
 void LLCStreamEngine::print(std::ostream &out) const {}
 
-void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
+void LLCStreamEngine::receiveStreamIndirectRequest(
+    const ruby::RequestMsg &req) {
 
   /**
    * After supporting broadcast strands, it's possible that even the first req
    * is not mapped here. Check the paddr.
    */
-  if (req.getType() == CoherenceRequestType_STREAM_FORWARD) {
+  if (req.getType() == ruby::CoherenceRequestType_STREAM_FORWARD) {
     if (this->isPAddrHandledByMe(req.getaddr(), this->myMachineType())) {
       this->receiveStreamIndirectRequestImpl(req);
     }
@@ -3031,7 +3040,7 @@ void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
   auto chainMsg = req.getChainMsg();
   while (chainMsg) {
 
-    auto chainReq = std::dynamic_pointer_cast<RequestMsg>(chainMsg);
+    auto chainReq = std::dynamic_pointer_cast<ruby::RequestMsg>(chainMsg);
     assert(chainReq && "Should be RequsetMsg.");
 
     const auto &chainSliceId = chainReq->m_sliceIds.singleSliceId();
@@ -3072,7 +3081,8 @@ void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
   }
 }
 
-void LLCStreamEngine::receiveStreamIndirectRequestImpl(const RequestMsg &req) {
+void LLCStreamEngine::receiveStreamIndirectRequestImpl(
+    const ruby::RequestMsg &req) {
 
   this->initializeTranslationBuffer();
 
@@ -3083,10 +3093,10 @@ void LLCStreamEngine::receiveStreamIndirectRequestImpl(const RequestMsg &req) {
   auto networkLatency =
       this->curCycle() - this->controller->ticksToCycles(req.getTime());
   LLC_SLICE_DPRINTF(sliceId, "Recv [ind] %s req paddrLine %#x NoC delay %s.\n",
-                    CoherenceRequestType_to_string(req.m_Type), req.m_addr,
-                    networkLatency);
+                    ruby::CoherenceRequestType_to_string(req.m_Type),
+                    req.m_addr, networkLatency);
 
-  if (req.m_Type == CoherenceRequestType_STREAM_FORWARD) {
+  if (req.m_Type == ruby::CoherenceRequestType_STREAM_FORWARD) {
     // Quick path for stream forwarding.
     this->receiveStreamFwdReq(req);
     return;
@@ -3105,25 +3115,25 @@ void LLCStreamEngine::receiveStreamIndirectRequestImpl(const RequestMsg &req) {
     statistic.remoteIndReqNoCDelay.sample(networkLatency);
   }
 
-  auto msg = std::make_shared<RequestMsg>(req);
+  auto msg = std::make_shared<ruby::RequestMsg>(req);
   Cycles latency(1);
   this->streamIssueMsgBuffer->enqueue(msg, this->controller->clockEdge(),
                                       this->controller->cyclesToTicks(latency));
 }
 
-void LLCStreamEngine::receivePUMConfigure(const RequestMsg &req) {
+void LLCStreamEngine::receivePUMConfigure(const ruby::RequestMsg &req) {
   this->pumEngine->receiveKick(req);
 }
 
-void LLCStreamEngine::receivePUMData(const RequestMsg &req) {
+void LLCStreamEngine::receivePUMData(const ruby::RequestMsg &req) {
   this->pumEngine->receiveData(req);
 }
 
-void LLCStreamEngine::receiveStreamFwdReq(const RequestMsg &req) {
+void LLCStreamEngine::receiveStreamFwdReq(const ruby::RequestMsg &req) {
   this->processStreamFwdReq(req);
 }
 
-void LLCStreamEngine::processStreamFwdReq(const RequestMsg &req) {
+void LLCStreamEngine::processStreamFwdReq(const ruby::RequestMsg &req) {
 
   const auto &sliceId = req.m_sliceIds.singleSliceId();
   const auto &recvDynId = req.m_sendToStrandId;
@@ -3192,7 +3202,7 @@ void LLCStreamEngine::processStreamFwdReq(const RequestMsg &req) {
 
       foundReceiver = true;
       // We need to reconstruct the PAddrLine from SliceId.Vaddr.
-      auto vaddrLine = makeLineAddress(sliceId.vaddr);
+      auto vaddrLine = ruby::makeLineAddress(sliceId.vaddr);
       Addr paddrLine;
       assert(dynS->translateToPAddr(vaddrLine, paddrLine));
 
@@ -3217,8 +3227,8 @@ void LLCStreamEngine::processStreamFwdReq(const RequestMsg &req) {
 }
 
 bool LLCStreamEngine::tryToProcessIndirectAtomicUnlockReq(
-    const RequestMsg &req) {
-  if (req.m_Type != CoherenceRequestType_STREAM_UNLOCK) {
+    const ruby::RequestMsg &req) {
+  if (req.m_Type != ruby::CoherenceRequestType_STREAM_UNLOCK) {
     // Not single slice id or store request.
     return false;
   }
@@ -3496,8 +3506,8 @@ void LLCStreamEngine::triggerIndElems(LLCDynStreamPtr dynS,
 void LLCStreamEngine::triggerUpdate(LLCDynStreamPtr dynS,
                                     LLCStreamElementPtr element,
                                     const DynStreamSliceId &sliceId,
-                                    const DataBlock &storeValueBlock,
-                                    DataBlock &loadValueBlock,
+                                    const ruby::DataBlock &storeValueBlock,
+                                    ruby::DataBlock &loadValueBlock,
                                     uint32_t &payloadSize) {
 
   auto S = dynS->getStaticS();
@@ -3512,7 +3522,7 @@ void LLCStreamEngine::triggerUpdate(LLCDynStreamPtr dynS,
   Addr elementPAddr;
   assert(dynS->translateToPAddr(elementVAddr, elementPAddr) &&
          "Fault on vaddr of UpdateStream.");
-  const auto lineSize = RubySystem::getBlockSizeBytes();
+  const auto lineSize = ruby::RubySystem::getBlockSizeBytes();
 
   /**
    * This is an update stream, and we have to handle multi-line
@@ -3566,7 +3576,7 @@ void LLCStreamEngine::triggerUpdate(LLCDynStreamPtr dynS,
   /**
    * Send back the overlap value within this line.
    */
-  Addr loadBlockVAddrLine = makeLineAddress(sliceId.vaddr);
+  Addr loadBlockVAddrLine = ruby::makeLineAddress(sliceId.vaddr);
   int elementOffset = 0;
   int loadBlockOffset = 0;
   auto overlapSize = element->computeOverlap(loadBlockVAddrLine, lineSize,
@@ -3579,7 +3589,7 @@ void LLCStreamEngine::triggerUpdate(LLCDynStreamPtr dynS,
 void LLCStreamEngine::triggerAtomic(LLCDynStreamPtr dynS,
                                     LLCStreamElementPtr elem,
                                     const DynStreamSliceId &sliceId,
-                                    DataBlock &loadValueBlock,
+                                    ruby::DataBlock &loadValueBlock,
                                     uint32_t &payloadSize) {
 
   auto S = dynS->getStaticS();
@@ -3600,8 +3610,8 @@ void LLCStreamEngine::triggerAtomic(LLCDynStreamPtr dynS,
   Addr elemPAddr;
   assert(dynS->translateToPAddr(elemVAddr, elemPAddr) &&
          "Fault on vaddr of LLCStore/Atomic/UpdateStream.");
-  auto lineOffset = elemVAddr % RubySystem::getBlockSizeBytes();
-  if (lineOffset + elemMemSize > RubySystem::getBlockSizeBytes()) {
+  auto lineOffset = elemVAddr % ruby::RubySystem::getBlockSizeBytes();
+  if (lineOffset + elemMemSize > ruby::RubySystem::getBlockSizeBytes()) {
     LLC_ELEMENT_PANIC(elem, "Multi-Line AtomicElement.");
   }
 
@@ -3929,10 +3939,10 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
     coreNeedValue = true;
   }
 
-  auto sliceVAddrLine = makeLineAddress(sliceId.vaddr);
+  auto sliceVAddrLine = ruby::makeLineAddress(sliceId.vaddr);
   Addr paddrLine;
   assert(dynS->translateToPAddr(sliceVAddrLine, paddrLine));
-  DataBlock loadValueBlock;
+  ruby::DataBlock loadValueBlock;
   int payloadSize = 0;
   for (auto elemIdx = sliceId.getStartIdx(); elemIdx < sliceId.getEndIdx();
        ++elemIdx) {
@@ -3942,7 +3952,7 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
     int sliceOffset;
     int elemOffset;
     int overlapSize = elem->computeLoadComputeOverlap(
-        sliceVAddrLine, RubySystem::getBlockSizeBytes(), sliceOffset,
+        sliceVAddrLine, ruby::RubySystem::getBlockSizeBytes(), sliceOffset,
         elemOffset);
     if (overlapSize == 0) {
       continue;
@@ -3961,15 +3971,15 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
   }
 
   // TotalOverlapSize should never exceed the line size.
-  if (payloadSize > RubySystem::getBlockSizeBytes()) {
-    payloadSize = RubySystem::getBlockSizeBytes();
+  if (payloadSize > ruby::RubySystem::getBlockSizeBytes()) {
+    payloadSize = ruby::RubySystem::getBlockSizeBytes();
   }
 
   if (coreNeedValue) {
     this->issueStreamDataToMLC(
         sliceId, paddrLine,
-        loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
-        RubySystem::getBlockSizeBytes(), payloadSize /* payloadSize */,
+        loadValueBlock.getData(0, ruby::RubySystem::getBlockSizeBytes()),
+        ruby::RubySystem::getBlockSizeBytes(), payloadSize /* payloadSize */,
         0 /* Line offset */);
     S->statistic.numLLCSentSlice++;
     S->se->numLLCSentSlice++;
@@ -4017,7 +4027,7 @@ void LLCStreamEngine::processDirectAtomicSlice(
   auto numMicroOps = S->getComputationNumMicroOps();
 
   // The final value return to the core.
-  DataBlock loadValueBlock;
+  ruby::DataBlock loadValueBlock;
   uint32_t totalPayloadSize = 0;
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     auto element = dynS->getElemPanic(idx, "Process slice of AtomicS");
@@ -4053,12 +4063,12 @@ void LLCStreamEngine::processDirectAtomicSlice(
   if (coreNeedValue) {
     Addr paddr = 0;
     assert(dynS->translateToPAddr(sliceId.vaddr, paddr));
-    auto paddrLine = makeLineAddress(paddr);
+    auto paddrLine = ruby::makeLineAddress(paddr);
     this->issueStreamDataToMLC(
         sliceId, paddrLine,
-        loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
-        RubySystem::getBlockSizeBytes(),
-        std::min(totalPayloadSize, RubySystem::getBlockSizeBytes()),
+        loadValueBlock.getData(0, ruby::RubySystem::getBlockSizeBytes()),
+        ruby::RubySystem::getBlockSizeBytes(),
+        std::min(totalPayloadSize, ruby::RubySystem::getBlockSizeBytes()),
         0 /* Line offset */);
     LLC_SLICE_DPRINTF(sliceId,
                       "Send StreamData to MLC: PAddrLine %#x Data %s.\n",
@@ -4121,7 +4131,7 @@ void LLCStreamEngine::postProcessIndirectAtomicSlice(
   assert(sliceId.isValid() && "Invalid IndirectAtomic slice id.");
 
   // The final value return to the core.
-  DataBlock loadValueBlock;
+  ruby::DataBlock loadValueBlock;
   uint32_t totalPayloadSize = 0;
 
   uint32_t payloadSize = 0;
@@ -4134,12 +4144,12 @@ void LLCStreamEngine::postProcessIndirectAtomicSlice(
   if (coreNeedValue) {
     Addr paddr = 0;
     assert(dynS->translateToPAddr(sliceId.vaddr, paddr));
-    auto paddrLine = makeLineAddress(paddr);
+    auto paddrLine = ruby::makeLineAddress(paddr);
     this->issueStreamDataToMLC(
         sliceId, paddrLine,
-        loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
-        RubySystem::getBlockSizeBytes(),
-        std::min(totalPayloadSize, RubySystem::getBlockSizeBytes()),
+        loadValueBlock.getData(0, ruby::RubySystem::getBlockSizeBytes()),
+        ruby::RubySystem::getBlockSizeBytes(),
+        std::min(totalPayloadSize, ruby::RubySystem::getBlockSizeBytes()),
         0 /* Line offset */);
     LLC_SLICE_DPRINTF(
         sliceId, "[IndirectAtomic] Send Data to MLC: PAddrLine %#x Data %s.\n",
@@ -4167,7 +4177,7 @@ void LLCStreamEngine::postProcessIndirectAtomicSlice(
 
 void LLCStreamEngine::processIndirectUpdateSlice(
     LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId,
-    const DataBlock &storeValueBlock) {
+    const ruby::DataBlock &storeValueBlock) {
 
   /**
    * First we check whether we should send back value or ack.
@@ -4184,7 +4194,7 @@ void LLCStreamEngine::processIndirectUpdateSlice(
   }
 
   // The final value return to the core.
-  DataBlock loadValueBlock;
+  ruby::DataBlock loadValueBlock;
   uint32_t totalPayloadSize = 0;
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     auto element = dynS->getElemPanic(idx, "Process slice of IndUpdateS");
@@ -4212,12 +4222,12 @@ void LLCStreamEngine::processIndirectUpdateSlice(
   if (coreNeedValue) {
     Addr paddr = 0;
     assert(dynS->translateToPAddr(sliceId.vaddr, paddr));
-    auto paddrLine = makeLineAddress(paddr);
+    auto paddrLine = ruby::makeLineAddress(paddr);
     this->issueStreamDataToMLC(
         sliceId, paddrLine,
-        loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
-        RubySystem::getBlockSizeBytes(),
-        std::min(totalPayloadSize, RubySystem::getBlockSizeBytes()),
+        loadValueBlock.getData(0, ruby::RubySystem::getBlockSizeBytes()),
+        ruby::RubySystem::getBlockSizeBytes(),
+        std::min(totalPayloadSize, ruby::RubySystem::getBlockSizeBytes()),
         0 /* Line offset */);
     LLC_SLICE_DPRINTF(sliceId,
                       "Send StreamData to MLC: PAddrLine %#x Data %s.\n",
@@ -4311,7 +4321,7 @@ void LLCStreamEngine::postProcessDirectUpdateSlice(
     /**
      * Construct the returning value from elements.
      */
-    DataBlock loadValueBlock;
+    ruby::DataBlock loadValueBlock;
     uint32_t totalPayloadSize = 0;
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
       auto element = dynS->getElemPanic(idx, "PostProcess UpdateStream");
@@ -4327,8 +4337,8 @@ void LLCStreamEngine::postProcessDirectUpdateSlice(
       /**
        * Send back the overlap value within this line.
        */
-      const auto lineSize = RubySystem::getBlockSizeBytes();
-      Addr loadBlockVAddrLine = makeLineAddress(sliceId.vaddr);
+      const auto lineSize = ruby::RubySystem::getBlockSizeBytes();
+      Addr loadBlockVAddrLine = ruby::makeLineAddress(sliceId.vaddr);
       int elementOffset = 0;
       int loadBlockOffset = 0;
       auto overlapSize = element->computeOverlap(
@@ -4340,12 +4350,12 @@ void LLCStreamEngine::postProcessDirectUpdateSlice(
 
     Addr paddr = 0;
     assert(dynS->translateToPAddr(sliceId.vaddr, paddr));
-    auto paddrLine = makeLineAddress(paddr);
+    auto paddrLine = ruby::makeLineAddress(paddr);
     this->issueStreamDataToMLC(
         sliceId, paddrLine,
-        loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
-        RubySystem::getBlockSizeBytes(),
-        std::min(totalPayloadSize, RubySystem::getBlockSizeBytes()),
+        loadValueBlock.getData(0, ruby::RubySystem::getBlockSizeBytes()),
+        ruby::RubySystem::getBlockSizeBytes(),
+        std::min(totalPayloadSize, ruby::RubySystem::getBlockSizeBytes()),
         0 /* Line offset */);
     LLC_SLICE_DPRINTF(sliceId,
                       "Send StreamData to MLC: PAddrLine %#x Data %s.\n",
@@ -4358,11 +4368,11 @@ void LLCStreamEngine::postProcessDirectUpdateSlice(
 }
 
 void LLCStreamEngine::performStore(Addr paddr, int size, const uint8_t *value) {
-  auto rubySystem = this->controller->params()->ruby_system;
+  auto rubySystem = this->controller->params().ruby_system;
   assert(rubySystem->getAccessBackingStore() &&
          "Do not support store stream without BackingStore.");
-  assert((paddr % RubySystem::getBlockSizeBytes()) + size <=
-             RubySystem::getBlockSizeBytes() &&
+  assert((paddr % ruby::RubySystem::getBlockSizeBytes()) + size <=
+             ruby::RubySystem::getBlockSizeBytes() &&
          "Can not store to multi-line elements.");
   RequestPtr req =
       std::make_shared<Request>(paddr, size, 0 /* Flags */, 0 /* MasterId */);
@@ -4403,12 +4413,12 @@ LLCStreamEngine::performStreamAtomicOp(LLCDynStreamPtr dynS,
   auto S = dynS->getStaticS();
   auto elemSize = S->getMemElementSize();
 
-  auto rubySystem = this->controller->params()->ruby_system;
+  auto rubySystem = this->controller->params().ruby_system;
   assert(rubySystem->getAccessBackingStore() &&
          "Do not support atomicrmw stream without BackingStore.");
   assert(elemSize <= 8 && "At most 8 byte data.");
-  assert((elemPAddr % RubySystem::getBlockSizeBytes()) + elemSize <=
-             RubySystem::getBlockSizeBytes() &&
+  assert((elemPAddr % ruby::RubySystem::getBlockSizeBytes()) + elemSize <=
+             ruby::RubySystem::getBlockSizeBytes() &&
          "Can not atomicrmw to multi-line elements.");
 
   /**
@@ -4480,7 +4490,7 @@ void LLCStreamEngine::tryVectorizeElem(LLCStreamElementPtr &elem,
      * Hack: For ReductionStream, each slice has only one element, thus here
      * we approximate by counting how many elements per cache line.
      */
-    auto elemsPerLine = RubySystem::getBlockSizeBytes() / elem->size;
+    auto elemsPerLine = ruby::RubySystem::getBlockSizeBytes() / elem->size;
     if (elem->idx % elemsPerLine != 0) {
       shouldVectorized = true;
     }
@@ -4528,7 +4538,8 @@ void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &elem,
     const auto seMachineID = this->controller->getMachineID();
     auto floatMachineType = dynS->getFloatMachineTypeAtElem(elem->idx);
     if (seMachineID.getType() != floatMachineType) {
-      LLC_ELEMENT_PANIC(elem, "[PushReadyCmp] Offload %s != SE MachineType %s.",
+      LLC_ELEMENT_PANIC(elem,
+                        "[PushReadyCmp] Offload %s != SE ruby::MachineType %s.",
                         floatMachineType, seMachineID);
     }
   }
@@ -4753,7 +4764,7 @@ void LLCStreamEngine::completeComputation() {
 }
 
 void LLCStreamEngine::incrementIssueSlice(StreamStatistic &statistic) {
-  if (this->myMachineType() == MachineType_Directory) {
+  if (this->myMachineType() == ruby::MachineType_Directory) {
     statistic.numMemIssueSlice++;
   } else {
     statistic.numLLCIssueSlice++;
@@ -4798,3 +4809,4 @@ void LLCStreamEngine::sampleLLCStreams() {
   }
   this->lastSampleCycle = curCycle();
 }
+} // namespace gem5

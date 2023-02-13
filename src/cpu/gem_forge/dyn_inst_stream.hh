@@ -16,6 +16,8 @@
 #include <list>
 #include <utility>
 
+namespace gem5 {
+
 /**
  * Represent a instruction stream from a file.
  * The instructions are read by fetch stage, and are only released when
@@ -144,5 +146,7 @@ private:
   Iterator fetchIter;
   size_t fetchedSize;
 };
+
+} // namespace gem5
 
 #endif

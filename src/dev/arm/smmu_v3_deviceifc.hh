@@ -48,6 +48,9 @@
 #include "params/SMMUv3DeviceInterface.hh"
 #include "sim/clocked_object.hh"
 
+namespace gem5
+{
+
 class SMMUTranslationProcess;
 class SMMUv3;
 class SMMUDevicePort;
@@ -118,7 +121,8 @@ class SMMUv3DeviceInterface : public ClockedObject
     Port& getPort(const std::string &name, PortID id) override;
 
   public:
-    SMMUv3DeviceInterface(const SMMUv3DeviceInterfaceParams *p);
+    PARAMS(SMMUv3DeviceInterface);
+    SMMUv3DeviceInterface(const Params &p);
 
     ~SMMUv3DeviceInterface()
     {
@@ -126,16 +130,12 @@ class SMMUv3DeviceInterface : public ClockedObject
         delete mainTLB;
     }
 
-    const SMMUv3DeviceInterfaceParams *
-    params() const
-    {
-        return static_cast<const SMMUv3DeviceInterfaceParams *>(_params);
-    }
-
     DrainState drain() override;
 
     void setSMMU(SMMUv3 *_smmu) { smmu = _smmu; }
     void sendRange();
 };
+
+} // namespace gem5
 
 #endif /* __DEV_ARM_SMMU_V3_DEVICEIFC_HH__ */

@@ -6,6 +6,8 @@
 #include <deque>
 #include <vector>
 
+namespace gem5 {
+
 class System;
 
 /**
@@ -45,5 +47,7 @@ private:
    */
   static int allocateOneRound();
 };
+
+} // namespace gem5
 
 #endif

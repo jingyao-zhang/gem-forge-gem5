@@ -41,64 +41,81 @@
 
 #include "cpu/thread_context.hh"
 
+#include <vector>
+
 #include "arch/generic/vec_pred_reg.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
-#include "config/the_isa.hh"
 #include "cpu/base.hh"
 #include "debug/Context.hh"
 #include "debug/Quiesce.hh"
+#include "mem/port.hh"
 #include "params/BaseCPU.hh"
 #include "sim/full_system.hh"
+#include "mem/translating_port_proxy.hh"
+#include "mem/se_translating_port_proxy.hh"
 
 // ! GemForge
 // We need this to revoke thread context.
 #include "sim/process.hh"
 
+namespace gem5
+{
+
 void
 ThreadContext::compare(ThreadContext *one, ThreadContext *two)
 {
+    const auto &regClasses = one->getIsaPtr()->regClasses();
+
     DPRINTF(Context, "Comparing thread contexts\n");
 
     // First loop through the integer registers.
-    for (int i = 0; i < TheISA::NumIntRegs; ++i) {
-        RegVal t1 = one->readIntReg(i);
-        RegVal t2 = two->readIntReg(i);
+    for (auto &id: *regClasses.at(IntRegClass)) {
+        RegVal t1 = one->getReg(id);
+        RegVal t2 = two->getReg(id);
         if (t1 != t2)
             panic("Int reg idx %d doesn't match, one: %#x, two: %#x",
-                  i, t1, t2);
+                  id.index(), t1, t2);
     }
 
     // Then loop through the floating point registers.
-    for (int i = 0; i < TheISA::NumFloatRegs; ++i) {
-        RegVal t1 = one->readFloatReg(i);
-        RegVal t2 = two->readFloatReg(i);
+    for (auto &id: *regClasses.at(FloatRegClass)) {
+        RegVal t1 = one->getReg(id);
+        RegVal t2 = two->getReg(id);
         if (t1 != t2)
             panic("Float reg idx %d doesn't match, one: %#x, two: %#x",
-                  i, t1, t2);
+                  id.index(), t1, t2);
     }
 
     // Then loop through the vector registers.
-    for (int i = 0; i < TheISA::NumVecRegs; ++i) {
-        RegId rid(VecRegClass, i);
-        const TheISA::VecRegContainer& t1 = one->readVecReg(rid);
-        const TheISA::VecRegContainer& t2 = two->readVecReg(rid);
-        if (t1 != t2)
+    const auto *vec_class = regClasses.at(VecRegClass);
+    std::vector<uint8_t> vec1(vec_class->regBytes());
+    std::vector<uint8_t> vec2(vec_class->regBytes());
+    for (auto &id: *regClasses.at(VecRegClass)) {
+        one->getReg(id, vec1.data());
+        two->getReg(id, vec2.data());
+        if (vec1 != vec2) {
             panic("Vec reg idx %d doesn't match, one: %#x, two: %#x",
-                  i, t1, t2);
+                  id.index(), vec_class->valString(vec1.data()),
+                  vec_class->valString(vec2.data()));
+        }
     }
 
     // Then loop through the predicate registers.
-    for (int i = 0; i < TheISA::NumVecPredRegs; ++i) {
-        RegId rid(VecPredRegClass, i);
-        const TheISA::VecPredRegContainer& t1 = one->readVecPredReg(rid);
-        const TheISA::VecPredRegContainer& t2 = two->readVecPredReg(rid);
-        if (t1 != t2)
-            panic("Pred reg idx %d doesn't match, one: %#x, two: %#x",
-                  i, t1, t2);
+    const auto *vec_pred_class = regClasses.at(VecPredRegClass);
+    std::vector<uint8_t> pred1(vec_pred_class->regBytes());
+    std::vector<uint8_t> pred2(vec_pred_class->regBytes());
+    for (auto &id: *regClasses.at(VecPredRegClass)) {
+        one->getReg(id, pred1.data());
+        two->getReg(id, pred2.data());
+        if (pred1 != pred2) {
+            panic("Pred reg idx %d doesn't match, one: %s, two: %s",
+                  id.index(), vec_pred_class->valString(pred1.data()),
+                  vec_pred_class->valString(pred2.data()));
+        }
     }
 
-    for (int i = 0; i < TheISA::NumMiscRegs; ++i) {
+    for (int i = 0; i < regClasses.at(MiscRegClass)->numRegs(); ++i) {
         RegVal t1 = one->readMiscRegNoEffect(i);
         RegVal t2 = two->readMiscRegNoEffect(i);
         if (t1 != t2)
@@ -107,14 +124,14 @@ ThreadContext::compare(ThreadContext *one, ThreadContext *two)
     }
 
     // loop through the Condition Code registers.
-    for (int i = 0; i < TheISA::NumCCRegs; ++i) {
-        RegVal t1 = one->readCCReg(i);
-        RegVal t2 = two->readCCReg(i);
+    for (auto &id: *regClasses.at(CCRegClass)) {
+        RegVal t1 = one->getReg(id);
+        RegVal t2 = two->getReg(id);
         if (t1 != t2)
             panic("CC reg idx %d doesn't match, one: %#x, two: %#x",
-                  i, t1, t2);
+                  id.index(), t1, t2);
     }
-    if (!(one->pcState() == two->pcState()))
+    if (one->pcState() != two->pcState())
         panic("PC state doesn't match.");
     int id1 = one->cpuId();
     int id2 = two->cpuId();
@@ -130,6 +147,15 @@ ThreadContext::compare(ThreadContext *one, ThreadContext *two)
 }
 
 void
+ThreadContext::sendFunctional(PacketPtr pkt)
+{
+    const auto *port =
+        dynamic_cast<const RequestPort *>(&getCpuPtr()->getDataPort());
+    assert(port);
+    port->sendFunctional(pkt);
+}
+
+void
 ThreadContext::quiesce()
 {
     getSystemPtr()->threads.quiesce(contextId());
@@ -142,11 +168,19 @@ ThreadContext::quiesceTick(Tick resume)
     getSystemPtr()->threads.quiesceTick(contextId(), resume);
 }
 
+RegVal
+ThreadContext::getReg(const RegId &reg) const
+{
+    RegVal val;
+    getReg(reg, &val);
+    return val;
+}
+
 void
 ThreadContext::schedYield()
 {
     auto cpu = this->getCpuPtr();
-    auto yieldLatency = cpu->params()->yield_latency;
+    auto yieldLatency = cpu->params().yield_latency;
     if (yieldLatency == 0) {
         warn("Ignore sched_yield(). "
              "Set --cpu-yield-lat=Xns to enable yielding.\n");
@@ -156,39 +190,32 @@ ThreadContext::schedYield()
 }
 
 void
+ThreadContext::setReg(const RegId &reg, RegVal val)
+{
+    setReg(reg, &val);
+}
+
+void
 serialize(const ThreadContext &tc, CheckpointOut &cp)
 {
-    using namespace TheISA;
+    for (const auto *reg_class: tc.getIsaPtr()->regClasses()) {
+        // MiscRegs are serialized elsewhere.
+        if (reg_class->type() == MiscRegClass)
+            continue;
 
-    RegVal floatRegs[NumFloatRegs];
-    for (int i = 0; i < NumFloatRegs; ++i)
-        floatRegs[i] = tc.readFloatRegFlat(i);
-    // This is a bit ugly, but needed to maintain backwards
-    // compatibility.
-    arrayParamOut(cp, "floatRegs.i", floatRegs, NumFloatRegs);
+        const size_t reg_bytes = reg_class->regBytes();
+        const size_t reg_count = reg_class->numRegs();
+        const size_t array_bytes = reg_bytes * reg_count;
 
-    std::vector<TheISA::VecRegContainer> vecRegs(NumVecRegs);
-    for (int i = 0; i < NumVecRegs; ++i) {
-        vecRegs[i] = tc.readVecRegFlat(i);
-    }
-    SERIALIZE_CONTAINER(vecRegs);
+        uint8_t regs[array_bytes];
+        auto *reg_ptr = regs;
+        for (const auto &id: *reg_class) {
+            tc.getReg(id, reg_ptr);
+            reg_ptr += reg_bytes;
+        }
 
-    std::vector<TheISA::VecPredRegContainer> vecPredRegs(NumVecPredRegs);
-    for (int i = 0; i < NumVecPredRegs; ++i) {
-        vecPredRegs[i] = tc.readVecPredRegFlat(i);
-    }
-    SERIALIZE_CONTAINER(vecPredRegs);
-
-    RegVal intRegs[NumIntRegs];
-    for (int i = 0; i < NumIntRegs; ++i)
-        intRegs[i] = tc.readIntRegFlat(i);
-    SERIALIZE_ARRAY(intRegs, NumIntRegs);
-
-    if (NumCCRegs) {
-        RegVal ccRegs[NumCCRegs];
-        for (int i = 0; i < NumCCRegs; ++i)
-            ccRegs[i] = tc.readCCRegFlat(i);
-        SERIALIZE_ARRAY(ccRegs, NumCCRegs);
+        arrayParamOut(cp, std::string("regs.") + reg_class->name(), regs,
+                array_bytes);
     }
 
     tc.pcState().serialize(cp);
@@ -199,42 +226,29 @@ serialize(const ThreadContext &tc, CheckpointOut &cp)
 void
 unserialize(ThreadContext &tc, CheckpointIn &cp)
 {
-    using namespace TheISA;
+    for (const auto *reg_class: tc.getIsaPtr()->regClasses()) {
+        // MiscRegs are serialized elsewhere.
+        if (reg_class->type() == MiscRegClass)
+            continue;
 
-    RegVal floatRegs[NumFloatRegs];
-    // This is a bit ugly, but needed to maintain backwards
-    // compatibility.
-    arrayParamIn(cp, "floatRegs.i", floatRegs, NumFloatRegs);
-    for (int i = 0; i < NumFloatRegs; ++i)
-        tc.setFloatRegFlat(i, floatRegs[i]);
+        const size_t reg_bytes = reg_class->regBytes();
+        const size_t reg_count = reg_class->numRegs();
+        const size_t array_bytes = reg_bytes * reg_count;
 
-    std::vector<TheISA::VecRegContainer> vecRegs(NumVecRegs);
-    UNSERIALIZE_CONTAINER(vecRegs);
-    for (int i = 0; i < NumVecRegs; ++i) {
-        tc.setVecRegFlat(i, vecRegs[i]);
+        uint8_t regs[array_bytes];
+        arrayParamIn(cp, std::string("regs.") + reg_class->name(), regs,
+                array_bytes);
+
+        auto *reg_ptr = regs;
+        for (const auto &id: *reg_class) {
+            tc.setReg(id, reg_ptr);
+            reg_ptr += reg_bytes;
+        }
     }
 
-    std::vector<TheISA::VecPredRegContainer> vecPredRegs(NumVecPredRegs);
-    UNSERIALIZE_CONTAINER(vecPredRegs);
-    for (int i = 0; i < NumVecPredRegs; ++i) {
-        tc.setVecPredRegFlat(i, vecPredRegs[i]);
-    }
-
-    RegVal intRegs[NumIntRegs];
-    UNSERIALIZE_ARRAY(intRegs, NumIntRegs);
-    for (int i = 0; i < NumIntRegs; ++i)
-        tc.setIntRegFlat(i, intRegs[i]);
-
-    if (NumCCRegs) {
-        RegVal ccRegs[NumCCRegs];
-        UNSERIALIZE_ARRAY(ccRegs, NumCCRegs);
-        for (int i = 0; i < NumCCRegs; ++i)
-            tc.setCCRegFlat(i, ccRegs[i]);
-    }
-
-    PCState pcState;
-    pcState.unserialize(cp);
-    tc.pcState(pcState);
+    std::unique_ptr<PCStateBase> pc_state(tc.pcState().clone());
+    pc_state->unserialize(cp);
+    tc.pcState(*pc_state);
 
     // thread_num and cpu_id are deterministic from the config
 }
@@ -305,3 +319,13 @@ std::shared_ptr<StreamNUCAManager> ThreadContext::getStreamNUCAManager() {
     assert(p && "Try getting StreamNUCAManager on Unassigned ThreadContext.");
     return p->streamNUCAManager;
 }
+
+
+PortProxy &ThreadContext::getVirtProxy() { 
+    if (!this->fsVirtProxy) {
+        this->fsVirtProxy = std::make_shared<TranslatingPortProxy>(this);
+        this->seVirtProxy = std::make_shared<SETranslatingPortProxy>(this);
+    }
+    return FullSystem ? *this->fsVirtProxy : *this->seVirtProxy;
+}
+} // namespace gem5

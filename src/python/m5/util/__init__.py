@@ -1,4 +1,4 @@
-# Copyright (c) 2016, 2020 ARM Limited
+# Copyright (c) 2016, 2020-2021 Arm Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -37,56 +37,91 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from __future__ import print_function
-
 import os
 import re
 import sys
 
-from six import string_types
-from six.moves import zip_longest
+from functools import wraps
 
 from . import convert
-from . import jobfile
 
 from .attrdict import attrdict, multiattrdict, optiondict
-from .code_formatter import code_formatter
 from .multidict import multidict
-from .smartdict import SmartDict
-from .sorteddict import SortedDict
 
 # panic() should be called when something happens that should never
 # ever happen regardless of what the user does (i.e., an acutal m5
 # bug).
 def panic(fmt, *args):
-    print('panic:', fmt % args, file=sys.stderr)
+    print("panic:", fmt % args, file=sys.stderr)
     sys.exit(1)
+
 
 # fatal() should be called when the simulation cannot continue due to
 # some condition that is the user's fault (bad configuration, invalid
 # arguments, etc.) and not a simulator bug.
 def fatal(fmt, *args):
-    print('fatal:', fmt % args, file=sys.stderr)
+    print("fatal:", fmt % args, file=sys.stderr)
     sys.exit(1)
+
 
 # warn() should be called when the user should be warned about some condition
 # that may or may not be the user's fault, but that they should be made aware
 # of as it may affect the simulation or results.
 def warn(fmt, *args):
-    print('warn:', fmt % args, file=sys.stderr)
+    print("warn:", fmt % args, file=sys.stderr)
+
 
 # inform() should be called when the user should be informed about some
 # condition that they may be interested in.
 def inform(fmt, *args):
-    print('info:', fmt % args, file=sys.stdout)
+    print("info:", fmt % args, file=sys.stdout)
+
+
+def callOnce(func):
+    """Decorator that enables to run a given function only once. Subsequent
+    calls are discarded."""
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not wrapper.has_run:
+            wrapper.has_run = True
+            return func(*args, **kwargs)
+
+    wrapper.has_run = False
+    return wrapper
+
+
+def deprecated(replacement=None, logger=warn):
+    """This decorator warns the user about a deprecated function."""
+
+    def decorator(func):
+        @callOnce
+        def notifyDeprecation():
+            try:
+                func_name = lambda f: f.__module__ + "." + f.__qualname__
+                message = f"Function {func_name(func)} is deprecated."
+                if replacement:
+                    message += f" Prefer {func_name(replacement)} instead."
+            except AttributeError:
+                message = f"Function {func} is deprecated."
+                if replacement:
+                    message += f" Prefer {replacement} instead."
+            logger(message)
+
+        notifyDeprecation()
+        return func
+
+    return decorator
+
 
 class Singleton(type):
     def __call__(cls, *args, **kwargs):
-        if hasattr(cls, '_instance'):
+        if hasattr(cls, "_instance"):
             return cls._instance
 
-        cls._instance = super(Singleton, cls).__call__(*args, **kwargs)
+        cls._instance = super().__call__(*args, **kwargs)
         return cls._instance
+
 
 def addToPath(path):
     """Prepend given directory to system module search path.  We may not
@@ -102,10 +137,22 @@ def addToPath(path):
     # so place the new dir right after that.
     sys.path.insert(1, path)
 
+
+def repoPath():
+    """
+    Return the abspath of the gem5 repository.
+    This is relying on the following structure:
+
+    <gem5-repo>/build/<ISA>/gem5.[opt,debug...]
+    """
+    return os.path.dirname(os.path.dirname(os.path.dirname(sys.executable)))
+
+
 # Apply method to object.
 # applyMethod(obj, 'meth', <args>) is equivalent to obj.meth(<args>)
 def applyMethod(obj, meth, *args, **kwargs):
     return getattr(obj, meth)(*args, **kwargs)
+
 
 # If the first argument is an (non-sequence) object, apply the named
 # method with the given arguments.  If the first argument is a
@@ -117,30 +164,6 @@ def applyOrMap(objOrSeq, meth, *args, **kwargs):
     else:
         return [applyMethod(o, meth, *args, **kwargs) for o in objOrSeq]
 
-def compareVersions(v1, v2):
-    """helper function: compare arrays or strings of version numbers.
-    E.g., compare_version((1,3,25), (1,4,1)')
-    returns -1, 0, 1 if v1 is <, ==, > v2
-    """
-    def make_version_list(v):
-        if isinstance(v, (list,tuple)):
-            return v
-        elif isinstance(v, string_types):
-            return list(map(lambda x: int(re.match('\d+', x).group()),
-                            v.split('.')))
-        else:
-            raise TypeError()
-
-    v1 = make_version_list(v1)
-    v2 = make_version_list(v2)
-
-    # Compare corresponding elements of lists
-    # The shorter list is filled with 0 till the lists have the same length
-    for n1,n2 in zip_longest(v1, v2, fillvalue=0):
-        if n1 < n2: return -1
-        if n1 > n2: return  1
-
-    return 0
 
 def crossproduct(items):
     if len(items) == 1:
@@ -151,6 +174,7 @@ def crossproduct(items):
             for j in crossproduct(items[1:]):
                 yield (i,) + j
 
+
 def flatten(items):
     while items:
         item = items.pop(0)
@@ -159,77 +183,27 @@ def flatten(items):
         else:
             yield item
 
+
 # force scalars to one-element lists for uniformity
 def makeList(objOrList):
     if isinstance(objOrList, list):
         return objOrList
     return [objOrList]
 
+
 def printList(items, indent=4):
-    line = ' ' * indent
-    for i,item in enumerate(items):
+    line = " " * indent
+    for i, item in enumerate(items):
         if len(line) + len(item) > 76:
             print(line)
-            line = ' ' * indent
+            line = " " * indent
 
         if i < len(items) - 1:
-            line += '%s, ' % item
+            line += "%s, " % item
         else:
             line += item
             print(line)
 
-def readCommandWithReturn(cmd, **kwargs):
-    """
-    run the command cmd, read the results and return them
-    this is sorta like `cmd` in shell
-
-    :param cmd: command to run with Popen
-    :type cmd: string, list
-    :returns: pair consisting on Popen retcode and the command stdout
-    :rtype: (int, string)
-    """
-    from subprocess import Popen, PIPE, STDOUT
-
-    if isinstance(cmd, str):
-        cmd = cmd.split()
-
-    no_exception = 'exception' in kwargs
-    exception = kwargs.pop('exception', None)
-
-    kwargs.setdefault('shell', False)
-    kwargs.setdefault('stdout', PIPE)
-    kwargs.setdefault('stderr', STDOUT)
-    kwargs.setdefault('close_fds', True)
-    try:
-        subp = Popen(cmd, **kwargs)
-    except Exception as e:
-        if no_exception:
-            return -1, exception
-        raise
-
-    output = subp.communicate()[0].decode('utf-8')
-    return subp.returncode, output
-
-def readCommand(cmd, **kwargs):
-    """
-    run the command cmd, read the results and return them
-    this is sorta like `cmd` in shell
-
-    :param cmd: command to run with Popen
-    :type cmd: string, list
-    :returns: command stdout
-    :rtype: string
-    """
-    return readCommandWithReturn(cmd, **kwargs)[1]
-
-def makeDir(path):
-    """Make a directory if it doesn't exist.  If the path does exist,
-    ensure that it is a directory"""
-    if os.path.exists(path):
-        if not os.path.isdir(path):
-            raise AttributeError("%s exists but is not directory" % path)
-    else:
-        os.mkdir(path)
 
 def isInteractive():
     """Check if the simulator is run interactively or in a batch environment"""

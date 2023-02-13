@@ -31,6 +31,8 @@
   STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance,        \
                (entry).idx.entryIdx, ##args)
 
+namespace gem5 {
+
 StreamValue GetCoalescedStreamValue::operator()(uint64_t streamId) const {
   assert(this->stream->isCoalescedHere(streamId) &&
          "Invalid CoalescedStreamId.");
@@ -1165,7 +1167,7 @@ Stream::setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
          "AtomicOperand should be myself.");
   params.emplace_back();
   auto atomicOp =
-      m5::make_unique<StreamAtomicOp>(this, idx, memElementsize, params,
+      std::make_unique<StreamAtomicOp>(this, idx, memElementsize, params,
                                       this->storeCallback, this->loadCallback);
   return atomicOp;
 }
@@ -1256,4 +1258,5 @@ void Stream::dump() const {
   for (const auto &dynS : this->dynamicStreams) {
     dynS.dump();
   }
-}
+}} // namespace gem5
+

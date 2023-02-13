@@ -9,6 +9,8 @@
 
 #include "cpu/thread_context.hh"
 
+namespace gem5 {
+
 namespace RiscvISA {
 class ExecFunc {
 public:
@@ -26,5 +28,7 @@ private:
 };
 
 } // namespace RiscvISA
+
+} // namespace gem5
 
 #endif

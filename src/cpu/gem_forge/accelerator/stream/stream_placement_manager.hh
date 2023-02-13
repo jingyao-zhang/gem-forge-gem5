@@ -3,6 +3,8 @@
 
 #include "stream.hh"
 
+namespace gem5 {
+
 class Cache;
 class CoherentXBar;
 
@@ -73,5 +75,7 @@ private:
   void sendTimingRequest(PacketPtr pkt, Cache *cache);
   void sendTimingRequestToL2Bus(PacketPtr pkt);
 };
+
+} // namespace gem5
 
 #endif

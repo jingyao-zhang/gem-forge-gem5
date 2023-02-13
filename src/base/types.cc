@@ -28,6 +28,9 @@
 
 #include "base/types.hh"
 
+namespace gem5
+{
+
 Addr
 bitSelect(Addr addr, unsigned int small, unsigned int big)
 {
@@ -75,3 +78,4 @@ operator<<(std::ostream &out, const Cycles & cycles)
     return out;
 }
 
+} // namespace gem5

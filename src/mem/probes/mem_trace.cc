@@ -41,24 +41,29 @@
 #include "base/output.hh"
 #include "params/MemTraceProbe.hh"
 #include "proto/packet.pb.h"
+#include "sim/core.hh"
+#include "sim/cur_tick.hh"
 #include "sim/system.hh"
 
-MemTraceProbe::MemTraceProbe(MemTraceProbeParams *p)
+namespace gem5
+{
+
+MemTraceProbe::MemTraceProbe(const MemTraceProbeParams &p)
     : BaseMemProbe(p),
       traceStream(nullptr),
-      system(p->system),
-      withPC(p->with_pc)
+      system(p.system),
+      withPC(p.with_pc)
 {
     std::string filename;
-    if (p->trace_file != "") {
+    if (p.trace_file != "") {
         // If the trace file is not specified as an absolute path,
         // append the current simulation output directory
-        filename = simout.resolve(p->trace_file);
+        filename = simout.resolve(p.trace_file);
 
         const std::string suffix = ".gz";
         // If trace_compress has been set, check the suffix. Append
         // accordingly.
-        if (p->trace_compress &&
+        if (p.trace_compress &&
             filename.compare(filename.size() - suffix.size(), suffix.size(),
                              suffix) != 0)
             filename = filename + suffix;
@@ -66,7 +71,7 @@ MemTraceProbe::MemTraceProbe(MemTraceProbeParams *p)
         // Generate a filename from the name of the SimObject. Append .trc
         // and .gz if we want compression enabled.
         filename = simout.resolve(name() + ".trc" +
-                                  (p->trace_compress ? ".gz" : ""));
+                                  (p.trace_compress ? ".gz" : ""));
     }
 
     traceStream = new ProtoOutputStream(filename);
@@ -84,7 +89,7 @@ MemTraceProbe::startup()
     // the stream
     ProtoMessage::PacketHeader header_msg;
     header_msg.set_obj_id(name());
-    header_msg.set_tick_freq(SimClock::Frequency);
+    header_msg.set_tick_freq(sim_clock::Frequency);
 
     for (int i = 0; i < system->maxRequestors(); i++) {
         auto id_string = header_msg.add_id_strings();
@@ -103,7 +108,7 @@ MemTraceProbe::closeStreams()
 }
 
 void
-MemTraceProbe::handleRequest(const ProbePoints::PacketInfo &pkt_info)
+MemTraceProbe::handleRequest(const probing::PacketInfo &pkt_info)
 {
     ProtoMessage::Packet pkt_msg;
 
@@ -119,9 +124,4 @@ MemTraceProbe::handleRequest(const ProbePoints::PacketInfo &pkt_info)
     traceStream->write(pkt_msg);
 }
 
-
-MemTraceProbe *
-MemTraceProbeParams::create()
-{
-    return new MemTraceProbe(this);
-}
+} // namespace gem5

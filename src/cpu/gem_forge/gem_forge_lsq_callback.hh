@@ -8,6 +8,8 @@
 #include <iostream>
 #include <memory>
 
+namespace gem5 {
+
 /**
  * This is used as the interface to let the core LSQ query about
  * information from the SE.
@@ -114,5 +116,7 @@ struct GemForgeSQDeprecatedCallback {
   virtual bool isWritebacked() = 0;
   virtual void writebacked() = 0;
 };
+
+} // namespace gem5
 
 #endif

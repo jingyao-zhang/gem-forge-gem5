@@ -45,6 +45,7 @@
 #include <map>
 #include <vector>
 
+#include "base/compiler.hh"
 #include "base/debug.hh"
 #include "base/output.hh"
 #include "base/trace.hh"
@@ -52,9 +53,8 @@
 
 namespace py = pybind11;
 
-namespace Debug {
-extern int allFlagsVersion;
-}
+namespace gem5
+{
 
 static void
 output(const char *filename)
@@ -64,7 +64,7 @@ output(const char *filename)
     if (!file_stream)
         file_stream = simout.create(filename);
 
-    Trace::setDebugLogger(new Trace::OstreamLogger(*file_stream->stream()));
+    trace::setDebugLogger(new trace::OstreamLogger(*file_stream->stream()));
 }
 
 static void
@@ -72,55 +72,59 @@ ignore(const char *expr)
 {
     ObjectMatch ignore(expr);
 
-    Trace::getDebugLogger()->addIgnore(ignore);
+    trace::getDebugLogger()->addIgnore(ignore);
 }
 
 void
-pybind_init_debug(py::module &m_native)
+pybind_init_debug(py::module_ &m_native)
 {
-    py::module m_debug = m_native.def_submodule("debug");
+    py::module_ m_debug = m_native.def_submodule("debug");
 
     m_debug
-        .def("getAllFlagsVersion", []() { return Debug::allFlagsVersion; })
-        .def("allFlags", &Debug::allFlags, py::return_value_policy::reference)
+        .def("getAllFlagsVersion",
+             []() { return debug::AllFlagsFlag::version(); })
+        .def("allFlags", &debug::allFlags, py::return_value_policy::reference)
 
         .def("schedBreak", &schedBreak)
-        .def("setRemoteGDBPort", &setRemoteGDBPort)
         ;
 
-    py::class_<Debug::Flag> c_flag(m_debug, "Flag");
+    py::class_<debug::Flag> c_flag(m_debug, "Flag");
     c_flag
-        .def_property_readonly("name", &Debug::Flag::name)
-        .def_property_readonly("desc", &Debug::Flag::desc)
-        .def("enable", &Debug::Flag::enable)
-        .def("disable", &Debug::Flag::disable)
-        .def_property("status",
-                      [](const Debug::Flag *flag) {
-                          return flag->status();
+        .def_property_readonly("name", &debug::Flag::name)
+        .def_property_readonly("desc", &debug::Flag::desc)
+        .def("enable", &debug::Flag::enable)
+        .def("disable", &debug::Flag::disable)
+        .def_property("tracing",
+                      [](const debug::Flag *flag) {
+                          return flag->tracing();
                       },
-                      [](Debug::Flag *flag, bool state) {
+                      [](debug::Flag *flag, bool state) {
                           if (state) {
                               flag->enable();
                           } else {
                               flag->disable();
                           }
                       })
-        .def("__bool__", [](const Debug::Flag *flag) {
-                return flag->status();
+        .def("__bool__", [](const debug::Flag *flag) {
+                return (bool)*flag;
             })
         ;
 
-    py::class_<Debug::SimpleFlag>(m_debug, "SimpleFlag", c_flag);
-    py::class_<Debug::CompoundFlag>(m_debug, "CompoundFlag", c_flag)
-        .def("kids", &Debug::CompoundFlag::kids)
+    py::class_<debug::SimpleFlag>(m_debug, "SimpleFlag", c_flag)
+        .def_property_readonly("isFormat", &debug::SimpleFlag::isFormat)
+        ;
+    py::class_<debug::CompoundFlag>(m_debug, "CompoundFlag", c_flag)
+        .def("kids", &debug::CompoundFlag::kids)
         ;
 
 
-    py::module m_trace = m_native.def_submodule("trace");
+    py::module_ m_trace = m_native.def_submodule("trace");
     m_trace
         .def("output", &output)
         .def("ignore", &ignore)
-        .def("enable", &Trace::enable)
-        .def("disable", &Trace::disable)
+        .def("enable", &trace::enable)
+        .def("disable", &trace::disable)
         ;
 }
+
+} // namespace gem5

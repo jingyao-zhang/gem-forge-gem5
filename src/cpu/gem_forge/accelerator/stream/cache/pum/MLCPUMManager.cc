@@ -43,6 +43,8 @@
     StreamFloatPolicy::getLog() << __s.str() << std::flush;                    \
   }
 
+namespace gem5 {
+
 int64_t MLCPUMManager::PUMContext::nextContextId = 0;
 int MLCPUMManager::PUMDataGraphNode::nextNodeId = 1;
 
@@ -208,7 +210,7 @@ MLCPUMManager::PUMContext::~PUMContext() {
 
 MLCPUMManager::MLCPUMManager(MLCStreamEngine *_mlcSE)
     : mlcSE(_mlcSE), controller(_mlcSE->controller) {
-  this->scheduler = m5::make_unique<PUMScheduler>(this);
+  this->scheduler = std::make_unique<PUMScheduler>(this);
 
   this->modelRegPressure =
       this->controller->myParams->stream_pum_schedule_type == "unison";
@@ -1276,22 +1278,14 @@ void MLCPUMManager::buildPUMDataGraphCompute(
 
   // Step 1: Define initial state of call registers.
   const RegId intRegParams[6] = {
-      RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_RDI),
-      RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_RSI),
-      RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_RDX),
-      RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_RCX),
-      RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_R8),
-      RegId(RegClass::IntRegClass, X86ISA::IntRegIndex::INTREG_R9),
+      X86ISA::int_reg::Rdi, X86ISA::int_reg::Rsi, X86ISA::int_reg::Rdx,
+      X86ISA::int_reg::Rcx, X86ISA::int_reg::R8,  X86ISA::int_reg::R9,
   };
   const RegId floatRegParams[8] = {
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM0_0),
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM1_0),
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM2_0),
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM3_0),
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM4_0),
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM5_0),
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM6_0),
-      RegId(RegClass::FloatRegClass, X86ISA::FloatRegIndex::FLOATREG_XMM7_0),
+      X86ISA::float_reg::xmmIdx(0, 0), X86ISA::float_reg::xmmIdx(1, 0),
+      X86ISA::float_reg::xmmIdx(2, 0), X86ISA::float_reg::xmmIdx(3, 0),
+      X86ISA::float_reg::xmmIdx(4, 0), X86ISA::float_reg::xmmIdx(5, 0),
+      X86ISA::float_reg::xmmIdx(6, 0), X86ISA::float_reg::xmmIdx(7, 0),
   };
 
   MLC_S_DPRINTF(dynId,
@@ -1408,24 +1402,24 @@ void MLCPUMManager::buildPUMDataGraphCompute(
     // Add current instruction.
     MLCSE_DPRINTF("  %s (f: %d l: %d) %s\n", inst->disassemble(0x0),
                   inst->isFirstMicroop(), inst->isLastMicroop(),
-                  Enums::OpClassStrings[inst->opClass()]);
+                  enums::OpClassStrings[inst->opClass()]);
 
     // Get op type.
     OpTypeE curOpTy;
     switch (inst->opClass()) {
-    case Enums::IprAccess:
-    case Enums::No_OpClass:
+    case enums::OpClass::IprAccess:
+    case enums::OpClass::No_OpClass:
       curOpTy = OpTypeE::Misc;
       break;
-    case Enums::MemRead:
-    case Enums::FloatMemRead:
+    case enums::OpClass::MemRead:
+    case enums::OpClass::FloatMemRead:
       curOpTy = OpTypeE::Load;
       break;
-    case Enums::MemWrite:
-    case Enums::FloatMemWrite:
-    case Enums::Num_OpClass:
+    case enums::OpClass::MemWrite:
+    case enums::OpClass::FloatMemWrite:
+    case enums::OpClass::Num_OpClass:
       MLCSE_PANIC("Unrecognized op type: %s\n",
-                  Enums::OpClassStrings[inst->opClass()]);
+                  enums::OpClassStrings[inst->opClass()]);
       break;
     default:
       curOpTy = OpTypeE::Compute;
@@ -1469,7 +1463,7 @@ void MLCPUMManager::buildPUMDataGraphCompute(
     //       deduplicate the output register. Examples of these instructions
     //       would be `maddf` and `mmulf`.
     //       https://www.felixcloutier.com/x86/mulsd
-    auto numSrc = std::min(inst->numSrcRegs(), static_cast<int8_t>(2));
+    auto numSrc = std::min(inst->numSrcRegs(), static_cast<uint8_t>(2));
     /**
      * Zhengrong: this is a bad choice for gem5 to track too many false WAR
      * dependencies. And this breaks our fused multiply-add. So for now I
@@ -1513,7 +1507,7 @@ void MLCPUMManager::buildPUMDataGraphCompute(
     switch (curOpTy) {
     case OpTypeE::Load:
       // Get register value.
-      if (inst->destRegIdx(0).isIntReg()) {
+      if (inst->destRegIdx(0).classValue() == RegClassType::IntRegClass) {
         uint32_t regVal = *reinterpret_cast<uint32_t *>(&regVals[i].front());
         curNode->compValTy = PUMDataGraphNode::CompValueE::ConstInt;
         curNode->iVal = regVal;
@@ -1767,41 +1761,41 @@ void MLCPUMManager::buildTDFG(PUMContext &context, const std::string &prefix) {
       case PUMDataGraphNode::CompValueE::None: {
         auto lastInst = node->insts.back();
         switch (lastInst->opClass()) {
-        case Enums::OpClass::IntAlu:
-        case Enums::OpClass::FloatAdd:
-        case Enums::OpClass::SimdAdd:
-        case Enums::OpClass::SimdFloatAdd:
+        case enums::OpClass::IntAlu:
+        case enums::OpClass::FloatAdd:
+        case enums::OpClass::SimdAdd:
+        case enums::OpClass::SimdFloatAdd:
           tdfgCompute->set_op(::LLVM::TDG::TDFG::Node::Compute::ADD);
           break;
 
-        case Enums::OpClass::IntMult:
-        case Enums::OpClass::FloatMult:
-        case Enums::OpClass::SimdMult:
-        case Enums::OpClass::SimdFloatMult:
+        case enums::OpClass::IntMult:
+        case enums::OpClass::FloatMult:
+        case enums::OpClass::SimdMult:
+        case enums::OpClass::SimdFloatMult:
           tdfgCompute->set_op(::LLVM::TDG::TDFG::Node::Compute::MUL);
           break;
 
-        case Enums::OpClass::SimdMultAcc:
-        case Enums::OpClass::FloatMultAcc:
-        case Enums::OpClass::SimdFloatMultAcc:
+        case enums::OpClass::SimdMultAcc:
+        case enums::OpClass::FloatMultAcc:
+        case enums::OpClass::SimdFloatMultAcc:
           tdfgCompute->set_op(::LLVM::TDG::TDFG::Node::Compute::MADD);
           break;
 
-        case Enums::OpClass::IntDiv:
-        case Enums::OpClass::FloatDiv:
-        case Enums::OpClass::SimdDiv:
-        case Enums::OpClass::SimdFloatDiv:
+        case enums::OpClass::IntDiv:
+        case enums::OpClass::FloatDiv:
+        case enums::OpClass::SimdDiv:
+        case enums::OpClass::SimdFloatDiv:
           tdfgCompute->set_op(::LLVM::TDG::TDFG::Node::Compute::DIV);
           break;
 
-        case Enums::OpClass::SimdCmp:
-        case Enums::OpClass::SimdFloatCmp:
+        case enums::OpClass::SimdCmp:
+        case enums::OpClass::SimdFloatCmp:
           tdfgCompute->set_op(::LLVM::TDG::TDFG::Node::Compute::CMP);
           break;
 
         default:
           MLCSE_PANIC("Unrecognized op type: %s\n",
-                      Enums::OpClassStrings[lastInst->opClass()]);
+                      enums::OpClassStrings[lastInst->opClass()]);
         }
       }
       }
@@ -2460,7 +2454,7 @@ void MLCPUMManager::compileCompute(PUMContext &context,
       compiler.tile_sizes);
 
   MLCSE_DPRINTF("[PUM] Compile Inst %s to OpClass %s.\n",
-                inst->disassemble(0x0), Enums::OpClassStrings[inst->opClass()]);
+                inst->disassemble(0x0), enums::OpClassStrings[inst->opClass()]);
 
   // Compile the final reduction instruction.
   if (node->isFinalReduceNode) {
@@ -2547,7 +2541,7 @@ Cycles MLCPUMManager::estimateComputeBits(const PUMCommand &command) const {
   int computeLatency = wordlineBits;
   switch (command.opClass) {
   default:
-    panic("Unknown PUM OpClass %s.", Enums::OpClassStrings[command.opClass]);
+    panic("Unknown PUM OpClass %s.", enums::OpClassStrings[command.opClass]);
     break;
 
   case No_OpClass:
@@ -2921,7 +2915,7 @@ MLCPUMManager::generatePrefetchStream(const ConfigPtr &config) {
 
   // Opt: prefetch patterns only describes an element from each of the
   // required cache-lines.
-  auto clSize = RubySystem::getBlockSizeBytes();
+  auto clSize = ruby::RubySystem::getBlockSizeBytes();
   prefetchConfig->elementSize = clSize;
 
   auto totalBytes = streamNUCARegion.numElement * streamNUCARegion.elementSize;
@@ -2955,9 +2949,9 @@ MLCPUMManager::generatePrefetchStream(const ConfigPtr &config) {
   /**
    * Set the float plan to offload to the LLC controller.
    */
-  MachineType prefetchLevel = MachineType_L2Cache;
+  ruby::MachineType prefetchLevel = ruby::MachineType_L2Cache;
   if (this->controller->myParams->stream_pum_prefetch_level == "mem") {
-    prefetchLevel = MachineType_Directory;
+    prefetchLevel = ruby::MachineType_Directory;
   }
   uint64_t firstMemFloatElemIdx = 0;
   prefetchConfig->floatPlan = StreamFloatPlan();
@@ -3626,14 +3620,14 @@ void MLCPUMManager::setPUMManagerAtPUMEngine() {
   for (int row = 0; row < this->controller->getNumRows(); ++row) {
     for (int col = 0; col < this->controller->getNumCols(); ++col) {
       int nodeId = row * this->controller->getNumCols() + col;
-      MachineID dstMachineId(MachineType_L2Cache, nodeId);
+      ruby::MachineID dstMachineId(ruby::MachineType_L2Cache, nodeId);
 
       /**
        * We still configure here. But PUMEngine will not start until received
        * the Kick.
        */
       auto llcCntrl =
-          AbstractStreamAwareController::getController(dstMachineId);
+          ruby::AbstractStreamAwareController::getController(dstMachineId);
       auto llcSE = llcCntrl->getLLCStreamEngine();
       llcSE->getPUMEngine()->setPUMManager(this);
     }
@@ -3644,14 +3638,14 @@ void MLCPUMManager::configurePUMEngine(PUMContext &context) {
   for (int row = 0; row < this->controller->getNumRows(); ++row) {
     for (int col = 0; col < this->controller->getNumCols(); ++col) {
       int nodeId = row * this->controller->getNumCols() + col;
-      MachineID dstMachineId(MachineType_L2Cache, nodeId);
+      ruby::MachineID dstMachineId(ruby::MachineType_L2Cache, nodeId);
 
       /**
        * We still configure here. But PUMEngine will not start until received
        * the Kick.
        */
       auto llcCntrl =
-          AbstractStreamAwareController::getController(dstMachineId);
+          ruby::AbstractStreamAwareController::getController(dstMachineId);
       auto llcSE = llcCntrl->getLLCStreamEngine();
       llcSE->getPUMEngine()->configure(this, context.contextId,
                                        context.commands);
@@ -3697,7 +3691,7 @@ void MLCPUMManager::configurePUMEngine(PUMContext &context) {
   // we do not charge compilation latency any more.
   context.state = PUMContext::StateE::Kicked;
   context.lastKickCycle = this->controller->curCycle();
-  this->kickPUMEngine(context, MessageSizeType_Data, false /* isIdea */);
+  this->kickPUMEngine(context, ruby::MessageSizeType_Data, false /* isIdea */);
 }
 
 void MLCPUMManager::kickPUMEngineEventImpl(int64_t contextId) {
@@ -3712,7 +3706,8 @@ void MLCPUMManager::kickPUMEngineEventImpl(int64_t contextId) {
     context.waitingFirstCompileDone = false;
     context.state = PUMContext::StateE::Kicked;
     context.lastKickCycle = this->controller->curCycle();
-    this->kickPUMEngine(context, MessageSizeType_Data, false /* isIdea */);
+    this->kickPUMEngine(context, ruby::MessageSizeType_Data,
+                        false /* isIdea */);
     return;
   }
   // Sliently ignore the case when we do not find the context.
@@ -3871,8 +3866,8 @@ void MLCPUMManager::fetchPUMDataBeforeSync(PUMContext &context) {
   return;
 }
 
-void MLCPUMManager::kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
-                                  bool isIdea) {
+void MLCPUMManager::kickPUMEngine(PUMContext &context,
+                                  ruby::MessageSizeType sizeType, bool isIdea) {
 
   context.lastSyncCycle = this->controller->curCycle();
 
@@ -3888,9 +3883,9 @@ void MLCPUMManager::kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
    * Broadcast the kick packet.
    * So far this is implemented as a PUMConfig packet.
    */
-  auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
+  auto msg = std::make_shared<ruby::RequestMsg>(this->controller->clockEdge());
   msg->m_addr = 0;
-  msg->m_Type = CoherenceRequestType_STREAM_CONFIG;
+  msg->m_Type = ruby::CoherenceRequestType_STREAM_CONFIG;
   msg->m_Requestors.add(this->controller->getMachineID());
   msg->m_MessageSize = sizeType;
   msg->m_isPUM = true;
@@ -3899,7 +3894,7 @@ void MLCPUMManager::kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
     for (int row = 0; row < this->controller->getNumRows(); ++row) {
       for (int col = 0; col < this->controller->getNumCols(); ++col) {
         int nodeId = row * this->controller->getNumCols() + col;
-        MachineID dstMachineId(MachineType_L2Cache, nodeId);
+        ruby::MachineID dstMachineId(ruby::MachineType_L2Cache, nodeId);
         msg->m_Destination.add(dstMachineId);
 
         /**
@@ -3907,7 +3902,7 @@ void MLCPUMManager::kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
          * received the configuration message.
          */
         auto llcCntrl =
-            AbstractStreamAwareController::getController(dstMachineId);
+            ruby::AbstractStreamAwareController::getController(dstMachineId);
         auto llcSE = llcCntrl->getLLCStreamEngine();
         llcSE->getPUMEngine()->receiveKick(*msg);
 
@@ -3920,7 +3915,7 @@ void MLCPUMManager::kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
   for (int row = 0; row < this->controller->getNumRows(); ++row) {
     for (int col = 0; col < this->controller->getNumCols(); ++col) {
       int nodeId = row * this->controller->getNumCols() + col;
-      MachineID dstMachineId(MachineType_L2Cache, nodeId);
+      ruby::MachineID dstMachineId(ruby::MachineType_L2Cache, nodeId);
 
       msg->m_Destination.add(dstMachineId);
     }
@@ -4356,7 +4351,7 @@ void MLCPUMManager::tryKickPUMEngine(PUMContext &context) {
   } else {
     // Notify the PUMEngine to continue.
     this->kickPUMEngine(
-        context, MessageSizeType_Control,
+        context, ruby::MessageSizeType_Control,
         this->controller->myParams->enable_stream_idea_ack /* isIdea */);
   }
 }
@@ -4741,7 +4736,7 @@ void MLCPUMManager::sendOneReductionResult(PUMContext &context,
   sliceId.getStartIdx() = result.elemIdx;
   sliceId.getEndIdx() = result.elemIdx + 1;
 
-  DataBlock dataBlock;
+  ruby::DataBlock dataBlock;
   dataBlock.setData(result.value.uint8Ptr(), 0, reduceConfig->elementSize);
   for (const auto &edge : reduceConfig->depEdges) {
 
@@ -4764,3 +4759,4 @@ void MLCPUMManager::sendOneReductionResult(PUMContext &context,
 
   group.reductionResults.pop_front();
 }
+} // namespace gem5

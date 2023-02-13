@@ -7,6 +7,8 @@
 #include <memory>
 #include <vector>
 
+namespace gem5 {
+
 class StreamNDCPacket;
 using StreamNDCPacketPtr = std::shared_ptr<StreamNDCPacket>;
 using StreamNDCPacketWeakPtr = std::weak_ptr<StreamNDCPacket>;
@@ -38,5 +40,7 @@ public:
    */
  StreamNDCPacketVec expectedForwardPackets;
 };
+
+} // namespace gem5
 
 #endif

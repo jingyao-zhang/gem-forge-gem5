@@ -7,6 +7,8 @@
 #include <string>
 #include <unordered_map>
 
+namespace gem5 {
+
 class FunctionTracer {
 public:
   FunctionTracer(const std::string &_name) : name(_name) {}
@@ -39,5 +41,6 @@ private:
   void resetFuncAccumulateTick();
   void dumpFuncAccumulateTick();
 };
+} // namespace gem5
 
 #endif

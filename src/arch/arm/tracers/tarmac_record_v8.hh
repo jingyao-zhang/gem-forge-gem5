@@ -45,7 +45,10 @@
 
 #include "tarmac_record.hh"
 
-namespace Trace {
+namespace gem5
+{
+
+namespace trace {
 
 /**
  * TarmacTracer record for ARMv8 CPUs:
@@ -100,17 +103,10 @@ class TarmacTracerRecordV8 : public TarmacTracerRecord
                            const std::string &prefix = "") const override;
 
       protected:
-        void updateInt(const TarmacContext& tarmCtx,
-                       RegIndex regRelIdx) override;
-
-        void updateMisc(const TarmacContext& tarmCtx,
-                        RegIndex regRelIdx) override;
-
-        void updateVec(const TarmacContext& tarmCtx,
-                       RegIndex regRelIdx) override;
-
-        void updatePred(const TarmacContext& tarmCtx,
-                        RegIndex regRelIdx) override;
+        void updateInt(const TarmacContext& tarmCtx) override;
+        void updateMisc(const TarmacContext& tarmCtx) override;
+        void updateVec(const TarmacContext& tarmCtx) override;
+        void updatePred(const TarmacContext& tarmCtx) override;
 
         /**
          * Returning a string which contains the formatted
@@ -144,8 +140,8 @@ class TarmacTracerRecordV8 : public TarmacTracerRecord
 
   public:
     TarmacTracerRecordV8(Tick _when, ThreadContext *_thread,
-                         const StaticInstPtr _staticInst, ArmISA::PCState _pc,
-                         TarmacTracer& _parent,
+                         const StaticInstPtr _staticInst,
+                         const PCStateBase &_pc, TarmacTracer& _parent,
                          const StaticInstPtr _macroStaticInst = NULL)
       : TarmacTracerRecord(_when, _thread, _staticInst, _pc,
                            _parent, _macroStaticInst)
@@ -162,6 +158,7 @@ class TarmacTracerRecordV8 : public TarmacTracerRecord
     void addRegEntry(std::vector<RegPtr>& queue, const TarmacContext& ptr);
 };
 
-} // namespace Trace
+} // namespace trace
+} // namespace gem5
 
 #endif // __ARCH_ARM_TRACERS_TARMAC_RECORD_V8_HH__

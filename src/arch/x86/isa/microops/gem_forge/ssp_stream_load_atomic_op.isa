@@ -7,7 +7,7 @@
 
 def template MicroSSPLoadAtomicOpExecute {{
         Fault %(class_name)s::execute(ExecContext *xc,
-                Trace::InstRecord *traceData) const
+                trace::InstRecord *traceData) const
         {
             %(op_decl)s;
             %(op_rd)s;
@@ -18,21 +18,21 @@ def template MicroSSPLoadAtomicOpExecute {{
 
         Fault
         %(class_name)s::initiateAcc(
-            ExecContext *xc, Trace::InstRecord *traceData) const {
+            ExecContext *xc, trace::InstRecord *traceData) const {
             Fault fault = NoFault;
             return fault;
         }
 
         Fault
         %(class_name)s::completeAcc(
-            PacketPtr pkt, ExecContext *xc, Trace::InstRecord *traceData) const {
+            PacketPtr pkt, ExecContext *xc, trace::InstRecord *traceData) const {
             Fault fault = NoFault;
             return fault;
         }
 }};
 
 def template MicroSSPLoadAtomicOpDeclare {{
-    class %(class_name)s : public X86ISA::X86MicroopBase
+    class %(class_name)s : public X86ISA::GemForgeMicroopBase
     {
       protected:
         const RegIndex dest;
@@ -41,29 +41,29 @@ def template MicroSSPLoadAtomicOpDeclare {{
         RegIndex foldOBit;
 
         std::string generateDisassembly(Addr pc,
-            const ::Loader::SymbolTable *symtab) const;
+            const gem5::loader::SymbolTable *symtab) const;
 
       public:
         %(class_name)s(ExtMachInst _machInst,
                 const char * instMnem,
-                uint64_t setFlags, InstRegIndex _dest,
+                uint64_t setFlags, RegIndex _dest,
                 uint64_t _imm, uint8_t _dataSize);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(
-            PacketPtr, ExecContext *, Trace::InstRecord *) const override;
+            PacketPtr, ExecContext *, trace::InstRecord *) const override;
     };
 }};
 
 def template MicroSSPLoadAtomicOpDisassembly {{
     std::string %(class_name)s::generateDisassembly(Addr pc,
-            const ::Loader::SymbolTable *symtab) const
+            const gem5::loader::SymbolTable *symtab) const
     {
         std::stringstream response;
 
         printMnemonic(response, instMnem, mnemonic);
-        printDestReg(response, 0, dataSize);
+        printReg(response, this->destRegIdx(0), dataSize);
         response << ", ";
         ccprintf(response, "%#x", imm);
         return response.str();
@@ -73,10 +73,10 @@ def template MicroSSPLoadAtomicOpDisassembly {{
 def template MicroSSPLoadAtomicOpConstructor {{
     %(class_name)s::%(class_name)s(
             ExtMachInst machInst, const char * instMnem, uint64_t setFlags,
-            InstRegIndex _dest, uint64_t _imm, uint8_t _dataSize) :
+            RegIndex _dest, uint64_t _imm, uint8_t _dataSize) :
         %(base_class)s(machInst, "%(mnemonic)s", instMnem,
                 setFlags, %(op_class)s),
-                dest(_dest.index()), imm(_imm), dataSize(_dataSize)
+                dest(_dest), imm(_imm), dataSize(_dataSize)
     {
         foldOBit = (dataSize == 1 && !machInst.rex.present) ? 1 << 6 : 0;
         %(constructor)s;
@@ -101,8 +101,10 @@ let {{
                 self.className = "SSPStreamAtomic"
             else:
                 self.className = "SSPStreamLoad"
-            self.dest = dest
-            if isinstance(imm, (int, long)):
+            # ! Gem Forge
+            # ! Get rid of the type and just use the index.
+            self.dest = "((%s).index)" % dest
+            if isinstance(imm, int):
                 imm = "ULL(%d)" % imm
             self.imm = imm
             self.dataSize = dataSize
@@ -133,21 +135,21 @@ let {{
         InstObjParams(
             "ssp_stream_load", # mnemonic
             "SSPStreamLoad", # class name
-            'X86MicroopBase',
+            'GemForgeMicroopBase',
             {
                 'code' : '',
                 'user_constructor': """
                     flags[IsInteger] = true;
-                    _destRegIdx[_numDestRegs++] = RegId(IntRegClass, INTREG_FOLDED(dest, foldOBit));
-                    _numIntDestRegs++;
+                    destRegIdxArr[_numDestRegs++] = intRegClass[dest];
+                    _numTypedDestRegs[intRegClass.type()]++;
                 """,
             },
-            ['MemReadOp', 'IsLoad', 'IsMemRef', 'IsGemForge']
+            ['MemReadOp', 'IsLoad', 'IsGemForge']
         ),
         InstObjParams(
             "ssp_stream_fload",
             "SSPStreamFLoad",
-            'X86MicroopBase',
+            'GemForgeMicroopBase',
             {
                 'code' : '',
                 'user_constructor': """
@@ -159,31 +161,31 @@ let {{
                      */
                     for (int i = 0; i < (dataSize + sizeof(uint64_t) - 1) / sizeof(uint64_t); i++) {
                         assert(_numDestRegs < MaxInstDestRegs && "DestRegs overflow.");
-                        _destRegIdx[_numDestRegs++] = RegId(FloatRegClass, dest + i);
-                        _numFPDestRegs++;
+                        destRegIdxArr[_numDestRegs++] = floatRegClass[dest + i];
+                        _numTypedDestRegs[floatRegClass.type()]++;
                     }
                 """,
             },
-            ['FloatMemReadOp', 'IsLoad', 'IsMemRef', 'IsGemForge']
+            ['FloatMemReadOp', 'IsLoad', 'IsGemForge']
         ),
         InstObjParams(
             "ssp_stream_atomic",
             "SSPStreamAtomic",
-            'X86MicroopBase',
+            'GemForgeMicroopBase',
             {
                 'code' : '',
                 'user_constructor': """
                     flags[IsInteger] = true;
-                    _destRegIdx[_numDestRegs++] = RegId(IntRegClass, INTREG_FOLDED(dest, foldOBit));
-                    _numIntDestRegs++;
+                    destRegIdxArr[_numDestRegs++] = intRegClass[dest];
+                    _numTypedDestRegs[intRegClass.type()]++;
                 """,
             },
-            ['MemReadOp', 'IsAtomic', 'IsMemRef', 'IsGemForge']
+            ['MemReadOp', 'IsAtomic', 'IsGemForge']
         ),
         InstObjParams(
             "ssp_stream_fatomic",
             "SSPStreamFAtomic",
-            'X86MicroopBase',
+            'GemForgeMicroopBase',
             {
                 'code' : '',
                 'user_constructor': """
@@ -195,12 +197,12 @@ let {{
                      */
                     for (int i = 0; i < (dataSize + sizeof(uint64_t) - 1) / sizeof(uint64_t); i++) {
                         assert(_numDestRegs < MaxInstDestRegs && "DestRegs overflow.");
-                        _destRegIdx[_numDestRegs++] = RegId(FloatRegClass, dest + i);
-                        _numFPDestRegs++;
+                        destRegIdxArr[_numDestRegs++] = floatRegClass[dest + i];
+                        _numTypedDestRegs[floatRegClass.type()]++;
                     }
                 """,
             },
-            ['FloatMemReadOp', 'IsAtomic', 'IsMemRef', 'IsGemForge']
+            ['FloatMemReadOp', 'IsAtomic', 'IsGemForge']
         ),
     ]
     for iop in iops:

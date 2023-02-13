@@ -44,6 +44,15 @@
 #include "mem/ruby/network/garnet/VirtualChannel.hh"
 #include "mem/ruby/network/garnet/flitBuffer.hh"
 
+namespace gem5
+{
+
+namespace ruby
+{
+
+namespace garnet
+{
+
 class InputUnit : public Consumer
 {
   public:
@@ -144,7 +153,9 @@ class InputUnit : public Consumer
     double get_buf_write_activity(unsigned int vnet) const
     { return m_num_buffer_writes[vnet]; }
 
+    bool functionalRead(Packet *pkt, WriteMask &mask);
     uint32_t functionalWrite(Packet *pkt);
+
     void resetStats();
 
   private:
@@ -251,5 +262,9 @@ class InputUnit : public Consumer
     void duplicateMulticastMsgToNetworkInterface(
         MulticastDuplicateBuffer &buffer);
 };
+
+} // namespace garnet
+} // namespace ruby
+} // namespace gem5
 
 #endif // __MEM_RUBY_NETWORK_GARNET_0_INPUTUNIT_HH__

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012 ARM Limited
+ * Copyright (c) 2012, 2020, 2022 Arm Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -40,6 +40,14 @@
 
         .globl	_start
 _start:
+        /* Save some values initialized by gem5. */
+        /* DTB address. */
+        mov x21, x0
+        /* Kernel entry point. */
+        mov x20, x3
+        /* cpu-release-addr. */
+        mov x22, x5
+
         /*
          * EL3 initialisation
          */
@@ -51,9 +59,12 @@ _start:
         orr	x0, x0, #(1 << 0)		// Non-secure EL1
         orr	x0, x0, #(1 << 8)		// HVC enable
         orr	x0, x0, #(1 << 10)		// 64-bit EL2
+        orr	x0, x0, #(1 << 16)		// Disable FEAT_PAuth traps (APK)
+        orr	x0, x0, #(1 << 17)		// Disable FEAT_PAuth traps (API)
         msr	scr_el3, x0
 
-        msr	cptr_el3, xzr			// Disable copro. traps to EL3
+        mov	x0, #(1 << 8)			// Disable SVE trap to EL3
+        msr	cptr_el3, x0			// Disable copro. traps to EL3
 
         /*
          * Check for the primary CPU to avoid a race on the distributor
@@ -65,30 +76,46 @@ _start:
         // extract the primary CPU.
         ldr x1, =0xff00ffffff
 #ifdef GICV3
-        and	x2, x0, #0xff // use Aff0 as cpuid for now...
         tst	x0, x1 // check for cpuid==zero
-        b.ne	1f // secondary CPU
+        b.ne	3f // secondary CPU
 
         ldr	x1, =GIC_DIST_BASE // GICD_CTLR
         mov	w0, #7 // EnableGrp0 | EnableGrp1NS | EnableGrp1S
         str	w0, [x1]
+        mov	x2, #0xffe8
+        ldr	w2, [x1, x2] // GICD_PIDR2
+        and	w3, w2, #0xf0 // GICD_PIDR2.Read ArchRev
+        cmp	w3, #0x30 // Check if GICv3
+        mov	w4, #0x20000 // 128KiB redistributor stride
+        mov	w5, #0x40000 // 256KiB redistributor stride
+        csel	w2, w4, w5, eq // Select the correct redistributor stride
 
-
-1:      ldr	x1, =GIC_REDIST_BASE + 0x10000 + 0x80 // GICR_IGROUPR0
-        // 128K for each redistributor, 256K strided...
-        mov	x3, #1 << 18 // GICv4
-        mul	x3, x3, x2
-        add	x1, x1, x3
+        ldr	x1, =GIC_REDIST_BASE
         mov	w0, #~0 // Grp1 interrupts
-        str	w0, [x1], #4
-        b.ne	2f // Only local interrupts for secondary CPUs
+1:  ldr	w3, [x1, #0x14] // GICR_WAKER
+        and	w3, w3, #~0x2 // Setting GICR_WAKER.ProcessorSleep to 0
+        str	w3, [x1, #0x14]
+        dsb	sy
+2:  ldr	w3, [x1, #0x14] // Re-reading GICR_WAKER
+        ands	w3, w3, #0x4 // Checking GICR_WAKER.ChildrenAsleep
+        b.ne	2b // Keep reading GICR_WAKER.ChildrenAsleep until awake
+
+        add	x5, x1, #0x10000 // SGI base
+        str	w0, [x5, #0x80] // GICR_IGROUPR0
+        ldr	w4, [x1, #0x8] // GICR_TYPER
+        add	x1, x1, x2 // Point to next redistributor
+        // Check GICR_TYPER.Last, which is set to 1
+        // if this is the last redistributor
+        ands	w4, w4, #0x10
+        b.eq	1b // Branch back if not last redistributor
+
         ldr	x1, =GIC_DIST_BASE + 0x84 // GICD_IGROUPR
         str	w0, [x1], #4
         str	w0, [x1], #4
         str	w0, [x1], #4
 
         /* SRE & Disable IRQ/FIQ Bypass & Allow EL2 access to ICC_SRE_EL2 */
-2:      mrs	x10, S3_6_C12_C12_5 // read ICC_SRE_EL3
+3:  mrs	x10, S3_6_C12_C12_5 // read ICC_SRE_EL3
         orr	x10, x10, #0xf      // enable 0xf
         msr	S3_6_C12_C12_5, x10 // write ICC_SRE_EL3
         isb
@@ -153,8 +180,19 @@ start_ns:
          * Secondary CPUs
          */
 1:	wfe
-        ldr	x4, =PHYS_OFFSET + 0xfff8
-        ldr     x4, [x4]
+        /* The Linux kernel v5.8 and older writes the entry point address
+         * of the secondary CPUs to this address, and does a SEV, waking up
+         * the secondary CPUs.
+         *
+         * gem5 informs the kernel the desired address via cpu-release-addr
+         * of the DTB.
+         *
+         * When this is first reached immediately after the bootloader starts,
+         * the value at that address must be 0, which is the default memory
+         * value set by gem5 for otherwise uninitialized memory, leading to
+         * WFE.
+         */
+        ldr x4, [x22]
         cbz	x4, 1b
         br	x4				// branch to the given address
 
@@ -180,9 +218,13 @@ start_ns:
         /*
          * Primary CPU
          */
-        ldr	x0, =PHYS_OFFSET + 0x8000000	 // device tree blob
-        ldr     x6, =PHYS_OFFSET + 0x80000       // kernel start address
-        br	x6
+        // The kernel boot protocol specifies that the DTB address is placed
+        // in x0.
+        // https://github.com/torvalds/linux/blob/v5.7/Documentation/arm64/
+        // booting.rst#4-call-the-kernel-image
+        mov x0, x21
+        // Jump into the kernel entry point.
+        br x20
 
         .ltorg
 

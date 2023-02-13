@@ -37,6 +37,15 @@
 #include "mem/ruby/network/garnet/Router.hh"
 #include "mem/ruby/network/garnet/flitBuffer.hh"
 
+namespace gem5
+{
+
+namespace ruby
+{
+
+namespace garnet
+{
+
 OutputUnit::OutputUnit(int id, PortDirection direction, Router *router,
   uint32_t consumerVcs)
   : Consumer(router), m_router(router), m_id(id), m_direction(direction),
@@ -163,8 +172,18 @@ OutputUnit::insert_flit(flit *t_flit)
     m_out_link->scheduleEventAbsolute(m_router->clockEdge(Cycles(1)));
 }
 
+bool
+OutputUnit::functionalRead(Packet *pkt, WriteMask &mask)
+{
+    return outBuffer.functionalRead(pkt, mask);
+}
+
 uint32_t
 OutputUnit::functionalWrite(Packet *pkt)
 {
     return outBuffer.functionalWrite(pkt);
 }
+
+} // namespace garnet
+} // namespace ruby
+} // namespace gem5

@@ -37,6 +37,9 @@
 #include "base/types.hh"
 #include "sim/guest_abi.hh"
 
+namespace gem5
+{
+
 template <typename Proxy>
 class ProxyPtrBuffer
 {
@@ -134,16 +137,16 @@ class ConstProxyPtr
     using Type = T;
 
     template <typename ...Args,
-              typename std::enable_if<std::is_constructible<
-                  Proxy, Args&&...>::value, int>::type = 0>
+              typename std::enable_if_t<std::is_constructible_v<
+                  Proxy, Args&&...>, int> = 0>
     explicit ConstProxyPtr(Addr _ptr, Args&&... args) :
         proxy(std::make_shared<Proxy>(args...))
     {
         setAddr(_ptr);
     }
     template <typename ...Args,
-              typename std::enable_if<std::is_constructible<
-                  Proxy, Args&&...>::value, int>::type = 0>
+              typename std::enable_if_t<std::is_constructible_v<
+                  Proxy, Args&&...>, int> = 0>
     explicit ConstProxyPtr(Args&&... args) :
         proxy(std::make_shared<Proxy>(args...))
     {
@@ -151,7 +154,7 @@ class ConstProxyPtr
     }
 
     template <typename O, typename Enabled=
-        typename std::enable_if<std::is_assignable<T *, O *>::value>::type>
+        typename std::enable_if_t<std::is_assignable_v<T *, O *>>>
     ConstProxyPtr(const ConstProxyPtr<O, Proxy> &other) :
         proxy(other.proxy), buffer(other.buffer)
     {}
@@ -171,14 +174,14 @@ class ConstProxyPtr
     operator bool() const { return (bool)buffer; }
 
     template <typename A>
-    typename std::enable_if<std::is_integral<A>::value, CPP>::type
+    typename std::enable_if_t<std::is_integral_v<A>, CPP>
     operator + (A a) const
     {
         return CPP(addr() + a * sizeof(T), proxy);
     }
 
     template <typename A>
-    typename std::enable_if<std::is_integral<A>::value, CPP>::type
+    typename std::enable_if_t<std::is_integral_v<A>, CPP>
     operator - (A a) const
     {
         return CPP(addr() - a * sizeof(T), proxy);
@@ -225,8 +228,7 @@ class ConstProxyPtr
 };
 
 template <typename T, typename Proxy, typename A>
-typename std::enable_if<std::is_integral<A>::value,
-                        ConstProxyPtr<T, Proxy>>::type
+typename std::enable_if_t<std::is_integral_v<A>, ConstProxyPtr<T, Proxy>>
 operator + (A a, const ConstProxyPtr<T, Proxy> &other)
 {
     return other + a;
@@ -243,16 +245,17 @@ class ProxyPtr : public ConstProxyPtr<T, Proxy>
 
   public:
     template <typename ...Args,
-              typename std::enable_if<std::is_constructible<
-                  Proxy, Args&&...>::value, int>::type = 0>
+              typename std::enable_if_t<std::is_constructible_v<
+                  Proxy, Args&&...>, int> = 0>
     explicit ProxyPtr(Addr _ptr, Args&&... args) : CPP(_ptr, args...) {}
     template <typename ...Args,
-              typename std::enable_if<std::is_constructible<
-                  Proxy, Args&&...>::value, int>::type = 0>
+              typename std::enable_if_t<std::is_constructible_v<
+                  Proxy, Args&&...>, int> = 0>
     explicit ProxyPtr(Args&&... args) : CPP(0, args...) {}
 
     template <typename O, typename Enabled=
-        typename std::enable_if<std::is_assignable<T *, O *>::value>::type>
+        typename std::enable_if_t<std::is_assignable_v<T *, O *> &&
+                                  !std::is_same_v<O, void>>>
     ProxyPtr(const ProxyPtr<O, Proxy> &other) : CPP(other) {}
 
     ProxyPtr(const PP &other) : CPP(other) {}
@@ -266,14 +269,14 @@ class ProxyPtr : public ConstProxyPtr<T, Proxy>
     }
 
     template <typename A>
-    typename std::enable_if<std::is_integral<A>::value, PP>::type
+    typename std::enable_if_t<std::is_integral_v<A>, PP>
     operator + (A a) const
     {
         return PP(this->addr() + a * sizeof(T), this->proxy);
     }
 
     template <typename A>
-    typename std::enable_if<std::is_integral<A>::value, PP>::type
+    typename std::enable_if_t<std::is_integral_v<A>, PP>
     operator - (A a) const
     {
         return PP(this->addr() - a * sizeof(T), this->proxy);
@@ -323,14 +326,39 @@ class ProxyPtr : public ConstProxyPtr<T, Proxy>
     }
 };
 
+template <typename Proxy>
+class ProxyPtr<void, Proxy>
+{
+  protected:
+    Addr _addr;
+
+  public:
+    ProxyPtr(Addr new_addr, ...) : _addr(new_addr) {}
+
+    template <typename T>
+    ProxyPtr(const ProxyPtr<T, Proxy> &other) : _addr(other.addr()) {}
+
+    ProxyPtr<void, Proxy> &
+    operator = (Addr new_addr)
+    {
+        _addr = new_addr;
+        return *this;
+    }
+
+    operator Addr() const { return _addr; }
+
+    Addr addr() const { return _addr; }
+};
+
 template <typename T, typename Proxy, typename A>
-typename std::enable_if<std::is_integral<A>::value, ProxyPtr<T, Proxy>>::type
+typename std::enable_if_t<std::is_integral_v<A>, ProxyPtr<T, Proxy>>
 operator + (A a, const ProxyPtr<T, Proxy> &other)
 {
     return other + a;
 }
 
-namespace GuestABI
+GEM5_DEPRECATED_NAMESPACE(GuestABI, guest_abi);
+namespace guest_abi
 {
 
 template <typename ABI, typename T, typename Proxy>
@@ -339,7 +367,8 @@ struct Argument<ABI, ProxyPtr<T, Proxy>>
     static ProxyPtr<T, Proxy>
     get(ThreadContext *tc, typename ABI::State &state)
     {
-        return ProxyPtr<T, Proxy>(Argument<ABI, Addr>::get(tc, state), tc);
+        return ProxyPtr<T, Proxy>(
+                Argument<ABI, typename ABI::UintPtr>::get(tc, state), tc);
     }
 };
 
@@ -350,11 +379,11 @@ struct Argument<ABI, ConstProxyPtr<T, Proxy>>
     get(ThreadContext *tc, typename ABI::State &state)
     {
         return ConstProxyPtr<T, Proxy>(
-                Argument<ABI, Addr>::get(tc, state), tc);
+                Argument<ABI, typename ABI::UintPtr>::get(tc, state), tc);
     }
 };
 
-} // namespace GuestABI
+} // namespace guest_abi
 
 template <typename T, typename Proxy>
 std::ostream &
@@ -368,7 +397,9 @@ class SETranslatingPortProxy;
 
 template <typename T>
 using ConstVPtr = ConstProxyPtr<T, SETranslatingPortProxy>;
-template <typename T>
+template <typename T=void>
 using VPtr = ProxyPtr<T, SETranslatingPortProxy>;
+
+} // namespace gem5
 
 #endif // __SIM_PROXY_PTR_HH__

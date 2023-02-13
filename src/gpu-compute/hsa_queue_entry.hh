@@ -2,8 +2,6 @@
  * Copyright (c) 2017-2018 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -29,8 +27,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Anthony Gutierrez
  */
 
 /**
@@ -56,6 +52,9 @@
 #include "dev/hsa/hsa_packet.hh"
 #include "dev/hsa/hsa_queue.hh"
 #include "gpu-compute/kernel_code.hh"
+
+namespace gem5
+{
 
 class HSAQueueEntry
 {
@@ -97,9 +96,22 @@ class HSAQueueEntry
         if (!numVgprs)
             numVgprs = (akc->granulated_workitem_vgpr_count + 1) * 4;
 
-        // TODO: Granularity changes for GFX9!
-        if (!numSgprs)
-            numSgprs = (akc->granulated_wavefront_sgpr_count + 1) * 8;
+        if (!numSgprs || numSgprs ==
+            std::numeric_limits<decltype(akc->wavefront_sgpr_count)>::max()) {
+            // Supported major generation numbers: 0 (BLIT kernels), 8, and 9
+            uint16_t version = akc->amd_machine_version_major;
+            assert((version == 0) || (version == 8) || (version == 9));
+            // SGPR allocation granularies:
+            // - GFX8: 8
+            // - GFX9: 16
+            // Source: https://llvm.org/docs/AMDGPUUsage.html
+            if ((version == 0) || (version == 8)) {
+                // We assume that BLIT kernels use the same granularity as GFX8
+                numSgprs = (akc->granulated_wavefront_sgpr_count + 1) * 8;
+            } else if (version == 9) {
+                numSgprs = ((akc->granulated_wavefront_sgpr_count + 1) * 16)/2;
+            }
+        }
 
         initialVgprState.reset();
         initialSgprState.reset();
@@ -476,5 +488,7 @@ class HSAQueueEntry
     std::bitset<NumVectorInitFields> initialVgprState;
     std::bitset<NumScalarInitFields> initialSgprState;
 };
+
+} // namespace gem5
 
 #endif // __GPU_COMPUTE_HSA_QUEUE_ENTRY__

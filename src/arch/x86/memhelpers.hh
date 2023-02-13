@@ -37,20 +37,24 @@
 #include "sim/byteswap.hh"
 #include "sim/insttracer.hh"
 
+namespace gem5
+{
+
 namespace X86ISA
 {
 
 /// Initiate a read from memory in timing mode.
 static Fault
-initiateMemRead(ExecContext *xc, Trace::InstRecord *traceData, Addr addr,
+initiateMemRead(ExecContext *xc, trace::InstRecord *traceData, Addr addr,
                 unsigned dataSize, Request::Flags flags)
 {
-    return xc->initiateMemRead(addr, dataSize, flags);
+    const std::vector<bool> byte_enable(dataSize, true);
+    return xc->initiateMemRead(addr, dataSize, flags, byte_enable);
 }
 
 static void
 getMem(PacketPtr pkt, uint64_t &mem, unsigned dataSize,
-       Trace::InstRecord *traceData)
+       trace::InstRecord *traceData)
 {
     switch (dataSize) {
       case 1:
@@ -84,7 +88,7 @@ getPackedMem(PacketPtr pkt, std::array<uint64_t, N> &mem, unsigned dataSize)
 template <size_t N>
 static void
 getMem(PacketPtr pkt, std::array<uint64_t, N> &mem, unsigned dataSize,
-       Trace::InstRecord *traceData)
+       trace::InstRecord *traceData)
 {
     switch (dataSize) {
       case 4:
@@ -104,11 +108,13 @@ getMem(PacketPtr pkt, std::array<uint64_t, N> &mem, unsigned dataSize,
 
 
 static Fault
-readMemAtomic(ExecContext *xc, Trace::InstRecord *traceData, Addr addr,
+readMemAtomic(ExecContext *xc, trace::InstRecord *traceData, Addr addr,
               uint64_t &mem, unsigned dataSize, Request::Flags flags)
 {
     memset(&mem, 0, sizeof(mem));
-    Fault fault = xc->readMem(addr, (uint8_t *)&mem, dataSize, flags);
+    const std::vector<bool> byte_enable(dataSize, true);
+    Fault fault = xc->readMem(addr, (uint8_t *)&mem, dataSize,
+                              flags, byte_enable);
     if (fault == NoFault) {
         // If LE to LE, this is a nop, if LE to BE, the actual data ends up
         // in the right place because the LSBs where at the low addresses on
@@ -126,8 +132,11 @@ readPackedMemAtomic(ExecContext *xc, Addr addr, std::array<uint64_t, N> &mem,
                     unsigned flags)
 {
     std::array<T, N> real_mem;
+    // Size is fixed at compilation time. Make a static vector.
+    constexpr auto size = sizeof(T) * N;
+    static const std::vector<bool> byte_enable(size, true);
     Fault fault = xc->readMem(addr, (uint8_t *)&real_mem,
-                              sizeof(T) * N, flags);
+                              size, flags, byte_enable);
     if (fault == NoFault) {
         real_mem = letoh(real_mem);
         for (int i = 0; i < N; i++)
@@ -138,7 +147,7 @@ readPackedMemAtomic(ExecContext *xc, Addr addr, std::array<uint64_t, N> &mem,
 
 template <size_t N>
 static Fault
-readMemAtomic(ExecContext *xc, Trace::InstRecord *traceData, Addr addr,
+readMemAtomic(ExecContext *xc, trace::InstRecord *traceData, Addr addr,
               std::array<uint64_t, N> &mem, unsigned dataSize,
               unsigned flags)
 {
@@ -170,24 +179,29 @@ writePackedMem(ExecContext *xc, std::array<uint64_t, N> &mem, Addr addr,
     for (int i = 0; i < N; i++)
         real_mem[i] = mem[i];
     real_mem = htole(real_mem);
-    return xc->writeMem((uint8_t *)&real_mem, sizeof(T) * N,
-                        addr, flags, res);
+    // Size is fixed at compilation time. Make a static vector.
+    constexpr auto size = sizeof(T) * N;
+    static const std::vector<bool> byte_enable(size, true);
+    return xc->writeMem((uint8_t *)&real_mem, size,
+                        addr, flags, res, byte_enable);
 }
 
 static Fault
-writeMemTiming(ExecContext *xc, Trace::InstRecord *traceData, uint64_t mem,
+writeMemTiming(ExecContext *xc, trace::InstRecord *traceData, uint64_t mem,
                unsigned dataSize, Addr addr, Request::Flags flags,
                uint64_t *res)
 {
     if (traceData)
         traceData->setData(mem);
     mem = htole(mem);
-    return xc->writeMem((uint8_t *)&mem, dataSize, addr, flags, res);
+    const std::vector<bool> byte_enable(dataSize, true);
+    return xc->writeMem((uint8_t *)&mem, dataSize, addr, flags,
+                        res, byte_enable);
 }
 
 template <size_t N>
 static Fault
-writeMemTiming(ExecContext *xc, Trace::InstRecord *traceData,
+writeMemTiming(ExecContext *xc, trace::InstRecord *traceData,
                std::array<uint64_t, N> &mem, unsigned dataSize,
                Addr addr, unsigned flags, uint64_t *res)
 {
@@ -206,15 +220,16 @@ writeMemTiming(ExecContext *xc, Trace::InstRecord *traceData,
 }
 
 static Fault
-writeMemAtomic(ExecContext *xc, Trace::InstRecord *traceData, uint64_t mem,
+writeMemAtomic(ExecContext *xc, trace::InstRecord *traceData, uint64_t mem,
                unsigned dataSize, Addr addr, Request::Flags flags,
                uint64_t *res)
 {
     if (traceData)
         traceData->setData(mem);
     uint64_t host_mem = htole(mem);
-    Fault fault =
-          xc->writeMem((uint8_t *)&host_mem, dataSize, addr, flags, res);
+    const std::vector<bool> byte_enable(dataSize, true);
+    Fault fault = xc->writeMem((uint8_t *)&host_mem, dataSize, addr,
+                               flags, res, byte_enable);
     if (fault == NoFault && res)
         *res = letoh(*res);
     return fault;
@@ -222,7 +237,7 @@ writeMemAtomic(ExecContext *xc, Trace::InstRecord *traceData, uint64_t mem,
 
 template <size_t N>
 static Fault
-writeMemAtomic(ExecContext *xc, Trace::InstRecord *traceData,
+writeMemAtomic(ExecContext *xc, trace::InstRecord *traceData,
                std::array<uint64_t, N> &mem, unsigned dataSize,
                Addr addr, unsigned flags, uint64_t *res)
 {
@@ -249,6 +264,7 @@ writeMemAtomic(ExecContext *xc, Trace::InstRecord *traceData,
     return fault;
 }
 
-}
+} // namespace X86ISA
+} // namespace gem5
 
 #endif

@@ -2,11 +2,15 @@
 
 #include <string>
 
+#include "arch/x86/regs/float.hh"
+#include "arch/x86/regs/int.hh"
 #include "arch/x86/regs/misc.hh"
 #include "cpu/exec_context.hh"
 #include "debug/X86AVX.hh"
 
 #include "base/logging.hh"
+
+namespace gem5 {
 
 // static std::set<Addr> debugPCs = {
 //     0x40236e,
@@ -20,22 +24,45 @@
 // }
 
 namespace X86ISA {
+
+void AVXOpBase::addAVXDestRegs() {
+  auto vDestRegs = destVL / sizeof(uint64_t);
+  assert(vDestRegs <= NumXMMSubRegs && "DestVL overflow.");
+  _numDestRegs = vDestRegs;
+  assert(_numDestRegs <= MaxInstDestRegs && "DestRegs overflow.");
+  for (int i = 0; i < vDestRegs; i++) {
+    setDestRegIdx(i, floatRegClass[dest + i]);
+    _numTypedDestRegs[floatRegClass.type()]++;
+  }
+}
+
+void AVXOpBase::addAVXDestAsSrcRegs() {
+  auto vDestRegs = destVL / sizeof(uint64_t);
+  assert(vDestRegs <= NumXMMSubRegs && "DestVL overflow.");
+  assert(_numSrcRegs + vDestRegs <= MaxInstSrcRegs &&
+         "DestAsSrcRegs overflow.");
+  for (int i = 0; i < vDestRegs; i++) {
+    setSrcRegIdx(i + _numSrcRegs, floatRegClass[dest + i]);
+  }
+  _numSrcRegs += vDestRegs;
+}
+
 std::string
 AVXOpBase::generateDisassembly(Addr pc,
-                               const ::Loader::SymbolTable *symtab) const {
+                               const gem5::loader::SymbolTable *symtab) const {
   std::stringstream response;
 
   printMnemonic(response, instMnem, mnemonic);
-  printDestReg(response, 0, destSize);
+  printReg(response, this->destRegIdx(0), destSize);
   if (this->srcType == SrcType::Non) {
     return response.str();
   }
   response << ", ";
-  printSrcReg(response, 0, srcSize);
+  printReg(response, this->srcRegIdx(0), srcSize);
   switch (this->srcType) {
   case RegReg: {
     response << ", ";
-    printSrcReg(response, 1, srcSize);
+    printReg(response, this->srcRegIdx(1), srcSize);
     break;
   }
   case RegImm: {
@@ -44,23 +71,23 @@ AVXOpBase::generateDisassembly(Addr pc,
   }
   case RegRegImm: {
     response << ", ";
-    printSrcReg(response, 1, srcSize);
+    printReg(response, this->srcRegIdx(1), srcSize);
     ccprintf(response, ", %#x", imm8);
     break;
   }
   case RegRegReg: {
     response << ", ";
-    printSrcReg(response, 1, srcSize);
+    printReg(response, this->srcRegIdx(1), srcSize);
     response << ", ";
-    printSrcReg(response, 2, srcSize);
+    printReg(response, this->srcRegIdx(2), srcSize);
     break;
   }
   default:
     break;
   }
-  if (this->mask != MASKREG_K0) {
+  if (this->mask != int_reg::_K0Idx) {
     response << " {";
-    printSrcReg(response, this->numSrcRegs() - 1, 8);
+    printReg(response, this->srcRegIdx(this->numSrcRegs() - 1), 8);
     response << "}";
   }
   return response.str();
@@ -253,15 +280,15 @@ void AVXOpBase::doPackedBinaryOp(ExecContext *xc, BinaryOp op) const {
   FloatInt src2;
   FloatInt maskValue;
   FloatInt originalValue;
-  if (this->mask == MASKREG_K0) {
+  if (this->mask == int_reg::_K0Idx) {
     // All active.
     maskValue.ul = 0xFFFFFFFFFFFFFFFF;
   } else {
-    maskValue.ul = xc->readIntRegOperand(this, this->numSrcRegs() - 1);
+    maskValue.ul = xc->getRegOperand(this, this->numSrcRegs() - 1);
   }
   for (int i = 0; i < vRegs; i++) {
-    src1.ul = xc->readFloatRegOperandBits(this, i * 2 + 0);
-    src2.ul = xc->readFloatRegOperandBits(this, i * 2 + 1);
+    src1.ul = xc->getRegOperand(this, i * 2 + 0);
+    src2.ul = xc->getRegOperand(this, i * 2 + 1);
     auto dest = this->calcPackedBinaryOp(src1, src2, op);
     // if (vRegs == 8 && op == BinaryOp::IntAdd && srcSize == 8) {
     //   hack("vpaddq %d %lu + %lu = %lu. pc = %#x.\n", i, src1.ul, src2.ul,
@@ -269,9 +296,9 @@ void AVXOpBase::doPackedBinaryOp(ExecContext *xc, BinaryOp op) const {
     // }
 
     // Read the original value.
-    if (this->mask != MASKREG_K0) {
+    if (this->mask != int_reg::_K0Idx) {
       // We need to apply the mask.
-      originalValue.ul = xc->readFloatRegOperandBits(this, vRegs * 2 + i);
+      originalValue.ul = xc->getRegOperand(this, vRegs * 2 + i);
       if (this->srcSize == 4) {
         // 2 float.
         if (!((maskValue.ul >> (i * 2 + 0)) & 1)) {
@@ -295,7 +322,7 @@ void AVXOpBase::doPackedBinaryOp(ExecContext *xc, BinaryOp op) const {
       }
     }
 
-    xc->setFloatRegOperandBits(this, i, dest.ul);
+    xc->setRegOperand(this, i, dest.ul);
   }
 }
 
@@ -305,8 +332,8 @@ void AVXOpBase::doSingleBinaryOpFillSrc1(ExecContext *xc, BinaryOp op) const {
   FloatInt src2;
   FloatInt dest;
   for (int i = 0; i < vRegs; i++) {
-    src1.ul = xc->readFloatRegOperandBits(this, i * 2 + 0);
-    src2.ul = xc->readFloatRegOperandBits(this, i * 2 + 1);
+    src1.ul = xc->getRegOperand(this, i * 2 + 0);
+    src2.ul = xc->getRegOperand(this, i * 2 + 1);
 
     if (i == 0) {
       dest = this->calcPackedBinaryOp(src1, src2, op);
@@ -317,7 +344,7 @@ void AVXOpBase::doSingleBinaryOpFillSrc1(ExecContext *xc, BinaryOp op) const {
     } else {
       dest.ul = src1.ul;
     }
-    xc->setFloatRegOperandBits(this, i, dest.ul);
+    xc->setRegOperand(this, i, dest.ul);
   }
 }
 
@@ -328,12 +355,12 @@ void AVXOpBase::doFusedPackedBinaryOp(ExecContext *xc, BinaryOp op1,
   FloatInt src2;
   FloatInt src3;
   for (int i = 0; i < vRegs; i++) {
-    src1.ul = xc->readFloatRegOperandBits(this, i * 3 + 0);
-    src2.ul = xc->readFloatRegOperandBits(this, i * 3 + 1);
-    src3.ul = xc->readFloatRegOperandBits(this, i * 3 + 2);
+    src1.ul = xc->getRegOperand(this, i * 3 + 0);
+    src2.ul = xc->getRegOperand(this, i * 3 + 1);
+    src3.ul = xc->getRegOperand(this, i * 3 + 2);
     auto tmp = this->calcPackedBinaryOp(src1, src2, op1);
     auto dest = this->calcPackedBinaryOp(tmp, src3, op2);
-    xc->setFloatRegOperandBits(this, i, dest.ul);
+    xc->setRegOperand(this, i, dest.ul);
   }
 }
 
@@ -345,10 +372,10 @@ void AVXOpBase::doFusedSingleBinaryOp(ExecContext *xc, BinaryOp op1,
   FloatInt src2;
   FloatInt src3;
   FloatInt dest;
-  src1.ul = xc->readFloatRegOperandBits(this, 0);
-  src2.ul = xc->readFloatRegOperandBits(this, 1);
-  src3.ul = xc->readFloatRegOperandBits(this, 2);
-  dest.ul = xc->readFloatRegOperandBits(this, 3);
+  src1.ul = xc->getRegOperand(this, 0);
+  src2.ul = xc->getRegOperand(this, 1);
+  src3.ul = xc->getRegOperand(this, 2);
+  dest.ul = xc->getRegOperand(this, 3);
   auto tmp = this->calcPackedBinaryOp(src1, src2, op1);
   auto result = this->calcPackedBinaryOp(tmp, src3, op2);
   // Partially set the result.
@@ -359,7 +386,7 @@ void AVXOpBase::doFusedSingleBinaryOp(ExecContext *xc, BinaryOp op1,
   } else {
     panic("Invalid SrcSize %d for SingleBinaryOp.", this->srcSize);
   }
-  xc->setFloatRegOperandBits(this, 0, dest.ul);
+  xc->setRegOperand(this, 0, dest.ul);
 }
 
 void AVXOpBase::doPackOp(ExecContext *xc, BinaryOp op) const {
@@ -375,12 +402,12 @@ void AVXOpBase::doPackOp(ExecContext *xc, BinaryOp op) const {
       int srcIdx = i - (i % 2);
       if ((i % 2) == 0) {
         // Take 128 bit from src1.
-        src1.ul = xc->readFloatRegOperandBits(this, (srcIdx + 0) * 2 + 0);
-        src2.ul = xc->readFloatRegOperandBits(this, (srcIdx + 1) * 2 + 0);
+        src1.ul = xc->getRegOperand(this, (srcIdx + 0) * 2 + 0);
+        src2.ul = xc->getRegOperand(this, (srcIdx + 1) * 2 + 0);
       } else {
         // Take 128 bit from src2.
-        src1.ul = xc->readFloatRegOperandBits(this, (srcIdx + 0) * 2 + 1);
-        src2.ul = xc->readFloatRegOperandBits(this, (srcIdx + 1) * 2 + 1);
+        src1.ul = xc->getRegOperand(this, (srcIdx + 0) * 2 + 1);
+        src2.ul = xc->getRegOperand(this, (srcIdx + 1) * 2 + 1);
       }
       FloatInt &dest = dests[i];
       dest.ul = 0;
@@ -423,7 +450,7 @@ void AVXOpBase::doPackOp(ExecContext *xc, BinaryOp op) const {
     // hack("%s.\n", this->generateDisassembly(0x0, nullptr));
     for (int i = 0; i < vRegs; ++i) {
       // hack("Pack Set Dest %d %#x.\n", i, dests[i].ul);
-      xc->setFloatRegOperandBits(this, i, dests[i].ul);
+      xc->setRegOperand(this, i, dests[i].ul);
     }
     break;
   }
@@ -437,19 +464,19 @@ void AVXOpBase::doExtract(ExecContext *xc) const {
   if (srcSize == 1) {
     FloatInt src;
     if (select >= 8) {
-      src.ul = xc->readFloatRegOperandBits(this, 1);
+      src.ul = xc->getRegOperand(this, 1);
     } else {
-      src.ul = xc->readFloatRegOperandBits(this, 0);
+      src.ul = xc->getRegOperand(this, 0);
     }
     // Extract the byte.
     result.uc.i1 = src.uc_array[select & 0x7];
   } else if (srcSize == 2) {
     FloatInt src;
     if (select >= 4) {
-      src.ul = xc->readFloatRegOperandBits(this, 1);
+      src.ul = xc->getRegOperand(this, 1);
       // hack("Extract read %d %#x.\n", 1, src.ul);
     } else {
-      src.ul = xc->readFloatRegOperandBits(this, 0);
+      src.ul = xc->getRegOperand(this, 0);
       // hack("Extract read %d %#x.\n", 0, src.ul);
     }
     // Extract the 16-bit value.
@@ -457,9 +484,9 @@ void AVXOpBase::doExtract(ExecContext *xc) const {
   } else if (srcSize == 4) {
     FloatInt src;
     if (select >= 2) {
-      src.ul = xc->readFloatRegOperandBits(this, 1);
+      src.ul = xc->getRegOperand(this, 1);
     } else {
-      src.ul = xc->readFloatRegOperandBits(this, 0);
+      src.ul = xc->getRegOperand(this, 0);
     }
     // Extract the 32-bit value.
     if (select & 0x1) {
@@ -470,7 +497,7 @@ void AVXOpBase::doExtract(ExecContext *xc) const {
   }
   // hack("%s.\n", this->generateDisassembly(0x0, nullptr));
   // hack("Extract %lu -> %s.\n", result.ul, this->destRegIdx(0));
-  xc->setIntRegOperand(this, 0, result.ul);
+  xc->setRegOperand(this, 0, result.ul);
 }
 
 void AVXOpBase::doInsert(ExecContext *xc) const {
@@ -484,10 +511,10 @@ void AVXOpBase::doInsert(ExecContext *xc) const {
   FloatInt src2[vDestRegs];
   FloatInt dest[vDestRegs];
   for (int i = 0; i < vSrcRegs; ++i) {
-    src1[i].ul = xc->readFloatRegOperandBits(this, i);
+    src1[i].ul = xc->getRegOperand(this, i);
   }
   for (int i = 0; i < vDestRegs; ++i) {
-    src2[i].ul = xc->readFloatRegOperandBits(this, i + vSrcRegs);
+    src2[i].ul = xc->getRegOperand(this, i + vSrcRegs);
     dest[i].ul = src2[i].ul;
     // hack("Insert Dest %d %lu.\n", i, dest[i].ul);
   }
@@ -511,7 +538,7 @@ void AVXOpBase::doInsert(ExecContext *xc) const {
   }
 
   for (int i = 0; i < vDestRegs; ++i) {
-    xc->setFloatRegOperandBits(this, i, dest[i].ul);
+    xc->setRegOperand(this, i, dest[i].ul);
   }
 }
 
@@ -525,7 +552,7 @@ void AVXOpBase::doInsert(ExecContext *xc) const {
 //   FloatInt src;
 //   FloatInt dest[vDestRegs];
 
-//   src.ul = xc->readFloatRegOperandBits(this, 0);
+//   src.ul = xc->getRegOperand(this, 0);
 //   if (srcVL == 4 && destVL == 64) {
 //     // Broadcast 32bit into 512bit.
 //     for (int i = 0; i < vDestRegs; ++i) {
@@ -538,7 +565,7 @@ void AVXOpBase::doInsert(ExecContext *xc) const {
 //   }
 
 //   for (int i = 0; i < vDestRegs; ++i) {
-//     xc->setFloatRegOperandBits(this, i, dest[i].ul);
+//     xc->setRegOperand(this, i, dest[i].ul);
 //   }
 // }
 
@@ -581,8 +608,8 @@ void AVXOpBase::doFloatCompare(ExecContext *xc, bool isSingle) const {
   }
 
   for (int i = 0; i < vSrcRegs; ++i) {
-    src1.ul = xc->readFloatRegOperandBits(this, i * 2);
-    src2.ul = xc->readFloatRegOperandBits(this, i * 2 + 1);
+    src1.ul = xc->getRegOperand(this, i * 2);
+    src2.ul = xc->getRegOperand(this, i * 2 + 1);
     if (this->srcSize == 4) {
       int c1 = compareFloat(src1.f.f1, src2.f.f1);
       result |= (c1 << (i * 2));
@@ -601,7 +628,7 @@ void AVXOpBase::doFloatCompare(ExecContext *xc, bool isSingle) const {
   DPRINTF(X86AVX, "fcmp %x.\n", result);
 
   assert(destVL == 8 && "Invalid DestVL for FloatCompare.");
-  xc->setIntRegOperand(this, 0, result);
+  xc->setRegOperand(this, 0, result);
 }
 
 void AVXOpBase::doMov(ExecContext *xc) const {
@@ -612,27 +639,27 @@ void AVXOpBase::doMov(ExecContext *xc) const {
   FloatInt maskValue;
   FloatInt originalValue;
 
-  if (this->mask == MASKREG_K0) {
+  if (this->mask == int_reg::_K0Idx) {
     // All active.
     maskValue.ul = 0xFFFFFFFFFFFFFFFF;
   } else {
-    maskValue.ul = xc->readIntRegOperand(this, this->numSrcRegs() - 1);
+    maskValue.ul = xc->getRegOperand(this, this->numSrcRegs() - 1);
   }
 
   DPRINTF(X86AVX, ">> Exec %s\n", this->generateDisassembly(0x0, nullptr));
   DPRINTF(X86AVX, "  Mask %#x\n", maskValue.ul);
 
   for (int i = 0; i < vSrcRegs; i++) {
-    src.ul = xc->readFloatRegOperandBits(this, i);
+    src.ul = xc->getRegOperand(this, i);
     DPRINTF(X86AVX, "   %d Src %#x\n", i, src.ul);
 
     // Move the value.
     dest.ul = src.ul;
 
     // Read the original value.
-    if (this->mask != MASKREG_K0) {
+    if (this->mask != int_reg::_K0Idx) {
       // We need to apply the mask.
-      originalValue.ul = xc->readFloatRegOperandBits(this, vSrcRegs + i);
+      originalValue.ul = xc->getRegOperand(this, vSrcRegs + i);
       DPRINTF(X86AVX, "   %d Org %#x\n", i, originalValue.ul);
       if (this->srcSize == 4) {
         // 2 float.
@@ -655,7 +682,7 @@ void AVXOpBase::doMov(ExecContext *xc) const {
       }
     }
 
-    xc->setFloatRegOperandBits(this, i, dest.ul);
+    xc->setRegOperand(this, i, dest.ul);
   }
 }
 
@@ -669,13 +696,14 @@ void AVXOpBase::doPermuteInLane(ExecContext *xc) const {
 
   assert(this->srcSize == 4 && "permilpd is not implemented yet.");
 
-  assert(this->mask == MASKREG_K0 && "Mask in permil is not implemented yet.");
+  assert(this->mask == int_reg::_K0Idx &&
+         "Mask in permil is not implemented yet.");
 
-  // if (this->mask == MASKREG_K0) {
+  // if (this->mask == int_reg::_K0Idx) {
   //   // All active.
   //   maskValue.ul = 0xFFFFFFFFFFFFFFFF;
   // } else {
-  //   maskValue.ul = xc->readIntRegOperand(this, this->numSrcRegs() - 1);
+  //   maskValue.ul = xc->getRegOperand(this, this->numSrcRegs() - 1);
   // }
 
   auto select4 = [&](int imm) -> uint32_t {
@@ -695,8 +723,8 @@ void AVXOpBase::doPermuteInLane(ExecContext *xc) const {
 
   for (int i = 0; i < vSrcRegs; i += 2) {
     // Read in the four 32-bit value.
-    src1.ul = xc->readFloatRegOperandBits(this, i + 0);
-    src2.ul = xc->readFloatRegOperandBits(this, i + 1);
+    src1.ul = xc->getRegOperand(this, i + 0);
+    src2.ul = xc->getRegOperand(this, i + 1);
 
     // Permute the value.
     dest1.ui.i1 = select4(this->imm8 >> 0);
@@ -704,9 +732,11 @@ void AVXOpBase::doPermuteInLane(ExecContext *xc) const {
     dest2.ui.i1 = select4(this->imm8 >> 4);
     dest2.ui.i2 = select4(this->imm8 >> 6);
 
-    xc->setFloatRegOperandBits(this, i + 0, dest1.ul);
-    xc->setFloatRegOperandBits(this, i + 1, dest2.ul);
+    xc->setRegOperand(this, i + 0, dest1.ul);
+    xc->setRegOperand(this, i + 1, dest2.ul);
   }
 }
 
 } // namespace X86ISA
+
+} // namespace gem5

@@ -34,26 +34,31 @@
 #include "mem/cache/compressors/dictionary_compressor.hh"
 #include "params/BaseDictionaryCompressor.hh"
 
-namespace Compressor {
+namespace gem5
+{
 
-BaseDictionaryCompressor::BaseDictionaryCompressor(const Params *p)
-  : Base(p), dictionarySize(p->dictionary_size),
+GEM5_DEPRECATED_NAMESPACE(Compressor, compression);
+namespace compression
+{
+
+BaseDictionaryCompressor::BaseDictionaryCompressor(const Params &p)
+  : Base(p), dictionarySize(p.dictionary_size),
     numEntries(0), dictionaryStats(stats, *this)
 {
 }
 
 BaseDictionaryCompressor::DictionaryStats::DictionaryStats(
     BaseStats& base_group, BaseDictionaryCompressor& _compressor)
-  : Stats::Group(&base_group), compressor(_compressor),
-    patterns(this, "pattern",
-        "Number of data entries that were compressed to this pattern")
+  : statistics::Group(&base_group), compressor(_compressor),
+    ADD_STAT(patterns, statistics::units::Count::get(),
+             "Number of data entries that were compressed to this pattern")
 {
 }
 
 void
 BaseDictionaryCompressor::DictionaryStats::regStats()
 {
-    Stats::Group::regStats();
+    statistics::Group::regStats();
 
     // We store the frequency of each pattern
     patterns.init(compressor.getNumPatterns());
@@ -65,4 +70,5 @@ BaseDictionaryCompressor::DictionaryStats::regStats()
     }
 }
 
-} // namespace Compressor
+} // namespace compression
+} // namespace gem5

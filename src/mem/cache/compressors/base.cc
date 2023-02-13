@@ -38,12 +38,19 @@
 #include <cstdint>
 #include <string>
 
+#include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/CacheComp.hh"
+#include "mem/cache/base.hh"
 #include "mem/cache/tags/super_blk.hh"
 #include "params/BaseCacheCompressor.hh"
 
-namespace Compressor {
+namespace gem5
+{
+
+GEM5_DEPRECATED_NAMESPACE(Compressor, compression);
+namespace compression
+{
 
 // Uncomment this line if debugging compression
 //#define DEBUG_COMPRESSION
@@ -75,15 +82,33 @@ Base::CompressionData::getSize() const
     return std::ceil(_size/8);
 }
 
-Base::Base(const Params *p)
-  : SimObject(p), blkSize(p->block_size), chunkSizeBits(p->chunk_size_bits),
-    sizeThreshold((blkSize * p->size_threshold_percentage) / 100),
-    stats(*this)
+Base::Base(const Params &p)
+  : SimObject(p), blkSize(p.block_size), chunkSizeBits(p.chunk_size_bits),
+    sizeThreshold((blkSize * p.size_threshold_percentage) / 100),
+    compChunksPerCycle(p.comp_chunks_per_cycle),
+    compExtraLatency(p.comp_extra_latency),
+    decompChunksPerCycle(p.decomp_chunks_per_cycle),
+    decompExtraLatency(p.decomp_extra_latency),
+    cache(nullptr), stats(*this)
 {
     fatal_if(64 % chunkSizeBits,
         "64 must be a multiple of the chunk granularity.");
 
+    fatal_if(((CHAR_BIT * blkSize) / chunkSizeBits) < compChunksPerCycle,
+        "Compressor processes more chunks per cycle than the number of "
+        "chunks in the input");
+    fatal_if(((CHAR_BIT * blkSize) / chunkSizeBits) < decompChunksPerCycle,
+        "Decompressor processes more chunks per cycle than the number of "
+        "chunks in the input");
+
     fatal_if(blkSize < sizeThreshold, "Compressed data must fit in a block");
+}
+
+void
+Base::setCache(BaseCache *_cache)
+{
+    assert(!cache);
+    cache = _cache;
 }
 
 std::vector<Base::Chunk>
@@ -207,26 +232,28 @@ Base::setSizeBits(CacheBlk* blk, const std::size_t size_bits)
 }
 
 Base::BaseStats::BaseStats(Base& _compressor)
-  : Stats::Group(&_compressor), compressor(_compressor),
-    compressions(this, "compressions",
-        "Total number of compressions"),
-    failedCompressions(this, "failed_compressions",
-        "Total number of failed compressions"),
-    compressionSize(this, "compression_size",
-        "Number of blocks that were compressed to this power of two size"),
-    compressionSizeBits(this, "compression_size_bits",
-        "Total compressed data size, in bits"),
-    avgCompressionSizeBits(this, "avg_compression_size_bits",
-        "Average compression size, in bits"),
-    decompressions(this, "total_decompressions",
-        "Total number of decompressions")
+  : statistics::Group(&_compressor), compressor(_compressor),
+    ADD_STAT(compressions, statistics::units::Count::get(),
+             "Total number of compressions"),
+    ADD_STAT(failedCompressions, statistics::units::Count::get(),
+             "Total number of failed compressions"),
+    ADD_STAT(compressionSize, statistics::units::Count::get(),
+             "Number of blocks that were compressed to this power of two "
+             "size"),
+    ADD_STAT(compressionSizeBits, statistics::units::Bit::get(),
+             "Total compressed data size"),
+    ADD_STAT(avgCompressionSizeBits, statistics::units::Rate<
+                statistics::units::Bit, statistics::units::Count>::get(),
+             "Average compression size"),
+    ADD_STAT(decompressions, statistics::units::Count::get(),
+             "Total number of decompressions")
 {
 }
 
 void
 Base::BaseStats::regStats()
 {
-    Stats::Group::regStats();
+    statistics::Group::regStats();
 
     // Values comprised are {0, 1, 2, 4, ..., blkSize}
     compressionSize.init(std::log2(compressor.blkSize*8) + 2);
@@ -240,8 +267,10 @@ Base::BaseStats::regStats()
             "Number of blocks that compressed to fit in " + str_i + " bits");
     }
 
-    avgCompressionSizeBits.flags(Stats::total | Stats::nozero | Stats::nonan);
+    avgCompressionSizeBits.flags(statistics::total | statistics::nozero |
+        statistics::nonan);
     avgCompressionSizeBits = compressionSizeBits / compressions;
 }
 
-} // namespace Compressor
+} // namespace compression
+} // namespace gem5

@@ -46,25 +46,28 @@
 #include "mem/packet.hh"
 #include "mem/packet_access.hh"
 
-const uint64_t AmbaVendor = ULL(0xb105f00d00000000);
+namespace gem5
+{
 
-AmbaPioDevice::AmbaPioDevice(const Params *p, Addr pio_size)
-    : BasicPioDevice(p, pio_size), ambaId(AmbaVendor | p->amba_id)
+const uint64_t AmbaVendor = 0xb105f00d00000000ULL;
+
+AmbaPioDevice::AmbaPioDevice(const Params &p, Addr pio_size)
+    : BasicPioDevice(p, pio_size), ambaId(AmbaVendor | p.amba_id)
 {
 }
 
-AmbaIntDevice::AmbaIntDevice(const Params *p, Addr pio_size)
+AmbaIntDevice::AmbaIntDevice(const Params &p, Addr pio_size)
     : AmbaPioDevice(p, pio_size),
-      interrupt(p->interrupt->get()), intDelay(p->int_delay)
+      interrupt(p.interrupt->get()), intDelay(p.int_delay)
 {
 }
 
 
 
-AmbaDmaDevice::AmbaDmaDevice(const Params *p, Addr pio_size)
-    : DmaDevice(p), ambaId(AmbaVendor | p->amba_id),
-      pioAddr(p->pio_addr), pioSize(pio_size),
-      pioDelay(p->pio_latency), interrupt(p->interrupt->get())
+AmbaDmaDevice::AmbaDmaDevice(const Params &p, Addr pio_size)
+    : DmaDevice(p), ambaId(AmbaVendor | p.amba_id),
+      pioAddr(p.pio_addr), pioSize(pio_size),
+      pioDelay(p.pio_latency), interrupt(p.interrupt->get())
 {
 }
 
@@ -84,3 +87,5 @@ AmbaDevice::readId(PacketPtr pkt, uint64_t amba_id, Addr pio_addr)
     pkt->setUintX((amba_id >> byte) & 0xFF, ByteOrder::little);
     return true;
 }
+
+} // namespace gem5

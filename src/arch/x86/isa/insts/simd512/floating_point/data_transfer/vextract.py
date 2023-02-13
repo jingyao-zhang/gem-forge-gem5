@@ -56,8 +56,8 @@ def macroop VEXTRACT128L_P_YMM_I {
 };
 
 def macroop VEXTRACT128H_XMM_YMM_I {
-    movfp dest=xmm0, src1=xmm2m, dataSize=8
-    movfp dest=xmm1, src1=xmm3m, dataSize=8
+    movfp reg1=xmm0, reg2=xmm2m, dataSize=8
+    movfp reg1=xmm1, reg2=xmm3m, dataSize=8
     vclear dest=xmm2, destVL=16
 };
 

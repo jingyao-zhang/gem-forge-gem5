@@ -42,11 +42,14 @@
 #include "mem/packet_access.hh"
 #include "params/MmioVirtIO.hh"
 
-MmioVirtIO::MmioVirtIO(const MmioVirtIOParams *params)
-    : BasicPioDevice(params, params->pio_size),
+namespace gem5
+{
+
+MmioVirtIO::MmioVirtIO(const MmioVirtIOParams &params)
+    : BasicPioDevice(params, params.pio_size),
       hostFeaturesSelect(0), guestFeaturesSelect(0), pageSize(0),
-      interruptStatus(0), vio(*params->vio),
-      interrupt(params->interrupt->get())
+      interruptStatus(0), vio(*params.vio),
+      interrupt(params.interrupt->get())
 {
     fatal_if(!interrupt, "No MMIO VirtIO interrupt specified\n");
 
@@ -274,9 +277,4 @@ MmioVirtIO::setInterrupts(uint32_t value)
     }
 }
 
-
-MmioVirtIO *
-MmioVirtIOParams::create()
-{
-    return new MmioVirtIO(this);
-}
+} // namespace gem5

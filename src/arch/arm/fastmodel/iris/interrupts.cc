@@ -29,10 +29,13 @@
 
 #include "arch/arm/fastmodel/iris/thread_context.hh"
 #include "arch/arm/interrupts.hh"
-#include "arch/arm/miscregs.hh"
-#include "arch/arm/miscregs_types.hh"
+#include "arch/arm/regs/misc.hh"
+#include "arch/arm/regs/misc_types.hh"
 #include "arch/arm/types.hh"
 #include "params/IrisInterrupts.hh"
+
+namespace gem5
+{
 
 void
 Iris::Interrupts::serialize(CheckpointOut &cp) const
@@ -107,8 +110,4 @@ Iris::Interrupts::unserialize(CheckpointIn &cp)
 {
 }
 
-Iris::Interrupts *
-IrisInterruptsParams::create()
-{
-    return new Iris::Interrupts(this);
-}
+} // namespace gem5

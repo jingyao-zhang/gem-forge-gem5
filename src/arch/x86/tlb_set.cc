@@ -1,4 +1,5 @@
 #include "tlb_set.hh"
+namespace gem5 {
 namespace X86ISA {
 void TLBSet::serialize(CheckpointOut &cp) const {
   // Only store the entries in use.
@@ -35,3 +36,4 @@ void TLBSet::unserialize(CheckpointIn &cp) {
 }
 
 } // namespace X86ISA
+}

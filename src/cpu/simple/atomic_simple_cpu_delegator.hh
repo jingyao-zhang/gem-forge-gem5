@@ -8,6 +8,8 @@
 #include "atomic.hh"
 #include "simple_cpu_delegator.hh"
 
+namespace gem5 {
+
 class AtomicSimpleCPUDelegator : public SimpleCPUDelegator {
 public:
   AtomicSimpleCPUDelegator(AtomicSimpleCPU *_cpu);
@@ -15,5 +17,7 @@ public:
 
   void sendRequest(PacketPtr pkt) override;
 };
+
+} // namespace gem5
 
 #endif

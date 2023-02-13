@@ -2,8 +2,6 @@
  * Copyright (c) 2016 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -29,14 +27,15 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Mark Wyse
  */
 
 #ifndef __STATIC_REGISTER_MANAGER_POLICY_HH__
 #define __STATIC_REGISTER_MANAGER_POLICY_HH__
 
 #include "gpu-compute/register_manager_policy.hh"
+
+namespace gem5
+{
 
 class HSAQueueEntry;
 
@@ -58,8 +57,8 @@ class StaticRegisterManagerPolicy : public RegisterManagerPolicy
         int scalarDemand) override;
 
     void freeRegisters(Wavefront *w) override;
-
-    void regStats() override;
 };
+
+} // namespace gem5
 
 #endif // __STATIC_REGISTER_MANAGER_POLICY_HH__

@@ -42,6 +42,9 @@
 
 #include "cpu/exec_context.hh"
 
+namespace gem5
+{
+
 using namespace ArmISA;
 
 DecoderFaultInst::DecoderFaultInst(ExtMachInst _machInst)
@@ -55,10 +58,9 @@ DecoderFaultInst::DecoderFaultInst(ExtMachInst _machInst)
 }
 
 Fault
-DecoderFaultInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
+DecoderFaultInst::execute(ExecContext *xc, trace::InstRecord *traceData) const
 {
-    const PCState pc_state(xc->pcState());
-    const Addr pc(pc_state.instAddr());
+    const Addr pc = xc->pcState().instAddr();
 
     switch (faultId) {
       case DecoderFault::UNALIGNED:
@@ -100,7 +102,7 @@ DecoderFaultInst::faultName() const
 
 std::string
 DecoderFaultInst::generateDisassembly(
-        Addr pc, const Loader::SymbolTable *symtab) const
+        Addr pc, const loader::SymbolTable *symtab) const
 {
     return csprintf("gem5fault %s", faultName());
 }
@@ -128,14 +130,14 @@ FailUnimplemented::FailUnimplemented(const char *_mnemonic,
 }
 
 Fault
-FailUnimplemented::execute(ExecContext *xc, Trace::InstRecord *traceData) const
+FailUnimplemented::execute(ExecContext *xc, trace::InstRecord *traceData) const
 {
     return std::make_shared<UndefinedInstruction>(machInst, false, mnemonic);
 }
 
 std::string
 FailUnimplemented::generateDisassembly(
-        Addr pc, const Loader::SymbolTable *symtab) const
+        Addr pc, const loader::SymbolTable *symtab) const
 {
     return csprintf("%-10s (unimplemented)",
                     fullMnemonic.size() ? fullMnemonic.c_str() : mnemonic);
@@ -164,7 +166,7 @@ WarnUnimplemented::WarnUnimplemented(const char *_mnemonic,
 }
 
 Fault
-WarnUnimplemented::execute(ExecContext *xc, Trace::InstRecord *traceData) const
+WarnUnimplemented::execute(ExecContext *xc, trace::InstRecord *traceData) const
 {
     if (!warned) {
         warn("\tinstruction '%s' unimplemented\n",
@@ -177,7 +179,7 @@ WarnUnimplemented::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 
 std::string
 WarnUnimplemented::generateDisassembly(
-        Addr pc, const Loader::SymbolTable *symtab) const
+        Addr pc, const loader::SymbolTable *symtab) const
 {
     return csprintf("%-10s (unimplemented)",
                     fullMnemonic.size() ? fullMnemonic.c_str() : mnemonic);
@@ -188,7 +190,7 @@ IllegalExecInst::IllegalExecInst(ExtMachInst _machInst)
 {}
 
 Fault
-IllegalExecInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
+IllegalExecInst::execute(ExecContext *xc, trace::InstRecord *traceData) const
 {
     return std::make_shared<IllegalInstSetStateFault>();
 }
@@ -198,9 +200,9 @@ DebugStep::DebugStep(ExtMachInst _machInst)
 { }
 
 Fault
-DebugStep::execute(ExecContext *xc, Trace::InstRecord *traceData) const
+DebugStep::execute(ExecContext *xc, trace::InstRecord *traceData) const
 {
-    PCState pc_state(xc->pcState());
+    PCState pc_state = xc->pcState().as<PCState>();
     pc_state.debugStep(false);
     xc->pcState(pc_state);
 
@@ -210,5 +212,6 @@ DebugStep::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 
     return std::make_shared<SoftwareStepFault>(machInst, ldx,
                                                pc_state.stepped());
-
 }
+
+} // namespace gem5

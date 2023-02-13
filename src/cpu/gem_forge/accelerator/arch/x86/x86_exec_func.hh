@@ -9,12 +9,15 @@
 #endif
 #include "cpu/gem_forge/accelerator/stream/StreamMessage.pb.h"
 
+#include "arch/x86/pcstate.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
 
 #include <array>
 #include <iostream>
+
+namespace gem5 {
 
 class GemForgeISAHandler;
 namespace X86ISA {
@@ -104,14 +107,17 @@ private:
 
   int numInstsBeforeStreamConfig = 0;
   std::vector<StaticInstPtr> instructions;
-  std::vector<PCState> pcs;
+  std::vector<X86ISA::PCState> pcs;
 
   void estimateLatency();
   Cycles estimateOneInstLat(const StaticInstPtr &staticInst) const;
 };
-} // namespace X86ISA
 
 std::ostream &operator<<(std::ostream &os,
                          const X86ISA::ExecFunc::RegisterValue &value);
+
+} // namespace X86ISA
+
+} // namespace gem5
 
 #endif

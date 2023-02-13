@@ -5,6 +5,8 @@
 
 #include "cpu/static_inst.hh"
 
+namespace gem5 {
+
 /**
  * Dummy class only used for branch prediction.
  */
@@ -12,8 +14,7 @@
 class LLVMStaticInst : public StaticInst {
 public:
   LLVMStaticInst(const LLVMDynamicInst *_dynamicInst)
-      : StaticInst("", ExtMachInst(), OpClass::No_OpClass),
-        dynamicInst(_dynamicInst) {
+      : StaticInst("", OpClass::No_OpClass), dynamicInst(_dynamicInst) {
     assert(this->dynamicInst->isBranchInst() &&
            "Only static inst for conditional branch so far.");
     this->flags.set(IsControl);
@@ -42,22 +43,24 @@ public:
     }
   }
 
-  Fault execute(ExecContext *xc, Trace::InstRecord *traceData) const override {
+  Fault execute(ExecContext *xc, trace::InstRecord *traceData) const override {
     panic("execute not defined!");
   }
 
   std::string
   generateDisassembly(Addr pc,
-                      const ::Loader::SymbolTable *symtab) const override {
+                      const loader::SymbolTable *symtab) const override {
     panic("generateDisassembly not defined!");
   }
 
-  void advancePC(TheISA::PCState &pcState) const override {
-    pcState.set(this->dynamicInst->getStaticNextPC());
+  void advancePC(PCStateBase &pcState) const override {
+    pcState.setPC(this->dynamicInst->getStaticNextPC());
   }
 
 private:
   const LLVMDynamicInst *dynamicInst;
 };
+
+} // namespace gem5
 
 #endif

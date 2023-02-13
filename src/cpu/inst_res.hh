@@ -38,167 +38,146 @@
 #ifndef __CPU_INST_RES_HH__
 #define __CPU_INST_RES_HH__
 
-#include <type_traits>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <string>
+#include <variant>
 
-#include "arch/generic/types.hh"
-#include "arch/generic/vec_reg.hh"
+#include "base/logging.hh"
+#include "base/types.hh"
+#include "cpu/reg_class.hh"
 
-class InstResult {
-    using VecRegContainer = TheISA::VecRegContainer;
-    using VecElem = TheISA::VecElem;
-    using VecPredRegContainer = TheISA::VecPredRegContainer;
-  public:
-    union MultiResult {
-        uint64_t integer;
-        double dbl;
-        VecRegContainer vector;
-        VecElem vecElem;
-        VecPredRegContainer pred;
-        MultiResult() {}
-    };
+namespace gem5
+{
 
-    enum class ResultType {
-        Scalar,
-        VecElem,
-        VecReg,
-        VecPredReg,
-        NumResultTypes,
-        Invalid
-    };
-
+class InstResult
+{
   private:
-    MultiResult result;
-    ResultType type;
+    using BlobPtr = std::unique_ptr<const uint8_t[]>;
+
+    std::variant<BlobPtr, RegVal> value;
+    const RegClass *_regClass = nullptr;
+
+    bool blob() const { return std::holds_alternative<BlobPtr>(value); }
+    bool valid() const { return _regClass != nullptr; }
+
+    // Raw accessors with no safety checks.
+    RegVal getRegVal() const { return std::get<RegVal>(value); }
+    const void *getBlob() const { return std::get<BlobPtr>(value).get(); }
+
+    // Store copies of blobs, not a pointer to the original.
+    void
+    set(const void *val)
+    {
+        uint8_t *temp = nullptr;
+        if (val) {
+            const size_t size = _regClass->regBytes();
+            temp = new uint8_t[size];
+            std::memcpy(temp, val, size);
+        }
+        value = BlobPtr(temp);
+    }
+
+    void set(RegVal val) { value = val; }
+
+    void
+    set(const InstResult &other)
+    {
+        other.blob() ? set(other.getBlob()) : set(other.getRegVal());
+    }
 
   public:
     /** Default constructor creates an invalid result. */
-    InstResult() : type(ResultType::Invalid) { }
-    InstResult(const InstResult &) = default;
-    /** Scalar result from scalar. */
-    template<typename T>
-    explicit InstResult(T i, const ResultType& t) : type(t) {
-        static_assert(std::is_integral<T>::value ^
-                        std::is_floating_point<T>::value,
-                "Parameter type is neither integral nor fp, or it is both");
-        if (std::is_integral<T>::value) {
-            result.integer = i;
-        } else if (std::is_floating_point<T>::value) {
-            result.dbl = i;
-        }
+    InstResult() {}
+    InstResult(const InstResult &other) : _regClass(other._regClass)
+    {
+        set(other);
     }
-    /** Vector result. */
-    explicit InstResult(const VecRegContainer& v, const ResultType& t)
-        : type(t) { result.vector = v; }
-    /** Predicate result. */
-    explicit InstResult(const VecPredRegContainer& v, const ResultType& t)
-        : type(t) { result.pred = v; }
 
-    InstResult& operator=(const InstResult& that) {
-        type = that.type;
-        switch (type) {
-        /* Given that misc regs are not written to, there may be invalids in
-         * the result stack. */
-        case ResultType::Invalid:
-            break;
-        case ResultType::Scalar:
-            result.integer = that.result.integer;
-            break;
-        case ResultType::VecElem:
-            result.vecElem = that.result.vecElem;
-            break;
-        case ResultType::VecReg:
-            result.vector = that.result.vector;
-            break;
-        case ResultType::VecPredReg:
-            result.pred = that.result.pred;
-            break;
+    InstResult(const RegClass &reg_class, RegVal val) :
+        _regClass(&reg_class)
+    {
+        set(val);
+    }
 
-        default:
-            panic("Assigning result from unknown result type");
-            break;
-        }
+    InstResult(const RegClass &reg_class, const void *val) :
+        _regClass(&reg_class)
+    {
+        set(val);
+    }
+
+    InstResult &
+    operator=(const InstResult &that)
+    {
+        _regClass = that._regClass;
+        set(that);
+
         return *this;
     }
+
     /**
      * Result comparison
      * Two invalid results always differ.
      */
-    bool operator==(const InstResult& that) const {
-        if (this->type != that.type)
+    bool
+    operator==(const InstResult& that) const
+    {
+        if (blob() != that.blob() || _regClass != that._regClass)
             return false;
-        switch (type) {
-        case ResultType::Scalar:
-            return result.integer == that.result.integer;
-        case ResultType::VecElem:
-            return result.vecElem == that.result.vecElem;
-        case ResultType::VecReg:
-            return result.vector == that.result.vector;
-        case ResultType::VecPredReg:
-            return result.pred == that.result.pred;
-        case ResultType::Invalid:
-            return false;
-        default:
-            panic("Unknown type of result: %d\n", (int)type);
+
+        if (blob()) {
+            const void *my_blob = getBlob();
+            const void *their_blob = that.getBlob();
+
+            // Invalid results always differ.
+            if (!my_blob || !their_blob)
+                return false;
+
+            // Check the contents of the blobs, not their addresses.
+            return std::memcmp(getBlob(), that.getBlob(),
+                    _regClass->regBytes()) == 0;
+        } else {
+            return getRegVal() == that.getRegVal();
         }
     }
 
-    bool operator!=(const InstResult& that) const {
+    bool
+    operator!=(const InstResult& that) const
+    {
         return !operator==(that);
     }
 
-    /** Checks */
-    /** @{ */
-    /** Is this a scalar result?. */
-    bool isScalar() const { return type == ResultType::Scalar; }
-    /** Is this a vector result?. */
-    bool isVector() const { return type == ResultType::VecReg; }
-    /** Is this a vector element result?. */
-    bool isVecElem() const { return type == ResultType::VecElem; }
-    /** Is this a predicate result?. */
-    bool isPred() const { return type == ResultType::VecPredReg; }
-    /** Is this a valid result?. */
-    bool isValid() const { return type != ResultType::Invalid; }
-    /** @} */
+    const RegClass &regClass() const { return *_regClass; }
+    bool isValid() const { return valid(); }
+    bool isBlob() const { return blob(); }
 
-    /** Explicit cast-like operations. */
-    /** @{ */
-    const uint64_t&
-    asInteger() const
+    RegVal
+    asRegVal() const
     {
-        assert(isScalar());
-        return result.integer;
+        assert(!blob());
+        return getRegVal();
     }
 
-    /** Cast to integer without checking type.
-     * This is required to have the o3 cpu checker happy, as it
-     * compares results as integers without being fully aware of
-     * their nature. */
-    const uint64_t&
-    asIntegerNoAssert() const
+    const void *
+    asBlob() const
     {
-        return result.integer;
-    }
-    const VecRegContainer&
-    asVector() const
-    {
-        panic_if(!isVector(), "Converting scalar (or invalid) to vector!!");
-        return result.vector;
-    }
-    const VecElem&
-    asVectorElem() const
-    {
-        panic_if(!isVecElem(), "Converting scalar (or invalid) to vector!!");
-        return result.vecElem;
+        assert(blob());
+        return getBlob();
     }
 
-    const VecPredRegContainer&
-    asPred() const
+    std::string
+    asString() const
     {
-        panic_if(!isPred(), "Converting scalar (or invalid) to predicate!!");
-        return result.pred;
+        if (blob()) {
+            return _regClass->valString(getBlob());
+        } else {
+            RegVal reg = getRegVal();
+            return _regClass->valString(&reg);
+        }
     }
-
-    /** @} */
 };
+
+} // namespace gem5
 
 #endif // __CPU_INST_RES_HH__

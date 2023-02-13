@@ -39,19 +39,24 @@ from m5.proxy import *
 from m5.objects.BaseTLB import BaseTLB
 from m5.objects.ClockedObject import ClockedObject
 
+
 class X86PagetableWalker(ClockedObject):
-    type = 'X86PagetableWalker'
-    cxx_class = 'X86ISA::Walker'
-    cxx_header = 'arch/x86/pagetable_walker.hh'
+    type = "X86PagetableWalker"
+    cxx_class = "gem5::X86ISA::Walker"
+    cxx_header = "arch/x86/pagetable_walker.hh"
+
     port = RequestPort("Port for the hardware table walker")
     system = Param.System(Parent.any, "system object")
-    num_squash_per_cycle = Param.Unsigned(4,
-            "Number of outstanding walks that can be squashed per cycle")
+    num_squash_per_cycle = Param.Unsigned(
+        4, "Number of outstanding walks that can be squashed per cycle"
+    )
+
 
 class X86TLB(BaseTLB):
-    type = 'X86TLB'
-    cxx_class = 'X86ISA::TLB'
-    cxx_header = 'arch/x86/tlb.hh'
+    type = "X86TLB"
+    cxx_class = "gem5::X86ISA::TLB"
+    cxx_header = "arch/x86/tlb.hh"
+
     size = Param.Unsigned(64, "TLB size")
     assoc = Param.Unsigned(0, "TLB assoc, 0 is fully-associative")
     l2size = Param.Unsigned(0, "L2 TLB size, 0 is no L2 TLB")
@@ -61,5 +66,6 @@ class X86TLB(BaseTLB):
     walker_se_port = Param.Unsigned(2, "Number of simultaneous page walk in SE mode")
     timing_se = Param.Bool(False, "Enable TLB miss timing in SE mode")
     system = Param.System(Parent.any, "system object")
-    walker = Param.X86PagetableWalker(\
-            X86PagetableWalker(), "page table walker")
+    walker = Param.X86PagetableWalker(
+        X86PagetableWalker(), "page table walker"
+    )

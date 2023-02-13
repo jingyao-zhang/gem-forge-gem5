@@ -43,13 +43,18 @@
 #ifndef __ARCH_ARM_TRACERS_TARMAC_RECORD_HH__
 #define __ARCH_ARM_TRACERS_TARMAC_RECORD_HH__
 
+#include <memory>
+
+#include "arch/arm/regs/misc.hh"
 #include "arch/arm/tracers/tarmac_base.hh"
 #include "base/printable.hh"
-#include "config/the_isa.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst.hh"
 
-namespace Trace {
+namespace gem5
+{
+
+namespace trace {
 
 class TarmacContext;
 
@@ -135,31 +140,18 @@ class TarmacTracerRecord : public TarmacBaseRecord
 
       protected:
         /** Register update functions. */
-        virtual void
-        updateMisc(const TarmacContext& tarmCtx, RegIndex regRelIdx);
-
-        virtual void
-        updateCC(const TarmacContext& tarmCtx, RegIndex regRelIdx);
-
-        virtual void
-        updateFloat(const TarmacContext& tarmCtx, RegIndex regRelIdx);
-
-        virtual void
-        updateInt(const TarmacContext& tarmCtx, RegIndex regRelIdx);
-
-        virtual void
-        updateVec(const TarmacContext& tarmCtx, RegIndex regRelIdx) {};
-
-        virtual void
-        updatePred(const TarmacContext& tarmCtx, RegIndex regRelIdx) {};
+        virtual void updateMisc(const TarmacContext& tarmCtx);
+        virtual void updateCC(const TarmacContext& tarmCtx);
+        virtual void updateFloat(const TarmacContext& tarmCtx);
+        virtual void updateInt(const TarmacContext& tarmCtx);
+        virtual void updateVec(const TarmacContext& tarmCtx) {};
+        virtual void updatePred(const TarmacContext& tarmCtx) {};
 
       public:
         /** True if register entry is valid */
         bool regValid;
-        /** Register class */
-        RegClass regClass;
-        /** Register arch number */
-        RegIndex regRel;
+        /** Register ID */
+        RegId regId;
         /** Register name to be printed */
         std::string regName;
     };
@@ -182,7 +174,7 @@ class TarmacTracerRecord : public TarmacBaseRecord
 
   public:
     TarmacTracerRecord(Tick _when, ThreadContext *_thread,
-                       const StaticInstPtr _staticInst, ArmISA::PCState _pc,
+                       const StaticInstPtr _staticInst, const PCStateBase &_pc,
                        TarmacTracer& _tracer,
                        const StaticInstPtr _macroStaticInst = NULL);
 
@@ -224,7 +216,9 @@ class TarmacTracerRecord : public TarmacBaseRecord
         // Find all CC Entries and move them at the end of the queue
         auto it = std::remove_if(
             queue.begin(), queue.end(),
-            [] (RegPtr& reg) ->bool { return (reg->regClass == CCRegClass); }
+            [] (RegPtr& reg) ->bool {
+                return (reg->regId.classValue() == CCRegClass);
+            }
         );
 
         if (it != queue.end()) {
@@ -233,8 +227,8 @@ class TarmacTracerRecord : public TarmacBaseRecord
 
             auto is_cpsr = [] (RegPtr& reg) ->bool
             {
-                return (reg->regClass == MiscRegClass) &&
-                       (reg->regRel == ArmISA::MISCREG_CPSR);
+                return (reg->regId.classValue()== MiscRegClass) &&
+                       (reg->regId.index() == ArmISA::MISCREG_CPSR);
             };
 
             // Looking for the presence of a CPSR register entry.
@@ -244,9 +238,9 @@ class TarmacTracerRecord : public TarmacBaseRecord
 
             // If CPSR entry not present, generate one
             if (cpsr_it == queue.end()) {
-                RegId reg(MiscRegClass, ArmISA::MISCREG_CPSR);
+                RegId reg = ArmISA::miscRegClass[ArmISA::MISCREG_CPSR];
                 queue.push_back(
-                    m5::make_unique<RegEntry>(
+                    std::make_unique<RegEntry>(
                         genRegister<RegEntry>(tarmCtx, reg))
                 );
             }
@@ -264,6 +258,7 @@ class TarmacTracerRecord : public TarmacBaseRecord
     TarmacTracer& tracer;
 };
 
-} // namespace Trace
+} // namespace trace
+} // namespace gem5
 
 #endif // __ARCH_ARM_TRACERS_TARMAC_RECORD_HH__

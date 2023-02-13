@@ -46,7 +46,9 @@
 #include "params/MipsTLB.hh"
 #include "sim/process.hh"
 
-using namespace std;
+namespace gem5
+{
+
 using namespace MipsISA;
 
 ///////////////////////////////////////////////////////////////////////
@@ -54,8 +56,7 @@ using namespace MipsISA;
 //  MIPS TLB
 //
 
-TLB::TLB(const Params *p)
-    : BaseTLB(p), size(p->size), nlu(0)
+TLB::TLB(const Params &p) : BaseTLB(p), size(p.size), nlu(0)
 {
     table = new PTE[size];
     memset(table, 0, sizeof(PTE[size]));
@@ -170,7 +171,7 @@ TLB::insertAt(PTE &pte, unsigned Index, int _smallPages)
         }
         table[Index]=pte;
         // Update fast lookup table
-        lookupTable.insert(make_pair(table[Index].VPN, Index));
+        lookupTable.insert(std::make_pair(table[Index].VPN, Index));
     }
 }
 
@@ -212,13 +213,14 @@ TLB::unserialize(CheckpointIn &cp)
         ScopedCheckpointSection sec(cp, csprintf("PTE%d", i));
         table[i].unserialize(cp);
         if (table[i].V0 || table[i].V1) {
-            lookupTable.insert(make_pair(table[i].VPN, i));
+            lookupTable.insert(std::make_pair(table[i].VPN, i));
         }
     }
 }
 
 Fault
-TLB::translateAtomic(const RequestPtr &req, ThreadContext *tc, Mode mode)
+TLB::translateAtomic(const RequestPtr &req, ThreadContext *tc,
+                     BaseMMU::Mode mode)
 {
     panic_if(FullSystem, "translateAtomic not implemented in full system.");
     return tc->getProcessPtr()->pTable->translate(req);
@@ -226,14 +228,15 @@ TLB::translateAtomic(const RequestPtr &req, ThreadContext *tc, Mode mode)
 
 void
 TLB::translateTiming(const RequestPtr &req, ThreadContext *tc,
-        Translation *translation, Mode mode)
+                     BaseMMU::Translation *translation, BaseMMU::Mode mode)
 {
     assert(translation);
     translation->finish(translateAtomic(req, tc, mode), req, tc, mode);
 }
 
 Fault
-TLB::translateFunctional(const RequestPtr &req, ThreadContext *tc, Mode mode)
+TLB::translateFunctional(const RequestPtr &req, ThreadContext *tc,
+                         BaseMMU::Mode mode)
 {
     panic_if(FullSystem, "translateAtomic not implemented in full system.");
     return tc->getProcessPtr()->pTable->translate(req);
@@ -241,7 +244,7 @@ TLB::translateFunctional(const RequestPtr &req, ThreadContext *tc, Mode mode)
 
 Fault
 TLB::finalizePhysical(const RequestPtr &req,
-                      ThreadContext *tc, Mode mode) const
+                      ThreadContext *tc, BaseMMU::Mode mode) const
 {
     return NoFault;
 }
@@ -258,8 +261,4 @@ TLB::index(bool advance)
     return *pte;
 }
 
-MipsISA::TLB *
-MipsTLBParams::create()
-{
-    return new TLB(this);
-}
+} // namespace gem5

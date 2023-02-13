@@ -26,9 +26,10 @@
 
 from slicc.ast.AST import AST
 
+
 class StatementAST(AST):
     def __init__(self, slicc, pairs=None):
-        super(StatementAST, self).__init__(slicc, pairs)
+        super().__init__(slicc, pairs)
 
     def findResources(self, resources):
         pass

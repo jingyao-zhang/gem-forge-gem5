@@ -5,6 +5,8 @@
 #include <cstdlib>
 #include <tuple>
 
+namespace gem5 {
+
 class PUMHWConfiguration {
 
 public:
@@ -115,5 +117,7 @@ public:
     return mesh_layer * mesh_rows * mesh_cols + mesh_row * mesh_cols + mesh_col;
   }
 };
+
+} // namespace gem5
 
 #endif

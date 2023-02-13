@@ -5,6 +5,8 @@
 
 #include <vector>
 
+namespace gem5 {
+
 namespace X86ISA {
 
 class TLBCache : public Serializable {
@@ -60,5 +62,6 @@ private:
   std::vector<TLBSet> sets;
 };
 } // namespace X86ISA
+} // namespace gem5
 
 #endif

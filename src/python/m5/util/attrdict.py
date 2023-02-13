@@ -24,26 +24,26 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from __future__ import print_function
+__all__ = ["attrdict", "multiattrdict", "optiondict"]
 
-__all__ = [ 'attrdict', 'multiattrdict', 'optiondict' ]
 
 class attrdict(dict):
     """Wrap dict, so you can use attribute access to get/set elements"""
+
     def __getattr__(self, attr):
         if attr in self:
             return self.__getitem__(attr)
-        return super(attrdict, self).__getattribute__(attr)
+        return super().__getattribute__(attr)
 
     def __setattr__(self, attr, value):
-        if attr in dir(self) or attr.startswith('_'):
-            return super(attrdict, self).__setattr__(attr, value)
+        if attr in dir(self) or attr.startswith("_"):
+            return super().__setattr__(attr, value)
         return self.__setitem__(attr, value)
 
     def __delattr__(self, attr):
         if attr in self:
             return self.__delitem__(attr)
-        return super(attrdict, self).__delattr__(attr)
+        return super().__delattr__(attr)
 
     def __getstate__(self):
         return dict(self)
@@ -51,40 +51,45 @@ class attrdict(dict):
     def __setstate__(self, state):
         self.update(state)
 
+
 class multiattrdict(attrdict):
     """Wrap attrdict so that nested attribute accesses automatically create
     nested dictionaries."""
+
     def __getattr__(self, attr):
         try:
-            return super(multiattrdict, self).__getattr__(attr)
+            return super().__getattr__(attr)
         except AttributeError:
-            if attr.startswith('_'):
+            if attr.startswith("_"):
                 raise
 
             d = multiattrdict()
             setattr(self, attr, d)
             return d
 
+
 class optiondict(attrdict):
     """Modify attrdict so that a missing attribute just returns None"""
+
     def __getattr__(self, attr):
         try:
-            return super(optiondict, self).__getattr__(attr)
+            return super().__getattr__(attr)
         except AttributeError:
             return None
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     x = attrdict()
     x.y = 1
-    x['z'] = 2
-    print(x['y'], x.y)
-    print(x['z'], x.z)
+    x["z"] = 2
+    print(x["y"], x.y)
+    print(x["z"], x.z)
     print(dir(x))
     print(x)
 
     print()
 
-    del x['y']
+    del x["y"]
     del x.z
     print(dir(x))
     print(x)

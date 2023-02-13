@@ -1,8 +1,8 @@
 Import ('*')
 
-SimObject('McPATManager.py')
+# SimObject('McPATManager.py', sim_objects=['McPATManager'])
 
-Source('mcpat_manager.cc')
-Source('mcpat_manager_llvm_trace_cpu.cc')
+# Source('mcpat_manager.cc')
+# Source('mcpat_manager_llvm_trace_cpu.cc')
 
-DebugFlag('McPATManager')
+# DebugFlag('McPATManager')

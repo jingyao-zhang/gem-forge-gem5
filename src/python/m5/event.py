@@ -38,8 +38,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from __future__ import print_function
-
 import m5
 import _m5.event
 
@@ -49,15 +47,17 @@ from _m5.event import getEventQueue, setEventQueue
 
 mainq = None
 
+
 class EventWrapper(Event):
     """Helper class to wrap callable objects in an Event base class"""
 
     def __init__(self, func, **kwargs):
-        super(EventWrapper, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
         if not callable(func):
-            raise RuntimeError("Can't wrap '%s', object is not callable" % \
-                               str(func))
+            raise RuntimeError(
+                "Can't wrap '%s', object is not callable" % str(func)
+            )
 
         self._func = func
 
@@ -65,18 +65,18 @@ class EventWrapper(Event):
         self._func()
 
     def __str__(self):
-        return "EventWrapper(%s)" % (str(self._func), )
+        return "EventWrapper(%s)" % (str(self._func),)
 
 
 class ProgressEvent(Event):
     def __init__(self, eventq, period):
-        super(ProgressEvent, self).__init__()
+        super().__init__()
         self.period = int(period)
         self.eventq = eventq
         self.eventq.schedule(self, m5.curTick() + self.period)
 
     def __call__(self):
-        print("Progress! Time now %fs" % (m5.curTick()/1e12))
+        print("Progress! Time now %fs" % (m5.curTick() / 1e12))
         self.eventq.schedule(self, m5.curTick() + self.period)
 
 
@@ -85,5 +85,12 @@ def create(func, priority=Event.Default_Pri):
 
     return EventWrapper(func, priority=priority)
 
-__all__ = [ 'Event', 'EventWrapper', 'ProgressEvent', 'SimExit',
-            'mainq', 'create' ]
+
+__all__ = [
+    "Event",
+    "EventWrapper",
+    "ProgressEvent",
+    "SimExit",
+    "mainq",
+    "create",
+]

@@ -31,7 +31,7 @@
 
 def template JumpExecute {{
         Fault %(class_name)s::execute(ExecContext *xc,
-                Trace::InstRecord *traceData) const
+                trace::InstRecord *traceData) const
         {
             // Attempt to execute the instruction
             Fault fault = NoFault;
@@ -53,7 +53,7 @@ def template JumpExecute {{
 def template BranchExecute {{
         Fault
         %(class_name)s::execute(ExecContext *xc,
-                Trace::InstRecord *traceData) const
+                trace::InstRecord *traceData) const
         {
             // Attempt to execute the instruction
             Fault fault = NoFault;
@@ -86,13 +86,12 @@ def template BranchDecode {{
 // Primary format for branch instructions:
 def format Branch(code, *opt_flags) {{
     code = 'NNPC = NNPC;\n' + code
-    (usesImm, code, immCode,
-     rString, iString) = splitOutImm(code)
+    code, immCode, iString = splitOutImm(code)
     iop = InstObjParams(name, Name, 'Branch', code, opt_flags)
     header_output = BasicDeclare.subst(iop)
     decoder_output = BasicConstructor.subst(iop)
     exec_output = JumpExecute.subst(iop)
-    if usesImm:
+    if immCode is not None:
         imm_iop = InstObjParams(name, Name + 'Imm', 'BranchImm' + iString,
                 immCode, opt_flags)
         header_output += BasicDeclare.subst(imm_iop)
@@ -188,4 +187,3 @@ def format BranchSplit(code=default_branch_code,
          decode_block) = doUncondBranch(name, Name,
              "BranchSplit", code, annul_code, opt_flags)
 }};
-

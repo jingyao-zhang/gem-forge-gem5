@@ -39,6 +39,9 @@
 #include "cpu/exec_context.hh"
 #include "cpu/static_inst.hh"
 
+namespace gem5
+{
+
 namespace RiscvISA
 {
 
@@ -55,19 +58,20 @@ class Unknown : public RiscvStaticInst
     {}
 
     Fault
-    execute(ExecContext *, Trace::InstRecord *) const override
+    execute(ExecContext *, trace::InstRecord *) const override
     {
         return std::make_shared<UnknownInstFault>(machInst);
     }
 
     std::string
     generateDisassembly(
-            Addr pc, const Loader::SymbolTable *symtab) const override
+            Addr pc, const loader::SymbolTable *symtab) const override
     {
         return csprintf("unknown opcode %#02x", OPCODE);
     }
 };
 
-}
+} // namespace RiscvISA
+} // namespace gem5
 
 #endif // __ARCH_RISCV_UNKNOWN_INST_HH__

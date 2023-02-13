@@ -43,17 +43,21 @@
 #include "mem/packet_access.hh"
 #include "params/EnergyCtrl.hh"
 #include "sim/dvfs_handler.hh"
+#include "sim/serialize.hh"
 
-EnergyCtrl::EnergyCtrl(const Params *p)
+namespace gem5
+{
+
+EnergyCtrl::EnergyCtrl(const Params &p)
     : BasicPioDevice(p, PIO_NUM_FIELDS * 4),        // each field is 32 bit
-      dvfsHandler(p->dvfs_handler),
+      dvfsHandler(p.dvfs_handler),
       domainID(0),
       domainIDIndexToRead(0),
       perfLevelAck(0),
       perfLevelToRead(0),
       updateAckEvent([this]{ updatePLAck(); }, name())
 {
-    fatal_if(!p->dvfs_handler, "EnergyCtrl: Needs a DVFSHandler for a "
+    fatal_if(!p.dvfs_handler, "EnergyCtrl: Needs a DVFSHandler for a "
              "functioning system.\n");
 }
 
@@ -98,7 +102,7 @@ EnergyCtrl::read(PacketPtr pkt)
         break;
       case DVFS_HANDLER_TRANS_LATENCY:
         // Return transition latency in nanoseconds
-        result = dvfsHandler->transLatency() / SimClock::Int::ns;
+        result = dvfsHandler->transLatency() / sim_clock::as_int::ns;
         DPRINTF(EnergyCtrl, "reading dvfs handler trans latency %d ns\n",
                 result);
         break;
@@ -241,11 +245,6 @@ EnergyCtrl::unserialize(CheckpointIn &cp)
     }
 }
 
-EnergyCtrl * EnergyCtrlParams::create()
-{
-    return new EnergyCtrl(this);
-}
-
 void
 EnergyCtrl::startup()
 {
@@ -259,3 +258,5 @@ EnergyCtrl::init()
 {
     BasicPioDevice::init();
 }
+
+} // namespace gem5

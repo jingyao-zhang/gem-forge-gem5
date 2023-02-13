@@ -35,6 +35,8 @@ extern "C" {
 
 #include <stdint.h>
 
+#include <gem5/asm/generic/m5ops.h>
+
 void m5_arm(uint64_t address);
 void m5_quiesce(void);
 void m5_quiesce_ns(uint64_t ns);
@@ -133,8 +135,27 @@ void m5_stream_nuca_set_property(void *buffer,
 void m5_stream_nuca_remap();
 uint64_t m5_stream_nuca_get_cached_bytes(void *buffer);
 
-void m5_se_syscall();
-void m5_se_page_fault();
+/*
+ * Send a very generic poke to the workload so it can do something. It's up to
+ * the workload to know what information to look for to interpret an event,
+ * such as what PC it came from, what register values are, or the context of
+ * the workload itself (is this SE mode? which OS is running?).
+ */
+void m5_workload();
+
+/*
+ * Create _addr and _semi versions all declarations, e.g. m5_exit_addr and
+ * m5_exit_semi. These expose the the memory and semihosting variants of the
+ * ops.
+ *
+ * Some of those declarations are not defined for certain ISAs, e.g. X86
+ * does not have _semi, but we felt that ifdefing them out could cause more
+ * trouble tham leaving them in.
+ */
+#define M5OP(name, func) __typeof__(name) M5OP_MERGE_TOKENS(name, _addr); \
+                         __typeof__(name) M5OP_MERGE_TOKENS(name, _semi);
+M5OP_FOREACH
+#undef M5OP
 
 #define m5_detail_sim_start() m5_switch_cpu();
 

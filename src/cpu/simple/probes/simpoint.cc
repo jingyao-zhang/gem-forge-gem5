@@ -39,16 +39,19 @@
 
 #include "base/output.hh"
 
-SimPoint::SimPoint(const SimPointParams *p)
+namespace gem5
+{
+
+SimPoint::SimPoint(const SimPointParams &p)
     : ProbeListenerObject(p),
-      intervalSize(p->interval),
+      intervalSize(p.interval),
       intervalCount(0),
       intervalDrift(0),
       simpointStream(NULL),
       currentBBV(0, 0),
       currentBBVInstCount(0)
 {
-    simpointStream = simout.create(p->profile_file, false);
+    simpointStream = simout.create(p.profile_file, false);
     if (!simpointStream)
         fatal("unable to open SimPoint profile_file");
 }
@@ -139,9 +142,4 @@ SimPoint::profile(const std::pair<SimpleThread*, StaticInstPtr>& p)
     }
 }
 
-/** SimPoint SimObject */
-SimPoint*
-SimPointParams::create()
-{
-    return new SimPoint(this);
-}
+} // namespace gem5

@@ -1,6 +1,6 @@
 // -*- mode:c++ -*-
 
-// Copyright (c) 2011-2014, 2017, 2019 ARM Limited
+// Copyright (c) 2011-2014, 2017, 2019, 2022 Arm Limited
 // All rights reserved
 //
 // The license below extends only to copyright in the software and shall
@@ -45,8 +45,9 @@ let {{
 }};
 
 def template Load64Execute {{
-    Fault %(class_name)s::execute(ExecContext *xc,
-                                  Trace::InstRecord *traceData) const
+    Fault
+    %(class_name)s::execute(ExecContext *xc,
+                            trace::InstRecord *traceData) const
     {
         Addr EA;
         Fault fault = NoFault;
@@ -69,8 +70,9 @@ def template Load64Execute {{
 }};
 
 def template Load64FpExecute {{
-    Fault %(class_name)s::execute(ExecContext *xc,
-                                  Trace::InstRecord *traceData) const
+    Fault
+    %(class_name)s::execute(ExecContext *xc,
+                            trace::InstRecord *traceData) const
     {
         Addr EA;
         Fault fault = NoFault;
@@ -93,8 +95,9 @@ def template Load64FpExecute {{
 }};
 
 def template Store64Execute {{
-    Fault %(class_name)s::execute(ExecContext *xc,
-                                  Trace::InstRecord *traceData) const
+    Fault
+    %(class_name)s::execute(ExecContext *xc,
+                            trace::InstRecord *traceData) const
     {
         Addr EA;
         Fault fault = NoFault;
@@ -109,7 +112,7 @@ def template Store64Execute {{
 
         if (fault == NoFault) {
             fault = writeMemAtomicLE(xc, traceData, Mem, EA,
-                                     memAccessFlags, NULL);
+                                     memAccessFlags, nullptr);
         }
 
         if (fault == NoFault) {
@@ -121,8 +124,9 @@ def template Store64Execute {{
 }};
 
 def template Store64InitiateAcc {{
-    Fault %(class_name)s::initiateAcc(ExecContext *xc,
-                                      Trace::InstRecord *traceData) const
+    Fault
+    %(class_name)s::initiateAcc(ExecContext *xc,
+                                trace::InstRecord *traceData) const
     {
         Addr EA;
         Fault fault = NoFault;
@@ -137,7 +141,7 @@ def template Store64InitiateAcc {{
 
         if (fault == NoFault) {
             fault = writeMemTimingLE(xc, traceData, Mem, EA, memAccessFlags,
-                                     NULL);
+                                     nullptr);
         }
 
         return fault;
@@ -145,8 +149,9 @@ def template Store64InitiateAcc {{
 }};
 
 def template StoreEx64Execute {{
-    Fault %(class_name)s::execute(ExecContext *xc,
-                                  Trace::InstRecord *traceData) const
+    Fault
+    %(class_name)s::execute(ExecContext *xc,
+                            trace::InstRecord *traceData) const
     {
         Addr EA;
         Fault fault = NoFault;
@@ -178,8 +183,9 @@ def template StoreEx64Execute {{
 }};
 
 def template StoreEx64InitiateAcc {{
-    Fault %(class_name)s::initiateAcc(ExecContext *xc,
-                                      Trace::InstRecord *traceData) const
+    Fault
+    %(class_name)s::initiateAcc(ExecContext *xc,
+                                trace::InstRecord *traceData) const
     {
         Addr EA;
         Fault fault = NoFault;
@@ -194,7 +200,7 @@ def template StoreEx64InitiateAcc {{
 
         if (fault == NoFault) {
             fault = writeMemTimingLE(xc, traceData, Mem, EA, memAccessFlags,
-                                     NULL);
+                                     nullptr);
         }
 
         return fault;
@@ -202,8 +208,9 @@ def template StoreEx64InitiateAcc {{
 }};
 
 def template Load64InitiateAcc {{
-    Fault %(class_name)s::initiateAcc(ExecContext *xc,
-                                      Trace::InstRecord *traceData) const
+    Fault
+    %(class_name)s::initiateAcc(ExecContext *xc,
+                                trace::InstRecord *traceData) const
     {
         Addr EA;
         Fault fault = NoFault;
@@ -221,8 +228,9 @@ def template Load64InitiateAcc {{
 }};
 
 def template Load64CompleteAcc {{
-    Fault %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
-                                      Trace::InstRecord *traceData) const
+    Fault
+    %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
+                                trace::InstRecord *traceData) const
     {
         Fault fault = NoFault;
 
@@ -245,16 +253,18 @@ def template Load64CompleteAcc {{
 }};
 
 def template Store64CompleteAcc {{
-    Fault %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
-                                      Trace::InstRecord *traceData) const
+    Fault
+    %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
+                                trace::InstRecord *traceData) const
     {
         return NoFault;
     }
 }};
 
 def template StoreEx64CompleteAcc {{
-    Fault %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
-                                      Trace::InstRecord *traceData) const
+    Fault
+    %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
+                                trace::InstRecord *traceData) const
     {
         Fault fault = NoFault;
 
@@ -275,16 +285,18 @@ def template StoreEx64CompleteAcc {{
 def template DCStore64Declare {{
     class %(class_name)s : public %(base_class)s
     {
+      private:
+        %(reg_idx_arr_decl)s;
+
       public:
-
         /// Constructor.
-        %(class_name)s(ExtMachInst machInst, IntRegIndex _base,
-                       MiscRegIndex _dest, uint64_t _imm);
+        %(class_name)s(ExtMachInst machInst, RegIndex _base,
+                       MiscRegIndex _dest);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(PacketPtr, ExecContext *,
-                          Trace::InstRecord *) const override;
+                          trace::InstRecord *) const override;
 
         void
         annotateFault(ArmISA::ArmFault *fault) override
@@ -295,19 +307,21 @@ def template DCStore64Declare {{
 }};
 
 def template DCStore64Constructor {{
-    %(class_name)s::%(class_name)s(ExtMachInst machInst, IntRegIndex _base,
-                                   MiscRegIndex _dest, uint64_t _imm)
-         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
-                          _base, _dest, _imm)
+    %(class_name)s::%(class_name)s(ExtMachInst machInst, RegIndex _base,
+                                   MiscRegIndex _dest) :
+         %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
+                        _base, _dest)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
         assert(!%(use_uops)d);
     }
 }};
 
 def template DCStore64Execute {{
-    Fault %(class_name)s::execute(ExecContext *xc,
-                                  Trace::InstRecord *traceData) const
+    Fault
+    %(class_name)s::execute(ExecContext *xc,
+                            trace::InstRecord *traceData) const
     {
         Addr EA;
         Fault fault = NoFault;
@@ -322,7 +336,9 @@ def template DCStore64Execute {{
         }
 
         if (fault == NoFault) {
-            fault = xc->writeMem(NULL, op_size, EA, memAccessFlags, NULL);
+            fault = writeMemAtomic(xc, nullptr, EA,
+                                   op_size, memAccessFlags, nullptr,
+                                   std::vector<bool>(op_size, true));
         }
 
         if (fault == NoFault) {
@@ -334,8 +350,9 @@ def template DCStore64Execute {{
 }};
 
 def template DCStore64InitiateAcc {{
-    Fault %(class_name)s::initiateAcc(ExecContext *xc,
-                                      Trace::InstRecord *traceData) const
+    Fault
+    %(class_name)s::initiateAcc(ExecContext *xc,
+                                trace::InstRecord *traceData) const
     {
         Addr EA;
         Fault fault = NoFault;
@@ -349,7 +366,9 @@ def template DCStore64InitiateAcc {{
         }
 
         if (fault == NoFault) {
-            fault = xc->writeMem(NULL, op_size, EA, memAccessFlags, NULL);
+            fault = writeMemTiming(xc, nullptr, EA, op_size,
+                                   memAccessFlags, nullptr,
+                                   std::vector<bool>(op_size, true));
         }
 
         return fault;
@@ -360,16 +379,18 @@ def template DCStore64InitiateAcc {{
 def template LoadStoreImm64Declare {{
     class %(class_name)s : public %(base_class)s
     {
-      public:
+      private:
+        %(reg_idx_arr_decl)s;
 
+      public:
         /// Constructor.
         %(class_name)s(ExtMachInst machInst,
-                IntRegIndex _dest, IntRegIndex _base, int64_t _imm);
+                RegIndex _dest, RegIndex _base, int64_t _imm);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(PacketPtr, ExecContext *,
-                          Trace::InstRecord *) const override;
+                          trace::InstRecord *) const override;
 
         void
         annotateFault(ArmISA::ArmFault *fault) override
@@ -382,18 +403,20 @@ def template LoadStoreImm64Declare {{
 def template LoadStoreImmU64Declare {{
     class %(class_name)s : public %(base_class)s
     {
-      public:
+      private:
+        %(reg_idx_arr_decl)s;
 
+      public:
         /// Constructor.
         %(class_name)s(ExtMachInst machInst,
-                IntRegIndex _dest, IntRegIndex _base, int64_t _imm,
+                RegIndex _dest, RegIndex _base, int64_t _imm,
                 bool noAlloc = false, bool exclusive = false,
                 bool acrel = false);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(PacketPtr, ExecContext *,
-                          Trace::InstRecord *) const override;
+                          trace::InstRecord *) const override;
 
         void
         annotateFault(ArmISA::ArmFault *fault) override
@@ -406,18 +429,20 @@ def template LoadStoreImmU64Declare {{
 def template LoadStoreImmDU64Declare {{
     class %(class_name)s : public %(base_class)s
     {
-      public:
+      private:
+        %(reg_idx_arr_decl)s;
 
+      public:
         /// Constructor.
         %(class_name)s(ExtMachInst machInst,
-                IntRegIndex _dest, IntRegIndex _dest2, IntRegIndex _base,
+                RegIndex _dest, RegIndex _dest2, RegIndex _base,
                 int64_t _imm = 0, bool noAlloc = false, bool exclusive = false,
                 bool acrel = false);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(PacketPtr, ExecContext *,
-                          Trace::InstRecord *) const override;
+                          trace::InstRecord *) const override;
 
         void
         annotateFault(ArmISA::ArmFault *fault) override
@@ -433,17 +458,19 @@ def template StoreImmDEx64Declare {{
      */
     class %(class_name)s : public %(base_class)s
     {
-      public:
+      private:
+        %(reg_idx_arr_decl)s;
 
+      public:
         /// Constructor.
         %(class_name)s(ExtMachInst machInst,
-                IntRegIndex _result, IntRegIndex _dest, IntRegIndex _dest2,
-                IntRegIndex _base, int64_t _imm = 0);
+                RegIndex _result, RegIndex _dest, RegIndex _dest2,
+                RegIndex _base, int64_t _imm = 0);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(PacketPtr, ExecContext *,
-                          Trace::InstRecord *) const override;
+                          trace::InstRecord *) const override;
     };
 }};
 
@@ -451,17 +478,19 @@ def template StoreImmDEx64Declare {{
 def template LoadStoreReg64Declare {{
     class %(class_name)s : public %(base_class)s
     {
-      public:
+      private:
+        %(reg_idx_arr_decl)s;
 
+      public:
         /// Constructor.
         %(class_name)s(ExtMachInst machInst,
-                IntRegIndex _dest, IntRegIndex _base, IntRegIndex _offset,
+                RegIndex _dest, RegIndex _base, RegIndex _offset,
                 ArmExtendType _type, uint32_t _shiftAmt);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(PacketPtr, ExecContext *,
-                          Trace::InstRecord *) const override;
+                          trace::InstRecord *) const override;
 
         void
         annotateFault(ArmISA::ArmFault *fault) override
@@ -474,19 +503,21 @@ def template LoadStoreReg64Declare {{
 def template LoadStoreRegU64Declare {{
     class %(class_name)s : public %(base_class)s
     {
-      public:
+      private:
+        %(reg_idx_arr_decl)s;
 
+      public:
         /// Constructor.
         %(class_name)s(ExtMachInst machInst,
-                IntRegIndex _dest, IntRegIndex _base, IntRegIndex _offset,
+                RegIndex _dest, RegIndex _base, RegIndex _offset,
                 ArmExtendType _type, uint32_t _shiftAmt,
                 bool noAlloc = false, bool exclusive = false,
                 bool acrel = false);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(PacketPtr, ExecContext *,
-                          Trace::InstRecord *) const override;
+                          trace::InstRecord *) const override;
 
         void
         annotateFault(ArmISA::ArmFault *fault) override
@@ -499,16 +530,18 @@ def template LoadStoreRegU64Declare {{
 def template LoadStoreRaw64Declare {{
     class %(class_name)s : public %(base_class)s
     {
+      private:
+        %(reg_idx_arr_decl)s;
+
       public:
-
         /// Constructor.
-        %(class_name)s(ExtMachInst machInst, IntRegIndex _dest,
-                       IntRegIndex _base);
+        %(class_name)s(ExtMachInst machInst, RegIndex _dest,
+                       RegIndex _base);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(PacketPtr, ExecContext *,
-                          Trace::InstRecord *) const override;
+                          trace::InstRecord *) const override;
 
         void
         annotateFault(ArmISA::ArmFault *fault) override
@@ -521,16 +554,18 @@ def template LoadStoreRaw64Declare {{
 def template LoadStoreEx64Declare {{
     class %(class_name)s : public %(base_class)s
     {
+      private:
+        %(reg_idx_arr_decl)s;
+
       public:
-
         /// Constructor.
-        %(class_name)s(ExtMachInst machInst, IntRegIndex _dest,
-                       IntRegIndex _base, IntRegIndex _result);
+        %(class_name)s(ExtMachInst machInst, RegIndex _dest,
+                       RegIndex _base, RegIndex _result);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(PacketPtr, ExecContext *,
-                          Trace::InstRecord *) const override;
+                          trace::InstRecord *) const override;
 
         void
         annotateFault(ArmISA::ArmFault *fault) override
@@ -543,15 +578,17 @@ def template LoadStoreEx64Declare {{
 def template LoadStoreLit64Declare {{
     class %(class_name)s : public %(base_class)s
     {
+      private:
+        %(reg_idx_arr_decl)s;
+
       public:
-
         /// Constructor.
-        %(class_name)s(ExtMachInst machInst, IntRegIndex _dest, int64_t _imm);
+        %(class_name)s(ExtMachInst machInst, RegIndex _dest, int64_t _imm);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(PacketPtr, ExecContext *,
-                          Trace::InstRecord *) const override;
+                          trace::InstRecord *) const override;
 
         void
         annotateFault(ArmISA::ArmFault *fault) override
@@ -564,17 +601,19 @@ def template LoadStoreLit64Declare {{
 def template LoadStoreLitU64Declare {{
     class %(class_name)s : public %(base_class)s
     {
-      public:
+      private:
+        %(reg_idx_arr_decl)s;
 
+      public:
         /// Constructor.
-        %(class_name)s(ExtMachInst machInst, IntRegIndex _dest, int64_t _imm,
+        %(class_name)s(ExtMachInst machInst, RegIndex _dest, int64_t _imm,
                 bool noAlloc = false, bool exclusive = false,
                 bool acrel = false);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(PacketPtr, ExecContext *,
-                          Trace::InstRecord *) const override;
+                          trace::InstRecord *) const override;
 
         void
         annotateFault(ArmISA::ArmFault *fault) override
@@ -586,10 +625,11 @@ def template LoadStoreLitU64Declare {{
 
 def template LoadStoreImm64Constructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-            IntRegIndex _dest, IntRegIndex _base, int64_t _imm)
-         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
-                 (IntRegIndex)_dest, (IntRegIndex)_base, _imm)
+            RegIndex _dest, RegIndex _base, int64_t _imm) :
+         %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
+                        (RegIndex)_dest, (RegIndex)_base, _imm)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
 #if %(use_uops)d
         assert(numMicroops >= 2);
@@ -605,11 +645,12 @@ def template LoadStoreImm64Constructor {{
 
 def template LoadStoreImmU64Constructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-            IntRegIndex _dest, IntRegIndex _base, int64_t _imm,
-            bool noAlloc, bool exclusive, bool acrel)
-         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
-                 _dest, _base, _imm)
+            RegIndex _dest, RegIndex _base, int64_t _imm,
+            bool noAlloc, bool exclusive, bool acrel) :
+         %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
+                        _dest, _base, _imm)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
         assert(!%(use_uops)d);
         setExcAcRel(exclusive, acrel);
@@ -618,11 +659,12 @@ def template LoadStoreImmU64Constructor {{
 
 def template LoadStoreImmDU64Constructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-            IntRegIndex _dest, IntRegIndex _dest2, IntRegIndex _base,
-            int64_t _imm, bool noAlloc, bool exclusive, bool acrel)
-         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
-                 _dest, _dest2, _base, _imm)
+            RegIndex _dest, RegIndex _dest2, RegIndex _base,
+            int64_t _imm, bool noAlloc, bool exclusive, bool acrel) :
+         %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
+                        _dest, _dest2, _base, _imm)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
         assert(!%(use_uops)d);
         setExcAcRel(exclusive, acrel);
@@ -631,11 +673,12 @@ def template LoadStoreImmDU64Constructor {{
 
 def template StoreImmDEx64Constructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-            IntRegIndex _result, IntRegIndex _dest, IntRegIndex _dest2,
-            IntRegIndex _base, int64_t _imm)
-         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
-                 _result, _dest, _dest2, _base, _imm)
+            RegIndex _result, RegIndex _dest, RegIndex _dest2,
+            RegIndex _base, int64_t _imm) :
+         %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
+                        _result, _dest, _dest2, _base, _imm)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
         assert(!%(use_uops)d);
     }
@@ -644,11 +687,12 @@ def template StoreImmDEx64Constructor {{
 
 def template LoadStoreReg64Constructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-            IntRegIndex _dest, IntRegIndex _base, IntRegIndex _offset,
-            ArmExtendType _type, uint32_t _shiftAmt)
-         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
-                 _dest, _base, _offset, _type, _shiftAmt)
+            RegIndex _dest, RegIndex _base, RegIndex _offset,
+            ArmExtendType _type, uint32_t _shiftAmt) :
+         %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
+                        _dest, _base, _offset, _type, _shiftAmt)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
 #if %(use_uops)d
         assert(numMicroops >= 2);
@@ -665,12 +709,13 @@ def template LoadStoreReg64Constructor {{
 
 def template LoadStoreRegU64Constructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-            IntRegIndex _dest, IntRegIndex _base, IntRegIndex _offset,
+            RegIndex _dest, RegIndex _base, RegIndex _offset,
             ArmExtendType _type, uint32_t _shiftAmt,
-            bool noAlloc, bool exclusive, bool acrel)
-         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
-                 _dest, _base, _offset, _type, _shiftAmt)
+            bool noAlloc, bool exclusive, bool acrel) :
+         %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
+                        _dest, _base, _offset, _type, _shiftAmt)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
         assert(!%(use_uops)d);
         setExcAcRel(exclusive, acrel);
@@ -679,29 +724,32 @@ def template LoadStoreRegU64Constructor {{
 
 def template LoadStoreRaw64Constructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-            IntRegIndex _dest, IntRegIndex _base)
-         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s, _dest, _base)
+            RegIndex _dest, RegIndex _base) :
+         %(base_class)s("%(mnemonic)s", machInst, %(op_class)s, _dest, _base)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
     }
 }};
 
 def template LoadStoreEx64Constructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-            IntRegIndex _dest, IntRegIndex _base, IntRegIndex _result)
-         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
-                          _dest, _base, _result)
+            RegIndex _dest, RegIndex _base, RegIndex _result) :
+         %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
+                        _dest, _base, _result)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
     }
 }};
 
 def template LoadStoreLit64Constructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-            IntRegIndex _dest, int64_t _imm)
-         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
-                 (IntRegIndex)_dest, _imm)
+            RegIndex _dest, int64_t _imm) :
+         %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
+                 (RegIndex)_dest, _imm)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
 #if %(use_uops)d
         assert(numMicroops >= 2);
@@ -717,11 +765,12 @@ def template LoadStoreLit64Constructor {{
 
 def template LoadStoreLitU64Constructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-            IntRegIndex _dest, int64_t _imm,
-            bool noAlloc, bool exclusive, bool acrel)
-         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
-                 (IntRegIndex)_dest, _imm)
+            RegIndex _dest, int64_t _imm,
+            bool noAlloc, bool exclusive, bool acrel) :
+         %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
+                 (RegIndex)_dest, _imm)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
         assert(!%(use_uops)d);
         setExcAcRel(exclusive, acrel);
@@ -731,8 +780,9 @@ def template LoadStoreLitU64Constructor {{
 // Atomic operations in memory
 
 def template AmoOpExecute {{
-    Fault %(class_name)s::execute(ExecContext *xc,
-                                  Trace::InstRecord *traceData) const
+    Fault
+    %(class_name)s::execute(ExecContext *xc,
+                            trace::InstRecord *traceData) const
     {
         Addr EA;
 
@@ -760,8 +810,9 @@ def template AmoOpExecute {{
 }};
 
 def template AmoOpInitiateAcc {{
-    Fault %(class_name)s::initiateAcc(ExecContext *xc,
-                                      Trace::InstRecord *traceData) const
+    Fault
+    %(class_name)s::initiateAcc(ExecContext *xc,
+                                trace::InstRecord *traceData) const
     {
         Addr EA;
 
@@ -781,8 +832,9 @@ def template AmoOpInitiateAcc {{
 }};
 
 def template AmoOpCompleteAcc {{
-    Fault %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
-                                      Trace::InstRecord *traceData) const
+    Fault
+    %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
+                                trace::InstRecord *traceData) const
     {
         %(op_decl)s;
         %(op_rd)s;
@@ -802,16 +854,18 @@ def template AmoOpCompleteAcc {{
 def template AmoOpDeclare {{
     class %(class_name)s : public %(base_class)s
     {
+      private:
+        %(reg_idx_arr_decl)s;
+
       public:
-
         /// Constructor.
-        %(class_name)s(ExtMachInst machInst, IntRegIndex _dest,
-                       IntRegIndex _base, IntRegIndex _result);
+        %(class_name)s(ExtMachInst machInst, RegIndex _dest,
+                       RegIndex _base, RegIndex _result);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(PacketPtr, ExecContext *,
-                          Trace::InstRecord *) const override;
+                          trace::InstRecord *) const override;
 
         void
         annotateFault(ArmISA::ArmFault *fault) override
@@ -824,58 +878,12 @@ def template AmoOpDeclare {{
 
 def template AmoOpConstructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-            IntRegIndex _dest, IntRegIndex _base, IntRegIndex _result)
-         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
-                          _dest, _base, _result)
+            RegIndex _dest, RegIndex _base, RegIndex _result) :
+         %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
+                        _dest, _base, _result)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
-        flags[IsStore] = false;
-        flags[IsLoad] = false;
-    }
-}};
-
-def template AmoPairOpDeclare {{
-    class %(class_name)s : public %(base_class)s
-    {
-      public:
-        uint32_t d2_src ;
-        uint32_t r2_src ;
-        uint32_t r2_dst ;
-        /// Constructor.
-        %(class_name)s(ExtMachInst machInst, IntRegIndex _dest,
-                       IntRegIndex _base, IntRegIndex _result);
-
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
-        Fault completeAcc(PacketPtr, ExecContext *,
-                          Trace::InstRecord *) const override;
-
-        void
-        annotateFault(ArmISA::ArmFault *fault) override
-        {
-            %(fa_code)s
-        }
-    };
-}};
-
-
-def template AmoPairOpConstructor {{
-    %(class_name)s::%(class_name)s(ExtMachInst machInst,
-            IntRegIndex _dest, IntRegIndex _base, IntRegIndex _result)
-         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
-                          _dest,  _base, _result)
-    {
-        %(constructor)s;
-
-        uint32_t d2 = RegId(IntRegClass, dest).index() + 1 ;
-        uint32_t r2 = RegId(IntRegClass, result).index() + 1 ;
-
-        d2_src = _numSrcRegs ;
-        _srcRegIdx[_numSrcRegs++] = RegId(IntRegClass, d2);
-        r2_src = _numSrcRegs ;
-        _srcRegIdx[_numSrcRegs++] = RegId(IntRegClass, r2);
-        r2_dst = _numDestRegs ;
-        _destRegIdx[_numDestRegs++] = RegId(IntRegClass, r2);
         flags[IsStore] = false;
         flags[IsLoad] = false;
     }
@@ -884,16 +892,19 @@ def template AmoPairOpConstructor {{
 def template AmoArithmeticOpDeclare {{
     class %(class_name)s : public %(base_class)s
     {
+      private:
+        %(reg_idx_arr_decl)s;
+
       public:
         bool isXZR ;
         /// Constructor.
-        %(class_name)s(ExtMachInst machInst, IntRegIndex _dest,
-                       IntRegIndex _base, IntRegIndex _result);
+        %(class_name)s(ExtMachInst machInst, RegIndex _dest,
+                       RegIndex _base, RegIndex _result);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(PacketPtr, ExecContext *,
-                          Trace::InstRecord *) const override;
+                          trace::InstRecord *) const override;
 
         void
         annotateFault(ArmISA::ArmFault *fault) override
@@ -905,16 +916,17 @@ def template AmoArithmeticOpDeclare {{
 
 def template AmoArithmeticOpConstructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-            IntRegIndex _dest, IntRegIndex _base, IntRegIndex _result)
-         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
+            RegIndex _dest, RegIndex _base, RegIndex _result) :
+         %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
                           _dest,  _base, _result)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
         isXZR = false;
-        uint32_t r2 = RegId(IntRegClass, dest).index() ;
+        uint32_t r2 = dest;
         flags[IsStore] = false;
         flags[IsLoad] = false;
-        if (r2 == 31){
+        if (r2 == 31) {
             isXZR = true;
         }
     }

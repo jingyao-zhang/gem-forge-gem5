@@ -6,6 +6,8 @@
 #include <utility>
 #include <vector>
 
+namespace gem5 {
+
 /**
  * A simple class to model the bank conflictions in one cycle.
  *
@@ -40,5 +42,7 @@ class BankManager {
 
   std::pair<uint32_t, uint32_t> getBanks(uint64_t addr, uint64_t size) const;
 };
+
+} // namespace gem5
 
 #endif

@@ -4,6 +4,8 @@
 #define DEBUG_TYPE StreamRangeSync
 #include "../stream_log.hh"
 
+namespace gem5 {
+
 LLCStreamRangeBuilder::LLCStreamRangeBuilder(LLCDynStream *_stream,
                                              int64_t _totalTripCount)
     : stream(_stream), totalTripCount(_totalTripCount) {}
@@ -166,4 +168,5 @@ void LLCStreamRangeBuilder::receiveLoopBoundRet(int64_t totalTripCount) {
       this->tryBuildRange();
     }
   }
-}
+}} // namespace gem5
+

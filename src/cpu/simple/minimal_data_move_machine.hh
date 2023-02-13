@@ -14,11 +14,13 @@
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst.hh"
 
+#include <iostream>
 #include <map>
 #include <set>
 #include <unordered_map>
 #include <vector>
-#include <iostream>
+
+namespace gem5 {
 
 class MinimalDataMoveMachine {
 public:
@@ -29,7 +31,7 @@ public:
   /**
    * Record one instruction and update my stats.
    */
-  void commit(StaticInstPtr staticInst, const TheISA::PCState &pc, Addr paddr,
+  void commit(StaticInstPtr staticInst, const PCStateBase &pc, Addr paddr,
               bool isStream);
 
 private:
@@ -45,9 +47,9 @@ private:
   const int colSize = 8;
   const int flitSizeBytes = 32;
 
-  Stats::Scalar totalHops;
-  Stats::Scalar totalIgnoredHops;
-  Stats::Scalar totalStreamHops;
+  statistics::Scalar totalHops;
+  statistics::Scalar totalIgnoredHops;
+  statistics::Scalar totalStreamHops;
 
   std::string name() const { return this->myName; }
 
@@ -102,5 +104,7 @@ private:
   void dumpPCHopsMap();
   std::ostream *pcHopsStream = nullptr;
 };
+
+} // namespace gem5
 
 #endif

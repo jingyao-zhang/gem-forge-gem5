@@ -1,4 +1,16 @@
 /*
+ * Copyright (c) 2021 ARM Limited
+ * All rights reserved.
+ *
+ * The license below extends only to copyright in the software and shall
+ * not be construed as granting a license to any other intellectual
+ * property including but not limited to intellectual property relating
+ * to a hardware implementation of the functionality of the software
+ * licensed hereunder.  You may use the software subject to the license
+ * terms below provided that you ensure that this notice is replicated
+ * unmodified and in its entirety in all distributions of the software,
+ * modified or unmodified, in source code or in binary form.
+ *
  * Copyright (c) 2011 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
@@ -28,14 +40,20 @@
 
 #include "mem/ruby/network/simple/SimpleLink.hh"
 
-SimpleExtLink::SimpleExtLink(const Params *p)
+namespace gem5
+{
+
+namespace ruby
+{
+
+SimpleExtLink::SimpleExtLink(const Params &p)
     : BasicExtLink(p)
 {
     // For the simple links, the bandwidth factor translates to the
     // bandwidth multiplier.  The multipiler, in combination with the
     // endpoint bandwidth multiplier - message size multiplier ratio,
     // determines the link bandwidth in bytes
-    m_bw_multiplier = p->bandwidth_factor;
+    m_bw_multiplier = p.bandwidth_factor;
 }
 
 void
@@ -44,20 +62,12 @@ SimpleExtLink::print(std::ostream& out) const
     out << name();
 }
 
-SimpleExtLink *
-SimpleExtLinkParams::create()
+SimpleIntLink::SimpleIntLink(const Params &p)
+    : BasicIntLink(p),
+      m_bw_multiplier(p.bandwidth_factor),
+      m_buffers(p.buffers)
 {
-    return new SimpleExtLink(this);
-}
 
-SimpleIntLink::SimpleIntLink(const Params *p)
-    : BasicIntLink(p)
-{
-    // For the simple links, the bandwidth factor translates to the
-    // bandwidth multiplier.  The multipiler, in combination with the
-    // endpoint bandwidth multiplier - message size multiplier ratio,
-    // determines the link bandwidth in bytes
-    m_bw_multiplier = p->bandwidth_factor;
 }
 
 void
@@ -66,8 +76,5 @@ SimpleIntLink::print(std::ostream& out) const
     out << name();
 }
 
-SimpleIntLink *
-SimpleIntLinkParams::create()
-{
-    return new SimpleIntLink(this);
-}
+} // namespace ruby
+} // namespace gem5

@@ -4,11 +4,14 @@
 #include "params/LLVMTraceCPUDriver.hh"
 #include "sim/emul_driver.hh"
 
+namespace gem5 {
+
 class LLVMTraceCPU;
 
 class LLVMTraceCPUDriver final : public EmulatedDriver {
  public:
-  LLVMTraceCPUDriver(LLVMTraceCPUDriverParams *p);
+  PARAMS(LLVMTraceCPUDriver)
+  LLVMTraceCPUDriver(const Params &p);
   void handshake(LLVMTraceCPU *llvm_trace_cpu);
   int open(ThreadContext *tc, int mode, int flags) override;
   int ioctl(ThreadContext *tc, unsigned req, Addr buf) override;
@@ -23,5 +26,7 @@ class LLVMTraceCPUDriver final : public EmulatedDriver {
     IOCTL_REQUEST_REPLAY = 0,
   };
 };
+
+} // namespace gem5
 
 #endif

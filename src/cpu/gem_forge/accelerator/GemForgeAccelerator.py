@@ -5,10 +5,12 @@ class GemForgeAccelerator(SimObject):
     type = 'GemForgeAccelerator'
     abstract = True
     cxx_header = 'cpu/gem_forge/accelerator/gem_forge_accelerator.hh'
+    cxx_class = "gem5::GemForgeAccelerator"
 
 class AbstractDataFlowAccelerator(GemForgeAccelerator):
     type = "AbstractDataFlowAccelerator"
     cxx_header = 'cpu/gem_forge/accelerator/adfa/adfa.hh'
+    cxx_class = "gem5::AbstractDataFlowAccelerator"
 
     adfaCoreIssueWidth = Param.Unsigned(16, "Issue width for each abstract dataflow core.")
     adfaEnableSpeculation = Param.Bool(
@@ -29,6 +31,7 @@ class AbstractDataFlowAccelerator(GemForgeAccelerator):
 class IdealPrefetcher(GemForgeAccelerator):
     type = "IdealPrefetcher"
     cxx_header = 'cpu/gem_forge/accelerator/ideal_prefetcher/ideal_prefetcher.hh'
+    cxx_class = "gem5::IdealPrefetcher"
     enableIdealPrefetcher = Param.Bool(
         False, "Whether the ideal prefetcher is enabled.")
     idealPrefetcherDistance = Param.Unsigned(
@@ -38,10 +41,12 @@ class SpeculativePrecomputationManager(GemForgeAccelerator):
     type = "SpeculativePrecomputationManager"
     cxx_header = \
         'cpu/gem_forge/accelerator/speculative_precomputation/speculative_precomputation_manager.hh'
+    cxx_class = "gem5::SpeculativePrecomputationManager"
 
 class StreamEngine(GemForgeAccelerator):
     type = "StreamEngine"
     cxx_header = 'cpu/gem_forge/accelerator/stream/stream_engine.hh'
+    cxx_class = "gem5::StreamEngine"
     streamEngineIsOracle = Param.Bool(
         False, "Whether the stream engine is oracle.")
     defaultRunAheadLength = Param.Unsigned(
@@ -132,4 +137,5 @@ class StreamEngine(GemForgeAccelerator):
 class GemForgeAcceleratorManager(SimObject):
     type = 'GemForgeAcceleratorManager'
     cxx_header = 'cpu/gem_forge/accelerator/gem_forge_accelerator.hh'
+    cxx_class = "gem5::GemForgeAcceleratorManager"
     accelerators = VectorParam.GemForgeAccelerator("Accelerators.")

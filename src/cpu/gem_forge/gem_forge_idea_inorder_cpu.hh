@@ -10,9 +10,15 @@
 
 #include "gem_forge_dyn_inst_info.hh"
 
+#include "arch/generic/isa.hh"
+#include "cpu/reg_class.hh"
+
+namespace gem5 {
+
 class GemForgeIdeaInorderCPU {
 public:
-  GemForgeIdeaInorderCPU(int _cpuId, int _issueWidth, bool _modelFUTiming,
+  GemForgeIdeaInorderCPU(int _cpuId, const BaseISA::RegClasses &regClasses,
+                         int _issueWidth, bool _modelFUTiming,
                          bool _modelLDTiming);
 
   void addOp(const GemForgeDynInstInfo &dynInfo);
@@ -45,20 +51,21 @@ private:
    */
   int currentIssuedOps = 0;
 
-  static constexpr int numRegs =
-      TheISA::NumIntRegs + TheISA::NumCCRegs + TheISA::NumFloatRegs +
-      (TheISA::NumVecRegs * TheISA::NumVecElemPerVecReg) +
-      TheISA::NumVecPredRegs;
   /**
    * A simple scoreboard.
-   * Avoid using specialized std::vector<bool> as we don't care.
    */
-  std::vector<int> updateMask;
+  std::map<RegClassType, std::vector<int>> updateMask;
+
+  void initUpdateMask(const BaseISA::RegClasses &regClasses);
+  int getUpdateLat(const RegId &regId);
+  void updateLat(const RegId &regId, int opLat);
 
   void nextCycle();
   void resetCallback();
   int getSrcLat(OpClass opClass) const;
   int getDestLat(OpClass opClass) const;
 };
+
+} // namespace gem5
 
 #endif

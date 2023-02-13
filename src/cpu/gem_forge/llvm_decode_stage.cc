@@ -2,9 +2,12 @@
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "debug/LLVMTraceCPU.hh"
 
+namespace gem5 {
+
 using InstStatus = LLVMTraceCPU::InstStatus;
 
-LLVMDecodeStage::LLVMDecodeStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
+LLVMDecodeStage::LLVMDecodeStage(const LLVMTraceCPUParams *params,
+                                 LLVMTraceCPU *_cpu)
     : cpu(_cpu), decodeWidth(params->decodeWidth),
       maxDecodeQueueSize(params->decodeQueueSize),
       fromFetchDelay(params->fetchToDecodeDelay),
@@ -151,3 +154,4 @@ size_t LLVMDecodeStage::getTotalDecodeQueueSize() const {
   }
   return totalDecodeQueueSize;
 }
+} // namespace gem5

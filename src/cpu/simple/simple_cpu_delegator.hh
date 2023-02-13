@@ -8,6 +8,8 @@
 #include "cpu/gem_forge/gem_forge_cpu_delegator.hh"
 #include "cpu/simple/base.hh"
 
+namespace gem5 {
+
 class SimpleCPUDelegator : public GemForgeCPUDelegator {
 public:
   SimpleCPUDelegator(CPUTypeE _cpuType, BaseSimpleCPU *_cpu);
@@ -27,7 +29,7 @@ public:
   bool canCommit(StaticInstPtr staticInst, ExecContext &xc);
   void commit(StaticInstPtr staticInst, ExecContext &xc);
   void storeTo(Addr vaddr, int size);
-  
+
   // Record the paddr of access.
   void recordPAddr(Addr paddr);
   void regStats();
@@ -45,5 +47,7 @@ protected:
   InstSeqNum getInstSeqNum() const override;
   void setInstSeqNum(InstSeqNum seqNum) override;
 };
+
+} // namespace gem5
 
 #endif

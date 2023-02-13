@@ -8,6 +8,8 @@
 #include "cpu/gem_forge/gem_forge_cpu_delegator.hh"
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 
+namespace gem5 {
+
 class LLVMTraceCPUDelegator : public GemForgeCPUDelegator {
 public:
   LLVMTraceCPUDelegator(LLVMTraceCPU *_cpu)
@@ -28,5 +30,7 @@ protected:
   InstSeqNum getInstSeqNum() const override;
   void setInstSeqNum(InstSeqNum seqNum) override;
 };
+
+} // namespace gem5
 
 #endif

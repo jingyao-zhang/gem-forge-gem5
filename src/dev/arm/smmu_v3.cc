@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2018-2019 ARM Limited
+ * Copyright (c) 2013, 2018-2020 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -42,6 +42,7 @@
 
 #include "base/bitfield.hh"
 #include "base/cast.hh"
+#include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
@@ -51,49 +52,54 @@
 #include "mem/packet_access.hh"
 #include "sim/system.hh"
 
-SMMUv3::SMMUv3(SMMUv3Params *params) :
+namespace gem5
+{
+
+SMMUv3::SMMUv3(const SMMUv3Params &params) :
     ClockedObject(params),
-    system(*params->system),
-    requestorId(params->system->getRequestorId(this)),
+    system(*params.system),
+    requestorId(params.system->getRequestorId(this)),
     requestPort(name() + ".request", *this),
     tableWalkPort(name() + ".walker", *this),
-    controlPort(name() + ".control", *this, params->reg_map),
-    tlb(params->tlb_entries, params->tlb_assoc, params->tlb_policy),
-    configCache(params->cfg_entries, params->cfg_assoc, params->cfg_policy),
-    ipaCache(params->ipa_entries, params->ipa_assoc, params->ipa_policy),
-    walkCache({ { params->walk_S1L0, params->walk_S1L1,
-                  params->walk_S1L2, params->walk_S1L3,
-                  params->walk_S2L0, params->walk_S2L1,
-                  params->walk_S2L2, params->walk_S2L3 } },
-              params->walk_assoc, params->walk_policy),
-    tlbEnable(params->tlb_enable),
-    configCacheEnable(params->cfg_enable),
-    ipaCacheEnable(params->ipa_enable),
-    walkCacheEnable(params->walk_enable),
+    controlPort(name() + ".control", *this, params.reg_map),
+    irqInterfaceEnable(params.irq_interface_enable),
+    tlb(params.tlb_entries, params.tlb_assoc, params.tlb_policy, this),
+    configCache(params.cfg_entries, params.cfg_assoc, params.cfg_policy, this),
+    ipaCache(params.ipa_entries, params.ipa_assoc, params.ipa_policy, this),
+    walkCache({ { params.walk_S1L0, params.walk_S1L1,
+                  params.walk_S1L2, params.walk_S1L3,
+                  params.walk_S2L0, params.walk_S2L1,
+                  params.walk_S2L2, params.walk_S2L3 } },
+              params.walk_assoc, params.walk_policy, this),
+    tlbEnable(params.tlb_enable),
+    configCacheEnable(params.cfg_enable),
+    ipaCacheEnable(params.ipa_enable),
+    walkCacheEnable(params.walk_enable),
     tableWalkPortEnable(false),
-    walkCacheNonfinalEnable(params->wc_nonfinal_enable),
-    walkCacheS1Levels(params->wc_s1_levels),
-    walkCacheS2Levels(params->wc_s2_levels),
-    requestPortWidth(params->request_port_width),
-    tlbSem(params->tlb_slots),
+    walkCacheNonfinalEnable(params.wc_nonfinal_enable),
+    walkCacheS1Levels(params.wc_s1_levels),
+    walkCacheS2Levels(params.wc_s2_levels),
+    requestPortWidth(params.request_port_width),
+    tlbSem(params.tlb_slots),
     ifcSmmuSem(1),
     smmuIfcSem(1),
-    configSem(params->cfg_slots),
-    ipaSem(params->ipa_slots),
-    walkSem(params->walk_slots),
+    configSem(params.cfg_slots),
+    ipaSem(params.ipa_slots),
+    walkSem(params.walk_slots),
     requestPortSem(1),
-    transSem(params->xlate_slots),
-    ptwSem(params->ptw_slots),
+    transSem(params.xlate_slots),
+    ptwSem(params.ptw_slots),
     cycleSem(1),
-    tlbLat(params->tlb_lat),
-    ifcSmmuLat(params->ifc_smmu_lat),
-    smmuIfcLat(params->smmu_ifc_lat),
-    configLat(params->cfg_lat),
-    ipaLat(params->ipa_lat),
-    walkLat(params->walk_lat),
-    deviceInterfaces(params->device_interfaces),
+    tlbLat(params.tlb_lat),
+    ifcSmmuLat(params.ifc_smmu_lat),
+    smmuIfcLat(params.smmu_ifc_lat),
+    configLat(params.cfg_lat),
+    ipaLat(params.ipa_lat),
+    walkLat(params.walk_lat),
+    stats(this),
+    deviceInterfaces(params.device_interfaces),
     commandExecutor(name() + ".cmd_exec", *this),
-    regsMap(params->reg_map),
+    regsMap(params.reg_map),
     processCommandsEvent(this)
 {
     fatal_if(regsMap.size() != SMMU_REG_SIZE,
@@ -104,14 +110,14 @@ SMMUv3::SMMUv3(SMMUv3Params *params) :
     memset(&regs, 0, sizeof(regs));
 
     // Setup RO ID registers
-    regs.idr0 = params->smmu_idr0;
-    regs.idr1 = params->smmu_idr1;
-    regs.idr2 = params->smmu_idr2;
-    regs.idr3 = params->smmu_idr3;
-    regs.idr4 = params->smmu_idr4;
-    regs.idr5 = params->smmu_idr5;
-    regs.iidr = params->smmu_iidr;
-    regs.aidr = params->smmu_aidr;
+    regs.idr0 = params.smmu_idr0;
+    regs.idr1 = params.smmu_idr1;
+    regs.idr2 = params.smmu_idr2;
+    regs.idr3 = params.smmu_idr3;
+    regs.idr4 = params.smmu_idr4;
+    regs.idr5 = params.smmu_idr5;
+    regs.iidr = params.smmu_iidr;
+    regs.aidr = params.smmu_aidr;
 
     // TODO: At the moment it possible to set the ID registers to hold
     // any possible value. It would be nice to have a sanity check here
@@ -247,7 +253,7 @@ SMMUv3::runProcessAtomic(SMMUProcess *proc, PacketPtr pkt)
                     pkt = action.pkt;
                     break;
                 }
-                M5_FALLTHROUGH;
+                [[fallthrough]];
             case ACTION_SEND_REQ_FINAL:
                 delay += requestPort.sendAtomic(action.pkt);
                 pkt = action.pkt;
@@ -303,7 +309,7 @@ SMMUv3::runProcessTiming(SMMUProcess *proc, PacketPtr pkt)
 
                 break;
             }
-            M5_FALLTHROUGH;
+            [[fallthrough]];
         case ACTION_SEND_REQ_FINAL:
             action.pkt->pushSenderState(proc);
 
@@ -561,22 +567,6 @@ SMMUv3::processCommand(const SMMUCommand &cmd)
     }
 }
 
-const PageTableOps*
-SMMUv3::getPageTableOps(uint8_t trans_granule)
-{
-    static V8PageTableOps4k  ptOps4k;
-    static V8PageTableOps16k ptOps16k;
-    static V8PageTableOps64k ptOps64k;
-
-    switch (trans_granule) {
-    case TRANS_GRANULE_4K:  return &ptOps4k;
-    case TRANS_GRANULE_16K: return &ptOps16k;
-    case TRANS_GRANULE_64K: return &ptOps64k;
-    default:
-        panic("Unknown translation granule size %d", trans_granule);
-    }
-}
-
 Tick
 SMMUv3::readControl(PacketPtr pkt)
 {
@@ -625,6 +615,13 @@ SMMUv3::writeControl(PacketPtr pkt)
         case offsetof(SMMURegs, cr0):
             assert(pkt->getSize() == sizeof(uint32_t));
             regs.cr0 = regs.cr0ack = pkt->getLE<uint32_t>();
+            break;
+        case offsetof(SMMURegs, irq_ctrl):
+            assert(pkt->getSize() == sizeof(uint32_t));
+            if (irqInterfaceEnable) {
+                warn("SMMUv3::%s No support for interrupt sources", __func__);
+                regs.irq_ctrl = regs.irq_ctrlack = pkt->getLE<uint32_t>();
+            }
             break;
 
         case offsetof(SMMURegs, cr1):
@@ -735,55 +732,37 @@ SMMUv3::init()
         controlPort.sendRangeChange();
 }
 
-void
-SMMUv3::regStats()
+SMMUv3::SMMUv3Stats::SMMUv3Stats(statistics::Group *parent)
+  : statistics::Group(parent),
+    ADD_STAT(steL1Fetches, statistics::units::Count::get(), "STE L1 fetches"),
+    ADD_STAT(steFetches, statistics::units::Count::get(), "STE fetches"),
+    ADD_STAT(cdL1Fetches, statistics::units::Count::get(), "CD L1 fetches"),
+    ADD_STAT(cdFetches, statistics::units::Count::get(), "CD fetches"),
+    ADD_STAT(translationTimeDist, statistics::units::Tick::get(),
+        "Time to translate address"),
+    ADD_STAT(ptwTimeDist, statistics::units::Tick::get(),
+        "Time to walk page tables")
 {
-    ClockedObject::regStats();
-
-    using namespace Stats;
-
-    for (size_t i = 0; i < deviceInterfaces.size(); i++) {
-        deviceInterfaces[i]->microTLB->regStats(
-            csprintf("%s.utlb%d", name(), i));
-        deviceInterfaces[i]->mainTLB->regStats(
-            csprintf("%s.maintlb%d", name(), i));
-    }
-
-    tlb.regStats(name() + ".tlb");
-    configCache.regStats(name() + ".cfg");
-    ipaCache.regStats(name() + ".ipa");
-    walkCache.regStats(name() + ".walk");
+    using namespace statistics;
 
     steL1Fetches
-        .name(name() + ".steL1Fetches")
-        .desc("STE L1 fetches")
         .flags(pdf);
 
     steFetches
-        .name(name() + ".steFetches")
-        .desc("STE fetches")
         .flags(pdf);
 
     cdL1Fetches
-        .name(name() + ".cdL1Fetches")
-        .desc("CD L1 fetches")
         .flags(pdf);
 
     cdFetches
-        .name(name() + ".cdFetches")
-        .desc("CD fetches")
         .flags(pdf);
 
     translationTimeDist
         .init(0, 2000000, 2000)
-        .name(name() + ".translationTimeDist")
-        .desc("Time to translate address")
         .flags(pdf);
 
     ptwTimeDist
         .init(0, 2000000, 2000)
-        .name(name() + ".ptwTimeDist")
-        .desc("Time to walk page tables")
         .flags(pdf);
 }
 
@@ -827,8 +806,4 @@ SMMUv3::getPort(const std::string &name, PortID id)
     }
 }
 
-SMMUv3*
-SMMUv3Params::create()
-{
-    return new SMMUv3(this);
-}
+} // namespace gem5

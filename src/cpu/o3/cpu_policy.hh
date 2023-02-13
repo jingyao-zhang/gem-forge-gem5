@@ -104,7 +104,7 @@ struct SimpleCPUPolicy
     typedef TimeBufStruct<Impl> TimeStruct;
 
     /** The struct GemForgeCPUDelegator. */
-    typedef DefaultO3CPUDelegator<Impl> O3CPUDelegator;
+    typedef O3CPUDelegator<Impl> O3CPUDelegator;
 
 };
 

@@ -1,4 +1,4 @@
-# Copyright (c) 2017,2019 ARM Limited
+# Copyright (c) 2017,2019-2021 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -41,20 +41,24 @@ from m5.proxy import *
 from m5.objects.ClockedObject import ClockedObject
 from m5.objects.Sequencer import RubySequencer
 
+
 class RubyController(ClockedObject):
-    type = 'RubyController'
-    cxx_class = 'AbstractController'
+    type = "RubyController"
+    cxx_class = "gem5::ruby::AbstractController"
     cxx_header = "mem/ruby/slicc_interface/AbstractController.hh"
     abstract = True
+
     version = Param.Int("")
     router_id = Param.Int(-1, "RounterId of this controller. -1 means Invalid.")
     numa_banks = VectorParam.Int([], "Banks that handled by this NUMA node.")
-    addr_ranges = VectorParam.AddrRange([AllMemory], "Address range this "
-                                        "controller responds to")
+    addr_ranges = VectorParam.AddrRange(
+        [AllMemory], "Address range this " "controller responds to"
+    )
     cluster_id = Param.UInt32(0, "Id of this controller's cluster")
 
-    transitions_per_cycle = \
-        Param.Int(32, "no. of  SLICC state machine transitions per cycle")
+    transitions_per_cycle = Param.Int(
+        32, "no. of  SLICC state machine transitions per cycle"
+    )
     buffer_size = Param.UInt32(0, "max buffer size 0 means infinite")
 
     recycle_latency = Param.Cycles(10, "")
@@ -65,21 +69,34 @@ class RubyController(ClockedObject):
     # If the latency depends on the request type or protocol-specific states,
     # the protocol may ignore this parameter by overriding the
     # mandatoryQueueLatency function
-    mandatory_queue_latency = \
-        Param.Cycles(1, "Default latency for requests added to the " \
-                        "mandatory queue on top-level controllers")
+    mandatory_queue_latency = Param.Cycles(
+        1,
+        "Default latency for requests added to the "
+        "mandatory queue on top-level controllers",
+    )
 
     memory_out_port = RequestPort("Port for attaching a memory controller")
-    memory = DeprecatedParam(memory_out_port, "The request port for Ruby "
-        "memory output to the main memory is now called `memory_out_port`")
+    memory = DeprecatedParam(
+        memory_out_port,
+        "The request port for Ruby "
+        "memory output to the main memory is now called `memory_out_port`",
+    )
 
     system = Param.System(Parent.any, "system object parameter")
-    sequencer = Param.RubySequencer(NULL,"CPU sequencer attached to cache")
+
+    # These can be used by a protocol to enable reuse of the same machine
+    # types to model different levels of the cache hierarchy
+    upstream_destinations = VectorParam.RubyController(
+        [], "Possible destinations for requests sent towards the CPU"
+    )
+    downstream_destinations = VectorParam.RubyController(
+        [], "Possible destinations for requests sent towards memory"
+    )
 
 # ! Sean: StreamAwareCache
 class RubyStreamAwareController(RubyController):
     type = 'RubyStreamAwareController'
-    cxx_class = 'AbstractStreamAwareController'
+    cxx_class = 'gem5::ruby::AbstractStreamAwareController'
     cxx_header = 'mem/ruby/slicc_interface/AbstractStreamAwareController.hh'
     abstract = True
 

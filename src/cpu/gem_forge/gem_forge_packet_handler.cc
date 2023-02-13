@@ -1,5 +1,7 @@
 #include "gem_forge_packet_handler.hh"
 
+namespace gem5 {
+
 GemForgePacketReleaseHandler GemForgePacketReleaseHandler::instance;
 
 PacketPtr GemForgePacketHandler::createGemForgePacket(
@@ -115,4 +117,5 @@ bool GemForgePacketHandler::needResponse(PacketPtr pkt) {
   }
   // So far all GemForgePacketHandler requires response.
   return true;
-}
+}} // namespace gem5
+

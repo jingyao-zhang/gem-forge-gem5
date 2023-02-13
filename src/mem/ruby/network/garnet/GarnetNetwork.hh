@@ -40,18 +40,29 @@
 #include "mem/ruby/network/garnet/CommonTypes.hh"
 #include "params/GarnetNetwork.hh"
 
+namespace gem5
+{
+
+namespace ruby
+{
+
 class FaultModel;
+class NetDest;
+
+namespace garnet
+{
+
 class NetworkInterface;
 class Router;
-class NetDest;
 class NetworkLink;
+class NetworkBridge;
 class CreditLink;
 
 class GarnetNetwork : public Network
 {
   public:
     typedef GarnetNetworkParams Params;
-    GarnetNetwork(const Params *p);
+    GarnetNetwork(const Params &p);
     ~GarnetNetwork() = default;
 
     void init();
@@ -102,6 +113,7 @@ class GarnetNetwork : public Network
                           PortDirection src_outport_dirn,
                           PortDirection dest_inport_dirn);
 
+    bool functionalRead(Packet *pkt, WriteMask &mask);
     //! Function for performing a functional write. The return value
     //! indicates the number of messages that were written.
     uint32_t functionalWrite(Packet *pkt);
@@ -154,6 +166,9 @@ class GarnetNetwork : public Network
         m_total_hop_types[type] += hops;
     }
 
+    void update_traffic_distribution(RouteInfo route);
+    int getNextPacketID() { return m_next_packet_id++; }
+
   protected:
     // Configuration
     int m_num_rows;
@@ -178,39 +193,42 @@ class GarnetNetwork : public Network
     std::vector<IdealizedMsg> m_ideal_noc_msg_types;
 
     // Statistical variables
-    Stats::Vector m_packets_received;
-    Stats::Vector m_packets_injected;
-    Stats::Vector m_packet_types_injected;
-    Stats::Vector m_packet_network_latency;
-    Stats::Vector m_packet_queueing_latency;
+    statistics::Vector m_packets_received;
+    statistics::Vector m_packets_injected;
+    statistics::Vector m_packet_types_injected;
+    statistics::Vector m_packet_network_latency;
+    statistics::Vector m_packet_queueing_latency;
 
-    Stats::Formula m_avg_packet_vnet_latency;
-    Stats::Formula m_avg_packet_vqueue_latency;
-    Stats::Formula m_avg_packet_network_latency;
-    Stats::Formula m_avg_packet_queueing_latency;
-    Stats::Formula m_avg_packet_latency;
+    statistics::Formula m_avg_packet_vnet_latency;
+    statistics::Formula m_avg_packet_vqueue_latency;
+    statistics::Formula m_avg_packet_network_latency;
+    statistics::Formula m_avg_packet_queueing_latency;
+    statistics::Formula m_avg_packet_latency;
 
-    Stats::Vector m_flits_received;
-    Stats::Vector m_flits_injected;
-    Stats::Vector m_flit_types_injected;
-    Stats::Vector m_flit_network_latency;
-    Stats::Vector m_flit_queueing_latency;
+    statistics::Vector m_flits_received;
+    statistics::Vector m_flits_injected;
+    statistics::Vector m_flit_types_injected;
+    statistics::Vector m_flit_network_latency;
+    statistics::Vector m_flit_queueing_latency;
 
-    Stats::Formula m_avg_flit_vnet_latency;
-    Stats::Formula m_avg_flit_vqueue_latency;
-    Stats::Formula m_avg_flit_network_latency;
-    Stats::Formula m_avg_flit_queueing_latency;
-    Stats::Formula m_avg_flit_latency;
+    statistics::Formula m_avg_flit_vnet_latency;
+    statistics::Formula m_avg_flit_vqueue_latency;
+    statistics::Formula m_avg_flit_network_latency;
+    statistics::Formula m_avg_flit_queueing_latency;
+    statistics::Formula m_avg_flit_latency;
 
-    Stats::Scalar m_total_ext_in_link_utilization;
-    Stats::Scalar m_total_ext_out_link_utilization;
-    Stats::Scalar m_total_int_link_utilization;
-    Stats::Scalar m_average_link_utilization;
-    Stats::Vector m_average_vc_load;
+    statistics::Scalar m_total_ext_in_link_utilization;
+    statistics::Scalar m_total_ext_out_link_utilization;
+    statistics::Scalar m_total_int_link_utilization;
+    statistics::Scalar m_average_link_utilization;
+    statistics::Vector m_average_vc_load;
 
-    Stats::Scalar  m_total_hops;
-    Stats::Vector  m_total_hop_types;
-    Stats::Formula m_avg_hops;
+    statistics::Scalar  m_total_hops;
+    statistics::Vector  m_total_hop_types;
+    statistics::Formula m_avg_hops;
+
+    std::vector<std::vector<statistics::Scalar *>> m_data_traffic_distribution;
+    std::vector<std::vector<statistics::Scalar *>> m_ctrl_traffic_distribution;
 
   private:
     GarnetNetwork(const GarnetNetwork& obj);
@@ -219,8 +237,10 @@ class GarnetNetwork : public Network
     std::vector<VNET_type > m_vnet_type;
     std::vector<Router *> m_routers;   // All Routers in Network
     std::vector<NetworkLink *> m_networklinks; // All flit links in the network
+    std::vector<NetworkBridge *> m_networkbridges; // All network bridges
     std::vector<CreditLink *> m_creditlinks; // All credit links in the network
     std::vector<NetworkInterface *> m_nis;   // All NI's in Network
+    int m_next_packet_id; // static vairable for packet id allocation
 };
 
 inline std::ostream&
@@ -230,5 +250,9 @@ operator<<(std::ostream& out, const GarnetNetwork& obj)
     out << std::flush;
     return out;
 }
+
+} // namespace garnet
+} // namespace ruby
+} // namespace gem5
 
 #endif //__MEM_RUBY_NETWORK_GARNET_0_GARNETNETWORK_HH__

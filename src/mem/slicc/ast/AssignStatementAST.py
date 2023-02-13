@@ -27,16 +27,17 @@
 
 from slicc.ast.StatementAST import StatementAST
 
+
 class AssignStatementAST(StatementAST):
     def __init__(self, slicc, lvalue, rvalue):
-        super(AssignStatementAST, self).__init__(slicc)
+        super().__init__(slicc)
         self.lvalue = lvalue
         self.rvalue = rvalue
 
     def __repr__(self):
         return "[AssignStatementAST: %r := %r]" % (self.lvalue, self.rvalue)
 
-    def generate(self, code, return_type):
+    def generate(self, code, return_type, **kwargs):
         lcode = self.slicc.codeFormatter()
         rcode = self.slicc.codeFormatter()
 
@@ -45,12 +46,16 @@ class AssignStatementAST(StatementAST):
 
         code("$lcode = $rcode;")
 
-        if not (ltype == rtype or (ltype.isInterface and ltype['interface'] == rtype.ident)):
+        if not (
+            ltype == rtype
+            or (ltype.isInterface and ltype["interface"] == rtype.ident)
+        ):
             # FIXME - beckmann
             # the following if statement is a hack to allow NetDest objects to
             # be assigned to Sets this allows for the previous Message
             # Destination 'Set class' to migrate to the new Message Destination
             # 'NetDest class'
             if str(ltype) != "NetDest" and str(rtype) != "Set":
-                self.error("Assignment type mismatch '%s' and '%s'",
-                           ltype, rtype)
+                self.error(
+                    "Assignment type mismatch '%s' and '%s'", ltype, rtype
+                )

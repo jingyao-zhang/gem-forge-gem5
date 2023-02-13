@@ -42,13 +42,20 @@
 #include "mem/ruby/network/garnet/flitBuffer.hh"
 #include "mem/ruby/slicc_interface/Message.hh"
 
-using namespace std;
+namespace gem5
+{
 
-NetworkInterface::NetworkInterface(const Params *p)
-  : ClockedObject(p), Consumer(this), m_id(p->id),
-    m_virtual_networks(p->virt_nets), m_vc_per_vnet(0),
+namespace ruby
+{
+
+namespace garnet
+{
+
+NetworkInterface::NetworkInterface(const Params &p)
+  : ClockedObject(p), Consumer(this), m_id(p.id),
+    m_virtual_networks(p.virt_nets), m_vc_per_vnet(0),
     m_vc_allocator(m_virtual_networks, 0),
-    m_deadlock_threshold(p->garnet_deadlock_threshold),
+    m_deadlock_threshold(p.garnet_deadlock_threshold),
     vc_busy_counter(m_virtual_networks, 0)
 {
     m_stall_count.resize(m_virtual_networks);
@@ -120,8 +127,8 @@ NetworkInterface::addOutPort(NetworkLink *out_link,
 }
 
 void
-NetworkInterface::addNode(vector<MessageBuffer *>& in,
-                            vector<MessageBuffer *>& out)
+NetworkInterface::addNode(std::vector<MessageBuffer *>& in,
+                          std::vector<MessageBuffer *>& out)
 {
     inNode_ptr = in;
     outNode_ptr = out;
@@ -366,7 +373,7 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
     NetDest net_msg_dest = net_msg_ptr->getDestination();
 
     // gets all the destinations associated with this message.
-    vector<NodeID> dest_nodes = net_msg_dest.getAllDest();
+    std::vector<NodeID> dest_nodes = net_msg_dest.getAllDest();
 
     // Number of flits is dependent on the link bandwidth available.
     // This is expressed in terms of bytes/cycle or the flit size
@@ -446,9 +453,12 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
         route.hops_traversed = -1;
 
         m_net_ptr->increment_injected_packets(vnet);
+        m_net_ptr->update_traffic_distribution(route);
+        int packet_id = m_net_ptr->getNextPacketID();
         for (int i = 0; i < num_flits; i++) {
             m_net_ptr->increment_injected_flits(vnet);
-            flit *fl = new flit(i, vc, vnet, route, num_flits, new_msg_ptr,
+            flit *fl = new flit(packet_id,
+                i, vc, vnet, route, num_flits, new_msg_ptr,
                 m_net_ptr->MessageSizeType_to_int(
                 net_msg_ptr->getMessageSize()),
                 oPort->bitWidth(), curTick());
@@ -708,6 +718,23 @@ NetworkInterface::print(std::ostream& out) const
     out << "[Network Interface]";
 }
 
+bool
+NetworkInterface::functionalRead(Packet *pkt, WriteMask &mask)
+{
+    bool read = false;
+    for (auto& ni_out_vc : niOutVcs) {
+        if (ni_out_vc.functionalRead(pkt, mask))
+            read = true;
+    }
+
+    for (auto &oPort: outPorts) {
+        if (oPort->outFlitQueue()->functionalRead(pkt, mask))
+            read = true;
+    }
+
+    return read;
+}
+
 uint32_t
 NetworkInterface::functionalWrite(Packet *pkt)
 {
@@ -722,8 +749,6 @@ NetworkInterface::functionalWrite(Packet *pkt)
     return num_functional_writes;
 }
 
-NetworkInterface *
-GarnetNetworkInterfaceParams::create()
-{
-    return new NetworkInterface(this);
-}
+} // namespace garnet
+} // namespace ruby
+} // namespace gem5

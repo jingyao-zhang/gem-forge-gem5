@@ -12,6 +12,8 @@
 #define SE_PANIC(format, args...)                                              \
   panic("[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 
+namespace gem5 {
+
 void StreamRegionController::initializeStep(
     const ::LLVM::TDG::StreamRegion &region, StaticRegion &staticRegion) {
 
@@ -471,4 +473,5 @@ void StreamRegionController::determineStepElemCount(const ConfigArgs &args) {
       stepDynS.stepElemCount = stepDynS.getInnerTripCount();
     }
   }
-}
+}} // namespace gem5
+

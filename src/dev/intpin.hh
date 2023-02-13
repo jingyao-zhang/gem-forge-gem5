@@ -30,6 +30,9 @@
 
 #include "sim/port.hh"
 
+namespace gem5
+{
+
 class IntSourcePinBase;
 
 class IntSinkPinBase : public Port
@@ -91,11 +94,10 @@ class IntSourcePinBase : public Port
 {
   private:
     IntSinkPinBase *sink = nullptr;
-    bool _state = false;
 
   public:
-    IntSourcePinBase(const std::string &_name, PortID _id, bool def_state) :
-        Port(_name, _id), _state(def_state)
+    IntSourcePinBase(const std::string &_name, PortID _id):
+        Port(_name, _id)
     {}
 
     void raise() { sink->raise(); }
@@ -109,10 +111,11 @@ template <class Device>
 class IntSourcePin : public IntSourcePinBase
 {
   public:
-    IntSourcePin(const std::string &_name, PortID _id, Device *owner,
-                 bool def_state=false) :
-        IntSourcePinBase(_name, _id, def_state)
+    IntSourcePin(const std::string &_name, PortID _id, Device *owner) :
+        IntSourcePinBase(_name, _id)
     {}
 };
+
+} // namespace gem5
 
 #endif //__DEV_INTPIN_HH__

@@ -1,4 +1,4 @@
-Import('main')
+Import('env')
 
 mcpat_files = list()
 def McPATFile(filename):
@@ -38,7 +38,7 @@ McPATFile('sharedcache.cc')
 McPATFile('XML_Parse.cc')
 McPATFile('xmlParser.cc')
 
-mcpat_env = main.Clone()
+mcpat_env = env.Clone()
 
 # Set the include path.
 mcpat_env.Replace(CPPPATH=Dir('./cacti'))
@@ -75,7 +75,7 @@ print(mcpat_env['CCFLAGS'])
 mcpat_objects = [mcpat_env.SharedObject(f) for f in mcpat_files]
 mcpat_env.StaticLibrary('mcpat', mcpat_objects)
 
-# Make the main environment be able to find here.
-main.Prepend(CPPPATH=[Dir('.'), Dir('./cacti')])
-main.Append(LIBS=['mcpat'])
-main.Prepend(LIBPATH=[Dir('.')])
+# Make the env environment be able to find here.
+env.Prepend(CPPPATH=[Dir('.'), Dir('./cacti')])
+env.Append(LIBS=['mcpat'])
+env.Prepend(LIBPATH=[Dir('.')])

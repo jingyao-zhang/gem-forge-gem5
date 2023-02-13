@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 ARM Limited
+ * Copyright (c) 2020-2021 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -35,10 +35,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
- #include "arch/arm/insts/tme64.hh"
- #include "debug/ArmTme.hh"
+#include "arch/arm/insts/tme64.hh"
 
- #include <sstream>
+#include <sstream>
+
+#include "debug/ArmTme.hh"
+
+namespace gem5
+{
 
 using namespace ArmISA;
 
@@ -46,7 +50,7 @@ namespace ArmISAInst {
 
 std::string
 TmeImmOp64::generateDisassembly(
-    Addr pc, const Loader::SymbolTable *symtab) const
+    Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss, "", false);
@@ -56,7 +60,7 @@ TmeImmOp64::generateDisassembly(
 
 std::string
 TmeRegNone64::generateDisassembly(
-    Addr pc, const Loader::SymbolTable *symtab) const
+    Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -66,7 +70,7 @@ TmeRegNone64::generateDisassembly(
 
 std::string
 MicroTmeBasic64::generateDisassembly(
-    Addr pc, const Loader::SymbolTable *symtab) const
+    Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -78,12 +82,6 @@ MicroTfence64::MicroTfence64(ExtMachInst machInst)
 {
     _numSrcRegs = 0;
     _numDestRegs = 0;
-    _numFPDestRegs = 0;
-    _numVecDestRegs = 0;
-    _numVecElemDestRegs = 0;
-    _numIntDestRegs = 0;
-    _numCCDestRegs = 0;
-    flags[IsMemBarrier] = true;
     flags[IsMicroop] = true;
     flags[IsReadBarrier] = true;
     flags[IsWriteBarrier] = true;
@@ -91,14 +89,14 @@ MicroTfence64::MicroTfence64(ExtMachInst machInst)
 
 Fault
 MicroTfence64::execute(
-    ExecContext *xc, Trace::InstRecord *traceData) const
+    ExecContext *xc, trace::InstRecord *traceData) const
 {
     return NoFault;
 }
 
 Fault
 MicroTfence64::initiateAcc(ExecContext *xc,
-                           Trace::InstRecord *traceData) const
+                           trace::InstRecord *traceData) const
 {
     panic("tfence should not have memory semantics");
 
@@ -107,54 +105,55 @@ MicroTfence64::initiateAcc(ExecContext *xc,
 
 Fault
 MicroTfence64::completeAcc(PacketPtr pkt, ExecContext *xc,
-                           Trace::InstRecord *traceData) const
+                           trace::InstRecord *traceData) const
 {
     panic("tfence should not have memory semantics");
 
     return NoFault;
 }
 
-Tstart64::Tstart64(ExtMachInst machInst, IntRegIndex _dest)
+Tstart64::Tstart64(ExtMachInst machInst, RegIndex _dest)
     : TmeRegNone64("tstart", machInst, MemReadOp, _dest)
 {
+    setRegIdxArrays(
+        nullptr,
+        reinterpret_cast<RegIdArrayPtr>(
+            &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+            ;
+
     _numSrcRegs = 0;
     _numDestRegs = 0;
-    _numFPDestRegs = 0;
-    _numVecDestRegs = 0;
-    _numVecElemDestRegs = 0;
-    _numIntDestRegs = 0;
-    _numCCDestRegs = 0;
-    _destRegIdx[_numDestRegs++] = RegId(IntRegClass, dest);
-    _numIntDestRegs++;
+    setDestRegIdx(_numDestRegs++, intRegClass[dest]);
+    _numTypedDestRegs[IntRegClass]++;
     flags[IsHtmStart] = true;
     flags[IsInteger] = true;
     flags[IsLoad] = true;
-    flags[IsMemRef] = true;
     flags[IsMicroop] = true;
     flags[IsNonSpeculative] = true;
 }
 
 Fault
 Tstart64::execute(
-    ExecContext *xc, Trace::InstRecord *traceData) const
+    ExecContext *xc, trace::InstRecord *traceData) const
 {
     panic("TME is not supported with atomic memory");
 
     return NoFault;
 }
 
-Ttest64::Ttest64(ExtMachInst machInst, IntRegIndex _dest)
+Ttest64::Ttest64(ExtMachInst machInst, RegIndex _dest)
     : TmeRegNone64("ttest", machInst, MemReadOp, _dest)
 {
+    setRegIdxArrays(
+        nullptr,
+        reinterpret_cast<RegIdArrayPtr>(
+            &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+            ;
+
     _numSrcRegs = 0;
     _numDestRegs = 0;
-    _numFPDestRegs = 0;
-    _numVecDestRegs = 0;
-    _numVecElemDestRegs = 0;
-    _numIntDestRegs = 0;
-    _numCCDestRegs = 0;
-    _destRegIdx[_numDestRegs++] = RegId(IntRegClass, dest);
-    _numIntDestRegs++;
+    setDestRegIdx(_numDestRegs++, intRegClass[dest]);
+    _numTypedDestRegs[IntRegClass]++;
     flags[IsInteger] = true;
     flags[IsMicroop] = true;
 }
@@ -164,13 +163,7 @@ Tcancel64::Tcancel64(ExtMachInst machInst, uint64_t _imm)
 {
     _numSrcRegs = 0;
     _numDestRegs = 0;
-    _numFPDestRegs = 0;
-    _numVecDestRegs = 0;
-    _numVecElemDestRegs = 0;
-    _numIntDestRegs = 0;
-    _numCCDestRegs = 0;
     flags[IsLoad] = true;
-    flags[IsMemRef] = true;
     flags[IsMicroop] = true;
     flags[IsNonSpeculative] = true;
     flags[IsHtmCancel] = true;
@@ -178,7 +171,7 @@ Tcancel64::Tcancel64(ExtMachInst machInst, uint64_t _imm)
 
 Fault
 Tcancel64::execute(
-    ExecContext *xc, Trace::InstRecord *traceData) const
+    ExecContext *xc, trace::InstRecord *traceData) const
 {
     panic("TME is not supported with atomic memory");
 
@@ -191,11 +184,6 @@ MacroTmeOp::MacroTmeOp(const char *mnem,
   PredMacroOp(mnem, machInst, __opClass) {
     _numSrcRegs = 0;
     _numDestRegs = 0;
-    _numFPDestRegs = 0;
-    _numVecDestRegs = 0;
-    _numVecElemDestRegs = 0;
-    _numIntDestRegs = 0;
-    _numCCDestRegs = 0;
 
     numMicroops = 0;
     microOps = nullptr;
@@ -206,20 +194,14 @@ MicroTcommit64::MicroTcommit64(ExtMachInst machInst)
 {
     _numSrcRegs = 0;
     _numDestRegs = 0;
-    _numFPDestRegs = 0;
-    _numVecDestRegs = 0;
-    _numVecElemDestRegs = 0;
-    _numIntDestRegs = 0;
-    _numCCDestRegs = 0;
     flags[IsHtmStop] = true;
     flags[IsLoad] = true;
-    flags[IsMemRef] = true;
     flags[IsMicroop] = true;
     flags[IsNonSpeculative] = true;
 }
 
 Fault
-MicroTcommit64::execute(ExecContext *xc, Trace::InstRecord *traceData) const
+MicroTcommit64::execute(ExecContext *xc, trace::InstRecord *traceData) const
 {
     panic("TME is not supported with atomic memory");
 
@@ -241,4 +223,5 @@ Tcommit64::Tcommit64(ExtMachInst _machInst) :
     microOps[1]->setLastMicroop();
 }
 
-} // namespace
+} // namespace ArmISAInst
+} // namespace gem5

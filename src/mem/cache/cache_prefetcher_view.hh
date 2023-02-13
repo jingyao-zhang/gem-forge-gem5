@@ -7,6 +7,8 @@
 
 #include "cpu/thread_context.hh"
 
+namespace gem5 {
+
 class CachePrefetcherView {
 public:
   /**
@@ -23,5 +25,7 @@ public:
   virtual ThreadContext *getThreadContext(ContextID contextId) = 0;
   virtual System *getSystem() = 0;
 };
+
+} // namespace gem5
 
 #endif

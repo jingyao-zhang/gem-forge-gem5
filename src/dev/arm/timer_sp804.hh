@@ -38,12 +38,21 @@
 #ifndef __DEV_ARM_SP804_HH__
 #define __DEV_ARM_SP804_HH__
 
+#include <cstdint>
+
+#include "base/bitunion.hh"
+#include "base/types.hh"
 #include "dev/arm/amba_device.hh"
 #include "params/Sp804.hh"
+#include "sim/eventq.hh"
+#include "sim/serialize.hh"
 
 /** @file
  * This implements the dual Sp804 timer block
  */
+
+namespace gem5
+{
 
 class BaseGic;
 
@@ -54,7 +63,8 @@ class Sp804 : public AmbaPioDevice
     {
 
       public:
-        enum {
+        enum
+        {
             LoadReg    = 0x00,
             CurrentReg = 0x04,
             ControlReg = 0x08,
@@ -129,17 +139,13 @@ class Sp804 : public AmbaPioDevice
     Timer timer1;
 
   public:
-    typedef Sp804Params Params;
-    const Params *
-    params() const
-    {
-        return dynamic_cast<const Params *>(_params);
-    }
+    using Params = Sp804Params;
+
     /**
       * The constructor for RealView just registers itself with the MMU.
       * @param p params structure
       */
-    Sp804(Params *p);
+    Sp804(const Params &p);
 
     /**
      * Handle a read to the device
@@ -160,6 +166,6 @@ class Sp804 : public AmbaPioDevice
     void unserialize(CheckpointIn &cp) override;
 };
 
+} // namespace gem5
 
 #endif // __DEV_ARM_SP804_HH__
-

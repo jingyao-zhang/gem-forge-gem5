@@ -43,11 +43,18 @@
 #ifndef __CPU_TRAFFIC_GEN_BASE_GEN_HH__
 #define __CPU_TRAFFIC_GEN_BASE_GEN_HH__
 
-#include "base/bitfield.hh"
-#include "base/intmath.hh"
+#include <cstdint>
+#include <string>
+
+#include "base/types.hh"
 #include "mem/packet.hh"
+#include "mem/request.hh"
+
+namespace gem5
+{
 
 class BaseTrafficGen;
+class SimObject;
 
 /**
  * Base class for all generators, with the shared functionality and
@@ -164,5 +171,7 @@ class StochasticGen : public BaseGen
     /** Maximum amount of data to manipulate */
     const Addr dataLimit;
 };
+
+} // namespace gem5
 
 #endif

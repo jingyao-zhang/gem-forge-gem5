@@ -2,9 +2,13 @@
 #include "pybind11/pybind11.h"
 #include "pybind11/stl.h"
 
-#include "mcpat/mcpat_manager.hh"
+#include <cassert>
+
+// #include "mcpat/mcpat_manager.hh"
 
 namespace py = pybind11;
+
+namespace gem5 {
 
 // void
 // pythonDump()
@@ -20,9 +24,18 @@ namespace py = pybind11;
 //     m.attr("reset")();
 // }
 
-// }
+void
+dumpFakeMcPATManager()
+{
+    printf("Warn: McPATManager is not maintained. Do not dump.\n");
+    return;
+}
+
 
 void pybind_init_mcpat(py::module &m_native) {
   py::module m = m_native.def_submodule("mcpat");
-  m.def("dump", &McPATManager::dump);
+  m.def("dump", &dumpFakeMcPATManager);
+  // m.def("dump", &gem5::McPATManager::dump);
+}
+
 }

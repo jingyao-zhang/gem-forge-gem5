@@ -1,6 +1,6 @@
 microcode = '''
 def macroop VMOVUPD_XMM_XMM {
-    movfp128 dest=xmm0, src1=xmm0m, dataSize=16
+    movfp128 reg1=xmm0, reg2=xmm0m, dataSize=16
     vclear dest=xmm2, destVL=16
 };
 
@@ -25,7 +25,7 @@ def macroop VMOVUPD_P_XMM {
 };
 
 def macroop VMOVUPD_YMM_YMM {
-    movfp256 dest=xmm0, src1=xmm0m, dataSize=32
+    movfp256 reg1=xmm0, reg2=xmm0m, dataSize=32
     vclear dest=xmm4, destVL=32
 };
 
@@ -50,7 +50,7 @@ def macroop VMOVUPD_P_YMM {
 };
 
 def macroop VMOVUPD_ZMM_ZMM {
-    movfp512 dest=xmm0, src1=xmm0m, dataSize=64
+    movfp512 reg1=xmm0, reg2=xmm0m, dataSize=64
 };
 
 def macroop VMOVUPD_ZMM_M {

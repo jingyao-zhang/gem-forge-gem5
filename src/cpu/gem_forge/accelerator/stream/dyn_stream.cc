@@ -10,6 +10,8 @@
 #define DEBUG_TYPE StreamBase
 #include "stream_log.hh"
 
+namespace gem5 {
+
 const char *DynStream::StreamDepEdge::typeToString(const TypeE &type) {
 #define Case(x)                                                                \
   case x:                                                                      \
@@ -1492,4 +1494,5 @@ std::string DynStream::dumpString() const {
   return ss.str();
 }
 
-void DynStream::dump() const { inform("%s\n", this->dumpString()); }
+void DynStream::dump() const { inform("%s\n", this->dumpString()); }} // namespace gem5
+

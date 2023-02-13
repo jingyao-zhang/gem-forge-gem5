@@ -33,10 +33,17 @@
 #include <string>
 
 #include "arch/generic/isa.hh"
-#include "arch/sparc/registers.hh"
+#include "arch/sparc/pcstate.hh"
+#include "arch/sparc/regs/float.hh"
+#include "arch/sparc/regs/int.hh"
+#include "arch/sparc/regs/misc.hh"
+#include "arch/sparc/sparc_traits.hh"
 #include "arch/sparc/types.hh"
 #include "cpu/reg_class.hh"
 #include "sim/sim_object.hh"
+
+namespace gem5
+{
 
 class Checkpoint;
 class EventManager;
@@ -143,11 +150,12 @@ class ISA : public BaseISA
     static const int RegsPerWindow = NumWindowedRegs - WindowOverlap;
     static const int TotalWindowed = NWindows * RegsPerWindow;
 
-    enum InstIntRegOffsets {
+    enum InstIntRegOffsets
+    {
         CurrentGlobalsOffset = 0,
         CurrentWindowOffset = CurrentGlobalsOffset + NumGlobalRegs,
         MicroIntOffset = CurrentWindowOffset + NumWindowedRegs,
-        NextGlobalsOffset = MicroIntOffset + NumMicroIntRegs,
+        NextGlobalsOffset = MicroIntOffset + int_reg::NumMicroRegs,
         NextWindowOffset = NextGlobalsOffset + NumGlobalRegs,
         PreviousGlobalsOffset = NextWindowOffset + NumWindowedRegs,
         PreviousWindowOffset = PreviousGlobalsOffset + NumGlobalRegs,
@@ -160,8 +168,15 @@ class ISA : public BaseISA
     void reloadRegMap();
 
   public:
+    const RegIndex &mapIntRegId(RegIndex idx) const { return intRegMap[idx]; }
 
-    void clear();
+    void clear() override;
+
+    PCStateBase *
+    newPCState(Addr new_inst_addr=0) const override
+    {
+        return new PCState(new_inst_addr);
+    }
 
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
@@ -173,54 +188,34 @@ class ISA : public BaseISA
 
   public:
 
-    RegVal readMiscRegNoEffect(int miscReg) const;
-    RegVal readMiscReg(int miscReg);
+    RegVal readMiscRegNoEffect(RegIndex idx) const override;
+    RegVal readMiscReg(RegIndex idx) override;
 
-    void setMiscRegNoEffect(int miscReg, RegVal val);
-    void setMiscReg(int miscReg, RegVal val);
+    void setMiscRegNoEffect(RegIndex idx, RegVal val) override;
+    void setMiscReg(RegIndex idx, RegVal val) override;
 
-    RegId
-    flattenRegId(const RegId& regId) const
+    uint64_t
+    getExecutingAsid() const override
     {
-        switch (regId.classValue()) {
-          case IntRegClass:
-            return RegId(IntRegClass, flattenIntIndex(regId.index()));
-          case FloatRegClass:
-            return RegId(FloatRegClass, flattenFloatIndex(regId.index()));
-          case CCRegClass:
-            return RegId(CCRegClass, flattenCCIndex(regId.index()));
-          case MiscRegClass:
-            return RegId(MiscRegClass, flattenMiscIndex(regId.index()));
-          default:
-            break;
-        }
-        return regId;
+        return readMiscRegNoEffect(MISCREG_MMU_P_CONTEXT);
     }
 
-    int
-    flattenIntIndex(int reg) const
+    using Params = SparcISAParams;
+
+    bool
+    inUserMode() const override
     {
-        assert(reg < TotalInstIntRegs);
-        RegIndex flatIndex = intRegMap[reg];
-        assert(flatIndex < NumIntRegs);
-        return flatIndex;
+        PSTATE pstate = readMiscRegNoEffect(MISCREG_PSTATE);
+        HPSTATE hpstate = readMiscRegNoEffect(MISCREG_HPSTATE);
+        return !(pstate.priv || hpstate.hpriv);
     }
 
-    int flattenFloatIndex(int reg) const { return reg; }
-    int flattenVecIndex(int reg) const { return reg; }
-    int flattenVecElemIndex(int reg) const { return reg; }
-    int flattenVecPredIndex(int reg) const { return reg; }
+    void copyRegsFrom(ThreadContext *src) override;
 
-    // dummy
-    int flattenCCIndex(int reg) const { return reg; }
-    int flattenMiscIndex(int reg) const { return reg; }
-
-
-    typedef SparcISAParams Params;
-    const Params *params() const;
-
-    ISA(Params *p);
+    ISA(const Params &p);
 };
-}
+
+} // namespace SparcISA
+} // namespace gem5
 
 #endif

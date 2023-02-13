@@ -42,11 +42,20 @@
 #include "params/GarnetExtLink.hh"
 #include "params/GarnetIntLink.hh"
 
+namespace gem5
+{
+
+namespace ruby
+{
+
+namespace garnet
+{
+
 class GarnetIntLink : public BasicIntLink
 {
   public:
     typedef GarnetIntLinkParams Params;
-    GarnetIntLink(const Params *p);
+    GarnetIntLink(const Params &p);
 
     void init();
 
@@ -86,7 +95,7 @@ class GarnetExtLink : public BasicExtLink
 {
   public:
     typedef GarnetExtLinkParams Params;
-    GarnetExtLink(const Params *p);
+    GarnetExtLink(const Params &p);
 
     void init();
 
@@ -122,5 +131,9 @@ operator<<(std::ostream& out, const GarnetExtLink& obj)
     out << std::flush;
     return out;
 }
+
+} // namespace garnet
+} // namespace ruby
+} // namespace gem5
 
 #endif //__MEM_RUBY_NETWORK_GARNET_0_GARNETLINK_HH__

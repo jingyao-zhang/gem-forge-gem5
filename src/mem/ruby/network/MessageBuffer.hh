@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 ARM Limited
+ * Copyright (c) 2019-2021 ARM Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -65,11 +65,17 @@
 #include "params/MessageBuffer.hh"
 #include "sim/sim_object.hh"
 
+namespace gem5
+{
+
+namespace ruby
+{
+
 class MessageBuffer : public SimObject
 {
   public:
     typedef MessageBufferParams Params;
-    MessageBuffer(const Params *p);
+    MessageBuffer(const Params &p);
 
     void reanalyzeMessages(Addr addr, Tick current_time);
     void reanalyzeAllMessages(Tick current_time);
@@ -81,6 +87,9 @@ class MessageBuffer : public SimObject
     bool isReady(Tick current_time) const;
 
     void delayHead(Tick current_time, Tick delta);
+
+    // earliest tick the head of queue will be ready, or MaxTick if empty
+    Tick readyTime() const;
 
     bool areNSlotsAvailable(unsigned int n, Tick curTime);
     int getPriority() { return m_priority_rank; }
@@ -145,20 +154,21 @@ class MessageBuffer : public SimObject
     void setIncomingLink(int link_id) { m_input_link_id = link_id; }
     void setVnet(int net) { m_vnet_id = net; }
 
+    int getIncomingLink() const { return m_input_link_id; }
+    int getVnet() const { return m_vnet_id; }
+
     Port &
     getPort(const std::string &, PortID idx=InvalidPortID) override
     {
         return RubyDummyPort::instance();
     }
 
-    void regStats() override;
-
     // Function for figuring out if any of the messages in the buffer need
     // to be updated with the data from the packet.
     // Return value indicates the number of messages that were updated.
     uint32_t functionalWrite(Packet *pkt)
     {
-        return functionalAccess(pkt, false);
+        return functionalAccess(pkt, false, nullptr);
     }
 
     // Function for figuring if message in the buffer has valid data for
@@ -167,13 +177,21 @@ class MessageBuffer : public SimObject
     // read was performed.
     bool functionalRead(Packet *pkt)
     {
-        return functionalAccess(pkt, true) == 1;
+        return functionalAccess(pkt, true, nullptr) == 1;
     }
+
+    // Functional read with mask
+    bool functionalRead(Packet *pkt, WriteMask &mask)
+    {
+        return functionalAccess(pkt, true, &mask) == 1;
+    }
+
+    int routingPriority() const { return m_routing_priority; }
 
   private:
     void reanalyzeList(std::list<MsgPtr> &, Tick);
 
-    uint32_t functionalAccess(Packet *pkt, bool is_read);
+    uint32_t functionalAccess(Packet *pkt, bool is_read, WriteMask *mask);
 
   private:
     // Data Members (m_ prefix)
@@ -228,6 +246,14 @@ class MessageBuffer : public SimObject
      */
     const unsigned int m_max_size;
 
+    /**
+     * When != 0, isReady returns false once m_max_dequeue_rate
+     * messages have been dequeued in the same cycle.
+     */
+    const unsigned int m_max_dequeue_rate;
+
+    unsigned int m_dequeues_this_cy;
+
     Tick m_time_last_time_size_checked;
     unsigned int m_size_last_time_size_checked;
 
@@ -241,20 +267,25 @@ class MessageBuffer : public SimObject
     unsigned int m_stalled_at_cycle_start;
     unsigned int m_msgs_this_cycle;
 
-    Stats::Scalar m_not_avail_count;  // count the # of times I didn't have N
-                                      // slots available
     uint64_t m_msg_counter;
     int m_priority_rank;
     const bool m_strict_fifo;
-    const bool m_randomization;
+    const MessageRandomization m_randomization;
+    const bool m_allow_zero_latency;
+
+    const int m_routing_priority;
 
     int m_input_link_id;
     int m_vnet_id;
 
-    Stats::Average m_buf_msgs;
-    Stats::Average m_stall_time;
-    Stats::Scalar m_stall_count;
-    Stats::Formula m_occupancy;
+    // Count the # of times I didn't have N slots available
+    statistics::Scalar m_not_avail_count;
+    statistics::Scalar m_msg_count;
+    statistics::Average m_buf_msgs;
+    statistics::Scalar m_stall_time;
+    statistics::Scalar m_stall_count;
+    statistics::Formula m_avg_stall_time;
+    statistics::Formula m_occupancy;
 };
 
 Tick random_time();
@@ -266,5 +297,8 @@ operator<<(std::ostream& out, const MessageBuffer& obj)
     out << std::flush;
     return out;
 }
+
+} // namespace ruby
+} // namespace gem5
 
 #endif //__MEM_RUBY_NETWORK_MESSAGEBUFFER_HH__

@@ -23,7 +23,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from __future__ import print_function
 
 import argparse
 import m5
@@ -34,9 +33,9 @@ from m5.objects import SystemC_Kernel, Root, SystemC_Printer, Gem5_Feeder
 # pylint:disable=unused-variable
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--word', action="append", default=[])
-parser.add_argument('--delay', default='1ns')
-parser.add_argument('--prefix', default='')
+parser.add_argument("--word", action="append", default=[])
+parser.add_argument("--delay", default="1ns")
+parser.add_argument("--prefix", default="")
 
 args = parser.parse_args()
 

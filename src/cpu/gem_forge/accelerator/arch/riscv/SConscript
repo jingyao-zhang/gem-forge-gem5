@@ -1,4 +1,4 @@
 Import('*')
 
-if env['TARGET_ISA'] == 'riscv':
+if env['CONF']['USE_RISCV_ISA']:
     Source('riscv_exec_func.cc')

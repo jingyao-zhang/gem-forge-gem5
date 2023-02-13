@@ -9,10 +9,12 @@
 #define DEBUG_TYPE MLCRubyStreamBase
 #include "../stream_log.hh"
 
+namespace gem5 {
+
 MLCDynIndirectStream::MLCDynIndirectStream(
     CacheStreamConfigureDataPtr _configData,
-    AbstractStreamAwareController *_controller,
-    MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
+    ruby::AbstractStreamAwareController *_controller,
+    ruby::MessageBuffer *_responseMsgBuffer, ruby::MessageBuffer *_requestToLLCMsgBuffer,
     const DynStreamId &_rootStreamId)
     : MLCDynStream(_configData, _controller, _responseMsgBuffer,
                    _requestToLLCMsgBuffer, false /* isMLCDirect */),
@@ -46,7 +48,7 @@ void MLCDynIndirectStream::setBaseStream(MLCDynStream *baseStream) {
 }
 
 void MLCDynIndirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
-                                             const DataBlock &dataBlock,
+                                             const ruby::DataBlock &dataBlock,
                                              Addr paddrLine) {
 
   // It is indeed a problem to synchronize the flow control between
@@ -119,10 +121,10 @@ void MLCDynIndirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
   auto sliceIter = slicesBegin;
   // We only check for the address if we are not waiting for Ack.
   if (!this->isWaitingAck()) {
-    auto targetLineAddr = makeLineAddress(sliceId.vaddr);
+    auto targetLineAddr = ruby::makeLineAddress(sliceId.vaddr);
     while (sliceIter != slicesEnd) {
       assert(sliceIter->sliceId.getStartIdx() == sliceId.getStartIdx());
-      auto sliceLineAddr = makeLineAddress(sliceIter->sliceId.vaddr);
+      auto sliceLineAddr = ruby::makeLineAddress(sliceIter->sliceId.vaddr);
       if (sliceLineAddr == targetLineAddr) {
         break;
       } else if (sliceLineAddr < targetLineAddr) {
@@ -148,7 +150,7 @@ void MLCDynIndirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
   if (sliceIter->coreStatus == MLCStreamSlice::CoreStatusE::WAIT_DATA) {
     // Sanity check that LLC and Core generated the same address.
     // ! Core is line address.
-    if (sliceIter->coreSliceId.vaddr != makeLineAddress(sliceId.vaddr)) {
+    if (sliceIter->coreSliceId.vaddr != ruby::makeLineAddress(sliceId.vaddr)) {
       MLC_SLICE_PANIC(sliceId, "Mismatch between Core %#x and LLC %#x.\n",
                       sliceIter->coreSliceId.vaddr, sliceId.vaddr);
     }
@@ -212,10 +214,10 @@ void MLCDynIndirectStream::fillElemVAddr(uint64_t strandElemIdx,
   while (totalSliceSize < elemSize) {
     Addr curSliceVAddr = elemVAddr + totalSliceSize;
     // Make sure the slice is contained within one line.
-    int lineOffset = curSliceVAddr % RubySystem::getBlockSizeBytes();
+    int lineOffset = curSliceVAddr % ruby::RubySystem::getBlockSizeBytes();
     auto curSliceSize = std::min(
         elemSize - totalSliceSize,
-        static_cast<int>(RubySystem::getBlockSizeBytes()) - lineOffset);
+        static_cast<int>(ruby::RubySystem::getBlockSizeBytes()) - lineOffset);
     // Here we set the slice vaddr and size.
     sliceId.vaddr = curSliceVAddr;
     sliceId.size = curSliceSize;
@@ -399,7 +401,7 @@ bool MLCDynIndirectStream::hasOverflowed() const {
 
 void MLCDynIndirectStream::setTotalTripCount(int64_t totalTripCount,
                                              Addr brokenPAddr,
-                                             MachineType brokenMachineType) {
+                                             ruby::MachineType brokenMachineType) {
   MLC_S_PANIC(this->getDynStrandId(), "Set TotalTripCount for IndirectS.");
 }
 
@@ -483,11 +485,11 @@ MLCDynIndirectStream::findOrInsertSliceBySliceId(
     ret->sliceId.vaddr = sliceId.vaddr;
     return ret;
   }
-  auto targetLineAddr = makeLineAddress(sliceId.vaddr);
+  auto targetLineAddr = ruby::makeLineAddress(sliceId.vaddr);
   while (ret != end) {
     assert(ret->sliceId.getStartIdx() == sliceId.getStartIdx() &&
            "Invalid elementIdx.");
-    auto lineAddr = makeLineAddress(ret->sliceId.vaddr);
+    auto lineAddr = ruby::makeLineAddress(ret->sliceId.vaddr);
     if (lineAddr == targetLineAddr) {
       // We found it.
       return ret;
@@ -523,7 +525,7 @@ MLCDynIndirectStream::findSliceForCoreRequest(const DynStreamSliceId &sliceId) {
 }
 
 bool MLCDynIndirectStream::receiveFinalReductionValue(
-    const DynStreamSliceId &sliceId, const DataBlock &dataBlock,
+    const DynStreamSliceId &sliceId, const ruby::DataBlock &dataBlock,
     Addr paddrLine) {
   auto S = this->getStaticStream();
   if (!(S->isReduction() || S->isPointerChaseIndVar())) {
@@ -560,4 +562,5 @@ bool MLCDynIndirectStream::receiveFinalReductionValue(
                      "Notify final reduction elem %llu.\n", finalElemIdx);
 
   return true;
-}
+}} // namespace gem5
+

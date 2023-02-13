@@ -20,6 +20,8 @@
 #define MLC_NDC_PANIC(ndc, format, args...)                                    \
   MLCSE_PANIC("%s: " format, (ndc)->entryIdx, ##args)
 
+namespace gem5 {
+
 MLCStreamNDCController::MLCStreamNDCController(MLCStreamEngine *_mlcSE)
     : mlcSE(_mlcSE) {}
 
@@ -34,9 +36,9 @@ void MLCStreamNDCController::receiveStreamNDCRequest(PacketPtr pkt) {
     LLCStreamNDCController::allocateContext(mlcSE->controller, streamNDC);
 
     // Create a new packet and forward it to LLC bank (L2 cache).
-    auto paddrLine = makeLineAddress(streamNDC->paddr);
+    auto paddrLine = ruby::makeLineAddress(streamNDC->paddr);
     auto llcBank = mlcSE->controller->mapAddressToLLCOrMem(
-        paddrLine, MachineType::MachineType_L2Cache);
+        paddrLine, ruby::MachineType_L2Cache);
     MLC_NDC_DPRINTF(streamNDC, "Receive NDC PAddr %#x LLC Bank %s.\n",
                     streamNDC->paddr, llcBank);
 
@@ -47,12 +49,12 @@ void MLCStreamNDCController::receiveStreamNDCRequest(PacketPtr pkt) {
         reinterpret_cast<uint8_t *>(new StreamNDCPacketPtr(streamNDC));
     pkt->dataDynamic(pktData);
     // Enqueue a packet to the LLC bank.
-    auto msg = std::make_shared<RequestMsg>(mlcSE->controller->clockEdge());
+    auto msg = std::make_shared<ruby::RequestMsg>(mlcSE->controller->clockEdge());
     msg->m_addr = paddrLine;
-    msg->m_Type = CoherenceRequestType_STREAM_NDC;
+    msg->m_Type = ruby::CoherenceRequestType_STREAM_NDC;
     msg->m_Requestors.add(mlcSE->controller->getMachineID());
     msg->m_Destination.add(llcBank);
-    msg->m_MessageSize = MessageSizeType_Control;
+    msg->m_MessageSize = ruby::MessageSizeType_Control;
     msg->m_pkt = pkt;
 
     Cycles latency(1);
@@ -65,7 +67,7 @@ void MLCStreamNDCController::receiveStreamNDCRequest(PacketPtr pkt) {
   delete pkt;
 }
 
-void MLCStreamNDCController::receiveStreamNDCResponse(const ResponseMsg &msg) {
+void MLCStreamNDCController::receiveStreamNDCResponse(const ruby::ResponseMsg &msg) {
 
   auto sliceId = msg.m_sliceIds.singleSliceId();
   assert(sliceId.getNumElements() == 1 && "NDC Slice with Multiple Elements.");
@@ -91,7 +93,7 @@ void MLCStreamNDCController::receiveStreamNDCResponse(const ResponseMsg &msg) {
   if (S->isAtomicComputeStream()) {
     auto vaddr = ndc->vaddr;
     auto size = S->getCoreElementSize();
-    auto vaddrLine = makeLineAddress(vaddr);
+    auto vaddrLine = ruby::makeLineAddress(vaddr);
     auto lineOffset = vaddr - vaddrLine;
     auto data = msg.getDataBlk().getData(lineOffset, size);
     MLC_NDC_DPRINTF(ndc, "Receive NDC Response, vaddr %#x size %d.\n", vaddr,
@@ -127,4 +129,5 @@ MLCStreamNDCController::NDCPacketMapIter
 MLCStreamNDCController::getNDCPacket(const DynStreamSliceId &sliceId) {
   FIFOEntryIdx entryIdx(sliceId.getDynStreamId(), sliceId.getStartIdx());
   return this->ndcPacketMap.find(entryIdx);
-}
+}} // namespace gem5
+

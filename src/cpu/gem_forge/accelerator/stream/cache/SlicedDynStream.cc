@@ -9,6 +9,8 @@
 #define DEBUG_TYPE SlicedDynStream
 #include "../stream_log.hh"
 
+namespace gem5 {
+
 SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
     : strandId(_configData->dynamicId, _configData->strandIdx,
                _configData->totalStrands),
@@ -25,7 +27,7 @@ SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
   if (auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
           this->addrGenCallback)) {
     auto innerStride = linearAddrGen->getInnerStride(this->formalParams);
-    auto blockBytes = RubySystem::getBlockSizeBytes();
+    auto blockBytes = ruby::RubySystem::getBlockSizeBytes();
     DYN_S_DPRINTF(this->strandId, "[Sliced] AddrPat %s.\n",
                   printAffinePatternParams(this->formalParams));
     if (innerStride <= blockBytes) {
@@ -100,8 +102,8 @@ Addr SlicedDynStream::getOrComputePtrChaseElemVAddr(uint64_t elemIdx) const {
                       GetSingleStreamValue(state.ivStream->staticId,
                                            state.currentIVValue))
             .front();
-    if (makeLineAddress(nextVAddr + this->elemSize - 1) !=
-        makeLineAddress(nextVAddr)) {
+    if (ruby::makeLineAddress(nextVAddr + this->elemSize - 1) !=
+        ruby::makeLineAddress(nextVAddr)) {
       DYN_S_PANIC(this->strandId,
                   "[PtrChase] Multi-Line Element %llu VAddr %#x.",
                   state.elementVAddrs.size(), nextVAddr);
@@ -195,9 +197,9 @@ void SlicedDynStream::allocateOneElement() const {
      */
     auto wrappedSize = lhs + this->elemSize;
     auto straightSize = this->elemSize - wrappedSize;
-    assert(wrappedSize <= RubySystem::getBlockSizeBytes() &&
+    assert(wrappedSize <= ruby::RubySystem::getBlockSizeBytes() &&
            "WrappedSize larger than a line.");
-    assert(straightSize <= RubySystem::getBlockSizeBytes() &&
+    assert(straightSize <= ruby::RubySystem::getBlockSizeBytes() &&
            "StraightSize larger than a line.");
     {
       // Straight slice.
@@ -206,8 +208,8 @@ void SlicedDynStream::allocateOneElement() const {
       slice.getDynStrandId() = this->strandId;
       slice.getStartIdx() = this->tailElemIdx;
       slice.getEndIdx() = this->tailElemIdx + 1;
-      slice.vaddr = makeLineAddress(lhs);
-      slice.size = RubySystem::getBlockSizeBytes();
+      slice.vaddr = ruby::makeLineAddress(lhs);
+      slice.size = ruby::RubySystem::getBlockSizeBytes();
     }
     {
       // Wrapped slice.
@@ -216,8 +218,8 @@ void SlicedDynStream::allocateOneElement() const {
       slice.getDynStrandId() = this->strandId;
       slice.getStartIdx() = this->tailElemIdx;
       slice.getEndIdx() = this->tailElemIdx + 1;
-      slice.vaddr = makeLineAddress(0);
-      slice.size = RubySystem::getBlockSizeBytes();
+      slice.vaddr = ruby::makeLineAddress(0);
+      slice.size = ruby::RubySystem::getBlockSizeBytes();
     }
 
     // Reset the sliceHeadElementIdx.
@@ -233,9 +235,9 @@ void SlicedDynStream::allocateOneElement() const {
   bool prevWrappedAround = (prevLHS + this->elemSize) < prevLHS;
 
   // Break to cache line granularity, [lhsBlock, rhsBlock]
-  auto lhsBlock = makeLineAddress(lhs);
-  auto rhsBlock = makeLineAddress(rhs - 1);
-  auto prevLHSBlock = makeLineAddress(prevLHS);
+  auto lhsBlock = ruby::makeLineAddress(lhs);
+  auto rhsBlock = ruby::makeLineAddress(rhs - 1);
+  auto prevLHSBlock = ruby::makeLineAddress(prevLHS);
   assert(rhsBlock >= lhsBlock && "Wrapped around should be handled above.");
 
   DYN_S_DPRINTF(this->strandId,
@@ -274,7 +276,7 @@ void SlicedDynStream::allocateOneElement() const {
           assert(slice.getEndIdx() == this->tailElemIdx &&
                  "Hole in overlapping elements.");
           slice.getEndIdx()++;
-          curBlock += RubySystem::getBlockSizeBytes();
+          curBlock += ruby::RubySystem::getBlockSizeBytes();
           if (curBlock > rhsBlock || curBlock < lhsBlock) {
             // We are done. If we wrapped around, then curBlock < lhsBlock.
             break;
@@ -307,10 +309,12 @@ void SlicedDynStream::allocateOneElement() const {
       slice.getStartIdx() = this->tailElemIdx;
       slice.getEndIdx() = this->tailElemIdx + 1;
       slice.vaddr = curBlock;
-      slice.size = RubySystem::getBlockSizeBytes();
-      curBlock += RubySystem::getBlockSizeBytes();
+      slice.size = ruby::RubySystem::getBlockSizeBytes();
+      curBlock += ruby::RubySystem::getBlockSizeBytes();
     }
   }
 
   this->stepTailElemIdx();
 }
+} // namespace gem5
+

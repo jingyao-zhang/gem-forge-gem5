@@ -23,8 +23,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from __future__ import print_function
-
 import sys
 
 import m5
@@ -43,4 +41,4 @@ cause = m5.simulate(m5.MaxTick).getCause()
 
 result = m5.systemc.sc_main_result()
 if result.code != 0:
-    m5.util.panic('sc_main return code was %d.' % result.code)
+    m5.util.panic("sc_main return code was %d." % result.code)

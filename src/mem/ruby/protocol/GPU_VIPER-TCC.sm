@@ -2,8 +2,6 @@
  * Copyright (c) 2010-2015 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -108,6 +106,7 @@ machine(MachineType:TCC, "TCC Cache")
     MachineID From,     desc="Waiting for writeback from...";
     NetDest Destination, desc="Data destination";
     int numAtomics,     desc="number remaining atomics";
+    int atomicDoneCnt,  desc="number AtomicDones triggered";
   }
 
   structure(TBETable, external="yes") {
@@ -125,6 +124,7 @@ machine(MachineType:TCC, "TCC Cache")
   void unset_tbe();
   void wakeUpAllBuffers();
   void wakeUpBuffers(Addr a);
+  void wakeUpAllBuffers(Addr a);
 
   MachineID mapAddressToMachine(Addr addr, MachineType mtype);
 
@@ -251,12 +251,19 @@ machine(MachineType:TCC, "TCC Cache")
 
 
 // ** IN_PORTS **
-  in_port(triggerQueue_in, TiggerMsg, triggerQueue) {
+  in_port(triggerQueue_in, TriggerMsg, triggerQueue) {
     if (triggerQueue_in.isReady(clockEdge())) {
       peek(triggerQueue_in, TriggerMsg) {
         TBE tbe := TBEs.lookup(in_msg.addr);
         Entry cache_entry := getCacheEntry(in_msg.addr);
-        if (tbe.numAtomics == 0) {
+
+        // There is a possible race where multiple AtomicDone triggers can be
+        // sent if another Atomic to the same address is issued after the
+        // AtomicDone is triggered but before the message arrives here. For
+        // that case we count the number of AtomicDones in flight for this
+        // address and only call AtomicDone to deallocate the TBE when it is
+        // the last in flight message.
+        if (tbe.numAtomics == 0 && tbe.atomicDoneCnt == 1) {
             trigger(Event:AtomicDone, in_msg.addr, cache_entry, tbe);
         } else {
             trigger(Event:AtomicNotDone, in_msg.addr, cache_entry, tbe);
@@ -439,11 +446,11 @@ machine(MachineType:TCC, "TCC Cache")
   }
 
   action(p_profileMiss, "pm", desc="Profile cache miss") {
-      ++L2cache.demand_misses;
+      L2cache.profileDemandMiss();
   }
 
   action(p_profileHit, "ph", desc="Profile cache hit") {
-      ++L2cache.demand_hits;
+      L2cache.profileDemandHit();
   }
 
   action(t_allocateTBE, "t", desc="allocate TBE Entry") {
@@ -453,6 +460,7 @@ machine(MachineType:TCC, "TCC Cache")
       set_tbe(TBEs.lookup(address));
       tbe.Destination.clear();
       tbe.numAtomics := 0;
+      tbe.atomicDoneCnt := 0;
     }
     if (coreRequestNetwork_in.isReady(clockEdge())) {
       peek(coreRequestNetwork_in, CPURequestMsg) {
@@ -559,6 +567,14 @@ machine(MachineType:TCC, "TCC Cache")
     probeNetwork_in.dequeue(clockEdge());
   }
 
+  action(st_stallAndWaitRequest, "st", desc="Stall and wait on the address") {
+    stall_and_wait(coreRequestNetwork_in, address);
+  }
+
+  action(wada_wakeUpAllDependentsAddr, "wada", desc="Wake up any requests waiting for this address") {
+    wakeUpAllBuffers(address);
+  }
+
   action(z_stall, "z", desc="stall") {
       // built-in
   }
@@ -573,10 +589,15 @@ machine(MachineType:TCC, "TCC Cache")
     tbe.numAtomics := tbe.numAtomics - 1;
     if (tbe.numAtomics==0) {
       enqueue(triggerQueue_out, TriggerMsg, 1) {
+        tbe.atomicDoneCnt := tbe.atomicDoneCnt + 1;
         out_msg.addr := address;
         out_msg.Type := TriggerType:AtomicDone;
       }
     }
+  }
+
+  action(dadc_decrementAtomicDoneCnt, "dadc", desc="decrement atomics done cnt flag") {
+    tbe.atomicDoneCnt := tbe.atomicDoneCnt - 1;
   }
 
   action(ptr_popTriggerQueue, "ptr", desc="pop Trigger") {
@@ -595,13 +616,22 @@ machine(MachineType:TCC, "TCC Cache")
   // they can cause a resource stall deadlock!
 
   transition(WI, {RdBlk, WrVicBlk, Atomic, WrVicBlkBack}) { //TagArrayRead} {
-      z_stall;
+      // by putting the stalled requests in a buffer, we reduce resource contention
+      // since they won't try again every cycle and will instead only try again once
+      // woken up
+      st_stallAndWaitRequest;
   }
   transition(A, {RdBlk, WrVicBlk, WrVicBlkBack}) { //TagArrayRead} {
-      z_stall;
+      // by putting the stalled requests in a buffer, we reduce resource contention
+      // since they won't try again every cycle and will instead only try again once
+      // woken up
+      st_stallAndWaitRequest;
   }
   transition(IV, {WrVicBlk, Atomic, WrVicBlkBack}) { //TagArrayRead} {
-      z_stall;
+      // by putting the stalled requests in a buffer, we reduce resource contention
+      // since they won't try again every cycle and will instead only try again once
+      // woken up
+      st_stallAndWaitRequest;
   }
   transition({M, V}, RdBlk) {TagArrayRead, DataArrayRead} {
     p_profileHit;
@@ -649,9 +679,10 @@ transition(I, Atomic, A) {TagArrayRead} {
 
   transition(A, Atomic) {
     p_profileMiss;
-    at_atomicThrough;
-    ina_incrementNumAtomics;
-    p_popRequestQueue;
+    // by putting the stalled requests in a buffer, we reduce resource contention
+    // since they won't try again every cycle and will instead only try again once
+    // woken up
+    st_stallAndWaitRequest;
   }
 
   transition({M, W}, Atomic, WI) {TagArrayRead} {
@@ -739,6 +770,7 @@ transition(I, Atomic, A) {TagArrayRead} {
     wcb_writeCacheBlock;
     sdr_sendDataResponse;
     pr_popResponseQueue;
+    wada_wakeUpAllDependentsAddr;
     dt_deallocateTBE;
   }
 
@@ -751,10 +783,12 @@ transition(I, Atomic, A) {TagArrayRead} {
 
   transition(A, AtomicDone, I) {TagArrayRead, TagArrayWrite} {
     dt_deallocateTBE;
+    wada_wakeUpAllDependentsAddr;
     ptr_popTriggerQueue;
   }
 
   transition(A, AtomicNotDone) {TagArrayRead} {
+    dadc_decrementAtomicDoneCnt;
     ptr_popTriggerQueue;
   }
 
@@ -767,6 +801,7 @@ transition(I, Atomic, A) {TagArrayRead} {
 
   transition(WI, WBAck,I) {
     dt_deallocateTBE;
+    wada_wakeUpAllDependentsAddr;
     pr_popResponseQueue;
   }
 }

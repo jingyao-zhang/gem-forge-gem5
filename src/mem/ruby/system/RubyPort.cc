@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2013,2020 ARM Limited
+ * Copyright (c) 2012-2013,2020-2021 ARM Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -41,6 +41,7 @@
 
 #include "mem/ruby/system/RubyPort.hh"
 
+#include "base/compiler.hh"
 #include "cpu/testers/rubytest/RubyTester.hh"
 #include "debug/Config.hh"
 #include "debug/Drain.hh"
@@ -51,31 +52,37 @@
 #include "sim/full_system.hh"
 #include "sim/system.hh"
 
-RubyPort::RubyPort(const Params *p)
-    : ClockedObject(p), m_ruby_system(p->ruby_system), m_version(p->version),
+namespace gem5
+{
+
+namespace ruby
+{
+
+RubyPort::RubyPort(const Params &p)
+    : ClockedObject(p), m_ruby_system(p.ruby_system), m_version(p.version),
       m_controller(NULL), m_mandatory_q_ptr(NULL),
-      m_usingRubyTester(p->using_ruby_tester), system(p->system),
+      m_usingRubyTester(p.using_ruby_tester), system(p.system),
       pioRequestPort(csprintf("%s.pio-request-port", name()), this),
       pioResponsePort(csprintf("%s.pio-response-port", name()), this),
       memRequestPort(csprintf("%s.mem-request-port", name()), this),
       memResponsePort(csprintf("%s-mem-response-port", name()), this,
-                   p->ruby_system->getAccessBackingStore(), -1,
-                   p->no_retry_on_stall),
-      gotAddrRanges(p->port_interrupt_out_port_connection_count),
-      m_isCPUSequencer(p->is_cpu_sequencer)
+                   p.ruby_system->getAccessBackingStore(), -1,
+                   p.no_retry_on_stall),
+      gotAddrRanges(p.port_interrupt_out_port_connection_count),
+      m_isCPUSequencer(p.is_cpu_sequencer)
 {
     assert(m_version != -1);
 
     // create the response ports based on the number of connected ports
-    for (size_t i = 0; i < p->port_in_ports_connection_count; ++i) {
+    for (size_t i = 0; i < p.port_in_ports_connection_count; ++i) {
         response_ports.push_back(new MemResponsePort(csprintf
             ("%s.response_ports%d", name(), i), this,
-            p->ruby_system->getAccessBackingStore(),
-            i, p->no_retry_on_stall));
+            p.ruby_system->getAccessBackingStore(),
+            i, p.no_retry_on_stall));
     }
 
     // create the request ports based on the number of connected ports
-    for (size_t i = 0; i < p->port_interrupt_out_port_connection_count; ++i) {
+    for (size_t i = 0; i < p.port_interrupt_out_port_connection_count; ++i) {
         request_ports.push_back(new PioRequestPort(csprintf(
                     "%s.request_ports%d", name(), i), this));
     }
@@ -86,6 +93,11 @@ RubyPort::init()
 {
     assert(m_controller != NULL);
     m_mandatory_q_ptr = m_controller->getMandatoryQueue();
+    for (const auto &response_port : response_ports)
+        response_port->sendRangeChange();
+    if (gotAddrRanges == 0 && FullSystem) {
+        pioResponsePort.sendRangeChange();
+    }
 }
 
 Port &
@@ -204,7 +216,7 @@ RubyPort::PioResponsePort::recvTimingReq(PacketPtr pkt)
             if (it->contains(pkt->getAddr())) {
                 // generally it is not safe to assume success here as
                 // the port could be blocked
-                bool M5_VAR_USED success =
+                [[maybe_unused]] bool success =
                     ruby_port->request_ports[i]->sendTimingReq(pkt);
                 assert(success);
                 return true;
@@ -256,8 +268,7 @@ RubyPort::MemResponsePort::recvTimingReq(PacketPtr pkt)
     // Check for pio requests and directly send them to the dedicated
     // pio port.
     if (pkt->cmd != MemCmd::MemSyncReq) {
-        if (!isPhysMemAddress(pkt)) {
-            assert(!pkt->req->isHTMCmd());
+        if (!pkt->req->isMemMgmt() && !isPhysMemAddress(pkt)) {
             assert(ruby_port->memRequestPort.isConnected());
             DPRINTF(RubyPort, "Request address %#x assumed to be a "
                     "pio address\n", pkt->getAddr());
@@ -362,16 +373,27 @@ RubyPort::MemResponsePort::recvAtomic(PacketPtr pkt)
         return backStore->recvAtomic(pkt);
     }
 
-    // Find appropriate directory for address
-    // This assumes that protocols have a Directory machine,
-    // which has its memPort hooked up to memory. This can
-    // fail for some custom protocols.
-    MachineID id = ruby_port->m_controller->mapAddressToMachine(
-                    pkt->getAddr(), MachineType_Directory);
+    // Find the machine type of memory controller interface
     RubySystem *rs = ruby_port->m_ruby_system;
-    AbstractController *directory =
-        rs->m_abstract_controls[id.getType()][id.getNum()];
-    Tick latency = directory->recvAtomic(pkt);
+    static int mem_interface_type = -1;
+    if (mem_interface_type == -1) {
+        if (rs->m_abstract_controls[MachineType_Directory].size() != 0) {
+            mem_interface_type = MachineType_Directory;
+        }
+        else if (rs->m_abstract_controls[MachineType_Memory].size() != 0) {
+            mem_interface_type = MachineType_Memory;
+        }
+        else {
+            panic("Can't find the memory controller interface\n");
+        }
+    }
+
+    // Find the controller for the target address
+    MachineID id = ruby_port->m_controller->mapAddressToMachine(
+                    pkt->getAddr(), (MachineType)mem_interface_type);
+    AbstractController *mem_interface =
+        rs->m_abstract_controls[mem_interface_type][id.getNum()];
+    Tick latency = mem_interface->recvAtomic(pkt);
     if (access_backing_store)
         rs->getPhysMem()->access(pkt);
     return latency;
@@ -397,7 +419,7 @@ RubyPort::MemResponsePort::recvFunctional(PacketPtr pkt)
 {
     DPRINTF(RubyPort, "Functional access for address: %#x\n", pkt->getAddr());
 
-    RubyPort *rp M5_VAR_USED = static_cast<RubyPort *>(&owner);
+    [[maybe_unused]] RubyPort *rp = static_cast<RubyPort *>(&owner);
     RubySystem *rs = rp->m_ruby_system;
 
     // Check for pio requests and directly send them to the dedicated
@@ -478,6 +500,55 @@ RubyPort::ruby_hit_callback(PacketPtr pkt)
     port->hitCallback(pkt, noTimingResponse);
 
     trySendRetries();
+}
+
+void
+RubyPort::ruby_unaddressed_callback(PacketPtr pkt)
+{
+    DPRINTF(RubyPort, "Unaddressed callback for %s\n", pkt->cmdString());
+
+    assert(pkt->isRequest());
+
+    // First we must retrieve the request port from the sender State
+    RubyPort::SenderState *senderState =
+        safe_cast<RubyPort::SenderState *>(pkt->popSenderState());
+    MemResponsePort *port = senderState->port;
+    bool noTimingResponse = senderState->noTimingResponse;
+    assert(port != NULL);
+    delete senderState;
+
+    port->hitCallback(pkt, noTimingResponse);
+
+    trySendRetries();
+}
+
+void
+RubyPort::ruby_stale_translation_callback(Addr txnId)
+{
+    DPRINTF(RubyPort, "Stale Translation Callback\n");
+
+    // Allocate the invalidate request and packet on the stack, as it is
+    // assumed they will not be modified or deleted by receivers.
+    // TODO: should this really be using funcRequestorId?
+    auto request = std::make_shared<Request>(
+        0, RubySystem::getBlockSizeBytes(), Request::TLBI_EXT_SYNC,
+        Request::funcRequestorId);
+    // Store the txnId in extraData instead of the address
+    request->setExtraData(txnId);
+
+    // Use a single packet to signal all snooping ports of the external sync.
+    // This assumes that snooping ports do NOT modify the packet/request
+    // TODO rename TlbiExtSync to StaleTranslation
+    Packet pkt(request, MemCmd::TlbiExtSync);
+    // TODO - see where response_ports is filled, might be we only want to send
+    // to specific places
+    for (auto &port : response_ports) {
+        // check if the connected request port is snooping
+        if (port->isSnooping()) {
+            // send as a snoop request
+            port->sendTimingSnoopReq(&pkt);
+        }
+    }
 }
 
 void
@@ -573,7 +644,8 @@ RubyPort::MemResponsePort::hitCallback(PacketPtr pkt, bool noTimingResponse)
     }
 
     // Flush, acquire, release requests don't access physical memory
-    if (pkt->isFlush() || pkt->cmd == MemCmd::MemSyncReq) {
+    if (pkt->isFlush() || pkt->cmd == MemCmd::MemSyncReq
+        || pkt->cmd == MemCmd::WriteCompleteResp) {
         accessPhysMem = false;
     }
 
@@ -591,7 +663,7 @@ RubyPort::MemResponsePort::hitCallback(PacketPtr pkt, bool noTimingResponse)
         // We must check device memory first in case it overlaps with the
         // system memory range.
         if (ruby_port->system->isDeviceMemAddr(pkt)) {
-            auto dmem = ruby_port->system->getDeviceMemory(pkt->requestorId());
+            auto dmem = ruby_port->system->getDeviceMemory(pkt);
             dmem->access(pkt);
         } else if (ruby_port->system->isMemAddr(pkt->getAddr())) {
             // ! GemForge
@@ -638,17 +710,33 @@ RubyPort::PioResponsePort::getAddrRanges() const
         ranges.splice(ranges.begin(),
                 ruby_port->request_ports[i]->getAddrRanges());
     }
-    for (const auto M5_VAR_USED &r : ranges)
+    for ([[maybe_unused]] const auto &r : ranges)
         DPRINTF(RubyPort, "%s\n", r.to_string());
     return ranges;
+}
+
+bool
+RubyPort::MemResponsePort::isShadowRomAddress(Addr addr) const
+{
+    RubyPort *ruby_port = static_cast<RubyPort *>(&owner);
+    AddrRangeList ranges = ruby_port->system->getShadowRomRanges();
+
+    for (auto it = ranges.begin(); it != ranges.end(); ++it) {
+        if (it->contains(addr)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool
 RubyPort::MemResponsePort::isPhysMemAddress(PacketPtr pkt) const
 {
     RubyPort *ruby_port = static_cast<RubyPort *>(&owner);
-    return ruby_port->system->isMemAddr(pkt->getAddr())
-        || ruby_port->system->isDeviceMemAddr(pkt);
+    Addr addr = pkt->getAddr();
+    return (ruby_port->system->isMemAddr(addr) && !isShadowRomAddress(addr))
+           || ruby_port->system->isDeviceMemAddr(pkt);
 }
 
 void
@@ -696,3 +784,6 @@ RubyPort::functionalWrite(Packet *func_pkt)
     }
     return num_written;
 }
+
+} // namespace ruby
+} // namespace gem5

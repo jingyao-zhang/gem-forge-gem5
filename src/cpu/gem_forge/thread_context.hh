@@ -5,6 +5,8 @@
 #include "dyn_inst_stream_dispatcher.hh"
 #include "region_stats.hh"
 
+namespace gem5 {
+
 /**
  * A basic thread context.
  */
@@ -65,5 +67,7 @@ protected:
   LLVMTraceCPU *cpu;
   ThreadID threadId;
 };
+
+} // namespace gem5
 
 #endif

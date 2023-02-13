@@ -11,6 +11,8 @@
 #define EXEC_FUNC_DPRINTF(format, args...)                                     \
   DPRINTF(ExecFunc, "[%s]: " format, this->func.name().c_str(), ##args)
 
+namespace gem5 {
+
 namespace {
 
 /**
@@ -89,4 +91,5 @@ uint64_t ExecFunc::invoke(const std::vector<uint64_t> &params) {
   EXEC_FUNC_DPRINTF("Ret %llu.\n", retAddr);
   return retAddr;
 }
-} // namespace RiscvISA
+} // namespace RiscvISA} // namespace gem5
+

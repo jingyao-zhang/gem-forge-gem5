@@ -3,9 +3,11 @@
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "debug/LLVMTraceCPU.hh"
 
+namespace gem5 {
+
 using InstStatus = LLVMTraceCPU::InstStatus;
 
-LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
+LLVMIEWStage::LLVMIEWStage(const LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
     : cpu(_cpu), dispatchWidth(params->dispatchWidth),
       issueWidth(params->issueWidth), writeBackWidth(params->writeBackWidth),
       maxRobSize(params->robSize), cacheLoadPorts(params->cacheLoadPorts),
@@ -39,11 +41,11 @@ void LLVMIEWStage::regStats() {
 
   this->lsq->regStats();
 
-  this->statIssuedInstType.init(cpu->numThreads, Enums::Num_OpClass)
+  this->statIssuedInstType.init(cpu->numThreads, enums::Num_OpClass)
       .name(name() + ".FU_type")
       .desc("Type of FU issued")
       .flags(Stats::total | Stats::pdf | Stats::dist);
-  this->statIssuedInstType.ysubnames(Enums::OpClassStrings);
+  this->statIssuedInstType.ysubnames(enums::OpClassStrings);
 
 #define scalar(stat, describe)                                                 \
   this->stat.name(name() + ("." #stat)).desc(describe).prereq(this->stat)
@@ -239,7 +241,7 @@ void LLVMIEWStage::issue() {
       bool canIssue = true;
       auto inst = cpu->inflyInstMap.at(instId);
       auto opClass = inst->getOpClass();
-      auto fuId = FUPool::NoCapableFU;
+      auto fuId = o3::FUPool::NoCapableFU;
       const auto &instName = inst->getInstName();
 
       // Check if this thread is blocked by misspeculation.
@@ -264,10 +266,10 @@ void LLVMIEWStage::issue() {
       // Check if there is available FU.
       if (opClass != No_OpClass) {
         fuId = cpu->fuPool->getUnit(opClass);
-        panic_if(fuId == FUPool::NoCapableFU,
+        panic_if(fuId == o3::FUPool::NoCapableFU,
                  "There is no capable FU %s for inst %u.\n",
-                 Enums::OpClassStrings[opClass], instId);
-        if (fuId == FUPool::NoFreeFU) {
+                 enums::OpClassStrings[opClass], instId);
+        if (fuId == o3::FUPool::NoFreeFU) {
           canIssue = false;
         }
       }
@@ -348,11 +350,11 @@ void LLVMIEWStage::issue() {
         // Handle the FU completion.
         if (opClass != No_OpClass) {
           // DPRINTF(LLVMTraceCPU, "Inst %u get FU %s with fuId %d.\n", instId,
-          //         Enums::OpClassStrings[opClass], fuId);
+          //         enums::OpClassStrings[opClass], fuId);
 
           auto opLatency = cpu->getOpLatency(opClass);
           // For accelerator, use the latency from the "actual accelerator".
-          if (opClass == Enums::OpClass::Accelerator) {
+          if (opClass == AcceleratorOp) {
             panic("Accelerator is deprecated now.");
           }
 
@@ -706,3 +708,4 @@ void LLVMIEWStage::GemForgeIEWLQCallback::RAWMisspeculate() {
 void LLVMIEWStage::GemForgeIEWSQCallback::writebacked() {
   cpu->inflyInstStatus.at(inst->getId()) = InstStatus::COMMITTED;
 }
+} // namespace gem5

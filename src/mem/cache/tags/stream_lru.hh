@@ -4,6 +4,8 @@
 #include "base_set_assoc.hh"
 #include "params/StreamLRU.hh"
 
+namespace gem5 {
+
 class StreamLRU : public BaseSetAssoc {
 public:
   using Params = StreamLRUParams;
@@ -18,5 +20,7 @@ public:
   void insertBlockLRU(PacketPtr pkt, BlkType *blk);
   void invalidate(CacheBlk *blk);
 };
+
+} // namespace gem5
 
 #endif

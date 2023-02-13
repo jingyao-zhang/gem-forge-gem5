@@ -1,5 +1,7 @@
 #include "bank_manager.hh"
 
+namespace gem5 {
+
 BankManager::BankManager(uint32_t _cacheLineSize, uint32_t _numBanks,
                          uint32_t _numPortsPerBank)
     : cacheLineSize(_cacheLineSize),
@@ -57,3 +59,5 @@ std::pair<uint32_t, uint32_t> BankManager::getBanks(uint64_t addr,
   assert(rhsBank < this->numBanks && "BankManager: illegal rhs bank.");
   return std::make_pair<uint32_t, uint32_t>(lhsBank, rhsBank);
 }
+} // namespace gem5
+

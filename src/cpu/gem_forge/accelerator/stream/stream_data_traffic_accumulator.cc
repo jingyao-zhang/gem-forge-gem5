@@ -1,5 +1,7 @@
 #include "stream_data_traffic_accumulator.hh"
 
+namespace gem5 {
+
 StreamDataTrafficAccumulator::StreamDataTrafficAccumulator(StreamEngine *_se,
                                                            bool _floated)
     : myName("acc"), se(_se), floated(_floated) {}
@@ -167,4 +169,5 @@ int StreamDataTrafficAccumulator::getElementDataBank(
     return -1;
   }
   return this->mapPAddrToBank(paddr);
-}
+}} // namespace gem5
+

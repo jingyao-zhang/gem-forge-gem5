@@ -5,7 +5,9 @@
 
 #include "cpu/gem_forge/gem_forge_lsq_callback.hh"
 
-namespace Minor {
+namespace gem5 {
+
+namespace minor {
 
 /**
  * Wraps GemForgeLQCallback into a LoadRequest into the LSQ.
@@ -22,7 +24,7 @@ protected:
    * Finish translation in TLB.
    */
   void finish(const Fault &fault, const RequestPtr &request, ThreadContext *tc,
-              BaseTLB::Mode mode) override {}
+              BaseMMU::Mode mode) override {}
 
 public:
   /**
@@ -83,6 +85,7 @@ public:
     return os << *(this->callback.get()) << "[State: " << this->state << ']';
   }
 };
-} // namespace Minor
+} // namespace minor
+} // namespace gem5
 
 #endif

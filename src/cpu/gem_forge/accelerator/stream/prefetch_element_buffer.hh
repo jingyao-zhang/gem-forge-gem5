@@ -5,6 +5,8 @@
 
 #include <unordered_set>
 
+namespace gem5 {
+
 /**
  * This data struction holds the stream element that's in prefetch state.
  * These elements should be
@@ -35,5 +37,7 @@ public:
 
   std::unordered_set<StreamElement *> elements;
 };
+
+} // namespace gem5
 
 #endif

@@ -41,11 +41,14 @@
 #include "scx/scx.h"
 #include "sim/init.hh"
 
+namespace gem5
+{
+
 namespace
 {
 
 void
-arm_fast_model_pybind(pybind11::module &m_internal)
+arm_fast_model_pybind(pybind11::module_ &m_internal)
 {
     auto arm_fast_model = m_internal.def_submodule("arm_fast_model");
     arm_fast_model
@@ -119,3 +122,4 @@ arm_fast_model_pybind(pybind11::module &m_internal)
 EmbeddedPyBind embed_("arm_fast_model", &arm_fast_model_pybind);
 
 } // anonymous namespace
+} // namespace gem5

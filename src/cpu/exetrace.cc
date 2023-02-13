@@ -43,9 +43,7 @@
 #include <iomanip>
 #include <sstream>
 
-#include "arch/utility.hh"
 #include "base/loader/symtab.hh"
-#include "config/the_isa.hh"
 #include "cpu/base.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
@@ -53,44 +51,45 @@
 #include "debug/FmtTicksOff.hh"
 #include "enums/OpClass.hh"
 
-using namespace std;
-using namespace TheISA;
+namespace gem5
+{
 
-namespace Trace {
+namespace trace {
 
 void
-Trace::ExeTracerRecord::traceInst(const StaticInstPtr &inst, bool ran)
+ExeTracerRecord::traceInst(const StaticInstPtr &inst, bool ran)
 {
     std::stringstream outs;
 
-    if (!Debug::ExecUser || !Debug::ExecKernel) {
-        bool in_user_mode = TheISA::inUserMode(thread);
-        if (in_user_mode && !Debug::ExecUser) return;
-        if (!in_user_mode && !Debug::ExecKernel) return;
+    const bool in_user_mode = thread->getIsaPtr()->inUserMode();
+    if (in_user_mode && !debug::ExecUser)
+        return;
+    if (!in_user_mode && !debug::ExecKernel)
+        return;
+
+    if (debug::ExecAsid) {
+        outs << "A" << std::dec <<
+            thread->getIsaPtr()->getExecutingAsid() << " ";
     }
 
-    if (Debug::ExecAsid)
-        outs << "A" << dec << TheISA::getExecutingAsid(thread) << " ";
-
-    if (Debug::ExecThread)
+    if (debug::ExecThread)
         outs << "T" << thread->threadId() << " : ";
 
-    Addr cur_pc = pc.instAddr();
-    Loader::SymbolTable::const_iterator it;
-    if (Debug::ExecSymbol && (!FullSystem || !inUserMode(thread)) &&
-            (it = Loader::debugSymbolTable.findNearest(cur_pc)) !=
-                Loader::debugSymbolTable.end()) {
+    Addr cur_pc = pc->instAddr();
+    loader::SymbolTable::const_iterator it;
+    ccprintf(outs, "%#x", cur_pc);
+    if (debug::ExecSymbol && (!FullSystem || !in_user_mode) &&
+            (it = loader::debugSymbolTable.findNearest(cur_pc)) !=
+                loader::debugSymbolTable.end()) {
         Addr delta = cur_pc - it->address;
         if (delta)
-            ccprintf(outs, "@%s+%d", it->name, delta);
+            ccprintf(outs, " @%s+%d", it->name, delta);
         else
-            ccprintf(outs, "@%s", it->name);
-    } else {
-        ccprintf(outs, "%#x", cur_pc);
+            ccprintf(outs, " @%s", it->name);
     }
 
     if (inst->isMicroop()) {
-        ccprintf(outs, ".%2d", pc.microPC());
+        ccprintf(outs, ".%2d", pc->microPC());
     } else {
         ccprintf(outs, "   ");
     }
@@ -101,65 +100,37 @@ Trace::ExeTracerRecord::traceInst(const StaticInstPtr &inst, bool ran)
     //  Print decoded instruction
     //
 
-    outs << setw(26) << left;
-    outs << inst->disassemble(cur_pc, &Loader::debugSymbolTable);
+    outs << std::setw(26) << std::left;
+    outs << inst->disassemble(cur_pc, &loader::debugSymbolTable);
 
     if (ran) {
         outs << " : ";
 
-        if (Debug::ExecOpClass) {
-            outs << Enums::OpClassStrings[inst->opClass()] << " : ";
+        if (debug::ExecOpClass) {
+            outs << enums::OpClassStrings[inst->opClass()] << " : ";
         }
 
-        if (Debug::ExecResult && !predicate) {
+        if (debug::ExecResult && !predicate) {
             outs << "Predicated False";
         }
 
-        if (Debug::ExecResult && data_status != DataInvalid) {
-            switch (data_status) {
-              case DataVec:
-                {
-                    ccprintf(outs, " D=0x[");
-                    auto dv = data.as_vec->as<uint32_t>();
-                    for (int i = TheISA::VecRegSizeBytes / 4 - 1; i >= 0;
-                         i--) {
-                        ccprintf(outs, "%08x", dv[i]);
-                        if (i != 0) {
-                            ccprintf(outs, "_");
-                        }
-                    }
-                    ccprintf(outs, "]");
-                }
-                break;
-              case DataVecPred:
-                {
-                    ccprintf(outs, " D=0b[");
-                    auto pv = data.as_pred->as<uint8_t>();
-                    for (int i = TheISA::VecPredRegSizeBits - 1; i >= 0; i--) {
-                        ccprintf(outs, pv[i] ? "1" : "0");
-                        if (i != 0 && i % 4 == 0) {
-                            ccprintf(outs, "_");
-                        }
-                    }
-                    ccprintf(outs, "]");
-                }
-                break;
-              default:
-                ccprintf(outs, " D=%#018x", data.as_int);
-                break;
-            }
+        if (debug::ExecResult && dataStatus != DataInvalid) {
+            if (dataStatus == DataReg)
+                ccprintf(outs, " D=%s", data.asReg.asString());
+            else
+                ccprintf(outs, " D=%#018x", data.asInt);
         }
 
-        if (Debug::ExecEffAddr && getMemValid())
-            outs << " A=0x" << hex << addr;
+        if (debug::ExecEffAddr && getMemValid())
+            outs << " A=0x" << std::hex << addr;
 
-        if (Debug::ExecFetchSeq && fetch_seq_valid)
-            outs << "  FetchSeq=" << dec << fetch_seq;
+        if (debug::ExecFetchSeq && fetch_seq_valid)
+            outs << "  FetchSeq=" << std::dec << fetch_seq;
 
-        if (Debug::ExecCPSeq && cp_seq_valid)
-            outs << "  CPSeq=" << dec << cp_seq;
+        if (debug::ExecCPSeq && cp_seq_valid)
+            outs << "  CPSeq=" << std::dec << cp_seq;
 
-        if (Debug::ExecFlags) {
+        if (debug::ExecFlags) {
             outs << "  flags=(";
             inst->printFlags(outs, "|");
             outs << ")";
@@ -169,15 +140,15 @@ Trace::ExeTracerRecord::traceInst(const StaticInstPtr &inst, bool ran)
     //
     //  End of line...
     //
-    outs << endl;
+    outs << std::endl;
 
-    Trace::getDebugLogger()->dprintf_flag(
+    trace::getDebugLogger()->dprintf_flag(
         when, thread->getCpuPtr()->name(), "ExecEnable", "%s",
         outs.str().c_str());
 }
 
 void
-Trace::ExeTracerRecord::dump()
+ExeTracerRecord::dump()
 {
     /*
      * The behavior this check tries to achieve is that if ExecMacro is on,
@@ -187,26 +158,17 @@ Trace::ExeTracerRecord::dump()
      * finishes. Macroops then behave like regular instructions and don't
      * complete/print when they fault.
      */
-    if (Debug::ExecMacro && staticInst->isMicroop() &&
-        ((Debug::ExecMicro &&
+    if (debug::ExecMacro && staticInst->isMicroop() &&
+        ((debug::ExecMicro &&
             macroStaticInst && staticInst->isFirstMicroop()) ||
-            (!Debug::ExecMicro &&
+            (!debug::ExecMicro &&
              macroStaticInst && staticInst->isLastMicroop()))) {
         traceInst(macroStaticInst, false);
     }
-    if (Debug::ExecMicro || !staticInst->isMicroop()) {
+    if (debug::ExecMicro || !staticInst->isMicroop()) {
         traceInst(staticInst, true);
     }
 }
 
-} // namespace Trace
-
-////////////////////////////////////////////////////////////////////////
-//
-//  ExeTracer Simulation Object
-//
-Trace::ExeTracer *
-ExeTracerParams::create()
-{
-    return new Trace::ExeTracer(this);
-}
+} // namespace trace
+} // namespace gem5

@@ -33,6 +33,8 @@
  * dispatching. This PreLSQ can be unordered.
  *************************************************************************/
 
+namespace gem5 {
+
 class MinorCPUDelegator : public GemForgeCPUDelegator {
 public:
   MinorCPUDelegator(MinorCPU *_cpu);
@@ -128,5 +130,7 @@ protected:
   InstSeqNum getInstSeqNum() const override;
   void setInstSeqNum(InstSeqNum seqNum) override;
 };
+
+} // namespace gem5
 
 #endif

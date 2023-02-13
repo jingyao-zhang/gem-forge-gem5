@@ -3,6 +3,8 @@
 
 #include "arch/x86/insts/microop.hh"
 
+namespace gem5 {
+
 namespace X86ISA {
 
 class AVXOpBase : public X86MicroopBase {
@@ -31,24 +33,37 @@ protected:
   const uint8_t ext;
   const RegIndex mask;
 
+  /**
+   * Now that src/dest reg arrays are declared internall in each static inst,
+   * we manually decare the largest possible one here.
+   * TODO: Use the current generator to taylor this array.
+   */
+  RegId srcRegIdxArr[MaxInstSrcRegs];
+  RegId destRegIdxArr[MaxInstDestRegs];
+
   // Constructor
   AVXOpBase(ExtMachInst _machInst, const char *_mnem, const char *_instMnem,
             uint64_t _setFlags, OpClass _opClass, SrcType _srcType,
-            InstRegIndex _dest, InstRegIndex _src1, InstRegIndex _src2,
-            InstRegIndex _src3, uint8_t _destSize, uint8_t _destVL,
+            FpRegIndex _dest, FpRegIndex _src1, FpRegIndex _src2,
+            FpRegIndex _src3, uint8_t _destSize, uint8_t _destVL,
             uint8_t _srcSize, uint8_t _srcVL, uint8_t _imm8, uint8_t _ext,
-            InstRegIndex _mask)
+            GpRegIndex _mask)
       : X86MicroopBase(_machInst, _mnem, _instMnem, _setFlags, _opClass),
-        srcType(_srcType), dest(_dest.index()), src1(_src1.index()),
-        src2(_src2.index()), src3(_src3.index()), destSize(_destSize),
+        srcType(_srcType), dest(_dest.index), src1(_src1.index),
+        src2(_src2.index), src3(_src3.index), destSize(_destSize),
         destVL(_destVL), srcSize(_srcSize), srcVL(_srcVL), imm8(_imm8),
-        ext(_ext), mask(_mask.index()) {
+        ext(_ext), mask(_mask.index) {
     assert((destVL % sizeof(uint64_t) == 0) && "Invalid destVL.\n");
     assert((srcVL % sizeof(uint64_t) == 0) && "Invalid srcVL.\n");
+
+    setRegIdxArrays(reinterpret_cast<RegIdArrayPtr>(
+                        &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+                    reinterpret_cast<RegIdArrayPtr>(
+                        &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
   }
 
   std::string generateDisassembly(Addr pc,
-                                  const ::Loader::SymbolTable *symtab) const;
+                                  const loader::SymbolTable *symtab) const;
 
   union FloatInt {
     struct __attribute__((packed)) {
@@ -150,29 +165,13 @@ protected:
   void doPermuteInLane(ExecContext *xc) const;
 
   // A helper function to add dest regs.
-  inline void addAVXDestRegs() {
-    auto vDestRegs = destVL / sizeof(uint64_t);
-    assert(vDestRegs <= NumXMMSubRegs && "DestVL overflow.");
-    _numDestRegs = _numFPDestRegs = vDestRegs;
-    assert(_numDestRegs <= MaxInstDestRegs && "DestRegs overflow.");
-    for (int i = 0; i < vDestRegs; i++) {
-      _destRegIdx[i] = RegId(FloatRegClass, dest + i);
-    }
-  }
+  void addAVXDestRegs();
 
   // A helper function to add dest regs as src regs.
-  inline void addAVXDestAsSrcRegs() {
-    auto vDestRegs = destVL / sizeof(uint64_t);
-    assert(vDestRegs <= NumXMMSubRegs && "DestVL overflow.");
-    assert(_numSrcRegs + vDestRegs <= MaxInstSrcRegs &&
-           "DestAsSrcRegs overflow.");
-    for (int i = 0; i < vDestRegs; i++) {
-      _srcRegIdx[i + _numSrcRegs] = RegId(FloatRegClass, dest + i);
-    }
-    _numSrcRegs += vDestRegs;
-  }
+  void addAVXDestAsSrcRegs();
 };
 
 } // namespace X86ISA
+} // namespace gem5
 
 #endif //__ARCH_X86_INSTS_MICROAVXOP_HH__

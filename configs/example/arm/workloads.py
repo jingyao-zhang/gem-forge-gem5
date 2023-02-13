@@ -34,9 +34,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-from __future__ import print_function
-from __future__ import absolute_import
-
 import inspect
 import m5
 from m5.objects import *
@@ -45,14 +42,17 @@ from m5.options import *
 from common.ObjectList import ObjectList
 from common.SysPaths import binary, disk
 
+
 class ArmBaremetal(ArmFsWorkload):
-    """ Baremetal workload """
-    atags_addr = 0
+    """Baremetal workload"""
+
+    dtb_addr = 0
 
     def __init__(self, obj, system, **kwargs):
         super(ArmBaremetal, self).__init__(**kwargs)
 
         self.object_file = obj
+
 
 class ArmTrustedFirmware(ArmFsWorkload):
     """
@@ -72,19 +72,21 @@ class ArmTrustedFirmware(ArmFsWorkload):
     https://github.com/ARM-software/arm-trusted-firmware
 
     """
-    atags_addr = 0
+
+    dtb_addr = 0
 
     def __init__(self, obj, system, **kwargs):
         super(ArmTrustedFirmware, self).__init__(**kwargs)
 
-        self.extras = [ binary('bl1.bin'), binary('fip.bin'), ]
+        self.extras = [binary("bl1.bin"), binary("fip.bin")]
         self.extras_addrs = [
             system.realview.bootmem.range.start,
-            system.realview.flash0.range.start
+            system.realview.flash0.range.start,
         ]
 
         # Arm Trusted Firmware will provide a PSCI implementation
         system._have_psci = True
+
 
 class _WorkloadList(ObjectList):
     def _add_objects(self):
@@ -93,4 +95,5 @@ class _WorkloadList(ObjectList):
         for name, cls in inspect.getmembers(modname, self._is_obj_class):
             self._sub_classes[name] = cls
 
-workload_list = _WorkloadList(getattr(m5.objects, 'ArmFsWorkload', None))
+
+workload_list = _WorkloadList(getattr(m5.objects, "ArmFsWorkload", None))

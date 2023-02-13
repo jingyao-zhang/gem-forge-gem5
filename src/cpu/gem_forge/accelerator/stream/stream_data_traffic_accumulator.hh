@@ -3,6 +3,8 @@
 
 #include "stream_engine.hh"
 
+namespace gem5 {
+
 /**
  * This is used to estimate the stream data traffic.
  * It models 8x8 mesh, 8-bit link, 1kB LLC interleaving.
@@ -28,8 +30,8 @@ private:
   const int colSize = 8;
   const int flitSizeBytes = 1;
 
-  Stats::Scalar hops;
-  Stats::Scalar cachedHops;
+  statistics::Scalar hops;
+  statistics::Scalar cachedHops;
 
   std::string name() const { return this->myName; }
 
@@ -59,5 +61,7 @@ private:
   void computeTrafficFix(const StreamElement *element);
   void computeTrafficFloat(const StreamElement *element);
 };
+
+} // namespace gem5
 
 #endif

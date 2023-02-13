@@ -7,6 +7,8 @@
 
 #include "debug/StreamEngineBase.hh"
 
+namespace gem5 {
+
 StreamInst::StreamInst(const LLVM::TDG::TDGInstruction &_TDG)
     : LLVMDynamicInst(_TDG, 1), finished(false) {}
 
@@ -206,4 +208,5 @@ LLVMDynamicInst *parseStreamInst(LLVM::TDG::TDGInstruction &TDGInst) {
   }
 
   return nullptr;
-}
+}} // namespace gem5
+

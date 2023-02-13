@@ -2,6 +2,8 @@
 
 #include <iomanip>
 
+namespace gem5 {
+
 std::ostream &operator<<(std::ostream &os, const PUMCommand &command) {
   os << command.to_string();
   return os;
@@ -37,7 +39,7 @@ std::string PUMCommand::to_string(int llcBankIdx) const {
     }
   } else {
     // Compute command.
-    os << "  Op " << Enums::OpClassStrings[opClass]
+    os << "  Op " << enums::OpClassStrings[opClass]
        << (isReduction ? " [Reduce] " : "") << '\n';
   }
   std::vector<int> mappedLLCBanks;
@@ -89,3 +91,4 @@ std::string PUMCommand::to_string(int llcBankIdx) const {
   }
   return os.str();
 }
+} // namespace gem5

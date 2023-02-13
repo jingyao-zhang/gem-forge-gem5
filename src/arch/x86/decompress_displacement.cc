@@ -8,6 +8,8 @@
 
 #include <unordered_set>
 
+namespace gem5 {
+
 namespace X86ISA {
 
 namespace {
@@ -398,3 +400,5 @@ void Decoder::processCompressedDisplacement() {
 }
 
 } // namespace X86ISA
+
+}

@@ -12,6 +12,8 @@
  * of Trie and FreeList.
  */
 
+namespace gem5 {
+
 namespace X86ISA {
 class TLBSet : public Serializable {
 public:
@@ -117,6 +119,8 @@ private:
   TlbEntryTrie trie;
   uint64_t lruSeq;
 };
+
 } // namespace X86ISA
+} // namespace gem5
 
 #endif

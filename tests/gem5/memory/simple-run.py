@@ -38,10 +38,10 @@ from m5.objects import *
 
 import argparse
 
-parser = argparse.ArgumentParser(description='Simple memory tester')
-parser.add_argument('--bandwidth', default=None)
-parser.add_argument('--latency', default=None)
-parser.add_argument('--latency_var', default=None)
+parser = argparse.ArgumentParser(description="Simple memory tester")
+parser.add_argument("--bandwidth", default=None)
+parser.add_argument("--latency", default=None)
+parser.add_argument("--latency_var", default=None)
 
 args = parser.parse_args()
 
@@ -49,10 +49,13 @@ args = parser.parse_args()
 # the scripts are happy
 try:
     cpu = TrafficGen(
-        config_file=os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             "tgen-simple-mem.cfg"))
+        config_file=os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "tgen-simple-mem.cfg"
+        )
+    )
 except NameError:
     m5.fatal("protobuf required for simple memory test")
+
 
 class MyMem(SimpleMemory):
     if args.bandwidth:
@@ -62,35 +65,37 @@ class MyMem(SimpleMemory):
     if args.latency_var:
         latency_var = args.latency_var
 
+
 # system simulated
-system = System(cpu = cpu, physmem = MyMem(),
-                membus = IOXBar(width = 16),
-                clk_domain = SrcClockDomain(clock = '1GHz',
-                                            voltage_domain =
-                                            VoltageDomain()))
+system = System(
+    cpu=cpu,
+    physmem=MyMem(),
+    membus=IOXBar(width=16),
+    clk_domain=SrcClockDomain(clock="1GHz", voltage_domain=VoltageDomain()),
+)
 
 # add a communication monitor, and also trace all the packets and
 # calculate and verify stack distance
 system.monitor = CommMonitor()
-system.monitor.trace = MemTraceProbe(trace_file = "monitor.ptrc.gz")
-system.monitor.stackdist = StackDistProbe(verify = True)
+system.monitor.trace = MemTraceProbe(trace_file="monitor.ptrc.gz")
+system.monitor.stackdist = StackDistProbe(verify=True)
 
 # connect the traffic generator to the bus via a communication monitor
-system.cpu.port = system.monitor.slave
-system.monitor.master = system.membus.slave
+system.cpu.port = system.monitor.cpu_side_port
+system.monitor.mem_side_port = system.membus.cpu_side_ports
 
 # connect the system port even if it is not used in this example
-system.system_port = system.membus.slave
+system.system_port = system.membus.cpu_side_ports
 
 # connect memory to the membus
-system.physmem.port = system.membus.master
+system.physmem.port = system.membus.mem_side_ports
 
 # -----------------------
 # run simulation
 # -----------------------
 
-root = Root(full_system = False, system = system)
-root.system.mem_mode = 'timing'
+root = Root(full_system=False, system=system)
+root.system.mem_mode = "timing"
 
 m5.instantiate()
 exit_event = m5.simulate(100000000000)

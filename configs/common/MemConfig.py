@@ -1,4 +1,4 @@
-# Copyright (c) 2013, 2017, 2020 ARM Limited
+# Copyright (c) 2013, 2017, 2020-2021 Arm Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -33,9 +33,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from __future__ import print_function
-from __future__ import absolute_import
-
 import m5.objects
 
 from common import ObjectList
@@ -53,7 +50,7 @@ def dramsim3_size_mb(ini_file):
     size_mb = channel_size * num_channels
     return size_mb
 
-def create_mem_intf(intf, r, i, nbr_mem_ctrls, intlv_bits, intlv_size, options):
+def create_mem_intf(intf, r, i, intlv_bits, intlv_size, options):
     """
     Helper function for creating a single memoy controller from the given
     options.  This function is invoked multiple times in config_mem function
@@ -61,6 +58,7 @@ def create_mem_intf(intf, r, i, nbr_mem_ctrls, intlv_bits, intlv_size, options):
     """
 
     import math
+
     intlv_low_bit = int(math.log(intlv_size, 2))
 
     # Use basic hashing for the channel selection, and preferably use
@@ -83,13 +81,15 @@ def create_mem_intf(intf, r, i, nbr_mem_ctrls, intlv_bits, intlv_size, options):
         # If the channel bits are appearing after the column
         # bits, we need to add the appropriate number of bits
         # for the row buffer size
-        if interface.addr_mapping.value == 'RoRaBaChCo':
+        if interface.addr_mapping.value == "RoRaBaChCo":
             # This computation only really needs to happen
             # once, but as we rely on having an instance we
             # end up having to repeat it for each and every
             # one
-            rowbuffer_size = interface.device_rowbuffer_size.value * \
-                interface.devices_per_rank.value
+            rowbuffer_size = (
+                interface.device_rowbuffer_size.value
+                * interface.devices_per_rank.value
+            )
 
             intlv_low_bit = int(math.log(rowbuffer_size, 2))
 
@@ -99,7 +99,7 @@ def create_mem_intf(intf, r, i, nbr_mem_ctrls, intlv_bits, intlv_size, options):
         # If the channel bits are appearing after the low order
         # address bits (buffer bits), we need to add the appropriate
         # number of bits for the buffer size
-        if interface.addr_mapping.value == 'RoRaBaChCo':
+        if interface.addr_mapping.value == "RoRaBaChCo":
             # This computation only really needs to happen
             # once, but as we rely on having an instance we
             # end up having to repeat it for each and every
@@ -111,12 +111,14 @@ def create_mem_intf(intf, r, i, nbr_mem_ctrls, intlv_bits, intlv_size, options):
     # We got all we need to configure the appropriate address
     # range
     print(f'IntlvLow {intlv_low_bit} IntlvBits {intlv_bits} {r.start} {r.size()} XORHighBit {xor_high_bit}')
-    interface.range = m5.objects.AddrRange(r.start, size = r.size(),
-                                      intlvHighBit = \
-                                          intlv_low_bit + intlv_bits - 1,
-                                      xorHighBit = xor_high_bit,
-                                      intlvBits = intlv_bits,
-                                      intlvMatch = i)
+    interface.range = m5.objects.AddrRange(
+        r.start,
+        size=r.size(),
+        intlvHighBit=intlv_low_bit + intlv_bits - 1,
+        xorHighBit=xor_high_bit,
+        intlvBits=intlv_bits,
+        intlvMatch=i,
+    )
     # Set options for DRAMSim2 controller.
     if hasattr(m5.objects, 'DRAMSim2') and issubclass(intf, m5.objects.DRAMSim2):
         interface.filePath = options.dramsim2_path
@@ -133,6 +135,7 @@ def create_mem_intf(intf, r, i, nbr_mem_ctrls, intlv_bits, intlv_size, options):
         interface.interleaveBitsHigh = intlv_low_bit + intlv_bits - 1
 
     return interface
+
 
 def config_mem(options, system):
     """
@@ -157,8 +160,9 @@ def config_mem(options, system):
 
     # Optional options
     opt_tlm_memory = getattr(options, "tlm_memory", None)
-    opt_external_memory_system = getattr(options, "external_memory_system",
-                                         None)
+    opt_external_memory_system = getattr(
+        options, "external_memory_system", None
+    )
     opt_elastic_trace_en = getattr(options, "elastic_trace_en", False)
     opt_mem_ranks = getattr(options, "mem_ranks", None)
     opt_nvm_ranks = getattr(options, "nvm_ranks", None)
@@ -191,16 +195,19 @@ def config_mem(options, system):
         system.external_memory = m5.objects.ExternalSlave(
             port_type="tlm_slave",
             port_data=opt_tlm_memory,
-            port=system.membus.master,
-            addr_ranges=system.mem_ranges)
+            port=system.membus.mem_side_ports,
+            addr_ranges=system.mem_ranges,
+        )
         system.workload.addr_check = False
         return
 
     if opt_external_memory_system:
         subsystem.external_memory = m5.objects.ExternalSlave(
             port_type=opt_external_memory_system,
-            port_data="init_mem0", port=xbar.master,
-            addr_ranges=system.mem_ranges)
+            port_data="init_mem0",
+            port=xbar.mem_side_ports,
+            addr_ranges=system.mem_ranges,
+        )
         subsystem.workload.addr_check = False
         return
 
@@ -208,8 +215,9 @@ def config_mem(options, system):
 
     import math
     from m5.util import fatal
+
     intlv_bits = int(math.log(nbr_mem_ctrls, 2))
-    if 2 ** intlv_bits != nbr_mem_ctrls:
+    if 2**intlv_bits != nbr_mem_ctrls:
         fatal("Number of memory channels must be a power of 2")
 
     if opt_mem_type:
@@ -221,8 +229,10 @@ def config_mem(options, system):
     mem_ctrls = []
 
     if opt_elastic_trace_en and not issubclass(intf, m5.objects.SimpleMemory):
-        fatal("When elastic trace is enabled, configure mem-type as "
-                "simple-mem.")
+        fatal(
+            "When elastic trace is enabled, configure mem-type as "
+            "simple-mem."
+        )
 
     # The default behaviour is to interleave memory channels on 128
     # byte granularity, or cache line granularity if larger than 128
@@ -242,27 +252,16 @@ def config_mem(options, system):
         for i in range(nbr_mem_ctrls):
             if opt_mem_type and (not opt_nvm_type or range_iter % 2 != 0):
                 # Create the DRAM interface
-                # ! This is moved into create_mem_ctrl.
-                # # We need to do a couple of things differently for DRAMsim3
-                # # use same outdir as gem5, and use its own address mapping
-                # if opt_mem_type == 'DRAMsim3':
-                #     mem_ctrl = cls()
-                #     if opt_dramsim3_ini:
-                #         mem_ctrl.config_file = opt_dramsim3_ini
-                #     mem_ctrl.file_path = m5.options.outdir
-                #     mem_ctrl.range=m5.objects.AddrRange(r.size())
-
-                dram_ctrl = create_mem_ctrl(cls, r, i, nbr_mem_ctrls, intlv_bits,
-                                           intlv_size, options)
-                # Set the number of ranks based on the command-line
-                # options if it was explicitly set
-                if issubclass(cls, m5.objects.DRAMCtrl) and opt_mem_ranks:
-                    dram_ctrl.ranks_per_channel = opt_mem_ranks
+                dram_intf = create_mem_intf(
+                    intf, r, i, intlv_bits, intlv_size, options
+                )
 
                 # Set the number of ranks based on the command-line
                 # options if it was explicitly set
-                if issubclass(intf, m5.objects.DRAMInterface) and \
-                   opt_mem_ranks:
+                if (
+                    issubclass(intf, m5.objects.DRAMInterface)
+                    and opt_mem_ranks
+                ):
                     dram_intf.ranks_per_channel = opt_mem_ranks
 
                 # Enable low-power DRAM states if option is set
@@ -270,41 +269,34 @@ def config_mem(options, system):
                     dram_intf.enable_dram_powerdown = opt_dram_powerdown
 
                 if opt_elastic_trace_en:
-                    dram_intf.latency = '1ns'
-                    print("For elastic trace, over-riding Simple Memory "
-                        "latency to 1ns.")
+                    dram_intf.latency = "1ns"
+                    print(
+                        "For elastic trace, over-riding Simple Memory "
+                        "latency to 1ns."
+                    )
 
                 # Create the controller that will drive the interface
-                if opt_mem_type == "HMC_2500_1x32":
-                    # The static latency of the vault controllers is estimated
-                    # to be smaller than a full DRAM channel controller
-                    mem_ctrl = m5.objects.MemCtrl(min_writes_per_switch = 8,
-                                             static_backend_latency = '4ns',
-                                             static_frontend_latency = '4ns')
-                elif opt_mem_type == "SimpleMemory":
-                    mem_ctrl = m5.objects.SimpleMemory()
-                else:
-                    mem_ctrl = m5.objects.MemCtrl()
-
-                # Hookup the controller to the interface and add to the list
-                if opt_mem_type != "SimpleMemory":
-                    mem_ctrl.dram = dram_intf
+                mem_ctrl = dram_intf.controller()
 
                 mem_ctrls.append(mem_ctrl)
 
             elif opt_nvm_type and (not opt_mem_type or range_iter % 2 == 0):
-                nvm_intf = create_mem_intf(n_intf, r, i, nbr_mem_ctrls,
-                                           intlv_bits, intlv_size)
+                nvm_intf = create_mem_intf(
+                    n_intf, r, i, intlv_bits, intlv_size, opt_xor_low_bit
+                )
+
                 # Set the number of ranks based on the command-line
                 # options if it was explicitly set
-                if issubclass(n_intf, m5.objects.NVMInterface) and \
-                   opt_nvm_ranks:
+                if (
+                    issubclass(n_intf, m5.objects.NVMInterface)
+                    and opt_nvm_ranks
+                ):
                     nvm_intf.ranks_per_channel = opt_nvm_ranks
 
                 # Create a controller if not sharing a channel with DRAM
                 # in which case the controller has already been created
                 if not opt_hybrid_channel:
-                    mem_ctrl = m5.objects.MemCtrl()
+                    mem_ctrl = m5.objects.HeteroMemCtrl()
                     mem_ctrl.nvm = nvm_intf
 
                     mem_ctrls.append(mem_ctrl)
@@ -313,18 +305,18 @@ def config_mem(options, system):
 
     # hook up NVM interface when channel is shared with DRAM + NVM
     for i in range(len(nvm_intfs)):
-        mem_ctrls[i].nvm = nvm_intfs[i];
+        mem_ctrls[i].nvm = nvm_intfs[i]
 
     # Connect the controller to the xbar port
     for i in range(len(mem_ctrls)):
         if opt_mem_type == "HMC_2500_1x32":
             # Connect the controllers to the membus
-            mem_ctrls[i].port = xbar[i/4].master
+            mem_ctrls[i].port = xbar[i // 4].mem_side_ports
             # Set memory device size. There is an independent controller
             # for each vault. All vaults are same size.
             mem_ctrls[i].dram.device_size = options.hmc_dev_vault_size
         else:
             # Connect the controllers to the membus
-            mem_ctrls[i].port = xbar.master
+            mem_ctrls[i].port = xbar.mem_side_ports
 
     subsystem.mem_ctrls = mem_ctrls

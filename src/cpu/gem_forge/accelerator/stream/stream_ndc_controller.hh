@@ -4,6 +4,8 @@
 #include "stream_engine.hh"
 #include "stream_ndc_packet.hh"
 
+namespace gem5 {
+
 /**
  * Helper class to manager per element fine-grained near-data computing
  * for streams. This is mainly used as a baseline for near-stream computing.
@@ -28,5 +30,7 @@ public:
 private:
   StreamEngine *se;
 };
+
+} // namespace gem5
 
 #endif

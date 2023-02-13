@@ -27,9 +27,10 @@
 
 from slicc.ast.AST import AST
 
+
 class DeclAST(AST):
-    def __init__(self, slicc, pairs = None):
-        super(DeclAST, self).__init__(slicc, pairs)
+    def __init__(self, slicc, pairs=None):
+        super().__init__(slicc, pairs)
 
     def files(self, parent=None):
         return set()

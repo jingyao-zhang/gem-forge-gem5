@@ -51,17 +51,20 @@
 #include "cpu/minor/execute.hh"
 #include "cpu/minor/fetch1.hh"
 #include "cpu/minor/fetch2.hh"
-#include "params/MinorCPU.hh"
+#include "params/BaseMinorCPU.hh"
 #include "sim/ticked_object.hh"
 
+namespace gem5
+{
 // ! GemForge
 class MinorCPUDelegator;
 
-namespace Minor
+GEM5_DEPRECATED_NAMESPACE(Minor, minor);
+namespace minor
 {
 
 /**
- * @namespace Minor
+ * @namespace minor
  *
  * Minor contains all the definitions within the MinorCPU apart from the CPU
  * class itself
@@ -73,7 +76,7 @@ class Pipeline : public Ticked
 {
 
   // ! GemForge
-  friend class ::MinorCPUDelegator;
+  friend class gem5::MinorCPUDelegator;
 
   protected:
     MinorCPU &cpu;
@@ -112,7 +115,7 @@ class Pipeline : public Ticked
     bool needToSignalDrained;
 
   public:
-    Pipeline(MinorCPU &cpu_, MinorCPUParams &params);
+    Pipeline(MinorCPU &cpu_, const BaseMinorCPUParams &params);
 
   public:
     /** Wake up the Fetch unit.  This is needed on thread activation esp.
@@ -145,6 +148,7 @@ class Pipeline : public Ticked
     MinorActivityRecorder *getActivityRecorder() { return &activityRecorder; }
 };
 
-}
+} // namespace minor
+} // namespace gem5
 
 #endif /* __CPU_MINOR_PIPELINE_HH__ */

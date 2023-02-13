@@ -26,6 +26,8 @@
   DPRINTF(MLCRubyStream, "[MLC_SE%d]: " format,                                \
           this->controller->getMachineID().num, ##args)
 
+namespace gem5 {
+
 MLCStrandManager::MLCStrandManager(MLCStreamEngine *_mlcSE)
     : mlcSE(_mlcSE), controller(_mlcSE->controller) {}
 
@@ -261,7 +263,7 @@ bool MLCStrandManager::canSplitIntoStrandsByElem(
             ->genAddr(elemIdx,
                       convertFormalParamToParam(params, getStreamValueFail))
             .uint64();
-    auto vaddrLine = makeLineAddress(vaddr);
+    auto vaddrLine = ruby::makeLineAddress(vaddr);
     Addr paddrLine;
     assert(cpuDelegator->translateVAddrOracle(vaddrLine, paddrLine));
     auto bank = StreamNUCAMap::getBank(paddrLine);
@@ -319,11 +321,11 @@ bool MLCStrandManager::precheckSplitable(StrandSplitContext &context,
   if (config->floatPlan.isFloatedToMem()) {
     // We assume MemCtrl interleavs at 4kB -> 64 cache lines.
     perStreamContext.splitTripPerStrand =
-        memChannelIntrlv / RubySystem::getBlockSizeBytes();
+        memChannelIntrlv / ruby::RubySystem::getBlockSizeBytes();
   } else {
     // We assume LLC interleavs at 1kB -> 16 cache lines.
     perStreamContext.splitTripPerStrand =
-        llcBankIntrlv / RubySystem::getBlockSizeBytes();
+        llcBankIntrlv / ruby::RubySystem::getBlockSizeBytes();
   }
 
   // 1.
@@ -937,7 +939,7 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
       strand->addrGenFormalParams = strandAddrGenFormalParams;
       strand->totalTripCount = strandSplit.getStrandTripCount(
           config->getTotalTripCount(), strandIdx);
-      strand->initVAddr = makeLineAddress(
+      strand->initVAddr = ruby::makeLineAddress(
           config->addrGenCallback
               ->genAddr(0, strandAddrGenFormalParams, getStreamValueFail)
               .front());
@@ -1251,12 +1253,12 @@ void MLCStrandManager::sendConfigToRemoteSE(ConfigPtr config,
   auto firstFloatElemMachineType =
       config->floatPlan.getMachineTypeAtElem(firstFloatElemIdx);
 
-  auto initPAddrLine = makeLineAddress(config->initPAddr);
+  auto initPAddrLine = ruby::makeLineAddress(config->initPAddr);
   auto remoteSEMachineID = this->controller->mapAddressToLLCOrMem(
       initPAddrLine, firstFloatElemMachineType);
 
   if (config->disableMigration &&
-      firstFloatElemMachineType != MachineType_L2Cache) {
+      firstFloatElemMachineType != ruby::MachineType_L2Cache) {
     MLC_S_PANIC_NO_DUMP(config->dynamicId,
                         "Cannot disable migration for non-LLC stream.");
   }
@@ -1268,9 +1270,9 @@ void MLCStrandManager::sendConfigToRemoteSE(ConfigPtr config,
   uint8_t *pktData = reinterpret_cast<uint8_t *>(new ConfigPtr(config));
   pkt->dataDynamic(pktData);
   // Enqueue a configure packet to the target LLC bank.
-  auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
+  auto msg = std::make_shared<ruby::RequestMsg>(this->controller->clockEdge());
   msg->m_addr = initPAddrLine;
-  msg->m_Type = CoherenceRequestType_STREAM_CONFIG;
+  msg->m_Type = ruby::CoherenceRequestType_STREAM_CONFIG;
   msg->m_Requestors.add(this->controller->getMachineID());
   msg->m_Destination.add(remoteSEMachineID);
   msg->m_pkt = pkt;
@@ -1283,9 +1285,9 @@ void MLCStrandManager::sendConfigToRemoteSE(ConfigPtr config,
    */
 
   if (this->controller->myParams->enable_stream_partial_config) {
-    msg->m_MessageSize = MessageSizeType_Control;
+    msg->m_MessageSize = ruby::MessageSizeType_Control;
   } else {
-    msg->m_MessageSize = MessageSizeType_Data;
+    msg->m_MessageSize = ruby::MessageSizeType_Data;
   }
 
   Cycles latency(1); // Just use 1 cycle latency here.
@@ -1307,7 +1309,7 @@ void MLCStrandManager::receiveStreamEnd(const std::vector<DynStreamId> &endIds,
 
 void MLCStrandManager::tryMarkPUMRegionCached(const DynStreamId &dynId) {
 
-  std::vector<std::pair<DynStrandId, std::pair<Addr, MachineType>>>
+  std::vector<std::pair<DynStrandId, std::pair<Addr, ruby::MachineType>>>
       rootStrandTailPAddrMachineTypeVec;
 
   Stream *S = nullptr;
@@ -1381,10 +1383,10 @@ void MLCStrandManager::endStream(const DynStreamId &endId,
   this->tryMarkPUMRegionCached(endId);
 
   /**
-   * Find all root strands and record the PAddr and MachineType to multicast
+   * Find all root strands and record the PAddr and ruby::MachineType to multicast
    * the StreamEnd message.
    */
-  std::vector<std::pair<DynStrandId, std::pair<Addr, MachineType>>>
+  std::vector<std::pair<DynStrandId, std::pair<Addr, ruby::MachineType>>>
       rootStrandTailPAddrMachineTypeVec;
   for (const auto &entry : this->strandMap) {
     const auto &strandId = entry.first;
@@ -1434,7 +1436,7 @@ void MLCStrandManager::endStream(const DynStreamId &endId,
     auto rootLLCStreamPAddr = entry.second.first;
     auto rootStreamOffloadedMachineType = entry.second.second;
 
-    auto rootLLCStreamPAddrLine = makeLineAddress(rootLLCStreamPAddr);
+    auto rootLLCStreamPAddrLine = ruby::makeLineAddress(rootLLCStreamPAddr);
     auto rootStreamOffloadedBank = this->controller->mapAddressToLLCOrMem(
         rootLLCStreamPAddrLine, rootStreamOffloadedMachineType);
     auto copyStrandId = new DynStrandId(strandId);
@@ -1448,7 +1450,7 @@ void MLCStrandManager::endStream(const DynStreamId &endId,
 
     if (this->controller->myParams->enable_stream_idea_end) {
       auto remoteController =
-          AbstractStreamAwareController::getController(rootStreamOffloadedBank);
+          ruby::AbstractStreamAwareController::getController(rootStreamOffloadedBank);
       auto remoteSE = remoteController->getLLCStreamEngine();
       // StreamAck is also disguised as StreamData.
       remoteSE->receiveStreamEnd(pkt);
@@ -1457,12 +1459,12 @@ void MLCStrandManager::endStream(const DynStreamId &endId,
 
     } else {
       // Enqueue a end packet to the target LLC bank.
-      auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
+      auto msg = std::make_shared<ruby::RequestMsg>(this->controller->clockEdge());
       msg->m_addr = rootLLCStreamPAddrLine;
-      msg->m_Type = CoherenceRequestType_STREAM_END;
+      msg->m_Type = ruby::CoherenceRequestType_STREAM_END;
       msg->m_Requestors.add(this->controller->getMachineID());
       msg->m_Destination.add(rootStreamOffloadedBank);
-      msg->m_MessageSize = MessageSizeType_Control;
+      msg->m_MessageSize = ruby::MessageSizeType_Control;
       msg->m_pkt = pkt;
 
       Cycles latency(1); // Just use 1 cycle latency here.
@@ -1554,3 +1556,5 @@ bool MLCStrandManager::isStreamElemAcked(
 
   return true;
 }
+} // namespace gem5
+

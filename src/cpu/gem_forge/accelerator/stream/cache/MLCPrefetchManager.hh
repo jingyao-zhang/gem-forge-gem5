@@ -8,6 +8,8 @@
 
 #include "../MLCStreamEngine.hh"
 
+namespace gem5 {
+
 class MLCPrefetchManager {
 public:
   MLCPrefetchManager(MLCStreamEngine *_mlcSE);
@@ -15,7 +17,9 @@ public:
 private:
   using ConfigPtr = CacheStreamConfigureDataPtr;
   MLCStreamEngine *mlcSE;
-  AbstractStreamAwareController *controller;
+  ruby::AbstractStreamAwareController *controller;
 };
+
+} // namespace gem5
 
 #endif

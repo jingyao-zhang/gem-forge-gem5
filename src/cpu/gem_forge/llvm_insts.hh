@@ -23,6 +23,8 @@
 #include <unordered_map>
 #include <vector>
 
+namespace gem5 {
+
 class LLVMTraceCPU;
 class LLVMStaticInst;
 class LLVMDynamicInst;
@@ -309,5 +311,7 @@ protected:
   Type type;
   Cycles fuLatency;
 };
+
+} // namespace gem5
 
 #endif

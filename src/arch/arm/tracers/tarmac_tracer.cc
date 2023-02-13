@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 ARM Limited
+ * Copyright (c) 2017-2018, 2022 Arm Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -40,9 +40,15 @@
 #include <string>
 
 #include "arch/arm/system.hh"
+#include "base/output.hh"
 #include "cpu/base.hh"
 
-namespace Trace {
+#include "enums/TarmacDump.hh"
+
+namespace gem5
+{
+
+namespace trace {
 
 std::string
 TarmacContext::tarmacCpuName() const
@@ -51,10 +57,30 @@ TarmacContext::tarmacCpuName() const
     return "cpu" + std::to_string(id);
 }
 
-TarmacTracer::TarmacTracer(const Params *p)
+namespace {
+
+OutputStream *
+tarmacDump(const TarmacTracerParams &p)
+{
+    switch (p.outfile) {
+      case TarmacDump::stdoutput:
+        return simout.findOrCreate("stdout");
+      case TarmacDump::stderror:
+        return simout.findOrCreate("stderr");
+      case TarmacDump::file:
+        return simout.findOrCreate(p.name);
+      default:
+        panic("Invalid option\n");
+    }
+}
+
+}
+
+TarmacTracer::TarmacTracer(const Params &p)
   : InstTracer(p),
-    startTick(p->start_tick),
-    endTick(p->end_tick)
+    outstream(tarmacDump(p)),
+    startTick(p.start_tick),
+    endTick(p.end_tick)
 {
     // Wrong parameter setting: The trace end happens before the
     // trace start.
@@ -73,7 +99,7 @@ TarmacTracer::TarmacTracer(const Params *p)
 InstRecord *
 TarmacTracer::getInstRecord(Tick when, ThreadContext *tc,
                            const StaticInstPtr staticInst,
-                           ArmISA::PCState pc,
+                           const PCStateBase &pc,
                            const StaticInstPtr macroStaticInst)
 {
     // Check if we need to start tracing since we have passed the
@@ -92,10 +118,11 @@ TarmacTracer::getInstRecord(Tick when, ThreadContext *tc,
     }
 }
 
-} // namespace Trace
-
-Trace::TarmacTracer *
-TarmacTracerParams::create()
+std::ostream&
+TarmacTracer::output()
 {
-    return new Trace::TarmacTracer(this);
+    return *(outstream->stream());
 }
+
+} // namespace trace
+} // namespace gem5

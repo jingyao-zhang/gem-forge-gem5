@@ -35,7 +35,11 @@
 #include "arch/arm/fastmodel/amba_ports.hh"
 #include "systemc/tlm_port_wrapper.hh"
 
-namespace FastModel
+namespace gem5
+{
+
+GEM5_DEPRECATED_NAMESPACE(FastModel, fastmodel);
+namespace fastmodel
 {
 
 // A wrapper around the fast model AMBA -> TLM bridge which provides
@@ -43,15 +47,28 @@ namespace FastModel
 class AmbaFromTlmBridge64 : public amba_pv::amba_pv_from_tlm_bridge<64>
 {
   public:
-    AmbaFromTlmBridge64(const char *name);
+    AmbaFromTlmBridge64(const sc_core::sc_module_name &name);
 
-    ::Port &gem5_getPort(const std::string &if_name, int idx=-1) override;
+    gem5::Port &gem5_getPort(const std::string &if_name, int idx=-1) override;
 
   private:
-    AmbaInitiator ambaWrapper;
+    void bTransport(amba_pv::amba_pv_transaction &trans, sc_core::sc_time &t);
+    bool getDirectMemPtr(amba_pv::amba_pv_transaction &trans,
+                         tlm::tlm_dmi &dmi_data);
+    unsigned int transportDbg(amba_pv::amba_pv_transaction &trans);
+    void invalidateDirectMemPtr(sc_dt::uint64 start_range,
+                                sc_dt::uint64 end_range);
+    void syncControlExtension(amba_pv::amba_pv_transaction &trans);
+
+    tlm_utils::simple_target_socket<
+        AmbaFromTlmBridge64, 64, tlm::tlm_base_protocol_types> targetProxy;
+    tlm_utils::simple_initiator_socket<
+        AmbaFromTlmBridge64, 64, tlm::tlm_base_protocol_types> initiatorProxy;
     sc_gem5::TlmTargetWrapper<64> tlmWrapper;
+    AmbaInitiator ambaWrapper;
 };
 
-} // namespace FastModel
+} // namespace fastmodel
+} // namespace gem5
 
 #endif // __ARCH_ARM_FASTMODEL_AMBA_FROM_TLM_BRIDGE_HH__

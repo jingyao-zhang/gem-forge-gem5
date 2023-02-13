@@ -77,8 +77,6 @@
 #define M5OP_WORK_END           0x5b
 #define M5OP_WORK_MARK          0x5c
 
-#define M5OP_SE_SYSCALL         0x60
-#define M5OP_SE_PAGE_FAULT      0x61
 #define M5OP_DIST_TOGGLE_SYNC   0x62
 
 // llvm trace related pseudo inst.
@@ -91,6 +89,7 @@
 #define M5OP_STREAM_NUCA_REMAP            0x68
 #define M5OP_STREAM_NUCA_GET_CACHED_BYTES 0x69
 #define M5OP_STREAM_NUCA_SET_PROPERTY     0x70
+#define M5OP_WORKLOAD           0x71
 
 #define M5OP_FOREACH                                            \
     M5OP(m5_arm, M5OP_ARM)                                      \
@@ -118,9 +117,8 @@
     M5OP(m5_work_begin, M5OP_WORK_BEGIN)                        \
     M5OP(m5_work_end, M5OP_WORK_END)                            \
     M5OP(m5_work_mark, M5OP_WORK_MARK)                          \
-    M5OP(m5_se_syscall, M5OP_SE_SYSCALL)                        \
-    M5OP(m5_se_page_fault, M5OP_SE_PAGE_FAULT)                  \
-    M5OP(m5_dist_toggle_sync, M5OP_DIST_TOGGLE_SYNC)
+    M5OP(m5_dist_toggle_sync, M5OP_DIST_TOGGLE_SYNC)            \
+    M5OP(m5_workload, M5OP_WORKLOAD)                            \
 
 #define M5OP_MERGE_TOKENS_I(a, b) a##b
 #define M5OP_MERGE_TOKENS(a, b) M5OP_MERGE_TOKENS_I(a, b)

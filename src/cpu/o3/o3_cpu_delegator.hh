@@ -56,16 +56,17 @@
  *
  *******************************************************************/
 
-template <class CPUImpl>
-class DefaultO3CPUDelegator : public GemForgeCPUDelegator {
-public:
-  using O3CPU = typename CPUImpl::O3CPU;
-  using LSQUnit = typename CPUImpl::CPUPol::LSQUnit;
-  using DynInstPtr = typename CPUImpl::DynInstPtr;
-  using GFLoadReq = GemForgeLoadRequest<CPUImpl>;
+namespace gem5 {
 
-  DefaultO3CPUDelegator(O3CPU *_cpu);
-  ~DefaultO3CPUDelegator() override;
+class O3CPUDelegator : public GemForgeCPUDelegator {
+public:
+  using O3CPU = o3::CPU;
+  using LSQUnit = o3::LSQUnit;
+  using DynInstPtr = o3::DynInstPtr;
+  using GFLoadReq = GemForgeLoadRequest;
+
+  O3CPUDelegator(O3CPU *_cpu);
+  ~O3CPUDelegator() override;
 
   void regStats();
 
@@ -145,13 +146,13 @@ private:
   class Impl;
   std::unique_ptr<Impl> pimpl;
 
-  Stats::Scalar statCoreDataHops;
-  Stats::Scalar statCoreDataHopsIgnored;
-  Stats::Scalar statCoreCachedDataHops;
-  Stats::Scalar statCoreCachedDataHopsIgnored;
-  Stats::Scalar statCoreCommitMicroOps;
-  Stats::Scalar statCoreCommitMicroOpsIgnored;
-  Stats::Scalar statCoreCommitMicroOpsGemForge;
+  statistics::Scalar statCoreDataHops;
+  statistics::Scalar statCoreDataHopsIgnored;
+  statistics::Scalar statCoreCachedDataHops;
+  statistics::Scalar statCoreCachedDataHopsIgnored;
+  statistics::Scalar statCoreCommitMicroOps;
+  statistics::Scalar statCoreCommitMicroOpsIgnored;
+  statistics::Scalar statCoreCommitMicroOpsGemForge;
 
   struct CoreDataTrafficAccumulator {
     static constexpr int interleaveSize = 1024;
@@ -184,5 +185,6 @@ protected:
   InstSeqNum getInstSeqNum() const override;
   void setInstSeqNum(InstSeqNum seqNum) override;
 };
+} // namespace gem5
 
 #endif

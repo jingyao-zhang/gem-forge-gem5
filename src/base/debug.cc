@@ -49,9 +49,12 @@
 #include "base/cprintf.hh"
 #include "base/logging.hh"
 
-using namespace std;
+namespace gem5
+{
 
-namespace Debug {
+GEM5_DEPRECATED_NAMESPACE(Debug, debug);
+namespace debug
+{
 
 //
 // This function will cause the process to signal itself with a
@@ -64,17 +67,21 @@ breakpoint()
 #ifndef NDEBUG
     kill(getpid(), SIGTRAP);
 #else
-    cprintf("Debug::breakpoint suppressed, compiled with NDEBUG\n");
+    cprintf("debug::breakpoint suppressed, compiled with NDEBUG\n");
 #endif
 }
 
-//
-// Flags for debugging purposes.  Primarily for trace.hh
-//
-int allFlagsVersion = 0;
+// Used to check the freshness of cached views of all flags.
 FlagsMap &
 allFlags()
 {
+    // Ensure that the special "All" compound debug flag has been created,
+    // and avoid infinite recursion.
+    static bool done = false;
+    if (!done) {
+        done = true;
+        AllFlagsFlag::instance();
+    }
     static FlagsMap flags;
     return flags;
 }
@@ -85,26 +92,26 @@ Flag *
 findFlag(const std::string &name)
 {
     FlagsMap::iterator i = allFlags().find(name);
-    if (i == allFlags().end())
+    if (i == allFlags().end()) {
         return NULL;
+    }
     return i->second;
 }
 
 Flag::Flag(const char *name, const char *desc)
     : _name(name), _desc(desc)
 {
-    pair<FlagsMap::iterator, bool> result =
-        allFlags().insert(make_pair(name, this));
+    std::pair<FlagsMap::iterator, bool> result =
+        allFlags().insert(std::make_pair(name, this));
 
-    if (!result.second)
-        panic("Flag %s already defined!", name);
+    panic_if(!result.second, "Flag %s already defined!", name);
 
-    ++allFlagsVersion;
+    sync();
 }
 
 Flag::~Flag()
 {
-    // should find and remove flag.
+    allFlags().erase(name());
 }
 
 void
@@ -123,6 +130,14 @@ Flag::globalDisable()
         i.second->sync();
 }
 
+SimpleFlag::SimpleFlag(const char *name, const char *desc, bool is_format)
+  : Flag(name, desc), _isFormat(is_format)
+{
+    // Add non-format flags to the special "All" compound flag.
+    if (!isFormat())
+        AllFlagsFlag::instance().add(this);
+}
+
 void
 CompoundFlag::enable()
 {
@@ -137,18 +152,24 @@ CompoundFlag::disable()
         k->disable();
 }
 
-bool
-CompoundFlag::status() const
+AllFlagsFlag::AllFlagsFlag() : CompoundFlag("All",
+        "Controls all debug flags. It should not be used within C++ code.", {})
+{}
+
+void
+AllFlagsFlag::add(SimpleFlag *flag)
 {
-    if (_kids.empty())
-        return false;
+    ++_version;
+    _kids.push_back(flag);
+}
 
-    for (auto& k : _kids) {
-        if (!k->status())
-            return false;
-    }
+int AllFlagsFlag::_version = 0;
 
-    return true;
+AllFlagsFlag &
+AllFlagsFlag::instance()
+{
+    static AllFlagsFlag flag;
+    return flag;
 }
 
 bool
@@ -166,30 +187,32 @@ changeFlag(const char *s, bool value)
     return true;
 }
 
-} // namespace Debug
+} // namespace debug
 
 // add a set of functions that can easily be invoked from gdb
 void
 setDebugFlag(const char *string)
 {
-    Debug::changeFlag(string, true);
+    debug::changeFlag(string, true);
 }
 
 void
 clearDebugFlag(const char *string)
 {
-    Debug::changeFlag(string, false);
+    debug::changeFlag(string, false);
 }
 
 void
-dumpDebugFlags()
+dumpDebugFlags(std::ostream &os)
 {
-    using namespace Debug;
+    using namespace debug;
     FlagsMap::iterator i = allFlags().begin();
     FlagsMap::iterator end = allFlags().end();
     for (; i != end; ++i) {
         SimpleFlag *f = dynamic_cast<SimpleFlag *>(i->second);
-        if (f && f->status())
-            cprintf("%s\n", f->name());
+        if (f && f->tracing())
+            ccprintf(os, "%s\n", f->name());
     }
 }
+
+} // namespace gem5

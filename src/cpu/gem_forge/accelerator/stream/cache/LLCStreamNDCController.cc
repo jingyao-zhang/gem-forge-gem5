@@ -19,6 +19,8 @@
 #define LLC_NDC_PANIC(ndc, format, args...)                                    \
   LLCSE_PANIC("%s: " format, (ndc)->entryIdx, ##args)
 
+namespace gem5 {
+
 LLCStreamNDCController::NDCContextMapT
     LLCStreamNDCController::inflyNDCContextMap;
 
@@ -58,18 +60,18 @@ void LLCStreamNDCController::processStreamNDCRequest(PacketPtr pkt) {
   sliceId.getEndIdx() = elementIdx + 1;
   sliceId.vaddr = streamNDC->vaddr;
   sliceId.size = S->getMemElementSize();
-  auto vaddrLine = makeLineAddress(streamNDC->vaddr);
-  auto paddrLine = makeLineAddress(streamNDC->paddr);
-  auto requestType = CoherenceRequestType_STREAM_STORE;
+  auto vaddrLine = ruby::makeLineAddress(streamNDC->vaddr);
+  auto paddrLine = ruby::makeLineAddress(streamNDC->paddr);
+  auto requestType = ruby::CoherenceRequestType_STREAM_STORE;
   if (streamNDC->isForward) {
-    requestType = CoherenceRequestType_GETH;
+    requestType = ruby::CoherenceRequestType_GETH;
   }
   llcSE->enqueueRequest(S, sliceId, vaddrLine, paddrLine,
                         llcSE->myMachineType(), requestType);
 }
 
 void LLCStreamNDCController::allocateContext(
-    AbstractStreamAwareController *mlcController,
+    ruby::AbstractStreamAwareController *mlcController,
     StreamNDCPacketPtr &streamNDC) {
   auto &contexts =
       inflyNDCContextMap
@@ -133,8 +135,8 @@ void LLCStreamNDCController::eraseContextFromSliceId(
 }
 
 void LLCStreamNDCController::receiveStreamData(
-    const DynStreamSliceId &sliceId, const DataBlock &dataBlock,
-    const DataBlock &storeValueBlock) {
+    const DynStreamSliceId &sliceId, const ruby::DataBlock &dataBlock,
+    const ruby::DataBlock &storeValueBlock) {
 
   auto *context = this->getContextFromSliceId(sliceId);
   if (!context) {
@@ -149,7 +151,7 @@ void LLCStreamNDCController::receiveStreamData(
 
 void LLCStreamNDCController::handleNDC(NDCContext &context,
                                        const DynStreamSliceId &sliceId,
-                                       const DataBlock &dataBlock) {
+                                       const ruby::DataBlock &dataBlock) {
   LLC_NDC_DPRINTF(context.ndc,
                   "[NDC] CacheLineReady %d. Got %d of %d Forwards.\n",
                   context.cacheLineReady, context.receivedForward,
@@ -189,7 +191,7 @@ void LLCStreamNDCController::handleAtomicNDC(NDCContext &context,
   /**
    * Send to backing store to perform atomic op.
    */
-  auto rubySystem = llcSE->controller->params()->ruby_system;
+  auto rubySystem = llcSE->controller->params().ruby_system;
   assert(rubySystem->getAccessBackingStore() &&
          "Do not support atomicrmw stream without BackingStore.");
 
@@ -208,7 +210,7 @@ void LLCStreamNDCController::handleAtomicNDC(NDCContext &context,
   }
 
   // Send back the response.
-  auto paddrLine = makeLineAddress(context.ndc->paddr);
+  auto paddrLine = ruby::makeLineAddress(context.ndc->paddr);
   auto lineOffset = context.ndc->paddr - paddrLine;
   auto dataSize = S->getCoreElementSize();
   auto payloadSize = S->getCoreElementSize();
@@ -230,7 +232,7 @@ void LLCStreamNDCController::handleStoreNDC(NDCContext &context) {
 
 void LLCStreamNDCController::handleForwardNDC(NDCContext &context,
                                               const DynStreamSliceId &sliceId,
-                                              const DataBlock &dataBlock) {
+                                              const ruby::DataBlock &dataBlock) {
 
   auto S = context.ndc->stream;
   auto dynS = S->getDynStream(context.ndc->entryIdx.streamId);
@@ -239,12 +241,12 @@ void LLCStreamNDCController::handleForwardNDC(NDCContext &context,
   }
 
   // Forward the cache line to the receiver bank.
-  auto paddrLine = makeLineAddress(context.ndc->receiverPAddr);
+  auto paddrLine = ruby::makeLineAddress(context.ndc->receiverPAddr);
   auto selfMachineId = llcSE->controller->getMachineID();
   auto destMachineId = selfMachineId;
   bool handledHere =
       llcSE->isPAddrHandledByMe(paddrLine, selfMachineId.getType());
-  auto requestType = CoherenceRequestType_STREAM_FORWARD;
+  auto requestType = ruby::CoherenceRequestType_STREAM_FORWARD;
   if (handledHere) {
     LLC_NDC_DPRINTF(context.ndc,
                     "NDC Forward [local] %#x paddrLine %#x value %s.\n",
@@ -255,14 +257,14 @@ void LLCStreamNDCController::handleForwardNDC(NDCContext &context,
                     MachineIDToString(destMachineId), dataBlock);
   }
 
-  auto msg = std::make_shared<RequestMsg>(llcSE->controller->clockEdge());
+  auto msg = std::make_shared<ruby::RequestMsg>(llcSE->controller->clockEdge());
   msg->m_addr = paddrLine;
   msg->m_Type = requestType;
   msg->m_Requestors.add(
-      MachineID(static_cast<MachineType>(selfMachineId.type - 1),
+      ruby::MachineID(static_cast<ruby::MachineType>(selfMachineId.type - 1),
                 sliceId.getDynStreamId().coreId));
   msg->m_Destination.add(destMachineId);
-  msg->m_MessageSize = MessageSizeType_Control;
+  msg->m_MessageSize = ruby::MessageSizeType_Control;
   msg->m_sliceIds.add(sliceId);
   msg->m_DataBlk = dataBlock;
   msg->m_sendToStrandId = DynStrandId(context.ndc->receiverEntryIdx.streamId);
@@ -283,7 +285,7 @@ void LLCStreamNDCController::handleForwardNDC(NDCContext &context,
 }
 
 void LLCStreamNDCController::receiveStreamForwardRequest(
-    const RequestMsg &msg) {
+    const ruby::RequestMsg &msg) {
   const auto &sliceId = msg.m_sliceIds.singleSliceId();
   const auto &recvDynId = msg.m_sendToStrandId;
 
@@ -326,7 +328,7 @@ void LLCStreamNDCController::issueStreamNDCResponseToMLC(
     int dataSize, int payloadSize, int lineOffset, bool forceIdea) {
 
   auto msg = llcSE->createStreamMsgToMLC(
-      sliceId, CoherenceResponseType_STREAM_NDC, paddrLine, data, dataSize,
+      sliceId, ruby::CoherenceResponseType_STREAM_NDC, paddrLine, data, dataSize,
       payloadSize, lineOffset);
   llcSE->issueStreamMsgToMLC(msg, forceIdea);
 }
@@ -393,7 +395,7 @@ void LLCStreamNDCController::completeComputation(
     /**
      * Send back the response, which is just an Ack.
      */
-    auto paddrLine = makeLineAddress(context->ndc->paddr);
+    auto paddrLine = ruby::makeLineAddress(context->ndc->paddr);
     auto lineOffset = 0;
     auto dataSize = 4;
     auto payloadSize = 0;
@@ -406,4 +408,5 @@ void LLCStreamNDCController::completeComputation(
                   "Illegal NDC StreamType in CompleteComputation.");
   }
   this->eraseContextFromSliceId(sliceId);
-}
+}} // namespace gem5
+

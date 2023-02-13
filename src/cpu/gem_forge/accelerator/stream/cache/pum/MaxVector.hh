@@ -5,6 +5,8 @@
 
 #include "base/logging.hh"
 
+namespace gem5 {
+
 /**
  * ! Not sure this is correct.
  * ! Only use it for simple data structures (no complicate resource management).
@@ -156,5 +158,7 @@ public:
 
   void clear() { count = 0; }
 };
+
+} // namespace gem5
 
 #endif

@@ -42,6 +42,9 @@
 #include <mutex>
 #include <vector>
 
+namespace gem5
+{
+
 class Drainable;
 
 /**
@@ -68,7 +71,8 @@ class Drainable;
  *
  * @ingroup api_drain
  */
-enum class DrainState {
+enum class DrainState
+{
     Running,  /**< Running normally */
     Draining, /**< Draining buffers pending serialization/handover */
     Drained,  /**< Buffers drained, ready for serialization/handover */
@@ -114,11 +118,11 @@ class DrainManager
     /**
      * Run state fixups before a checkpoint restore operation.
      *
-     * This is called before restoring the checkpoint and to make 
+     * This is called before restoring the checkpoint and to make
      * sure that everything has been set to drained.
      *
-     * When restoring from a checkpoint, this function should be called 
-     * first before calling the resume() function. And also before 
+     * When restoring from a checkpoint, this function should be called
+     * first before calling the resume() function. And also before
      * calling loadstate() on any object.
      *
      * The drain state of an object isn't stored in a checkpoint since
@@ -355,5 +359,7 @@ class Drainable
      */
     mutable DrainState _drainState;
 };
+
+} // namespace gem5
 
 #endif

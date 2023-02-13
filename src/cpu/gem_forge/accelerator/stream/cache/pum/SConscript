@@ -19,7 +19,7 @@ Source('MLCPUMManager.cc')
 Source('PUMEngine.cc')
 Source('PUMScheduler.cc')
 
-tdfg = ProtoBuf('TDFG.proto')
+ProtoBuf('TDFG.proto')
 
 RealExecutable('pum-jitter',
                'CommandJitter.cc',
@@ -27,7 +27,7 @@ RealExecutable('pum-jitter',
                llc_tile_pattern,
                pum_command,
                data_move_compiler,
-               tdfg.cc_file,
+               'TDFG.pb.cc',
                '../../../../../../base/logging.cc',
                '../../../../../../base/cprintf.cc',
         #        '../../../../../../enums/OpClass.cc',

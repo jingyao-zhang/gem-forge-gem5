@@ -28,10 +28,13 @@
 
 Import('*')
 
-if env['PROTOCOL'] == 'None':
+if env['CONF']['PROTOCOL'] == 'None':
     Return()
 
-SimObject('Controller.py')
+SimObject('Controller.py', sim_objects=[
+    'RubyController',
+    'RubyStreamAwareController',
+    ])
 
 Source('AbstractController.cc')
 Source('AbstractStreamAwareController.cc')

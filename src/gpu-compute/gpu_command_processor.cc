@@ -2,8 +2,6 @@
  * Copyright (c) 2018 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -29,21 +27,72 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Anthony Gutierrez
  */
 
 #include "gpu-compute/gpu_command_processor.hh"
 
+#include <cassert>
+
+#include "arch/amdgpu/vega/pagetable_walker.hh"
+#include "base/chunk_generator.hh"
 #include "debug/GPUCommandProc.hh"
 #include "debug/GPUKernelInfo.hh"
+#include "dev/amdgpu/amdgpu_device.hh"
 #include "gpu-compute/dispatcher.hh"
+#include "mem/abstract_mem.hh"
+#include "mem/packet_access.hh"
+#include "mem/se_translating_port_proxy.hh"
+#include "mem/translating_port_proxy.hh"
 #include "params/GPUCommandProcessor.hh"
+#include "sim/full_system.hh"
+#include "sim/process.hh"
+#include "sim/proxy_ptr.hh"
+#include "sim/syscall_emul_buf.hh"
 
-GPUCommandProcessor::GPUCommandProcessor(const Params *p)
-    : HSADevice(p), dispatcher(*p->dispatcher)
+namespace gem5
 {
+
+GPUCommandProcessor::GPUCommandProcessor(const Params &p)
+    : DmaVirtDevice(p), dispatcher(*p.dispatcher), _driver(nullptr),
+      walker(p.walker), hsaPP(p.hsapp)
+{
+    assert(hsaPP);
+    hsaPP->setDevice(this);
     dispatcher.setCommandProcessor(this);
+}
+
+HSAPacketProcessor&
+GPUCommandProcessor::hsaPacketProc()
+{
+    return *hsaPP;
+}
+
+/**
+ * Forward the VRAM requestor ID needed for device memory from GPU device.
+ */
+RequestorID
+GPUCommandProcessor::vramRequestorId()
+{
+    return gpuDevice->vramRequestorId();
+}
+
+TranslationGenPtr
+GPUCommandProcessor::translate(Addr vaddr, Addr size)
+{
+    if (!FullSystem) {
+        // Grab the process and try to translate the virtual address with it;
+        // with new extensions, it will likely be wrong to just arbitrarily
+        // grab context zero.
+        auto process = sys->threads[0]->getProcessPtr();
+
+        return process->pTable->translateRange(vaddr, size);
+    }
+
+    // In full system use the page tables setup by the kernel driver rather
+    // than the CPU page tables.
+    return TranslationGenPtr(
+        new AMDGPUVM::UserTranslationGen(&gpuDevice->getVM(), walker,
+                                         1 /* vmid */, vaddr, size));
 }
 
 /**
@@ -69,13 +118,42 @@ GPUCommandProcessor::submitDispatchPkt(void *raw_pkt, uint32_t queue_id,
 {
     static int dynamic_task_id = 0;
     _hsa_dispatch_packet_t *disp_pkt = (_hsa_dispatch_packet_t*)raw_pkt;
+    assert(!(disp_pkt->kernel_object & (system()->cacheLineSize() - 1)));
 
     /**
      * we need to read a pointer in the application's address
      * space to pull out the kernel code descriptor.
      */
     auto *tc = sys->threads[0];
-    auto &virt_proxy = tc->getVirtProxy();
+
+    TranslatingPortProxy fs_proxy(tc);
+    SETranslatingPortProxy se_proxy(tc);
+    PortProxy &virt_proxy = FullSystem ? fs_proxy : se_proxy;
+
+    /**
+     * In full system mode, the page table entry may point to a system page
+     * or a device page. System pages use the proxy as normal, but a device
+     * page needs to be read from device memory. Check what type it is here.
+     */
+    bool is_system_page = true;
+    Addr phys_addr = disp_pkt->kernel_object;
+    if (FullSystem) {
+        /**
+         * Full system currently only supports running on single VMID (one
+         * virtual memory space), i.e., one application running on GPU at a
+         * time. Because of this, for now we know the VMID is always 1. Later
+         * the VMID would have to be passed on to the command processor.
+         */
+        int vmid = 1;
+        unsigned tmp_bytes;
+        walker->startFunctional(gpuDevice->getVM().getPageTableBase(vmid),
+                                phys_addr, tmp_bytes, BaseMMU::Mode::Read,
+                                is_system_page);
+    }
+
+    DPRINTF(GPUCommandProc, "kernobj vaddr %#lx paddr %#lx size %d s:%d\n",
+            disp_pkt->kernel_object, phys_addr, sizeof(AMDKernelCode),
+            is_system_page);
 
     /**
      * The kernel_object is a pointer to the machine code, whose entry
@@ -87,11 +165,42 @@ GPUCommandProcessor::submitDispatchPkt(void *raw_pkt, uint32_t queue_id,
      * instructions.
      */
     AMDKernelCode akc;
-    virt_proxy.readBlob(disp_pkt->kernel_object, (uint8_t*)&akc,
-        sizeof(AMDKernelCode));
+    if (is_system_page) {
+        DPRINTF(GPUCommandProc, "kernel_object in system, using proxy\n");
+        virt_proxy.readBlob(disp_pkt->kernel_object, (uint8_t*)&akc,
+            sizeof(AMDKernelCode));
+    } else {
+        assert(FullSystem);
+        DPRINTF(GPUCommandProc, "kernel_object in device, using device mem\n");
+
+        // Read from GPU memory manager one cache line at a time to prevent
+        // rare cases where the AKC spans two memory pages.
+        ChunkGenerator gen(disp_pkt->kernel_object, sizeof(AMDKernelCode),
+                           system()->cacheLineSize());
+        for (; !gen.done(); gen.next()) {
+            Addr chunk_addr = gen.addr();
+            int vmid = 1;
+            unsigned dummy;
+            walker->startFunctional(gpuDevice->getVM().getPageTableBase(vmid),
+                                    chunk_addr, dummy, BaseMMU::Mode::Read,
+                                    is_system_page);
+
+            Request::Flags flags = Request::PHYSICAL;
+            RequestPtr request = std::make_shared<Request>(chunk_addr,
+                system()->cacheLineSize(), flags, walker->getDevRequestor());
+            Packet *readPkt = new Packet(request, MemCmd::ReadReq);
+            readPkt->dataStatic((uint8_t *)&akc + gen.complete());
+            system()->getDeviceMemory(readPkt)->access(readPkt);
+            delete readPkt;
+        }
+    }
 
     DPRINTF(GPUCommandProc, "GPU machine code is %lli bytes from start of the "
         "kernel object\n", akc.kernel_code_entry_byte_offset);
+
+    DPRINTF(GPUCommandProc,"GPUCommandProc: Sending dispatch pkt to %lu\n",
+        (uint64_t)tc->cpuId());
+
 
     Addr machine_code_addr = (Addr)disp_pkt->kernel_object
         + akc.kernel_code_entry_byte_offset;
@@ -99,7 +208,6 @@ GPUCommandProcessor::submitDispatchPkt(void *raw_pkt, uint32_t queue_id,
     DPRINTF(GPUCommandProc, "Machine code starts at addr: %#x\n",
         machine_code_addr);
 
-    Addr kern_name_addr(0);
     std::string kernel_name;
 
     /**
@@ -112,10 +220,7 @@ GPUCommandProcessor::submitDispatchPkt(void *raw_pkt, uint32_t queue_id,
      * host memory.  I have no idea what BLIT stands for.
      * */
     if (akc.runtime_loader_kernel_symbol) {
-        virt_proxy.readBlob(akc.runtime_loader_kernel_symbol + 0x10,
-            (uint8_t*)&kern_name_addr, 0x8);
-
-        virt_proxy.readString(kernel_name, kern_name_addr);
+        kernel_name = "Some kernel";
     } else {
         kernel_name = "Blit kernel";
     }
@@ -140,6 +245,76 @@ GPUCommandProcessor::submitDispatchPkt(void *raw_pkt, uint32_t queue_id,
 
     initABI(task);
     ++dynamic_task_id;
+}
+
+uint64_t
+GPUCommandProcessor::functionalReadHsaSignal(Addr signal_handle)
+{
+    Addr value_addr = getHsaSignalValueAddr(signal_handle);
+    auto tc = system()->threads[0];
+    ConstVPtr<Addr> prev_value(value_addr, tc);
+    return *prev_value;
+}
+
+void
+GPUCommandProcessor::updateHsaSignal(Addr signal_handle, uint64_t signal_value,
+                                     HsaSignalCallbackFunction function)
+{
+    // The signal value is aligned 8 bytes from
+    // the actual handle in the runtime
+    Addr value_addr = getHsaSignalValueAddr(signal_handle);
+    Addr mailbox_addr = getHsaSignalMailboxAddr(signal_handle);
+    Addr event_addr = getHsaSignalEventAddr(signal_handle);
+    DPRINTF(GPUCommandProc, "Triggering completion signal: %x!\n", value_addr);
+
+    auto cb = new DmaVirtCallback<uint64_t>(function, signal_value);
+
+    dmaWriteVirt(value_addr, sizeof(Addr), cb, &cb->dmaBuffer, 0);
+
+    auto tc = system()->threads[0];
+    ConstVPtr<uint64_t> mailbox_ptr(mailbox_addr, tc);
+
+    // Notifying an event with its mailbox pointer is
+    // not supported in the current implementation. Just use
+    // mailbox pointer to distinguish between interruptible
+    // and default signal. Interruptible signal will have
+    // a valid mailbox pointer.
+    if (*mailbox_ptr != 0) {
+        // This is an interruptible signal. Now, read the
+        // event ID and directly communicate with the driver
+        // about that event notification.
+        ConstVPtr<uint32_t> event_val(event_addr, tc);
+
+        DPRINTF(GPUCommandProc, "Calling signal wakeup event on "
+                "signal event value %d\n", *event_val);
+
+        // The mailbox/wakeup signal uses the SE mode proxy port to write
+        // the event value. This is not available in full system mode so
+        // instead we need to issue a DMA write to the address. The value of
+        // *event_val clears the event.
+        if (FullSystem) {
+            auto cb = new DmaVirtCallback<uint64_t>(function, *event_val);
+            dmaWriteVirt(mailbox_addr, sizeof(Addr), cb, &cb->dmaBuffer, 0);
+        } else {
+            signalWakeupEvent(*event_val);
+        }
+    }
+}
+
+void
+GPUCommandProcessor::attachDriver(GPUComputeDriver *gpu_driver)
+{
+    fatal_if(_driver, "Should not overwrite driver.");
+    // TODO: GPU Driver inheritance hierarchy doesn't really make sense.
+    // Should get rid of the base class.
+    _driver = gpu_driver;
+    assert(_driver);
+}
+
+GPUComputeDriver*
+GPUCommandProcessor::driver()
+{
+    return _driver;
 }
 
 /**
@@ -167,6 +342,54 @@ GPUCommandProcessor::submitVendorPkt(void *raw_pkt, uint32_t queue_id,
 }
 
 /**
+ * submitAgentDispatchPkt() is for accepting agent dispatch packets.
+ * These packets will control the dispatch of Wg on the device, and inform
+ * the host when a specified number of Wg have been executed on the device.
+ *
+ * For now it simply finishes the pkt.
+ */
+void
+GPUCommandProcessor::submitAgentDispatchPkt(void *raw_pkt, uint32_t queue_id,
+    Addr host_pkt_addr)
+{
+    //Parse the Packet, see what it wants us to do
+    _hsa_agent_dispatch_packet_t * agent_pkt =
+        (_hsa_agent_dispatch_packet_t *)raw_pkt;
+
+    if (agent_pkt->type == AgentCmd::Nop) {
+        DPRINTF(GPUCommandProc, "Agent Dispatch Packet NOP\n");
+    } else if (agent_pkt->type == AgentCmd::Steal) {
+        //This is where we steal the HSA Task's completion signal
+        int kid = agent_pkt->arg[0];
+        DPRINTF(GPUCommandProc,
+            "Agent Dispatch Packet Stealing signal handle for kernel %d\n",
+            kid);
+
+        HSAQueueEntry *task = dispatcher.hsaTask(kid);
+        uint64_t signal_addr = task->completionSignal();// + sizeof(uint64_t);
+
+        uint64_t return_address = agent_pkt->return_address;
+        DPRINTF(GPUCommandProc, "Return Addr: %p\n",return_address);
+        //*return_address = signal_addr;
+        Addr *new_signal_addr = new Addr;
+        *new_signal_addr  = (Addr)signal_addr;
+        dmaWriteVirt(return_address, sizeof(Addr), nullptr, new_signal_addr, 0);
+
+        DPRINTF(GPUCommandProc,
+            "Agent Dispatch Packet Stealing signal handle from kid %d :" \
+            "(%x:%x) writing into %x\n",
+            kid,signal_addr,new_signal_addr,return_address);
+
+    } else
+    {
+        panic("The agent dispatch packet provided an unknown argument in" \
+        "arg[0],currently only 0(nop) or 1(return kernel signal) is accepted");
+    }
+
+    hsaPP->finishPkt(raw_pkt, queue_id);
+}
+
+/**
  * Once the CP has finished extracting all relevant information about
  * a task and has initialized the ABI state, we send a description of
  * the task to the dispatcher. The dispatcher will create and dispatch
@@ -178,6 +401,12 @@ GPUCommandProcessor::dispatchPkt(HSAQueueEntry *task)
     dispatcher.dispatch(task);
 }
 
+void
+GPUCommandProcessor::signalWakeupEvent(uint32_t event_id)
+{
+    _driver->signalWakeupEvent(event_id);
+}
+
 /**
  * The CP is responsible for traversing all HSA-ABI-related data
  * structures from memory and initializing the ABI state.
@@ -187,14 +416,15 @@ GPUCommandProcessor::dispatchPkt(HSAQueueEntry *task)
 void
 GPUCommandProcessor::initABI(HSAQueueEntry *task)
 {
-    auto *readDispIdOffEvent = new ReadDispIdOffsetDmaEvent(*this, task);
+    auto cb = new DmaVirtCallback<uint32_t>(
+        [ = ] (const uint32_t &readDispIdOffset)
+            { ReadDispIdOffsetDmaEvent(task, readDispIdOffset); }, 0);
 
     Addr hostReadIdxPtr
         = hsaPP->getQueueDesc(task->queueId())->hostReadIndexPtr;
 
     dmaReadVirt(hostReadIdxPtr + sizeof(hostReadIdxPtr),
-        sizeof(readDispIdOffEvent->readDispIdOffset), readDispIdOffEvent,
-            &readDispIdOffEvent->readDispIdOffset);
+        sizeof(uint32_t), cb, &cb->dmaBuffer);
 }
 
 System*
@@ -211,6 +441,13 @@ GPUCommandProcessor::getAddrRanges() const
 }
 
 void
+GPUCommandProcessor::setGPUDevice(AMDGPUDevice *gpu_device)
+{
+    gpuDevice = gpu_device;
+    walker->setDevRequestor(gpuDevice->vramRequestorId());
+}
+
+void
 GPUCommandProcessor::setShader(Shader *shader)
 {
     _shader = shader;
@@ -222,8 +459,4 @@ GPUCommandProcessor::shader()
     return _shader;
 }
 
-GPUCommandProcessor*
-GPUCommandProcessorParams::create()
-{
-    return new GPUCommandProcessor(this);
-}
+} // namespace gem5

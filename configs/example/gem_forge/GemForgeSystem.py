@@ -1,12 +1,12 @@
 import m5
 
-def run(options, root, system, future_cpus):
+def run(args, root, system, future_cpus):
     checkpoint_dir = None
     # We only allow some number of maximum instructions in real simulation.
     if future_cpus:
         future_cpus[0].max_insts_any_thread = 5e10
     m5.instantiate(checkpoint_dir)
-    max_tick = options.abs_max_tick if options.abs_max_tick else m5.MaxTick
+    max_tick = args.abs_max_tick if args.abs_max_tick else m5.MaxTick
     if future_cpus:
         assert(len(future_cpus) == len(system.cpu))
         # Fast forward simulation.
@@ -18,15 +18,15 @@ def run(options, root, system, future_cpus):
                 t=m5.curTick(), s=exit_cause))
 
             if exit_cause == 'switchcpu':
-                if options.gem_forge_work_mark_switch_cpu != -1:
+                if args.gem_forge_work_mark_switch_cpu != -1:
                     print('--- Ignored as we switch at work mark {m}'.format(
-                        m=options.gem_forge_work_mark_switch_cpu))
+                        m=args.gem_forge_work_mark_switch_cpu))
                     continue
                 else:
                     print('--- Switch cpu from m5_switchcpu()')
                     break
             elif exit_cause == 'markswitchcpu':
-                assert(options.gem_forge_work_mark_switch_cpu != -1)
+                assert(args.gem_forge_work_mark_switch_cpu != -1)
                 print('--- Switch cpu from m5_workmark()')
                 break
             elif exit_cause == 'markend':
@@ -50,7 +50,7 @@ def run(options, root, system, future_cpus):
         exit_cause = exit_event.getCause()
         print('**** Exit @ tick {t} as {s} ****'.format(
             t=m5.curTick(), s=exit_event.getCause()))
-        if options.gem_forge_work_mark_end != -1:
+        if args.gem_forge_work_mark_end != -1:
             if exit_cause == 'switchcpu':
                 print('Ignore switchcpu pseudo as we are using work marks.')
                 continue

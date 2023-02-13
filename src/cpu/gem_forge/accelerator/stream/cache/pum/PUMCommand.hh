@@ -7,6 +7,8 @@
 
 #include "../DynStreamId.hh"
 
+namespace gem5 {
+
 class PUMCommand {
 public:
   std::string type = "none";
@@ -72,5 +74,7 @@ public:
 std::ostream &operator<<(std::ostream &os, const PUMCommand &command);
 
 using PUMCommandVecT = std::vector<PUMCommand>;
+
+} // namespace gem5
 
 #endif

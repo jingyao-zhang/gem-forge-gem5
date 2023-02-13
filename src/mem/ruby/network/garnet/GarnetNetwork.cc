@@ -34,6 +34,7 @@
 #include <cassert>
 
 #include "base/cast.hh"
+#include "base/compiler.hh"
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/common/NetDest.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
@@ -46,7 +47,14 @@
 #include "mem/ruby/system/RubySystem.hh"
 #include "sim/stream_nuca/stream_nuca_map.hh"
 
-using namespace std;
+namespace gem5
+{
+
+namespace ruby
+{
+
+namespace garnet
+{
 
 /*
  * GarnetNetwork sets up the routers and links and collects stats.
@@ -54,22 +62,23 @@ using namespace std;
  * (see configs/network/Network.py)
  */
 
-GarnetNetwork::GarnetNetwork(const Params *p)
+GarnetNetwork::GarnetNetwork(const Params &p)
     : Network(p)
 {
-    m_num_rows = p->num_rows;
-    m_ni_flit_size = p->ni_flit_size;
+    m_num_rows = p.num_rows;
+    m_ni_flit_size = p.ni_flit_size;
     m_max_vcs_per_vnet = 0;
-    m_buffers_per_data_vc = p->buffers_per_data_vc;
-    m_buffers_per_ctrl_vc = p->buffers_per_ctrl_vc;
-    m_routing_algorithm = p->routing_algorithm;
+    m_buffers_per_data_vc = p.buffers_per_data_vc;
+    m_buffers_per_ctrl_vc = p.buffers_per_ctrl_vc;
+    m_routing_algorithm = p.routing_algorithm;
+    m_next_packet_id = 0;
 
-    m_enable_fault_model = p->enable_fault_model;
+    m_enable_fault_model = p.enable_fault_model;
     if (m_enable_fault_model)
-        fault_model = p->fault_model;
-    m_enable_multicast = p->enable_multicast;
-    m_ideal_noc_hops = p->ideal_noc_hops;
-    m_ideal_noc_msg = p->ideal_noc_msg;
+        fault_model = p.fault_model;
+    m_enable_multicast = p.enable_multicast;
+    m_ideal_noc_hops = p.ideal_noc_hops;
+    m_ideal_noc_msg = p.ideal_noc_msg;
     m_ideal_noc_msg_all = m_ideal_noc_msg == "all";
     /**
      * Record the message stats category and types
@@ -146,8 +155,8 @@ GarnetNetwork::GarnetNetwork(const Params *p)
     }
 
     // record the routers
-    for (vector<BasicRouter*>::const_iterator i =  p->routers.begin();
-         i != p->routers.end(); ++i) {
+    for (std::vector<BasicRouter*>::const_iterator i =  p.routers.begin();
+         i != p.routers.end(); ++i) {
         Router* router = safe_cast<Router*>(*i);
         m_routers.push_back(router);
 
@@ -156,8 +165,8 @@ GarnetNetwork::GarnetNetwork(const Params *p)
     }
 
     // record the network interfaces
-    for (vector<ClockedObject*>::const_iterator i = p->netifs.begin();
-         i != p->netifs.end(); ++i) {
+    for (std::vector<ClockedObject*>::const_iterator i = p.netifs.begin();
+         i != p.netifs.end(); ++i) {
         NetworkInterface *ni = safe_cast<NetworkInterface *>(*i);
         m_nis.push_back(ni);
         ni->init_net_ptr(this);
@@ -201,18 +210,18 @@ GarnetNetwork::init()
 
     // FaultModel: declare each router to the fault model
     if (isFaultModelEnabled()) {
-        for (vector<Router*>::const_iterator i= m_routers.begin();
+        for (std::vector<Router*>::const_iterator i= m_routers.begin();
              i != m_routers.end(); ++i) {
             Router* router = safe_cast<Router*>(*i);
-            int router_id M5_VAR_USED =
+            [[maybe_unused]] int router_id =
                 fault_model->declare_router(router->get_num_inports(),
                                             router->get_num_outports(),
                                             router->get_vc_per_vnet(),
                                             getBuffersPerDataVC(),
                                             getBuffersPerCtrlVC());
             assert(router_id == router->get_id());
-            router->printAggregateFaultProbability(cout);
-            router->printFaultVector(cout);
+            router->printAggregateFaultProbability(std::cout);
+            router->printFaultVector(std::cout);
         }
     }
 }
@@ -262,10 +271,12 @@ GarnetNetwork::makeExtInLink(NodeID global_src, SwitchID dest, BasicLink* link,
     if (garnet_link->extBridgeEn) {
         DPRINTF(RubyNetwork, "Enable external bridge for %s\n",
             garnet_link->name());
+        NetworkBridge *n_bridge = garnet_link->extNetBridge[LinkDirection_In];
         m_nis[local_src]->
-        addOutPort(garnet_link->extNetBridge[LinkDirection_In],
+        addOutPort(n_bridge,
                    garnet_link->extCredBridge[LinkDirection_In],
                    dest, m_routers[dest]->get_vc_per_vnet());
+        m_networkbridges.push_back(n_bridge);
     } else {
         m_nis[local_src]->addOutPort(net_link, credit_link, dest,
             m_routers[dest]->get_vc_per_vnet());
@@ -274,10 +285,12 @@ GarnetNetwork::makeExtInLink(NodeID global_src, SwitchID dest, BasicLink* link,
     if (garnet_link->intBridgeEn) {
         DPRINTF(RubyNetwork, "Enable internal bridge for %s\n",
             garnet_link->name());
+        NetworkBridge *n_bridge = garnet_link->intNetBridge[LinkDirection_In];
         m_routers[dest]->
             addInPort(dst_inport_dirn,
-                      garnet_link->intNetBridge[LinkDirection_In],
+                      n_bridge,
                       garnet_link->intCredBridge[LinkDirection_In]);
+        m_networkbridges.push_back(n_bridge);
     } else {
         m_routers[dest]->addInPort(dst_inport_dirn, net_link, credit_link);
     }
@@ -331,9 +344,10 @@ GarnetNetwork::makeExtOutLink(SwitchID src, NodeID global_dest,
     if (garnet_link->extBridgeEn) {
         DPRINTF(RubyNetwork, "Enable external bridge for %s\n",
             garnet_link->name());
+        NetworkBridge *n_bridge = garnet_link->extNetBridge[LinkDirection_Out];
         m_nis[local_dest]->
-            addInPort(garnet_link->extNetBridge[LinkDirection_Out],
-                      garnet_link->extCredBridge[LinkDirection_Out]);
+            addInPort(n_bridge, garnet_link->extCredBridge[LinkDirection_Out]);
+        m_networkbridges.push_back(n_bridge);
     } else {
         m_nis[local_dest]->addInPort(net_link, credit_link);
     }
@@ -341,12 +355,14 @@ GarnetNetwork::makeExtOutLink(SwitchID src, NodeID global_dest,
     if (garnet_link->intBridgeEn) {
         DPRINTF(RubyNetwork, "Enable internal bridge for %s\n",
             garnet_link->name());
+        NetworkBridge *n_bridge = garnet_link->intNetBridge[LinkDirection_Out];
         m_routers[src]->
             addOutPort(src_outport_dirn,
-                       garnet_link->intNetBridge[LinkDirection_Out],
+                       n_bridge,
                        routing_table_entry, link->m_weight,
                        garnet_link->intCredBridge[LinkDirection_Out],
                        m_routers[src]->get_vc_per_vnet());
+        m_networkbridges.push_back(n_bridge);
     } else {
         m_routers[src]->
             addOutPort(src_outport_dirn, net_link,
@@ -397,8 +413,10 @@ GarnetNetwork::makeInternalLink(SwitchID src, SwitchID dest, BasicLink* link,
     if (garnet_link->dstBridgeEn) {
         DPRINTF(RubyNetwork, "Enable destination bridge for %s\n",
             garnet_link->name());
-        m_routers[dest]->addInPort(dst_inport_dirn,
-            garnet_link->dstNetBridge, garnet_link->dstCredBridge);
+        NetworkBridge *n_bridge = garnet_link->dstNetBridge;
+        m_routers[dest]->addInPort(dst_inport_dirn, n_bridge,
+                                   garnet_link->dstCredBridge);
+        m_networkbridges.push_back(n_bridge);
     } else {
         m_routers[dest]->addInPort(dst_inport_dirn, net_link, credit_link);
     }
@@ -406,11 +424,13 @@ GarnetNetwork::makeInternalLink(SwitchID src, SwitchID dest, BasicLink* link,
     if (garnet_link->srcBridgeEn) {
         DPRINTF(RubyNetwork, "Enable source bridge for %s\n",
             garnet_link->name());
+        NetworkBridge *n_bridge = garnet_link->srcNetBridge;
         m_routers[src]->
-            addOutPort(src_outport_dirn, garnet_link->srcNetBridge,
+            addOutPort(src_outport_dirn, n_bridge,
                        routing_table_entry,
                        link->m_weight, garnet_link->srcCredBridge,
                        m_routers[dest]->get_vc_per_vnet());
+        m_networkbridges.push_back(n_bridge);
     } else {
         m_routers[src]->addOutPort(src_outport_dirn, net_link,
                         routing_table_entry,
@@ -444,13 +464,15 @@ GarnetNetwork::regStats()
     m_packets_received
         .init(m_virtual_networks)
         .name(name() + ".packets_received")
-        .flags(Stats::pdf | Stats::total | Stats::nozero | Stats::oneline)
+        .flags(statistics::pdf | statistics::total | statistics::nozero |
+            statistics::oneline)
         ;
 
     m_packets_injected
         .init(m_virtual_networks)
         .name(name() + ".packets_injected")
-        .flags(Stats::pdf | Stats::total | Stats::nozero | Stats::oneline)
+        .flags(statistics::pdf | statistics::total | statistics::nozero |
+            statistics::oneline)
         ;
     m_packet_types_injected
         .init(MAX_MSG_CATEGORY * MAX_MSG_TYPES_PER_CATEGORY)
@@ -461,13 +483,13 @@ GarnetNetwork::regStats()
     m_packet_network_latency
         .init(m_virtual_networks)
         .name(name() + ".packet_network_latency")
-        .flags(Stats::oneline)
+        .flags(statistics::oneline)
         ;
 
     m_packet_queueing_latency
         .init(m_virtual_networks)
         .name(name() + ".packet_queueing_latency")
-        .flags(Stats::oneline)
+        .flags(statistics::oneline)
         ;
 
     for (int i = 0; i < m_virtual_networks; i++) {
@@ -479,13 +501,13 @@ GarnetNetwork::regStats()
 
     m_avg_packet_vnet_latency
         .name(name() + ".average_packet_vnet_latency")
-        .flags(Stats::oneline);
+        .flags(statistics::oneline);
     m_avg_packet_vnet_latency =
         m_packet_network_latency / m_packets_received;
 
     m_avg_packet_vqueue_latency
         .name(name() + ".average_packet_vqueue_latency")
-        .flags(Stats::oneline);
+        .flags(statistics::oneline);
     m_avg_packet_vqueue_latency =
         m_packet_queueing_latency / m_packets_received;
 
@@ -508,13 +530,15 @@ GarnetNetwork::regStats()
     m_flits_received
         .init(m_virtual_networks)
         .name(name() + ".flits_received")
-        .flags(Stats::pdf | Stats::total | Stats::nozero | Stats::oneline)
+        .flags(statistics::pdf | statistics::total | statistics::nozero |
+            statistics::oneline)
         ;
 
     m_flits_injected
         .init(m_virtual_networks)
         .name(name() + ".flits_injected")
-        .flags(Stats::pdf | Stats::total | Stats::nozero | Stats::oneline)
+        .flags(statistics::pdf | statistics::total | statistics::nozero |
+            statistics::oneline)
         ;
     m_flit_types_injected
         .init(MAX_MSG_TYPES_PER_CATEGORY * MAX_MSG_CATEGORY)
@@ -525,13 +549,13 @@ GarnetNetwork::regStats()
     m_flit_network_latency
         .init(m_virtual_networks)
         .name(name() + ".flit_network_latency")
-        .flags(Stats::oneline)
+        .flags(statistics::oneline)
         ;
 
     m_flit_queueing_latency
         .init(m_virtual_networks)
         .name(name() + ".flit_queueing_latency")
-        .flags(Stats::oneline)
+        .flags(statistics::oneline)
         ;
 
     for (int i = 0; i < m_virtual_networks; i++) {
@@ -543,12 +567,12 @@ GarnetNetwork::regStats()
 
     m_avg_flit_vnet_latency
         .name(name() + ".average_flit_vnet_latency")
-        .flags(Stats::oneline);
+        .flags(statistics::oneline);
     m_avg_flit_vnet_latency = m_flit_network_latency / m_flits_received;
 
     m_avg_flit_vqueue_latency
         .name(name() + ".average_flit_vqueue_latency")
-        .flags(Stats::oneline);
+        .flags(statistics::oneline);
     m_avg_flit_vqueue_latency =
         m_flit_queueing_latency / m_flits_received;
 
@@ -591,14 +615,36 @@ GarnetNetwork::regStats()
     m_average_vc_load
         .init(m_virtual_networks * m_max_vcs_per_vnet)
         .name(name() + ".avg_vc_load")
-        .flags(Stats::pdf | Stats::total | Stats::nozero | Stats::oneline)
+        .flags(statistics::pdf | statistics::total | statistics::nozero |
+            statistics::oneline)
         ;
+
+    // Traffic distribution
+    for (int source = 0; source < m_routers.size(); ++source) {
+        m_data_traffic_distribution.push_back(
+            std::vector<statistics::Scalar *>());
+        m_ctrl_traffic_distribution.push_back(
+            std::vector<statistics::Scalar *>());
+
+        for (int dest = 0; dest < m_routers.size(); ++dest) {
+            statistics::Scalar *data_packets = new statistics::Scalar();
+            statistics::Scalar *ctrl_packets = new statistics::Scalar();
+
+            data_packets->name(name() + ".data_traffic_distribution." + "n" +
+                    std::to_string(source) + "." + "n" + std::to_string(dest));
+            m_data_traffic_distribution[source].push_back(data_packets);
+
+            ctrl_packets->name(name() + ".ctrl_traffic_distribution." + "n" +
+                    std::to_string(source) + "." + "n" + std::to_string(dest));
+            m_ctrl_traffic_distribution[source].push_back(ctrl_packets);
+        }
+    }
 }
 
 void
 GarnetNetwork::collateStats()
 {
-    RubySystem *rs = params()->ruby_system;
+    RubySystem *rs = params().ruby_system;
     double time_delta = double(curCycle() - rs->getStartCycle());
 
     for (int i = 0; i < m_networklinks.size(); i++) {
@@ -615,7 +661,7 @@ GarnetNetwork::collateStats()
         m_average_link_utilization +=
             (double(activity) / time_delta);
 
-        vector<unsigned int> vc_load = m_networklinks[i]->getVcLoad();
+        std::vector<unsigned int> vc_load = m_networklinks[i]->getVcLoad();
         for (int j = 0; j < vc_load.size(); j++) {
             m_average_vc_load[j] += ((double)vc_load[j] / time_delta);
         }
@@ -642,15 +688,49 @@ GarnetNetwork::resetStats()
 }
 
 void
-GarnetNetwork::print(ostream& out) const
+GarnetNetwork::print(std::ostream& out) const
 {
     out << "[GarnetNetwork]";
 }
 
-GarnetNetwork *
-GarnetNetworkParams::create()
+void
+GarnetNetwork::update_traffic_distribution(RouteInfo route)
 {
-    return new GarnetNetwork(this);
+    int src_node = route.src_router;
+    int dest_node = route.dest_router;
+    int vnet = route.vnet;
+
+    if (m_vnet_type[vnet] == DATA_VNET_)
+        (*m_data_traffic_distribution[src_node][dest_node])++;
+    else
+        (*m_ctrl_traffic_distribution[src_node][dest_node])++;
+}
+
+bool
+GarnetNetwork::functionalRead(Packet *pkt, WriteMask &mask)
+{
+    bool read = false;
+    for (unsigned int i = 0; i < m_routers.size(); i++) {
+        if (m_routers[i]->functionalRead(pkt, mask))
+            read = true;
+    }
+
+    for (unsigned int i = 0; i < m_nis.size(); ++i) {
+        if (m_nis[i]->functionalRead(pkt, mask))
+            read = true;
+    }
+
+    for (unsigned int i = 0; i < m_networklinks.size(); ++i) {
+        if (m_networklinks[i]->functionalRead(pkt, mask))
+            read = true;
+    }
+
+    for (unsigned int i = 0; i < m_networkbridges.size(); ++i) {
+        if (m_networkbridges[i]->functionalRead(pkt, mask))
+            read = true;
+    }
+
+    return read;
 }
 
 uint32_t
@@ -695,3 +775,6 @@ GarnetNetwork::isIdealNoCMsg(const MsgPtr &msg) const {
     }
     return false;
 }
+} // namespace garnet
+} // namespace ruby
+} // namespace gem5

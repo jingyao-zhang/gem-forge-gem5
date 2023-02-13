@@ -21,6 +21,8 @@
 #include <array>
 #include <unordered_map>
 
+namespace gem5 {
+
 class StreamEngine;
 class GemForgeCPUDelegator;
 
@@ -60,11 +62,11 @@ public:
   void storeTo(InstSeqNum seqNum, Addr vaddr, int size);
 
 private:
-  ::GemForgeCPUDelegator *cpuDelegator;
+  GemForgeCPUDelegator *cpuDelegator;
 
-  ::StreamEngine *SE = nullptr;
+  StreamEngine *SE = nullptr;
   bool SEMemorized = false;
-  ::StreamEngine *getStreamEngine();
+  StreamEngine *getStreamEngine();
 
   template <typename T> T extractImm(const StaticInst *staticInst) const;
 
@@ -257,5 +259,7 @@ private:
   void increamentStreamRegionInfoNumExecutedInsts(
       DynStreamRegionInfo &dynStreamRegionInfo);
 };
+
+} // namespace gem5
 
 #endif

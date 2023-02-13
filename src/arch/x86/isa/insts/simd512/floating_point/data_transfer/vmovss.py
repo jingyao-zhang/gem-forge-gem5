@@ -1,7 +1,7 @@
 microcode = '''
 def macroop VMOVSS_XMM_XMM {
-    movfp128 dest=xmm0, src1=xmm0v, dataSize=16
-    movfpl2l dest=xmm0, src1=xmm0m, dataSize=4
+    movfp128 reg1=xmm0, reg2=xmm0v, dataSize=16
+    movfpl2l xmm0, xmm0m, dataSize=4
     vclear dest=xmm2, destVL=16
 };
 

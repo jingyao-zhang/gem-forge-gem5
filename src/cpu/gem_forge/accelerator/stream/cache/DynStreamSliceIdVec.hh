@@ -5,6 +5,8 @@
 
 #include <vector>
 
+namespace gem5 {
+
 /**
  * A vector of DynStreamSliceId. Used for Ruby Slicc to multicast slices.
  */
@@ -32,5 +34,7 @@ struct DynStreamSliceIdVec {
 };
 
 std::ostream &operator<<(std::ostream &os, const DynStreamSliceIdVec &slices);
+
+} // namespace gem5
 
 #endif

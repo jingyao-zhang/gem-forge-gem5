@@ -16,6 +16,8 @@
 
 #include <unordered_map>
 
+namespace gem5 {
+
 class MLCStreamNDCController;
 class MLCStrandManager;
 class MLCPUMManager;
@@ -31,11 +33,11 @@ class MessageBuffer;
  *                                       ------> N, handled as uncached request.
  * isDataReady?     ------> Y, send response.
  */
-class MLCStreamEngine : public Consumer {
+class MLCStreamEngine : public ruby::Consumer {
 public:
-  MLCStreamEngine(AbstractStreamAwareController *_controller,
-                  MessageBuffer *_responseToUpperMsgBuffer,
-                  MessageBuffer *_requestToLLCMsgBuffer);
+  MLCStreamEngine(ruby::AbstractStreamAwareController *_controller,
+                  ruby::MessageBuffer *_responseToUpperMsgBuffer,
+                  ruby::MessageBuffer *_requestToLLCMsgBuffer);
   ~MLCStreamEngine();
 
   void wakeup() override;
@@ -49,9 +51,9 @@ public:
    * Receive a StreamEnd message and end all streams.
    */
   void receiveStreamEnd(PacketPtr pkt);
-  void receiveStreamData(const ResponseMsg &msg);
+  void receiveStreamData(const ruby::ResponseMsg &msg);
   void receiveStreamDataForSingleSlice(const DynStreamSliceId &sliceId,
-                                       const DataBlock &dataBlock,
+                                       const ruby::DataBlock &dataBlock,
                                        Addr paddrLine);
 
   bool isStreamRequest(const DynStreamSliceId &slice);
@@ -65,14 +67,14 @@ public:
    * Basically handled by MLCStreamNDCController.
    */
   void receiveStreamNDCRequest(PacketPtr pkt);
-  void receiveStreamNDCResponse(const ResponseMsg &msg);
+  void receiveStreamNDCResponse(const ruby::ResponseMsg &msg);
 
   /**
    * Receive a StreamLoopBound TotalTripCount.
    */
   void receiveStreamTotalTripCount(const DynStrandId &strandId,
                                    int64_t totalTripCount, Addr brokenPAddr,
-                                   MachineType brokenMachineType);
+                                   ruby::MachineType brokenMachineType);
 
   /**
    * Issue a StreamData to LLC. Used to forwarding some reduction results from
@@ -80,7 +82,7 @@ public:
    * matrix-multiplication.
    */
   void issueStreamDataToLLC(const DynStreamSliceId &sliceId,
-                            const DataBlock &dataBlock,
+                            const ruby::DataBlock &dataBlock,
                             const CacheStreamConfigureDataPtr &recvConfig,
                             uint64_t recvStreamElemIdx, int payloadSize);
 
@@ -95,9 +97,9 @@ public:
   void notifyMLCPUMManagerPrefetchDone(int64_t numSentPkts) const;
 
 private:
-  AbstractStreamAwareController *controller;
-  MessageBuffer *responseToUpperMsgBuffer;
-  MessageBuffer *requestToLLCMsgBuffer;
+  ruby::AbstractStreamAwareController *controller;
+  ruby::MessageBuffer *responseToUpperMsgBuffer;
+  ruby::MessageBuffer *requestToLLCMsgBuffer;
 
   // For sanity check.
   // TODO: Limit the size of this set.
@@ -121,7 +123,8 @@ private:
   std::unordered_map<DynStreamId, ReuseInfo, DynStreamIdHasher> reuseInfoMap;
   std::unordered_map<DynStreamId, ReuseInfo, DynStreamIdHasher>
       reverseReuseInfoMap;
-  void reuseSlice(const DynStreamSliceId &sliceId, const DataBlock &dataBlock);
+  void reuseSlice(const DynStreamSliceId &sliceId,
+                  const ruby::DataBlock &dataBlock);
 
   friend class MLCStreamNDCController;
   friend class MLCStrandManager;
@@ -141,5 +144,7 @@ private:
     this->prevRecordedStreamCycle = curCycle;
   }
 };
+
+} // namespace gem5
 
 #endif

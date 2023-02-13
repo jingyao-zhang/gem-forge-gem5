@@ -3,6 +3,8 @@
 
 #include "MLCDynStream.hh"
 
+namespace gem5 {
+
 /**
  * MLCDynIndirectStream is a special stream.
  * 1. It does not send credit to LLC. The direct stream should perform the flow
@@ -19,9 +21,9 @@
 class MLCDynIndirectStream : public MLCDynStream {
 public:
   MLCDynIndirectStream(CacheStreamConfigureDataPtr _configData,
-                       AbstractStreamAwareController *_controller,
-                       MessageBuffer *_responseMsgBuffer,
-                       MessageBuffer *_requestToLLCMsgBuffer,
+                       ruby::AbstractStreamAwareController *_controller,
+                       ruby::MessageBuffer *_responseMsgBuffer,
+                       ruby::MessageBuffer *_requestToLLCMsgBuffer,
                        const DynStreamId &_rootStreamId);
 
   virtual ~MLCDynIndirectStream() {}
@@ -45,7 +47,7 @@ public:
    * Receive data from LLC.
    */
   void receiveStreamData(const DynStreamSliceId &sliceId,
-                         const DataBlock &dataBlock, Addr paddrLine) override;
+                         const ruby::DataBlock &dataBlock, Addr paddrLine) override;
 
   /**
    * Receive data from the base direct stream.
@@ -75,7 +77,7 @@ public:
     return this->baseStream->hasInnerTripCount();
   }
   void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr,
-                         MachineType brokenMachineType) override;
+                         ruby::MachineType brokenMachineType) override;
   int getBaseStreamReuse() const { return this->baseStreamReuse; }
   int getBaseStreamSkip() const { return 0; }
 
@@ -136,7 +138,9 @@ private:
    * @return whether this is handled as the FinalReductionValue.
    */
   bool receiveFinalReductionValue(const DynStreamSliceId &sliceId,
-                                  const DataBlock &dataBlock, Addr paddrLine);
+                                  const ruby::DataBlock &dataBlock, Addr paddrLine);
 };
+
+} // namespace gem5
 
 #endif

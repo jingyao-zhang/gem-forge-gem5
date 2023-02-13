@@ -6,6 +6,9 @@
 
 #include <unordered_set>
 
+namespace gem5 {
+namespace ruby {
+
 class PCRequestRecorder {
 public:
   PCRequestRecorder(const std::string &_name) : name(_name) {}
@@ -57,5 +60,8 @@ private:
   std::unordered_set<RequestLatencyStats, RequestLatencyStatsHasher>
       pcLatencySet;
 };
+
+} // namespace ruby
+} // namespace gem5
 
 #endif

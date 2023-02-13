@@ -10,6 +10,8 @@
 #include "cpu/timebuf.hh"
 #include "params/LLVMTraceCPU.hh"
 
+namespace gem5 {
+
 class LLVMTraceCPU;
 
 class LLVMRenameStage {
@@ -17,7 +19,7 @@ public:
   using DecodeStruct = LLVMDecodeStage::DecodeStruct;
   using RenameStruct = std::vector<LLVMDynamicInstId>;
 
-  LLVMRenameStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
+  LLVMRenameStage(const LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
   LLVMRenameStage(const LLVMRenameStage &rs) = delete;
   LLVMRenameStage(LLVMRenameStage &&rs) = delete;
 
@@ -34,16 +36,16 @@ public:
     this->renameStates.at(threadId).clear();
   }
 
-  Stats::Scalar blockedCycles;
+  statistics::Scalar blockedCycles;
   /** Stat for total number of renamed instructions. */
-  Stats::Scalar renameRenamedInsts;
+  statistics::Scalar renameRenamedInsts;
   /** Stat for total number of renamed destination registers. */
-  Stats::Scalar renameRenamedOperands;
+  statistics::Scalar renameRenamedOperands;
   /** Stat for total number of source register rename lookups. */
-  Stats::Scalar renameRenameLookups;
-  Stats::Scalar intRenameLookups;
-  Stats::Scalar fpRenameLookups;
-  Stats::Scalar vecRenameLookups;
+  statistics::Scalar renameRenameLookups;
+  statistics::Scalar intRenameLookups;
+  statistics::Scalar fpRenameLookups;
+  statistics::Scalar vecRenameLookups;
 
 private:
   LLVMTraceCPU *cpu;
@@ -76,5 +78,7 @@ private:
 
   size_t getTotalRenameQueueSize() const;
 };
+
+} // namespace gem5
 
 #endif

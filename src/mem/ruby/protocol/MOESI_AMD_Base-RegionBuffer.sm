@@ -2,8 +2,6 @@
  * Copyright (c) 2010-2015 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -1373,4 +1371,3 @@ machine(MachineType:RegionBuffer, "Region Buffer for AMD_Base-like protocol")
   }
 
 }
-

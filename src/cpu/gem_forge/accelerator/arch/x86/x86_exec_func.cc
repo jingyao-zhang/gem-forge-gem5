@@ -20,6 +20,8 @@
 #define EXEC_FUNC_PANIC(format, args...)                                       \
   panic("[%s]: " format, this->func.name().c_str(), ##args)
 
+namespace gem5 {
+
 namespace {
 
 /**
@@ -32,8 +34,23 @@ static ExecFuncContext execFuncXC;
 
 namespace X86ISA {
 
+namespace {
+const RegId intRegParams[6] = {
+    int_reg::Rdi, int_reg::Rsi, int_reg::Rdx,
+    int_reg::Rcx, int_reg::R8,  int_reg::R9,
+};
+const RegId floatRegParams[8] = {
+    float_reg::xmmIdx(0, 0), float_reg::xmmIdx(1, 0), float_reg::xmmIdx(2, 0),
+    float_reg::xmmIdx(3, 0), float_reg::xmmIdx(4, 0), float_reg::xmmIdx(5, 0),
+    float_reg::xmmIdx(6, 0), float_reg::xmmIdx(7, 0),
+};
+} // namespace
+
 ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
     : tc(_tc), func(_func) {
+
+  execFuncXC.init(tc->getIsaPtr());
+
   auto p = tc->getProcessPtr();
   auto obj = p->objFile;
   Addr funcStartVAddr;
@@ -41,8 +58,8 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
     panic("Failed to resovle symbol: %s.", this->func.name());
   }
 
-  auto dsEffBase = tc->readMiscRegNoEffect(MiscRegIndex::MISCREG_DS_EFF_BASE);
-  auto csEffBase = tc->readMiscRegNoEffect(MiscRegIndex::MISCREG_CS_EFF_BASE);
+  auto dsEffBase = tc->readMiscRegNoEffect(misc_reg::DsEffBase);
+  auto csEffBase = tc->readMiscRegNoEffect(misc_reg::CsEffBase);
   assert(dsEffBase == 0 && "We cannot handle this DS.\n");
   assert(csEffBase == 0 && "We cannot handle this CS.\n");
 
@@ -54,14 +71,15 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
   /**
    * Let's create a new decoder to avoid interfering the original one's state.
    */
-  TheISA::Decoder decoder;
-  decoder.takeOverFrom(this->tc->getDecoderPtr());
+  auto dec = dynamic_cast<TheISA::Decoder *>(this->tc->getDecoderPtr());
+  TheISA::Decoder decoder(dec->params());
+  decoder.takeOverFrom(dec);
   decoder.reset();
   TheISA::PCState pc(funcStartVAddr);
   auto fetchPC = funcStartVAddr;
   // Feed in the first line.
-  MachInst machInst;
-  assert(prox.tryReadBlob(fetchPC, &machInst, sizeof(machInst)) &&
+  MachInst &machInst = *static_cast<MachInst *>(decoder.moreBytesPtr());
+  assert(prox.tryReadBlob(fetchPC, &machInst, sizeof(MachInst)) &&
          "Failed to read in next machine inst.");
 
   while (true) {
@@ -74,11 +92,11 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
                       (machInst >> 16) & 0xff, (machInst >> 24) & 0xff,
                       (machInst >> 32) & 0xff, (machInst >> 40) & 0xff,
                       (machInst >> 48) & 0xff, (machInst >> 56) & 0xff);
-    decoder.moreBytes(pc, fetchPC, machInst);
+    decoder.moreBytes(pc, fetchPC);
     // Read in the next machInst.
     if (decoder.needMoreBytes()) {
       fetchPC += sizeof(machInst);
-      assert(prox.tryReadBlob(fetchPC, &machInst, sizeof(machInst)) &&
+      assert(prox.tryReadBlob(fetchPC, &machInst, sizeof(MachInst)) &&
              "Failed to read in next machine inst.");
     }
     if (!decoder.instReady()) {
@@ -87,7 +105,7 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
                         (machInst >> 16) & 0xff, (machInst >> 24) & 0xff,
                         (machInst >> 32) & 0xff, (machInst >> 40) & 0xff,
                         (machInst >> 48) & 0xff, (machInst >> 56) & 0xff);
-      decoder.moreBytes(pc, fetchPC, machInst);
+      decoder.moreBytes(pc, fetchPC);
       if (!decoder.instReady()) {
         fetchPC += sizeof(machInst);
         assert(prox.tryReadBlob(fetchPC, &machInst, sizeof(machInst)) &&
@@ -98,7 +116,7 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
                           (machInst >> 24) & 0xff, (machInst >> 32) & 0xff,
                           (machInst >> 40) & 0xff, (machInst >> 48) & 0xff,
                           (machInst >> 56) & 0xff);
-        decoder.moreBytes(pc, fetchPC, machInst);
+        decoder.moreBytes(pc, fetchPC);
       }
     }
     assert(decoder.instReady() && "Decoder should have the inst ready.");
@@ -120,7 +138,7 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
     for (auto upc = 0; upc < numMicroops; ++upc) {
       auto microop = staticInst->fetchMicroop(upc);
       EXEC_FUNC_DPRINTF("  Decode MicroInst %s %s.\n",
-                        Enums::OpClassStrings[microop->opClass()],
+                        enums::OpClassStrings[microop->opClass()],
                         microop->disassemble(pc.pc()).c_str());
       this->instructions.push_back(microop);
       this->pcs.push_back(pc);
@@ -229,24 +247,6 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
   }
   execFuncXC.clear();
 
-  const RegId intRegParams[6] = {
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RDI),
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RSI),
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RDX),
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RCX),
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_R8),
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_R9),
-  };
-  const RegId floatRegParams[8] = {
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM0_0),
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM1_0),
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM2_0),
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM3_0),
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM4_0),
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM5_0),
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM6_0),
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM7_0),
-  };
   EXEC_FUNC_DPRINTF("Set up calling convention. Params %d.\n", params.size());
   int intParamIdx = 0;
   int floatParamIdx = 0;
@@ -262,7 +262,7 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
     if (type == ::LLVM::TDG::DataType::INTEGER) {
       if (intParamIdx < 6) {
         const auto &reg = intRegParams[intParamIdx];
-        execFuncXC.setIntRegOperand(reg, param.front());
+        execFuncXC.setRegOperand(reg, param.front());
         EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
       } else {
         stackArgs.push_back(param.front());
@@ -274,8 +274,8 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
       if (floatParamIdx < 8) {
         const auto &baseReg = floatRegParams[floatParamIdx];
         for (int i = 0; i < numRegs; ++i) {
-          RegId reg = RegId(RegClass::FloatRegClass, baseReg.index() + i);
-          execFuncXC.setFloatRegOperand(reg, param.at(i));
+          RegId reg = RegId(baseReg.regClass(), baseReg.index() + i);
+          execFuncXC.setRegOperand(reg, param.at(i));
           EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
         }
       } else {
@@ -299,11 +299,12 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
   // Subtract the final fake return address from rsp.
   curFakeStackVAddr -= 8;
 
-  RegId RSP(RegClass::IntRegClass, IntRegIndex::INTREG_RSP);
-  execFuncXC.setIntRegOperand(RSP, curFakeStackVAddr);
+  auto RSP = int_reg::Rsp;
+  execFuncXC.setRegOperand(RSP, curFakeStackVAddr);
 
   // Set up the virt proxy.
-  execFuncXC.setVirtProxy(&this->tc->getVirtProxy());
+  auto &vproxy = this->tc->getVirtProxy();
+  execFuncXC.setVirtProxy(&vproxy);
 
   // Support a simple stack. This is used for complex NestStreamConfigureFunc.
   std::vector<RegVal> stack;
@@ -343,15 +344,14 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
   RegisterValue retValue;
   if (retType == ::LLVM::TDG::DataType::INTEGER) {
     // We expect the int result in rax.
-    const RegId rax(RegClass::IntRegClass, IntRegIndex::INTREG_RAX);
-    retValue.front() = execFuncXC.readIntRegOperand(rax);
+    auto rax = int_reg::Rax;
+    retValue.front() = execFuncXC.getRegOperand(rax);
   } else {
     // We expect the float result in xmm0.
     auto numRegs = this->translateToNumRegs(retType);
     for (int i = 0; i < numRegs; ++i) {
-      RegId reg =
-          RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM0_0 + i);
-      retValue.at(i) = execFuncXC.readFloatRegOperand(reg);
+      auto reg = float_reg::xmmIdx(0, i);
+      retValue.at(i) = execFuncXC.getRegOperand(reg);
     }
   }
   EXEC_FUNC_DPRINTF("Ret Type %s %s.\n", ::LLVM::TDG::DataType_Name(retType),
@@ -374,24 +374,6 @@ ExecFunc::invoke_imvals(const std::vector<RegisterValue> &params,
   }
   execFuncXC.clear();
 
-  const RegId intRegParams[6] = {
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RDI),
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RSI),
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RDX),
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RCX),
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_R8),
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_R9),
-  };
-  const RegId floatRegParams[8] = {
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM0_0),
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM1_0),
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM2_0),
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM3_0),
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM4_0),
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM5_0),
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM6_0),
-      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM7_0),
-  };
   EXEC_FUNC_DPRINTF("Set up calling convention.\n");
   int intParamIdx = 0;
   int floatParamIdx = 0;
@@ -404,7 +386,7 @@ ExecFunc::invoke_imvals(const std::vector<RegisterValue> &params,
       }
       const auto &reg = intRegParams[intParamIdx];
       intParamIdx++;
-      execFuncXC.setIntRegOperand(reg, param.front());
+      execFuncXC.setRegOperand(reg, param.front());
       EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
     } else {
       if (floatParamIdx == 8) {
@@ -414,15 +396,16 @@ ExecFunc::invoke_imvals(const std::vector<RegisterValue> &params,
       const auto &baseReg = floatRegParams[floatParamIdx];
       floatParamIdx++;
       for (int i = 0; i < numRegs; ++i) {
-        RegId reg = RegId(RegClass::FloatRegClass, baseReg.index() + i);
-        execFuncXC.setFloatRegOperand(reg, param.at(i));
+        RegId reg = RegId(baseReg.regClass(), baseReg.index() + i);
+        execFuncXC.setRegOperand(reg, param.at(i));
         EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
       }
     }
   }
 
   // Set up the virt proxy.
-  execFuncXC.setVirtProxy(&this->tc->getVirtProxy());
+  auto &vproxy = this->tc->getVirtProxy();
+  execFuncXC.setVirtProxy(&vproxy);
 
   std::vector<ExecFunc::RegisterValue> imvals;
 
@@ -445,7 +428,7 @@ ExecFunc::invoke_imvals(const std::vector<RegisterValue> &params,
         // Push into our small stack.
         // The 3rd argument is the data register.
         assert(staticInst->numSrcRegs() == 4);
-        auto data = execFuncXC.readIntRegOperand(staticInst->srcRegIdx(2));
+        auto data = execFuncXC.getRegOperand(staticInst->srcRegIdx(2));
         stack.push_back(data);
         EXEC_FUNC_DPRINTF("Push %lu.\n", data);
       }
@@ -460,7 +443,7 @@ ExecFunc::invoke_imvals(const std::vector<RegisterValue> &params,
         assert(staticInst->numDestRegs() == 1);
         auto data = stack.back();
         stack.pop_back();
-        execFuncXC.setIntRegOperand(staticInst->destRegIdx(0), data);
+        execFuncXC.setRegOperand(staticInst->destRegIdx(0), data);
         EXEC_FUNC_DPRINTF("Pop %lu.\n", data);
       }
       // Ignore other microops.
@@ -476,13 +459,13 @@ ExecFunc::invoke_imvals(const std::vector<RegisterValue> &params,
     assert(staticInst->numDestRegs() >= 1);
     imvals.emplace_back();
     auto reg = staticInst->destRegIdx(0);
-    if (reg.isIntReg()) {
-      imvals.back().front() = execFuncXC.readIntRegOperand(reg);
-    } else if (reg.isFloatReg()) {
+    if (reg.classValue() == RegClassType::IntRegClass) {
+      imvals.back().front() = execFuncXC.getRegOperand(reg);
+    } else if (reg.classValue() == RegClassType::FloatRegClass) {
       // TODO: this should be the entire vector register
-      imvals.back().at(0) = execFuncXC.readFloatRegOperand(reg);
-    } else if (reg.isCCReg()) {
-      imvals.back().at(0) = execFuncXC.readCCRegOperand(reg);
+      imvals.back().at(0) = execFuncXC.getRegOperand(reg);
+    } else if (reg.classValue() == RegClassType::CCRegClass) {
+      imvals.back().at(0) = execFuncXC.getRegOperand(reg);
     } else {
       EXEC_FUNC_PANIC("Unsupported register type %s\n", reg);
     }
@@ -509,15 +492,14 @@ ExecFunc::invoke_imvals(const std::vector<RegisterValue> &params,
   RegisterValue retValue;
   if (retType == ::LLVM::TDG::DataType::INTEGER) {
     // We expect the int result in rax.
-    const RegId rax(RegClass::IntRegClass, IntRegIndex::INTREG_RAX);
-    retValue.front() = execFuncXC.readIntRegOperand(rax);
+    auto rax = int_reg::Rax;
+    retValue.front() = execFuncXC.getRegOperand(rax);
   } else {
     // We expect the float result in xmm0.
     auto numRegs = this->translateToNumRegs(retType);
     for (int i = 0; i < numRegs; ++i) {
-      RegId reg =
-          RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM0_0 + i);
-      retValue.at(i) = execFuncXC.readFloatRegOperand(reg);
+      RegId reg = float_reg::xmmIdx(0, i);
+      retValue.at(i) = execFuncXC.getRegOperand(reg);
     }
   }
   EXEC_FUNC_DPRINTF("Ret Type %s.\n", ::LLVM::TDG::DataType_Name(retType),
@@ -544,24 +526,17 @@ Addr ExecFunc::invoke(const std::vector<Addr> &params) {
   }
   execFuncXC.clear();
 
-  const RegId intRegParams[6] = {
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RDI),
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RSI),
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RDX),
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RCX),
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_R8),
-      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_R9),
-  };
   EXEC_FUNC_DPRINTF("Set up calling convention.\n");
   for (auto idx = 0; idx < params.size(); ++idx) {
     auto param = params.at(idx);
     const auto &reg = intRegParams[idx];
-    execFuncXC.setIntRegOperand(reg, param);
+    execFuncXC.setRegOperand(reg, param);
     EXEC_FUNC_DPRINTF("Arg %d Reg %s %#x.\n", idx, reg, param);
   }
 
   // Set up the virt proxy.
-  execFuncXC.setVirtProxy(&this->tc->getVirtProxy());
+  auto &vproxy = this->tc->getVirtProxy();
+  execFuncXC.setVirtProxy(&vproxy);
 
   for (auto idx = 0; idx < this->instructions.size(); ++idx) {
     auto &staticInst = this->instructions.at(idx);
@@ -572,8 +547,8 @@ Addr ExecFunc::invoke(const std::vector<Addr> &params) {
   }
 
   // We expect the int result in rax.
-  const RegId rax(RegClass::IntRegClass, IntRegIndex::INTREG_RAX);
-  Addr retValue = execFuncXC.readIntRegOperand(rax);
+  auto rax = int_reg::Rax;
+  Addr retValue = execFuncXC.getRegOperand(rax);
   EXEC_FUNC_DPRINTF("Ret %#x.\n", retValue);
   return retValue;
 }
@@ -585,111 +560,111 @@ Cycles ExecFunc::estimateOneInstLat(const StaticInstPtr &staticInst) const {
   default:
     lat = 0;
     break;
-  case Enums::OpClass::No_OpClass:
+  case enums::OpClass::No_OpClass:
     lat = 0;
     break;
-  case Enums::OpClass::IntAlu:
+  case enums::OpClass::IntAlu:
     lat = 1;
     break;
-  case Enums::OpClass::IntMult:
+  case enums::OpClass::IntMult:
     lat = 3;
     break;
-  case Enums::OpClass::IntDiv:
+  case enums::OpClass::IntDiv:
     lat = 12;
     break;
-  case Enums::OpClass::FloatAdd:
-  case Enums::OpClass::FloatCmp:
-  case Enums::OpClass::FloatCvt:
-  case Enums::OpClass::FloatMisc:
+  case enums::OpClass::FloatAdd:
+  case enums::OpClass::FloatCmp:
+  case enums::OpClass::FloatCvt:
+  case enums::OpClass::FloatMisc:
     lat = 2;
     break;
-  case Enums::OpClass::FloatMult:
+  case enums::OpClass::FloatMult:
     lat = 1;
     break;
-  case Enums::OpClass::FloatMultAcc:
+  case enums::OpClass::FloatMultAcc:
     lat = 3;
     break;
-  case Enums::OpClass::FloatDiv:
+  case enums::OpClass::FloatDiv:
     lat = 12;
     break;
-  case Enums::OpClass::FloatSqrt:
+  case enums::OpClass::FloatSqrt:
     lat = 20;
     break;
-  case Enums::OpClass::SimdAdd:
-  case Enums::OpClass::SimdAddAcc:
-  case Enums::OpClass::SimdAlu:
-  case Enums::OpClass::SimdCmp:
-  case Enums::OpClass::SimdCvt:
-  case Enums::OpClass::SimdMisc:
-  case Enums::OpClass::SimdShift:
+  case enums::OpClass::SimdAdd:
+  case enums::OpClass::SimdAddAcc:
+  case enums::OpClass::SimdAlu:
+  case enums::OpClass::SimdCmp:
+  case enums::OpClass::SimdCvt:
+  case enums::OpClass::SimdMisc:
+  case enums::OpClass::SimdShift:
     lat = 1;
     break;
-  case Enums::OpClass::SimdMult:
+  case enums::OpClass::SimdMult:
     lat = 3;
     break;
-  case Enums::OpClass::SimdMultAcc:
+  case enums::OpClass::SimdMultAcc:
     lat = 4;
     break;
-  case Enums::OpClass::SimdShiftAcc:
+  case enums::OpClass::SimdShiftAcc:
     lat = 2;
     break;
-  case Enums::OpClass::SimdDiv:
+  case enums::OpClass::SimdDiv:
     lat = 12;
     break;
-  case Enums::OpClass::SimdSqrt:
+  case enums::OpClass::SimdSqrt:
     lat = 20;
     break;
-  case Enums::OpClass::SimdFloatAdd:
-  case Enums::OpClass::SimdFloatAlu:
-  case Enums::OpClass::SimdFloatCmp:
-  case Enums::OpClass::SimdFloatCvt:
-  case Enums::OpClass::SimdFloatMisc:
+  case enums::OpClass::SimdFloatAdd:
+  case enums::OpClass::SimdFloatAlu:
+  case enums::OpClass::SimdFloatCmp:
+  case enums::OpClass::SimdFloatCvt:
+  case enums::OpClass::SimdFloatMisc:
     lat = 2;
     break;
-  case Enums::OpClass::SimdFloatDiv:
+  case enums::OpClass::SimdFloatDiv:
     lat = 12;
     break;
-  case Enums::OpClass::SimdFloatMult:
+  case enums::OpClass::SimdFloatMult:
     lat = 3;
     break;
-  case Enums::OpClass::SimdFloatMultAcc:
+  case enums::OpClass::SimdFloatMultAcc:
     lat = 4;
     break;
-  case Enums::OpClass::SimdFloatSqrt:
+  case enums::OpClass::SimdFloatSqrt:
     lat = 20;
     break;
-  case Enums::OpClass::SimdReduceAdd:
+  case enums::OpClass::SimdReduceAdd:
     lat = 1;
     break;
-  case Enums::OpClass::SimdReduceAlu:
-  case Enums::OpClass::SimdReduceCmp:
-  case Enums::OpClass::SimdFloatReduceAdd:
-  case Enums::OpClass::SimdFloatReduceCmp:
+  case enums::OpClass::SimdReduceAlu:
+  case enums::OpClass::SimdReduceCmp:
+  case enums::OpClass::SimdFloatReduceAdd:
+  case enums::OpClass::SimdFloatReduceCmp:
     lat = 2;
     break;
-  case Enums::OpClass::SimdAes:
-  case Enums::OpClass::SimdAesMix:
-  case Enums::OpClass::SimdSha1Hash:
-  case Enums::OpClass::SimdSha1Hash2:
-  case Enums::OpClass::SimdSha256Hash:
-  case Enums::OpClass::SimdSha256Hash2:
-  case Enums::OpClass::SimdShaSigma2:
-  case Enums::OpClass::SimdShaSigma3:
+  case enums::OpClass::SimdAes:
+  case enums::OpClass::SimdAesMix:
+  case enums::OpClass::SimdSha1Hash:
+  case enums::OpClass::SimdSha1Hash2:
+  case enums::OpClass::SimdSha256Hash:
+  case enums::OpClass::SimdSha256Hash2:
+  case enums::OpClass::SimdShaSigma2:
+  case enums::OpClass::SimdShaSigma3:
     lat = 20;
     break;
-  case Enums::OpClass::SimdPredAlu:
+  case enums::OpClass::SimdPredAlu:
     lat = 1;
     break;
-  case Enums::OpClass::MemRead:
-  case Enums::OpClass::MemWrite:
-  case Enums::OpClass::FloatMemRead:
-  case Enums::OpClass::FloatMemWrite:
+  case enums::OpClass::MemRead:
+  case enums::OpClass::MemWrite:
+  case enums::OpClass::FloatMemRead:
+  case enums::OpClass::FloatMemWrite:
     // MemRead is only used to read the immediate number.
     lat = 0;
     break;
-  case Enums::OpClass::IprAccess:
-  case Enums::OpClass::InstPrefetch:
-  case Enums::OpClass::Accelerator:
+  case enums::OpClass::IprAccess:
+  case enums::OpClass::InstPrefetch:
+  case enums::OpClass::Accelerator:
     lat = 1;
     break;
   }
@@ -702,10 +677,12 @@ void ExecFunc::estimateLatency() {
     this->estimatedLatency += this->estimateOneInstLat(staticInst);
   }
 }
-} // namespace X86ISA
 
 std::ostream &operator<<(std::ostream &os,
                          const X86ISA::ExecFunc::RegisterValue &value) {
   os << value.print();
   return os;
 }
+
+} // namespace X86ISA
+} // namespace gem5

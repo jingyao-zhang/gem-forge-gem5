@@ -14,6 +14,8 @@
 
 #include "proto/protoio.hh"
 
+namespace gem5 {
+
 /**
  * Represent a instruction stream from a file.
  * This file simply parses the
@@ -67,5 +69,7 @@ private:
 
   void dispatchADFA(Packet *packet);
 };
+
+} // namespace gem5
 
 #endif

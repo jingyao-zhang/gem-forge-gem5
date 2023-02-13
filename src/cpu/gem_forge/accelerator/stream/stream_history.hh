@@ -8,6 +8,8 @@
 #include <list>
 #include <string>
 
+namespace gem5 {
+
 class StreamHistory {
 public:
   StreamHistory(const std::string &_historyPath);
@@ -54,5 +56,7 @@ private:
   size_t currentIdx;
   uint64_t previousAddr;
 };
+
+} // namespace gem5
 
 #endif

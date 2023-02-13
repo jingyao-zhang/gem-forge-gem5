@@ -14,7 +14,11 @@
 #include <set>
 #include <vector>
 
+namespace gem5 {
+
+namespace ruby {
 class AbstractStreamAwareController;
+}
 class LLCStreamRangeBuilder;
 class LLCStreamEngine;
 class LLCStreamCommitController;
@@ -27,28 +31,28 @@ using LLCDynStreamPtr = LLCDynStream *;
 
 struct LLCStreamRequest {
   LLCStreamRequest(Stream *_S, const DynStreamSliceId &_sliceId,
-                   Addr _paddrLine, MachineType _destMachineType,
-                   CoherenceRequestType _type)
+                   Addr _paddrLine, ruby::MachineType _destMachineType,
+                   ruby::CoherenceRequestType _type)
       : S(_S), sliceId(_sliceId), paddrLine(_paddrLine),
         destMachineType(_destMachineType), requestType(_type) {}
   Stream *S;
   DynStreamSliceId sliceId;
   Addr paddrLine;
-  MachineType destMachineType;
-  CoherenceRequestType requestType;
+  ruby::MachineType destMachineType;
+  ruby::CoherenceRequestType requestType;
   bool translationDone = false;
 
   // Optional fields.
-  DataBlock dataBlock;
+  ruby::DataBlock dataBlock;
 
   // Optional storeValueBlk. Only used for sending back to NonMigrating stream.
-  DataBlock storeValueBlock;
+  ruby::DataBlock storeValueBlock;
 
   // Optional for StreamStore request.
   int storeSize = 8;
 
   // Optional for StreamForward request with smaller payload size.
-  int payloadSize = RubySystem::getBlockSizeBytes();
+  int payloadSize = ruby::RubySystem::getBlockSizeBytes();
 
   // Optional for Multicast request, excluding the original stream
   std::vector<DynStreamSliceId> multicastSliceIds;
@@ -64,7 +68,7 @@ public:
 
   ~LLCDynStream();
 
-  AbstractStreamAwareController *getMLCController() const {
+  ruby::AbstractStreamAwareController *getMLCController() const {
     return this->mlcController;
   }
 
@@ -155,7 +159,7 @@ public:
   /**
    * Query the offloaded machine type.
    */
-  MachineType getFloatMachineTypeAtElem(uint64_t elementIdx) const;
+  ruby::MachineType getFloatMachineTypeAtElem(uint64_t elementIdx) const;
 
   bool hasIndirectDependent() const {
     auto S = this->getStaticS();
@@ -190,7 +194,7 @@ public:
   bool isNextElemOverflown() const;
   uint64_t getNextAllocSliceIdx() const { return this->nextAllocSliceIdx; }
   const DynStreamSliceId &peekNextAllocSliceId() const;
-  std::pair<Addr, MachineType> peekNextAllocVAddrAndMachineType() const;
+  std::pair<Addr, ruby::MachineType> peekNextAllocVAddrAndMachineType() const;
   uint64_t peekNextAllocElemIdx() const { return this->nextAllocElemIdx; }
   void checkNextAllocElemIdx();
   LLCStreamSlicePtr getNextAllocSlice() const;
@@ -227,14 +231,14 @@ public:
   bool isTerminated() const { return this->state == State::TERMINATED; }
   bool isRemoteConfigured() const { return this->state != State::INITIALIZED; }
 
-  void remoteConfigured(AbstractStreamAwareController *llcController);
+  void remoteConfigured(ruby::AbstractStreamAwareController *llcController);
   void migratingStart();
-  void migratingDone(AbstractStreamAwareController *llcController);
+  void migratingDone(ruby::AbstractStreamAwareController *llcController);
 
-  AbstractStreamAwareController *getLLCController() const {
+  ruby::AbstractStreamAwareController *getLLCController() const {
     return this->llcController;
   }
-  void setLLCController(AbstractStreamAwareController *llcController);
+  void setLLCController(ruby::AbstractStreamAwareController *llcController);
 
   void terminate();
 
@@ -258,13 +262,14 @@ public:
     }
     panic("Failed to get LLCDynStream %s: %s.", strandId, msg);
   }
-  static void allocateLLCStreams(AbstractStreamAwareController *mlcController,
-                                 CacheStreamConfigureVec &configs);
+  static void
+  allocateLLCStreams(ruby::AbstractStreamAwareController *mlcController,
+                     CacheStreamConfigureVec &configs);
 
   bool isBasedOn(const DynStreamId &baseId) const;
   void recvStreamForward(LLCStreamEngine *se, uint64_t sendStrandElemIdx,
                          const DynStreamSliceId &sliceId,
-                         const DataBlock &dataBlk);
+                         const ruby::DataBlock &dataBlk);
 
   bool hasComputation() const;
   StreamValue computeElemValue(const LLCStreamElementPtr &element);
@@ -299,8 +304,8 @@ private:
   uint64_t pumPrefetchDoneSlices = 0;
 
   State state = INITIALIZED;
-  AbstractStreamAwareController *mlcController;
-  AbstractStreamAwareController *llcController;
+  ruby::AbstractStreamAwareController *mlcController;
+  ruby::AbstractStreamAwareController *llcController;
 
   int maxInflyRequests;
 
@@ -315,15 +320,16 @@ private:
   std::vector<LLCDynStreamPtr> allIndirectStreams;
 
   // Private controller as user should use allocateLLCStreams().
-  LLCDynStream(AbstractStreamAwareController *_mlcController,
-               AbstractStreamAwareController *_llcController,
+  LLCDynStream(ruby::AbstractStreamAwareController *_mlcController,
+               ruby::AbstractStreamAwareController *_llcController,
                CacheStreamConfigureDataPtr _configData);
 
   static GlobalLLCDynStreamMapT GlobalLLCDynStreamMap;
-  static std::unordered_map<NodeID, std::list<std::vector<LLCDynStream *>>>
+  static std::unordered_map<ruby::NodeID,
+                            std::list<std::vector<LLCDynStream *>>>
       GlobalMLCToLLCDynStreamGroupMap;
   static LLCDynStreamPtr
-  allocateLLCStream(AbstractStreamAwareController *mlcController,
+  allocateLLCStream(ruby::AbstractStreamAwareController *mlcController,
                     CacheStreamConfigureDataPtr &config);
 
   Cycles curCycle() const;
@@ -341,7 +347,7 @@ public:
   void skipIssuingPredOffElems();
 
 private:
-  std::pair<Addr, MachineType> peekNextInitVAddrAndMachineType() const;
+  std::pair<Addr, ruby::MachineType> peekNextInitVAddrAndMachineType() const;
   const DynStreamSliceId &peekNextInitSliceId() const;
   uint64_t peekNextInitElemIdx() const;
 
@@ -359,7 +365,7 @@ public:
   std::vector<CacheStreamConfigureData::DepEdge> sendToPUMEdges;
   // Number of PUMData packets sent to each bank.
   int64_t sentPUMPackets = 0;
-  std::map<NodeID, int> sentPUMDataPacketMap;
+  std::map<ruby::NodeID, int> sentPUMDataPacketMap;
 
   /**
    * Remember the base stream.
@@ -606,5 +612,7 @@ public:
 private:
   bool loadBalanceValve = false;
 };
+
+} // namespace gem5
 
 #endif

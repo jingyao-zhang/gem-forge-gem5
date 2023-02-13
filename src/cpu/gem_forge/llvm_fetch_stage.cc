@@ -2,9 +2,12 @@
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "debug/LLVMTraceCPUFetch.hh"
 
+namespace gem5 {
+
 using InstStatus = LLVMTraceCPU::InstStatus;
 
-LLVMFetchStage::LLVMFetchStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
+LLVMFetchStage::LLVMFetchStage(const LLVMTraceCPUParams *params,
+                               LLVMTraceCPU *_cpu)
     : cpu(_cpu), fetchWidth(params->fetchWidth),
       fetchStates(params->hardwareContexts),
       toDecodeDelay(params->fetchToDecodeDelay),
@@ -204,7 +207,7 @@ void LLVMFetchStage::tick() {
         TheISA::PCState dynamicNextPCState(inst->getDynamicNextPC());
 
         bool predictWrongGem5 = dynamicNextPCState.pc() != targetPCState.pc() &&
-                            inst->getInstName() != "ret";
+                                inst->getInstName() != "ret";
 
         if (predictWrongGem5) {
           // Prediction wrong.
@@ -216,7 +219,8 @@ void LLVMFetchStage::tick() {
         // For simplicity, we always commit immediately.
         this->branchPredictor->update(instSeqNum, threadId);
 
-        auto predictWrong = this->useGem5BranchPredictor ? predictWrongGem5 : predictionWrongLLVM;
+        auto predictWrong = this->useGem5BranchPredictor ? predictWrongGem5
+                                                         : predictionWrongLLVM;
         if (predictWrong) {
           DPRINTF(LLVMTraceCPUFetch,
                   "Fetch blocked due to failed branch predictor for %s.\n",
@@ -233,3 +237,4 @@ void LLVMFetchStage::tick() {
 
   this->fetchedInsts += fetchedInsts;
 }
+} // namespace gem5

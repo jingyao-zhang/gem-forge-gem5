@@ -2,9 +2,12 @@
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "debug/LLVMTraceCPUCommit.hh"
 
+namespace gem5 {
+
 using InstStatus = LLVMTraceCPU::InstStatus;
 
-LLVMCommitStage::LLVMCommitStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
+LLVMCommitStage::LLVMCommitStage(const LLVMTraceCPUParams *params,
+                                 LLVMTraceCPU *_cpu)
     : cpu(_cpu), commitWidth(params->commitWidth),
       maxCommitQueueSize(params->commitQueueSize),
       fromIEWDelay(params->iewToCommitDelay),
@@ -183,3 +186,4 @@ void LLVMCommitStage::tick() {
 void LLVMCommitStage::clearThread(ThreadID threadId) {
   this->commitStates.at(threadId).clear();
 }
+} // namespace gem5

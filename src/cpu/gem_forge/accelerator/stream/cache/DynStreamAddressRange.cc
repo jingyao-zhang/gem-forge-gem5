@@ -1,5 +1,7 @@
 #include "DynStreamAddressRange.hh"
 
+namespace gem5 {
+
 DynStreamAddressRange::DynStreamAddressRange(
     const DynStrandElementRangeId &_elementRange,
     const AddressRange &_vaddrRange, const AddressRange &_paddrRange)
@@ -49,4 +51,5 @@ std::ostream &operator<<(std::ostream &os, const DynStreamAddressRange &range) {
        << range.paddrRange;
     return os;
   }
-}
+}} // namespace gem5
+

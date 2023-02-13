@@ -11,6 +11,8 @@
 #include "cpu/timebuf.hh"
 #include "params/LLVMTraceCPU.hh"
 
+namespace gem5 {
+
 class LLVMTraceCPU;
 
 class LLVMDecodeStage {
@@ -18,7 +20,7 @@ public:
   using FetchStruct = LLVMFetchStage::FetchStruct;
   using DecodeStruct = std::vector<LLVMDynamicInstId>;
 
-  LLVMDecodeStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
+  LLVMDecodeStage(const LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
   LLVMDecodeStage(const LLVMDecodeStage &ds) = delete;
   LLVMDecodeStage(LLVMDecodeStage &&ds) = delete;
 
@@ -35,10 +37,10 @@ public:
     this->decodeStates.at(threadId).clear();
   }
 
-  Stats::Scalar blockedCycles;
+  statistics::Scalar blockedCycles;
 
   /** Stat for total number of decoded instructions. */
-  Stats::Scalar decodeDecodedInsts;
+  statistics::Scalar decodeDecodedInsts;
 
 private:
   LLVMTraceCPU *cpu;
@@ -75,5 +77,7 @@ private:
    */
   size_t getTotalDecodeQueueSize() const;
 };
+
+} // namespace gem5
 
 #endif

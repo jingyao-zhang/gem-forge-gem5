@@ -14,6 +14,8 @@
 #include <list>
 #include <unordered_map>
 
+namespace gem5 {
+
 /**
  * Implement the abstract data flow accelerator.
  */
@@ -22,7 +24,7 @@ class AbstractDataFlowCore {
 public:
   AbstractDataFlowCore(const std::string &_id, LLVMTraceCPU *_cpu,
                        GemForgeCPUDelegator *_cpuDelegator,
-                       AbstractDataFlowAcceleratorParams *params);
+                       const AbstractDataFlowAcceleratorParams *params);
 
   AbstractDataFlowCore(const AbstractDataFlowCore &other) = delete;
   AbstractDataFlowCore(AbstractDataFlowCore &&other) = delete;
@@ -48,10 +50,10 @@ public:
   Stats::Distribution numIssuedDist;
   Stats::Distribution numIssuedLoadDist;
   Stats::Distribution numCommittedDist;
-  Stats::Scalar numExecution;
-  Stats::Scalar numCycles;
-  Stats::Scalar numCommittedInst;
-  Stats::Scalar numBankConflicts;
+  statistics::Scalar numExecution;
+  statistics::Scalar numCycles;
+  statistics::Scalar numCommittedInst;
+  statistics::Scalar numBankConflicts;
 
 private:
   std::string id;
@@ -138,8 +140,8 @@ private:
 
 class AbstractDataFlowAccelerator : public GemForgeAccelerator {
 public:
-  using Params = AbstractDataFlowAcceleratorParams;
-  AbstractDataFlowAccelerator(Params *_params);
+  PARAMS(AbstractDataFlowAccelerator)
+  AbstractDataFlowAccelerator(const Params &_params);
   ~AbstractDataFlowAccelerator() override;
 
   void handshake(GemForgeCPUDelegator *_cpuDelegator,
@@ -153,14 +155,13 @@ public:
    * Stats
    */
 
-  Stats::Scalar numConfigured;
-  Stats::Scalar numExecution;
-  Stats::Scalar numCycles;
-  Stats::Scalar numTLSJobs;
-  Stats::Scalar numTLSJobsSerialized;
+  statistics::Scalar numConfigured;
+  statistics::Scalar numExecution;
+  statistics::Scalar numCycles;
+  statistics::Scalar numTLSJobs;
+  statistics::Scalar numTLSJobsSerialized;
 
 private:
-  Params *params;
   LLVMTraceCPU *cpu;
   union {
     ADFAConfigInst *config;
@@ -217,5 +218,7 @@ private:
   bool isTLSBoundary(LLVMDynamicInst *inst) const;
   bool hasTLSDependence(LLVMDynamicInst *inst) const;
 };
+
+} // namespace gem5
 
 #endif

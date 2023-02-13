@@ -5,6 +5,8 @@
 
 #include "stream_engine.hh"
 
+namespace gem5 {
+
 /**
  * Helper class to throttle the stream's maxSize.
  */
@@ -31,5 +33,7 @@ public:
 private:
   bool tryGlobalThrottle(Stream *S);
 };
+
+} // namespace gem5
 
 #endif

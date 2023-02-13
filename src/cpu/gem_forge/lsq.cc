@@ -5,6 +5,8 @@
 
 #include "debug/GemForgeLoadStoreQueue.hh"
 
+namespace gem5 {
+
 using InstStatus = LLVMTraceCPU::InstStatus;
 
 GemForgeLoadStoreQueue::LoadQueueEntry::LoadQueueEntry(
@@ -246,4 +248,5 @@ void GemForgeLoadStoreQueue::checkStoreStoreAlias(
 bool GemForgeLoadStoreQueue::isAliased(Addr addr1, uint32_t size1, Addr addr2,
                                        uint32_t size2) {
   return !((addr1 + size1 <= addr2) || (addr2 + size2 <= addr1));
-}
+}} // namespace gem5
+

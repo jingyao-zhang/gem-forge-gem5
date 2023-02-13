@@ -2,8 +2,6 @@
  * Copyright (c) 2014-2015 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -36,9 +34,12 @@
 #include "gpu-compute/compute_unit.hh"
 #include "gpu-compute/wavefront.hh"
 
-FetchStage::FetchStage(const ComputeUnitParams* p, ComputeUnit &cu)
-    : numVectorALUs(p->num_SIMDs), computeUnit(cu),
-      _name(cu.name() + ".FetchStage")
+namespace gem5
+{
+
+FetchStage::FetchStage(const ComputeUnitParams &p, ComputeUnit &cu)
+    : numVectorALUs(p.num_SIMDs), computeUnit(cu),
+      _name(cu.name() + ".FetchStage"), stats(&cu)
 {
     for (int j = 0; j < numVectorALUs; ++j) {
         FetchUnit newFetchUnit(p, cu);
@@ -79,7 +80,7 @@ FetchStage::processFetchReturn(PacketPtr pkt)
     const unsigned num_instructions = pkt->req->getSize() /
         sizeof(TheGpuISA::RawMachInst);
 
-    instFetchInstReturned.sample(num_instructions);
+    stats.instFetchInstReturned.sample(num_instructions);
     uint32_t simdId = wavefront->simdId;
     _fetchUnit[simdId].processFetchReturn(pkt);
 }
@@ -90,13 +91,12 @@ FetchStage::fetch(PacketPtr pkt, Wavefront *wavefront)
     _fetchUnit[wavefront->simdId].fetch(pkt, wavefront);
 }
 
-void
-FetchStage::regStats()
+FetchStage::FetchStageStats::FetchStageStats(statistics::Group *parent)
+    : statistics::Group(parent, "FetchStage"),
+      ADD_STAT(instFetchInstReturned, "For each instruction fetch request "
+               "received record how many instructions you got from it")
 {
-    instFetchInstReturned
-        .init(1, 32, 1)
-        .name(name() + ".inst_fetch_instr_returned")
-        .desc("For each instruction fetch request recieved record how many "
-              "instructions you got from it")
-        ;
+        instFetchInstReturned.init(1, 32, 1);
 }
+
+} // namespace gem5

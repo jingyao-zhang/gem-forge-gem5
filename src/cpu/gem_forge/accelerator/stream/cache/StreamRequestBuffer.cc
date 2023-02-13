@@ -5,8 +5,10 @@
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
 
+namespace gem5 {
+
 StreamRequestBuffer::StreamRequestBuffer(
-    AbstractStreamAwareController *_controller, MessageBuffer *_outBuffer,
+    ruby::AbstractStreamAwareController *_controller, ruby::MessageBuffer *_outBuffer,
     Cycles _latency, bool _enableIndMulticast, int _maxInqueueRequestsPerStream,
     int _maxMulticastReqPerMsg, int _multicastBankGroupSize)
     : controller(_controller), outBuffer(_outBuffer), latency(_latency),
@@ -15,7 +17,7 @@ StreamRequestBuffer::StreamRequestBuffer(
       maxMulticastReqPerMsg(_maxMulticastReqPerMsg),
       multicastBankGroupSize(_multicastBankGroupSize) {
   this->outBuffer->registerDequeueCallbackOnMsg(
-      [this](MsgPtr msg) -> void { this->dequeue(msg); });
+      [this](ruby::MsgPtr msg) -> void { this->dequeue(msg); });
 }
 
 void StreamRequestBuffer::pushRequest(RequestPtr req) {
@@ -47,13 +49,13 @@ void StreamRequestBuffer::pushRequest(RequestPtr req) {
   }
 }
 
-void StreamRequestBuffer::dequeue(MsgPtr msg) {
-  auto req = std::dynamic_pointer_cast<RequestMsg>(msg);
+void StreamRequestBuffer::dequeue(ruby::MsgPtr msg) {
+  auto req = std::dynamic_pointer_cast<ruby::RequestMsg>(msg);
   if (!req) {
     LLC_SE_PANIC("Message should be RequestMsg.");
   }
 
-  if (req->m_Type == CoherenceRequestType_STREAM_PUM_DATA) {
+  if (req->m_Type == ruby::CoherenceRequestType_STREAM_PUM_DATA) {
     // This not handled by us.
     return;
   }
@@ -158,16 +160,16 @@ bool StreamRequestBuffer::shouldTryMulticast(const RequestPtr &req) const {
   switch (req->getType()) {
   default:
     return false;
-  case CoherenceRequestType_GETU:
-  case CoherenceRequestType_GETH:
-  case CoherenceRequestType_STREAM_STORE:
-  case CoherenceRequestType_STREAM_UNLOCK: {
+  case ruby::CoherenceRequestType_GETU:
+  case ruby::CoherenceRequestType_GETH:
+  case ruby::CoherenceRequestType_STREAM_STORE:
+  case ruby::CoherenceRequestType_STREAM_UNLOCK: {
     if (!this->enableIndMulticast) {
       return false;
     }
     break;
   }
-  case CoherenceRequestType_STREAM_FORWARD: {
+  case ruby::CoherenceRequestType_STREAM_FORWARD: {
     if (this->controller->myParams->stream_strand_broadcast_size == 0) {
       return false;
     }
@@ -210,7 +212,7 @@ bool StreamRequestBuffer::tryMulticast(const RequestPtr &req) {
        * 1. Same Stream, and StrandElemIdx.
        * 2. Belong to merged broadcast strand.
        */
-      if (req->getType() == CoherenceRequestType_STREAM_FORWARD) {
+      if (req->getType() == ruby::CoherenceRequestType_STREAM_FORWARD) {
         auto sliceId1 = candidate->getsliceIds().firstSliceId();
         auto sliceId2 = req->getsliceIds().firstSliceId();
         if (sliceId1.getDynStreamId() != sliceId2.getDynStreamId() ||
@@ -254,7 +256,7 @@ bool StreamRequestBuffer::tryMulticast(const RequestPtr &req) {
    * pointer is also captured either in the MessageBuffer or InqueueStreamMap.
    */
   int multicastSize = 1;
-  MsgPtr prevChainMsg = multicastReq;
+  ruby::MsgPtr prevChainMsg = multicastReq;
   auto chainMsg = multicastReq->getChainMsg();
   while (chainMsg) {
     multicastSize++;
@@ -292,4 +294,5 @@ bool StreamRequestBuffer::tryMulticast(const RequestPtr &req) {
   }
 
   return true;
-}
+}} // namespace gem5
+

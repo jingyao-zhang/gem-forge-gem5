@@ -4,6 +4,8 @@
 
 #include "cpu/gem_forge/llvm_insts.hh"
 
+namespace gem5 {
+
 class SpeculativePrecomputationTriggerInst : public LLVMDynamicInst {
  public:
   SpeculativePrecomputationTriggerInst(const LLVM::TDG::TDGInstruction &_TDG);
@@ -26,5 +28,7 @@ class SpeculativePrecomputationTriggerInst : public LLVMDynamicInst {
  */
 LLVMDynamicInst *parseSpeculativePrecomputationInst(
     LLVM::TDG::TDGInstruction &TDGInst);
+
+} // namespace gem5
 
 #endif

@@ -31,15 +31,19 @@
 
 #include <deque>
 
+#include "base/bitunion.hh"
 #include "dev/intpin.hh"
 #include "dev/io_device.hh"
 #include "dev/ps2/device.hh"
 #include "params/I8042.hh"
 
+namespace gem5
+{
+
 namespace X86ISA
 {
 
-class I8042 : public BasicPioDevice
+class I8042 : public PioDevice
 {
   protected:
     enum Command
@@ -94,37 +98,31 @@ class I8042 : public BasicPioDevice
         Bitfield<0> keyboardFullInt;
     EndBitUnion(CommandByte)
 
-    Tick latency;
-    Addr dataPort;
-    Addr commandPort;
+    Tick latency = 0;
+    Addr dataPort = 0;
+    Addr commandPort = 0;
 
-    StatusReg statusReg;
-    CommandByte commandByte;
+    StatusReg statusReg = 0;
+    CommandByte commandByte = 0;
 
-    uint8_t dataReg;
+    uint8_t dataReg = 0;
 
-    static const uint16_t NoCommand = (uint16_t)(-1);
-    uint16_t lastCommand;
+    static inline const uint16_t NoCommand = (uint16_t)(-1);
+    uint16_t lastCommand = NoCommand;
 
     std::vector<IntSourcePin<I8042> *> mouseIntPin;
     std::vector<IntSourcePin<I8042> *> keyboardIntPin;
 
-    PS2Device *mouse;
-    PS2Device *keyboard;
+    ps2::Device *mouse = nullptr;
+    ps2::Device *keyboard = nullptr;
 
-    void writeData(uint8_t newData, bool mouse = false);
+    void writeData(uint8_t newData, bool mouse=false);
     uint8_t readDataOut();
 
   public:
-    typedef I8042Params Params;
+    using Params = I8042Params;
 
-    const Params *
-    params() const
-    {
-        return dynamic_cast<const Params *>(_params);
-    }
-
-    I8042(Params *p);
+    I8042(const Params &p);
 
     Port &
     getPort(const std::string &if_name, PortID idx=InvalidPortID) override
@@ -134,7 +132,7 @@ class I8042 : public BasicPioDevice
         else if (if_name == "keyboard_int_pin")
             return *keyboardIntPin.at(idx);
         else
-            return BasicPioDevice::getPort(if_name, idx);
+            return PioDevice::getPort(if_name, idx);
     }
 
     AddrRangeList getAddrRanges() const override;
@@ -148,5 +146,6 @@ class I8042 : public BasicPioDevice
 };
 
 } // namespace X86ISA
+} // namespace gem5
 
 #endif //__DEV_X86_I8042_HH__

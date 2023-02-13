@@ -2,8 +2,6 @@
  * Copyright (c) 2014-2015 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -43,12 +41,15 @@
 #include "gpu-compute/vector_register_file.hh"
 #include "gpu-compute/wavefront.hh"
 
-GlobalMemPipeline::GlobalMemPipeline(const ComputeUnitParams* p,
+namespace gem5
+{
+
+GlobalMemPipeline::GlobalMemPipeline(const ComputeUnitParams &p,
                                      ComputeUnit &cu)
     : computeUnit(cu), _name(cu.name() + ".GlobalMemPipeline"),
-      gmQueueSize(p->global_mem_queue_size),
-      maxWaveRequests(p->max_wave_requests), inflightStores(0),
-      inflightLoads(0)
+      gmQueueSize(p.global_mem_queue_size),
+      maxWaveRequests(p.max_wave_requests), inflightStores(0),
+      inflightLoads(0), stats(&cu)
 {
 }
 
@@ -61,6 +62,10 @@ GlobalMemPipeline::init()
 bool
 GlobalMemPipeline::coalescerReady(GPUDynInstPtr mp) const
 {
+    // System requests do not need GPU coalescer tokens. Make sure nothing
+    // has bypassed the operand gather check stage.
+    assert(!mp->isSystemReq());
+
     // We require one token from the coalescer's uncoalesced table to
     // proceed
     int token_count = 1;
@@ -130,6 +135,9 @@ GlobalMemPipeline::exec()
         DPRINTF(GPUMem, "CU%d: WF[%d][%d]: Completing global mem instr %s\n",
                 m->cu_id, m->simdId, m->wfSlotId, m->disassemble());
         m->completeAcc(m);
+        if (m->isFlat()) {
+            w->decLGKMInstsIssued();
+        }
         w->decVMemInstsIssued();
 
         if (m->isLoad() || m->isAtomicRet()) {
@@ -192,6 +200,10 @@ GlobalMemPipeline::exec()
         DPRINTF(GPUCoalescer, "initiateAcc for %s seqNum %d\n",
                 mp->disassemble(), mp->seqNum());
         mp->initiateAcc(mp);
+
+        if (mp->isStore() && mp->isGlobalSeg()) {
+            mp->wavefront()->decExpInstsIssued();
+        }
 
         if (((mp->isMemSync() && !mp->isEndOfKernel()) || !mp->isMemSync())) {
             /**
@@ -266,6 +278,24 @@ GlobalMemPipeline::completeRequest(GPUDynInstPtr gpuDynInst)
 void
 GlobalMemPipeline::issueRequest(GPUDynInstPtr gpuDynInst)
 {
+    Wavefront *wf = gpuDynInst->wavefront();
+    if (gpuDynInst->isLoad()) {
+        wf->rdGmReqsInPipe--;
+        wf->outstandingReqsRdGm++;
+    } else if (gpuDynInst->isStore()) {
+        wf->wrGmReqsInPipe--;
+        wf->outstandingReqsWrGm++;
+    } else {
+        // Atomic, both read and write
+        wf->rdGmReqsInPipe--;
+        wf->outstandingReqsRdGm++;
+        wf->wrGmReqsInPipe--;
+        wf->outstandingReqsWrGm++;
+    }
+
+    wf->outstandingReqs++;
+    wf->validateRequestCounters();
+
     gpuDynInst->setAccessTime(curTick());
     gpuDynInst->profileRoundTripTime(curTick(), InstMemoryHop::Initiate);
     gmIssuedRequests.push(gpuDynInst);
@@ -282,12 +312,12 @@ GlobalMemPipeline::handleResponse(GPUDynInstPtr gpuDynInst)
     mem_req->second.second = true;
 }
 
-void
-GlobalMemPipeline::regStats()
+GlobalMemPipeline::
+GlobalMemPipelineStats::GlobalMemPipelineStats(statistics::Group *parent)
+    : statistics::Group(parent, "GlobalMemPipeline"),
+      ADD_STAT(loadVrfBankConflictCycles, "total number of cycles GM data "
+               "are delayed before updating the VRF")
 {
-    loadVrfBankConflictCycles
-        .name(name() + ".load_vrf_bank_conflict_cycles")
-        .desc("total number of cycles GM data are delayed before updating "
-              "the VRF")
-        ;
 }
+
+} // namespace gem5

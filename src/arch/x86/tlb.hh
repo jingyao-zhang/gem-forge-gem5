@@ -51,6 +51,8 @@
 #include "sim/stats.hh"
 
 #include <memory>
+namespace gem5
+{
 
 class ThreadContext;
 
@@ -70,7 +72,7 @@ namespace X86ISA
       public:
 
         typedef X86TLBParams Params;
-        TLB(const Params *p);
+        TLB(const Params &p);
 
         void takeOverFrom(BaseTLB *otlb) override {}
 
@@ -82,6 +84,11 @@ namespace X86ISA
             bool updateStats, bool updateLRU, int &hitLevel);
 
         void setConfigAddress(uint32_t addr);
+        //concatenate Page Addr and pcid
+        inline Addr concAddrPcid(Addr vpn, uint64_t pcid)
+        {
+          return (vpn | pcid);
+        }
 
       protected:
 
@@ -131,17 +138,18 @@ namespace X86ISA
 
         AddrRange m5opRange;
 
-        struct TlbStats : public Stats::Group {
-            TlbStats(Stats::Group *parent);
+        struct TlbStats : public statistics::Group
+        {
+            TlbStats(statistics::Group *parent);
 
-            Stats::Scalar rdAccesses;
-            Stats::Scalar wrAccesses;
-            Stats::Scalar rdMisses;
-            Stats::Scalar wrMisses;
-            Stats::Scalar l1Accesses;
-            Stats::Scalar l1Misses;
-            Stats::Scalar l2Accesses;
-            Stats::Scalar l2Misses;
+            statistics::Scalar rdAccesses;
+            statistics::Scalar wrAccesses;
+            statistics::Scalar rdMisses;
+            statistics::Scalar wrMisses;
+            statistics::Scalar l1Accesses;
+            statistics::Scalar l1Misses;
+            statistics::Scalar l2Accesses;
+            statistics::Scalar l2Misses;
         } stats;
 
         Fault translateInt(bool read, RequestPtr req, ThreadContext *tc);
@@ -151,28 +159,32 @@ namespace X86ISA
          * @param updateStats: whether this translation should be counted.
          */
         Fault translate(const RequestPtr &req, ThreadContext *tc,
-                Translation *translation, Mode mode,
-                bool &delayedResponse, Cycles &delayedResponseCycles,
-                bool timing, bool isLastLeve, bool updateStats);
+                BaseMMU::Translation *translation, BaseMMU::Mode mode,
+                bool &delayedResponse,
+                Cycles &delayedResponseCycles,
+                bool timing,
+                bool isLastLeve, bool updateStats);
 
         void translateTimingImpl(
             const RequestPtr &req, ThreadContext *tc,
-            Translation *translation, Mode mode, bool isLastLevel);
+            BaseMMU::Translation *translation, BaseMMU::Mode mode, bool isLastLevel);
 
       public:
 
         Fault translateAtomic(
-            const RequestPtr &req, ThreadContext *tc, Mode mode) override;
+            const RequestPtr &req, ThreadContext *tc,
+            BaseMMU::Mode mode) override;
         Fault translateFunctional(
-            const RequestPtr &req, ThreadContext *tc, Mode mode) override;
+            const RequestPtr &req, ThreadContext *tc,
+            BaseMMU::Mode mode) override;
         void translateTiming(
             const RequestPtr &req, ThreadContext *tc,
-            Translation *translation, Mode mode) override {
+            BaseMMU::Translation *translation, BaseMMU::Mode mode) override {
             translateTimingImpl(req, tc, translation, mode, false);
         }
         void translateTimingAtLastLevel(
             const RequestPtr &req, ThreadContext *tc,
-            Translation *translation, Mode mode) {
+            BaseMMU::Translation *translation, BaseMMU::Mode mode) {
             translateTimingImpl(req, tc, translation, mode, true);
         }
 
@@ -190,9 +202,9 @@ namespace X86ISA
          * @return A fault on failure, NoFault otherwise.
          */
         Fault finalizePhysical(const RequestPtr &req, ThreadContext *tc,
-                               Mode mode) const override;
+                               BaseMMU::Mode mode) const override;
 
-        TlbEntry *insert(Addr vpn, const TlbEntry &entry,
+        TlbEntry *insert(Addr vpn, const TlbEntry &entry, uint64_t pcid,
             bool isLastLevel);
 
         // Checkpointing
@@ -219,20 +231,22 @@ namespace X86ISA
           TLB *tlb;
           bool isLastLevel;
           ThreadContext *tc;
-          Translation *translation;
+          BaseMMU::Translation *translation;
           RequestPtr req;
-          BaseTLB::Mode mode;
+          BaseMMU::Mode mode;
           Fault fault;
           std::string n;
           DelayedTranslationEvent(
             TLB *_tlb, bool _isLastLevel, ThreadContext *_tc,
-            Translation *_translation, const RequestPtr &_req,
-            BaseTLB::Mode _mode, Fault _fault);
+            BaseMMU::Translation *_translation, const RequestPtr &_req,
+            BaseMMU::Mode _mode, Fault _fault);
           void process() override;
           const char *description() const { return "DelayedTranslationEvent"; }
           const std::string name() const { return this->n; }
         };
     };
-}
+
+} // namespace X86ISA
+} // namespace gem5
 
 #endif // __ARCH_X86_TLB_HH__

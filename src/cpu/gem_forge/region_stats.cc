@@ -4,6 +4,8 @@
 #include "base/trace.hh"
 #include "debug/RegionStats.hh"
 
+namespace gem5 {
+
 const RegionStats::BasicBlockId RegionStats::InvalidBB = 0;
 
 RegionStats::RegionStats(const RegionTable &_regionTable,
@@ -203,4 +205,5 @@ void RegionStats::dumpStatsVec(const StatsVecExt &stats,
       ccprintf(stream, "%-40s %12f\n", stat.first, stat.second);
     }
   }
-}
+}} // namespace gem5
+

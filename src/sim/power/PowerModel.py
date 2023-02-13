@@ -1,4 +1,4 @@
-# Copyright (c) 2016-2018 ARM Limited
+# Copyright (c) 2016-2018, 2021 Arm Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -38,14 +38,17 @@ from m5.params import *
 from m5.proxy import Parent
 
 # Enum for a type of  power model
-class PMType(Enum) : vals = ['All', 'Static', 'Dynamic']
+class PMType(Enum):
+    vals = ["All", "Static", "Dynamic"]
+
 
 # Represents a power model for a simobj
 # The model itself is also a SimObject so we can make use some
 # nice features available such as Parent.any
 class PowerModel(SimObject):
-    type = 'PowerModel'
+    type = "PowerModel"
     cxx_header = "sim/power/power_model.hh"
+    cxx_class = "gem5::PowerModel"
 
     cxx_exports = [
         PyBindMethod("getDynamicPower"),
@@ -63,4 +66,4 @@ class PowerModel(SimObject):
     pm_type = Param.PMType("All", "Type of power model")
 
     # Ambient temperature to be used when no thermal model is present
-    ambient_temp = Param.Float(25.0, "Ambient temperature")
+    ambient_temp = Param.Temperature("25.0C", "Ambient temperature")

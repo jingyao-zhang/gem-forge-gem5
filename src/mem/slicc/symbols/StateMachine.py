@@ -1,4 +1,4 @@
-# Copyright (c) 2019-2020 ARM Limited
+# Copyright (c) 2019-2021 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -46,30 +46,31 @@ import slicc.generate.html as html
 import re
 
 python_class_map = {
-                    "int": "Int",
-                    "NodeID": "Int",
-                    "uint32_t" : "UInt32",
-                    "std::string": "String",
-                    "bool": "Bool",
-                    "CacheMemory": "RubyCache",
-                    "WireBuffer": "RubyWireBuffer",
-                    "Sequencer": "RubySequencer",
-                    "HTMSequencer": "RubyHTMSequencer",
-                    "GPUCoalescer" : "RubyGPUCoalescer",
-                    "VIPERCoalescer" : "VIPERCoalescer",
-                    "DirectoryMemory": "RubyDirectoryMemory",
-                    "PerfectCacheMemory": "RubyPerfectCacheMemory",
-                    "MemoryControl": "MemoryControl",
-                    "MessageBuffer": "MessageBuffer",
-                    "DMASequencer": "DMASequencer",
-                    "RubyPrefetcher":"RubyPrefetcher",
-                    "RubyBingoPrefetcher": "RubyBingoPrefetcher",
-                    "Cycles":"Cycles",
-                   }
+    "int": "Int",
+    "NodeID": "Int",
+    "uint32_t": "UInt32",
+    "std::string": "String",
+    "bool": "Bool",
+    "CacheMemory": "RubyCache",
+    "WireBuffer": "RubyWireBuffer",
+    "Sequencer": "RubySequencer",
+    "HTMSequencer": "RubyHTMSequencer",
+    "GPUCoalescer": "RubyGPUCoalescer",
+    "VIPERCoalescer": "VIPERCoalescer",
+    "DirectoryMemory": "RubyDirectoryMemory",
+    "PerfectCacheMemory": "RubyPerfectCacheMemory",
+    "MemoryControl": "MemoryControl",
+    "MessageBuffer": "MessageBuffer",
+    "DMASequencer": "DMASequencer",
+    "RubyPrefetcher": "RubyPrefetcher",
+    "RubyBingoPrefetcher": "RubyBingoPrefetcher",
+    "Cycles": "Cycles",
+}
+
 
 class StateMachine(Symbol):
     def __init__(self, symtab, ident, location, pairs, config_parameters):
-        super(StateMachine, self).__init__(symtab, ident, location, pairs)
+        super().__init__(symtab, ident, location, pairs)
         self.table = None
 
         # ! Sean: StreamAwareCache
@@ -91,11 +92,25 @@ class StateMachine(Symbol):
 
         for param in config_parameters:
             if param.pointer:
-                var = Var(symtab, param.ident, location, param.type_ast.type,
-                          "(*m_%s_ptr)" % param.ident, {}, self)
+                var = Var(
+                    symtab,
+                    param.ident,
+                    location,
+                    param.type_ast.type,
+                    "(*m_%s_ptr)" % param.ident,
+                    {},
+                    self,
+                )
             else:
-                var = Var(symtab, param.ident, location, param.type_ast.type,
-                          "m_%s" % param.ident, {}, self)
+                var = Var(
+                    symtab,
+                    param.ident,
+                    location,
+                    param.type_ast.type,
+                    "m_%s" % param.ident,
+                    {},
+                    self,
+                )
 
             self.symtab.registerSym(param.ident, var)
 
@@ -115,12 +130,14 @@ class StateMachine(Symbol):
         # the {} machine.  Note that these along with the config params
         # form the entire set of data members of the machine.
         self.objects = []
-        self.TBEType   = None
+        self.TBEType = None
         self.EntryType = None
+        # Python's sets are not sorted so we have to be careful when using
+        # this to generate deterministic output.
         self.debug_flags = set()
-        self.debug_flags.add('RubyGenerated')
-        self.debug_flags.add('RubySlicc')
-        self.debug_flags.add('RubyMulticast')
+        self.debug_flags.add("RubyGenerated")
+        self.debug_flags.add("RubySlicc")
+        self.debug_flags.add("RubyMulticast")
 
     def __repr__(self):
         return "[StateMachine: %s]" % self.ident
@@ -139,7 +156,9 @@ class StateMachine(Symbol):
         # Check for duplicate action
         for other in self.actions.values():
             if action.ident == other.ident:
-                action.warning("Duplicate action definition: %s" % action.ident)
+                action.warning(
+                    "Duplicate action definition: %s" % action.ident
+                )
                 action.error("Duplicate action definition: %s" % action.ident)
             if action.short == other.short:
                 other.warning("Duplicate action shorthand: %s" % other.ident)
@@ -173,21 +192,24 @@ class StateMachine(Symbol):
         self.objects.append(obj)
 
     def addType(self, type):
-        type_ident = '%s' % type.c_ident
+        type_ident = "%s" % type.c_ident
 
-        if type_ident == "%s_TBE" %self.ident:
+        if type_ident == "%s_TBE" % self.ident:
             if self.TBEType != None:
-                self.error("Multiple Transaction Buffer types in a " \
-                           "single machine.");
+                self.error(
+                    "Multiple Transaction Buffer types in a " "single machine."
+                )
             self.TBEType = type
 
         elif "interface" in type and "AbstractCacheEntry" == type["interface"]:
             if "main" in type and "false" == type["main"].lower():
-                pass # this isn't the EntryType
+                pass  # this isn't the EntryType
             else:
                 if self.EntryType != None:
-                    self.error("Multiple AbstractCacheEntry types in a " \
-                               "single machine.");
+                    self.error(
+                        "Multiple AbstractCacheEntry types in a "
+                        "single machine."
+                    )
                 self.EntryType = type
 
     # Needs to be called before accessing the table
@@ -216,7 +238,7 @@ class StateMachine(Symbol):
             if not action.used:
                 error_msg = "Unused action: %s" % action.ident
                 if "desc" in action:
-                    error_msg += ", "  + action.desc
+                    error_msg += ", " + action.desc
                 action.warning(error_msg)
         self.table = table
 
@@ -250,7 +272,8 @@ class StateMachine(Symbol):
         c_ident = "%s_Controller" % self.ident
         abstract_controller_class_py = self.abstract_controller_class_py
 
-        code('''
+        code(
+            """
 from m5.params import *
 from m5.SimObject import SimObject
 from m5.objects.Controller import ${abstract_controller_class_py}
@@ -258,41 +281,44 @@ from m5.objects.Controller import ${abstract_controller_class_py}
 class $py_ident(${abstract_controller_class_py}):
     type = '$py_ident'
     cxx_header = 'mem/ruby/protocol/${c_ident}.hh'
-''')
+    cxx_class = 'gem5::ruby::$py_ident'
+"""
+        )
         code.indent()
         for param in self.config_parameters:
-            dflt_str = ''
+            dflt_str = ""
 
             if param.rvalue is not None:
-                dflt_str = str(param.rvalue.inline()) + ', '
+                dflt_str = str(param.rvalue.inline()) + ", "
 
             if param.type_ast.type.c_ident in python_class_map:
                 python_type = python_class_map[param.type_ast.type.c_ident]
-                code('${{param.ident}} = Param.${{python_type}}(${dflt_str}"")')
+                code(
+                    '${{param.ident}} = Param.${{python_type}}(${dflt_str}"")'
+                )
 
             else:
-                self.error("Unknown c++ to python class conversion for c++ " \
-                           "type: '%s'. Please update the python_class_map " \
-                           "in StateMachine.py", param.type_ast.type.c_ident)
+                self.error(
+                    "Unknown c++ to python class conversion for c++ "
+                    "type: '%s'. Please update the python_class_map "
+                    "in StateMachine.py",
+                    param.type_ast.type.c_ident,
+                )
 
         code.dedent()
-        code.write(path, '%s.py' % py_ident)
-
+        code.write(path, "%s.py" % py_ident)
 
     def printControllerHH(self, path):
-        '''Output the method declarations for the class declaration'''
+        """Output the method declarations for the class declaration"""
         code = self.symtab.codeFormatter()
         ident = self.ident
         c_ident = "%s_Controller" % self.ident
         # ! Sean: StreamAwareCache
         abstract_controller_class_cc = self.abstract_controller_class_cc
 
-        code('''
-/** \\file $c_ident.hh
- *
- * Auto generated C++ code started by $__file__:$__line__
- * Created by slicc definition of Module "${{self.short}}"
- */
+        code(
+            """
+// Created by slicc definition of Module "${{self.short}}"
 
 #ifndef __${ident}_CONTROLLER_HH__
 #define __${ident}_CONTROLLER_HH__
@@ -307,7 +333,8 @@ class $py_ident(${abstract_controller_class_py}):
 #include "mem/ruby/slicc_interface/${abstract_controller_class_cc}.hh"
 #include "params/$c_ident.hh"
 
-''')
+"""
+        )
 
         seen_types = set()
         for var in self.objects:
@@ -316,14 +343,21 @@ class $py_ident(${abstract_controller_class_py}):
                 seen_types.add(var.type.ident)
 
         # for adding information to the protocol debug trace
-        code('''
+        code(
+            """
+namespace gem5
+{
+
+namespace ruby
+{
+
 extern std::stringstream ${ident}_transitionComment;
 
 class $c_ident : public ${abstract_controller_class_cc}
 {
   public:
     typedef ${c_ident}Params Params;
-    $c_ident(const Params *p);
+    $c_ident(const Params &p);
     static int getNumControllers();
     void init();
 
@@ -344,6 +378,7 @@ class $c_ident : public ${abstract_controller_class_cc}
     GPUCoalescer* getGPUCoalescer() const;
 
     bool functionalReadBuffers(PacketPtr&);
+    bool functionalReadBuffers(PacketPtr&, WriteMask&);
     int functionalWriteBuffers(PacketPtr&);
 
     void countTransition(${ident}_State state, ${ident}_Event event);
@@ -355,123 +390,167 @@ class $c_ident : public ${abstract_controller_class_cc}
 // ! GemForge
 // I make them all public.
 public:
-''')
+"""
+        )
 
         code.indent()
         # added by SS
         for param in self.config_parameters:
             if param.pointer:
-                code('${{param.type_ast.type}}* m_${{param.ident}}_ptr;')
+                code("${{param.type_ast.type}}* m_${{param.ident}}_ptr;")
             else:
-                code('${{param.type_ast.type}} m_${{param.ident}};')
+                code("${{param.type_ast.type}} m_${{param.ident}};")
 
-        code('''
+        code(
+            """
 TransitionResult doTransition(${ident}_Event event,
-''')
+"""
+        )
 
         if self.EntryType != None:
-            code('''
+            code(
+                """
                               ${{self.EntryType.c_ident}}* m_cache_entry_ptr,
-''')
+"""
+            )
         if self.TBEType != None:
-            code('''
+            code(
+                """
                               ${{self.TBEType.c_ident}}* m_tbe_ptr,
-''')
+"""
+            )
 
-        code('''
+        code(
+            """
                               Addr addr);
 
 TransitionResult doTransitionWorker(${ident}_Event event,
                                     ${ident}_State state,
                                     ${ident}_State& next_state,
-''')
+"""
+        )
 
         if self.TBEType != None:
-            code('''
+            code(
+                """
                                     ${{self.TBEType.c_ident}}*& m_tbe_ptr,
-''')
+"""
+            )
         if self.EntryType != None:
-            code('''
+            code(
+                """
                                     ${{self.EntryType.c_ident}}*& m_cache_entry_ptr,
-''')
+"""
+            )
 
-        code('''
+        code(
+            """
                                     Addr addr);
+
+${ident}_Event m_curTransitionEvent;
+${ident}_State m_curTransitionNextState;
+
+${ident}_Event curTransitionEvent() { return m_curTransitionEvent; }
+${ident}_State curTransitionNextState() { return m_curTransitionNextState; }
 
 int m_counters[${ident}_State_NUM][${ident}_Event_NUM];
 int m_event_counters[${ident}_Event_NUM];
 bool m_possible[${ident}_State_NUM][${ident}_Event_NUM];
 
-static std::vector<Stats::Vector *> eventVec;
-static std::vector<std::vector<Stats::Vector *> > transVec;
+static std::vector<statistics::Vector *> eventVec;
+static std::vector<std::vector<statistics::Vector *> > transVec;
 static int m_num_controllers;
 
 // Internal functions
-''')
+"""
+        )
 
         for func in self.functions:
             proto = func.prototype
             if proto:
-                code('$proto')
+                code("$proto")
 
         if self.EntryType != None:
-            code('''
+            code(
+                """
 
 // Set and Reset for cache_entry variable
 void set_cache_entry(${{self.EntryType.c_ident}}*& m_cache_entry_ptr, AbstractCacheEntry* m_new_cache_entry);
 void unset_cache_entry(${{self.EntryType.c_ident}}*& m_cache_entry_ptr);
-''')
+"""
+            )
 
         if self.TBEType != None:
-            code('''
+            code(
+                """
 
 // Set and Reset for tbe variable
 void set_tbe(${{self.TBEType.c_ident}}*& m_tbe_ptr, ${ident}_TBE* m_new_tbe);
 void unset_tbe(${{self.TBEType.c_ident}}*& m_tbe_ptr);
-''')
+"""
+            )
 
         # Prototype the actions that the controller can take
-        code('''
+        code(
+            """
 
 // Actions
-''')
+"""
+        )
         if self.TBEType != None and self.EntryType != None:
             for action in self.actions.values():
-                code('/** \\brief ${{action.desc}} */')
-                code('void ${{action.ident}}(${{self.TBEType.c_ident}}*& '
-                     'm_tbe_ptr, ${{self.EntryType.c_ident}}*& '
-                     'm_cache_entry_ptr, Addr addr);')
+                code("/** \\brief ${{action.desc}} */")
+                code(
+                    "void ${{action.ident}}(${{self.TBEType.c_ident}}*& "
+                    "m_tbe_ptr, ${{self.EntryType.c_ident}}*& "
+                    "m_cache_entry_ptr, Addr addr);"
+                )
         elif self.TBEType != None:
             for action in self.actions.values():
-                code('/** \\brief ${{action.desc}} */')
-                code('void ${{action.ident}}(${{self.TBEType.c_ident}}*& '
-                     'm_tbe_ptr, Addr addr);')
+                code("/** \\brief ${{action.desc}} */")
+                code(
+                    "void ${{action.ident}}(${{self.TBEType.c_ident}}*& "
+                    "m_tbe_ptr, Addr addr);"
+                )
         elif self.EntryType != None:
             for action in self.actions.values():
-                code('/** \\brief ${{action.desc}} */')
-                code('void ${{action.ident}}(${{self.EntryType.c_ident}}*& '
-                     'm_cache_entry_ptr, Addr addr);')
+                code("/** \\brief ${{action.desc}} */")
+                code(
+                    "void ${{action.ident}}(${{self.EntryType.c_ident}}*& "
+                    "m_cache_entry_ptr, Addr addr);"
+                )
         else:
             for action in self.actions.values():
-                code('/** \\brief ${{action.desc}} */')
-                code('void ${{action.ident}}(Addr addr);')
+                code("/** \\brief ${{action.desc}} */")
+                code("void ${{action.ident}}(Addr addr);")
 
         # the controller internal variables
-        code('''
+        code(
+            """
 
 // Objects
-''')
+"""
+        )
         for var in self.objects:
             th = var.get("template", "")
-            code('${{var.type.c_ident}}$th* m_${{var.ident}}_ptr;')
+            code("${{var.type.c_ident}}$th* m_${{var.ident}}_ptr;")
 
         code.dedent()
-        code('};')
-        code('#endif // __${ident}_CONTROLLER_H__')
-        code.write(path, '%s.hh' % c_ident)
+        code(
+            """
+};
+
+} // namespace ruby
+} // namespace gem5
+
+#endif // __${ident}_CONTROLLER_H__
+"""
+        )
+
+        code.write(path, "%s.hh" % c_ident)
 
     def printControllerCC(self, path, includes):
-        '''Output the actions for performing the actions'''
+        """Output the actions for performing the actions"""
 
         code = self.symtab.codeFormatter()
         ident = self.ident
@@ -492,23 +571,20 @@ void unset_tbe(${{self.TBEType.c_ident}}*& m_tbe_ptr);
         # is included above "base/cprintf.hh" in this file, despite it being
         # necessary in this case. This is therefore a bit of a hack to keep
         # both clang and our style-checker happy.
-        base_include = '''
+        base_include = """
 #include "base/compiler.hh"
 #include "base/cprintf.hh"
 
-'''
+"""
 
-        boolvec_include = '''
+        boolvec_include = """
 #include "mem/ruby/common/BoolVec.hh"
 
-'''
+"""
 
-        code('''
-/** \\file $c_ident.cc
- *
- * Auto generated C++ code started by $__file__:$__line__
- * Created by slicc definition of Module "${{self.short}}"
- */
+        code(
+            """
+// Created by slicc definition of Module "${{self.short}}"
 
 #include <sys/types.h>
 #include <unistd.h>
@@ -518,14 +594,17 @@ void unset_tbe(${{self.TBEType.c_ident}}*& m_tbe_ptr);
 #include <string>
 #include <typeinfo>
 
-''')
+"""
+        )
 
         code(boolvec_include)
         code(base_include)
-
-        for f in self.debug_flags:
+        # We have to sort self.debug_flags in order to produce deterministic
+        # output and avoid unnecessary rebuilds of the generated files.
+        for f in sorted(self.debug_flags):
             code('#include "debug/${{f}}.hh"')
-        code('''
+        code(
+            """
 #include "mem/ruby/network/Network.hh"
 #include "mem/ruby/protocol/${ident}_Controller.hh"
 #include "mem/ruby/protocol/${ident}_Event.hh"
@@ -533,14 +612,10 @@ void unset_tbe(${{self.TBEType.c_ident}}*& m_tbe_ptr);
 #include "mem/ruby/protocol/Types.hh"
 #include "mem/ruby/system/RubySystem.hh"
 
-''')
+"""
+        )
         for include_path in includes:
             code('#include "${{include_path}}"')
-
-        code('''
-
-using namespace std;
-''')
 
         # include object classes
         seen_types = set()
@@ -551,19 +626,20 @@ using namespace std;
 
         num_in_ports = len(self.in_ports)
 
-        code('''
-$c_ident *
-${c_ident}Params::create()
+        code(
+            """
+namespace gem5
 {
-    return new $c_ident(this);
-}
+
+namespace ruby
+{
 
 int $c_ident::m_num_controllers = 0;
-std::vector<Stats::Vector *>  $c_ident::eventVec;
-std::vector<std::vector<Stats::Vector *> >  $c_ident::transVec;
+std::vector<statistics::Vector *>  $c_ident::eventVec;
+std::vector<std::vector<statistics::Vector *> >  $c_ident::transVec;
 
 // for adding information to the protocol debug trace
-stringstream ${ident}_transitionComment;
+std::stringstream ${ident}_transitionComment;
 
 #ifndef NDEBUG
 #define APPEND_TRANSITION_COMMENT(str) (${ident}_transitionComment << str)
@@ -572,16 +648,17 @@ stringstream ${ident}_transitionComment;
 #endif
 
 /** \\brief constructor */
-$c_ident::$c_ident(const Params *p)
+$c_ident::$c_ident(const Params &p)
     : ${abstract_controller_class_cc}(p)
 {
     m_machineID.type = MachineType_${ident};
     m_machineID.num = m_version;
     m_num_controllers++;
-    p->ruby_system->registerAbstractController(this);
+    p.ruby_system->registerAbstractController(this);
 
     m_in_ports = $num_in_ports;
-''')
+"""
+        )
         code.indent()
 
         #
@@ -591,20 +668,25 @@ $c_ident::$c_ident(const Params *p)
         #
         for param in self.config_parameters:
             if param.pointer:
-                code('m_${{param.ident}}_ptr = p->${{param.ident}};')
+                code("m_${{param.ident}}_ptr = p.${{param.ident}};")
             else:
-                code('m_${{param.ident}} = p->${{param.ident}};')
+                code("m_${{param.ident}} = p.${{param.ident}};")
 
-            if re.compile("sequencer").search(param.ident) or \
-                   param.type_ast.type.c_ident == "GPUCoalescer" or \
-                   param.type_ast.type.c_ident == "VIPERCoalescer":
-                code('''
+            if (
+                re.compile("sequencer").search(param.ident)
+                or param.type_ast.type.c_ident == "GPUCoalescer"
+                or param.type_ast.type.c_ident == "VIPERCoalescer"
+            ):
+                code(
+                    """
 if (m_${{param.ident}}_ptr != NULL) {
     m_${{param.ident}}_ptr->setController(this);
 }
-''')
+"""
+                )
 
-        code('''
+        code(
+            """
 
 for (int state = 0; state < ${ident}_State_NUM; state++) {
     for (int event = 0; event < ${ident}_Event_NUM; event++) {
@@ -615,18 +697,21 @@ for (int state = 0; state < ${ident}_State_NUM; state++) {
 for (int event = 0; event < ${ident}_Event_NUM; event++) {
     m_event_counters[event] = 0;
 }
-''')
+"""
+        )
         code.dedent()
-        code('''
+        code(
+            """
 }
 
 void
 $c_ident::initNetQueues()
 {
     MachineType machine_type = string_to_MachineType("${{self.ident}}");
-    int base M5_VAR_USED = MachineType_base_number(machine_type);
+    [[maybe_unused]] int base = MachineType_base_number(machine_type);
 
-''')
+"""
+        )
         code.indent()
 
         # set for maintaining the vnet, direction pairs already seen for this
@@ -638,7 +723,7 @@ $c_ident::initNetQueues()
             vid = "m_%s_ptr" % var.ident
             if "network" in var:
                 vtype = var.type_ast.type
-                code('assert($vid != NULL);')
+                code("assert($vid != NULL);")
 
                 # Network port object
                 network = var["network"]
@@ -648,25 +733,29 @@ $c_ident::initNetQueues()
                     vnet_type = var["vnet_type"]
 
                     assert (vnet, network) not in vnet_dir_set
-                    vnet_dir_set.add((vnet,network))
+                    vnet_dir_set.add((vnet, network))
 
-                    code('''
+                    code(
+                        """
 m_net_ptr->set${network}NetQueue(m_version + base, $vid->getOrdered(), $vnet,
                                  "$vnet_type", $vid);
-''')
+"""
+                    )
                 # Set Priority
                 if "rank" in var:
                     code('$vid->setPriority(${{var["rank"]}})')
 
         code.dedent()
-        code('''
+        code(
+            """
 }
 
 void
 $c_ident::init()
 {
     // initialize objects
-''')
+"""
+        )
 
         code.indent()
 
@@ -676,7 +765,7 @@ $c_ident::init()
             if "network" not in var:
                 # Not a network port object
                 if "primitive" in vtype:
-                    code('$vid = new ${{vtype.c_ident}};')
+                    code("$vid = new ${{vtype.c_ident}};")
                     if "default" in var:
                         code('(*$vid) = ${{var["default"]}};')
                 else:
@@ -687,8 +776,8 @@ $c_ident::init()
                     if "non_obj" not in vtype and not vtype.isEnumeration:
                         args = var.get("constructor", "")
 
-                    code('$expr($args);')
-                    code('assert($vid != NULL);')
+                    code("$expr($args);")
+                    code("assert($vid != NULL);")
 
                     if "default" in var:
                         code('*$vid = ${{var["default"]}}; // Object default')
@@ -699,16 +788,16 @@ $c_ident::init()
         # Set the prefetchers
         code()
         for prefetcher in self.prefetchers:
-            code('''
+            code("""
 if (m_${{prefetcher.ident}}_ptr != NULL) {
     m_${{prefetcher.ident}}_ptr->setController(this);
-}''')
-            # code('${{prefetcher.code}}.setController(this);')
+}""")
+            # code("${{prefetcher.code}}.setController(this);")
 
         code()
         for port in self.in_ports:
             # Set the queue consumers
-            code('${{port.code}}.setConsumer(this);')
+            code("${{port.code}}.setConsumer(this);")
 
         # Initialize the transition profiling
         code()
@@ -723,14 +812,16 @@ if (m_${{prefetcher.ident}}_ptr != NULL) {
             if not stall:
                 state = "%s_State_%s" % (self.ident, trans.state.ident)
                 event = "%s_Event_%s" % (self.ident, trans.event.ident)
-                code('possibleTransition($state, $event);')
+                code("possibleTransition($state, $event);")
 
         code.dedent()
-        code('''
+        code(
+            """
     ${abstract_controller_class_cc}::init();
     resetStats();
 }
-''')
+"""
+        )
 
         mq_ident = "NULL"
         for port in self.in_ports:
@@ -750,23 +841,24 @@ if (m_${{prefetcher.ident}}_ptr != NULL) {
         seq_ident = "NULL"
         for param in self.config_parameters:
             if param.ident == "sequencer":
-                assert(param.pointer)
+                assert param.pointer
                 seq_ident = "m_%s_ptr" % param.ident
 
         dma_seq_ident = "NULL"
         for param in self.config_parameters:
             if param.ident == "dma_sequencer":
-                assert(param.pointer)
+                assert param.pointer
                 dma_seq_ident = "m_%s_ptr" % param.ident
 
         coal_ident = "NULL"
         for param in self.config_parameters:
             if param.ident == "coalescer":
-                assert(param.pointer)
+                assert param.pointer
                 coal_ident = "m_%s_ptr" % param.ident
 
         if seq_ident != "NULL":
-            code('''
+            code(
+                """
 Sequencer*
 $c_ident::getCPUSequencer() const
 {
@@ -776,19 +868,23 @@ $c_ident::getCPUSequencer() const
         return NULL;
     }
 }
-''')
+"""
+            )
         else:
-            code('''
+            code(
+                """
 
 Sequencer*
 $c_ident::getCPUSequencer() const
 {
     return NULL;
 }
-''')
+"""
+            )
 
         if dma_seq_ident != "NULL":
-            code('''
+            code(
+                """
 DMASequencer*
 $c_ident::getDMASequencer() const
 {
@@ -798,19 +894,23 @@ $c_ident::getDMASequencer() const
         return NULL;
     }
 }
-''')
+"""
+            )
         else:
-            code('''
+            code(
+                """
 
 DMASequencer*
 $c_ident::getDMASequencer() const
 {
     return NULL;
 }
-''')
+"""
+            )
 
         if coal_ident != "NULL":
-            code('''
+            code(
+                """
 GPUCoalescer*
 $c_ident::getGPUCoalescer() const
 {
@@ -820,33 +920,44 @@ $c_ident::getGPUCoalescer() const
         return NULL;
     }
 }
-''')
+"""
+            )
         else:
-            code('''
+            code(
+                """
 
 GPUCoalescer*
 $c_ident::getGPUCoalescer() const
 {
     return NULL;
 }
-''')
+"""
+            )
 
-        code('''
+        code(
+            """
 
 void
 $c_ident::regStats()
 {
     ${abstract_controller_class_cc}::regStats();
 
+    // For each type of controllers, one controller of that type is picked
+    // to aggregate stats of all controllers of that type.
     if (m_version == 0) {
+
+        Profiler *profiler = params().ruby_system->getProfiler();
+        statistics::Group *profilerStatsPtr = &profiler->rubyProfilerStats;
+
         for (${ident}_Event event = ${ident}_Event_FIRST;
              event < ${ident}_Event_NUM; ++event) {
-            Stats::Vector *t = new Stats::Vector();
+            std::string stat_name =
+                "${c_ident}." + ${ident}_Event_to_string(event);
+            statistics::Vector *t =
+                new statistics::Vector(profilerStatsPtr, stat_name.c_str());
             t->init(m_num_controllers);
-            t->name(params()->ruby_system->name() + ".${c_ident}." +
-                ${ident}_Event_to_string(event));
-            t->flags(Stats::pdf | Stats::total | Stats::oneline |
-                     Stats::nozero);
+            t->flags(statistics::pdf | statistics::total |
+                statistics::oneline | statistics::nozero);
 
             eventVec.push_back(t);
         }
@@ -854,20 +965,70 @@ $c_ident::regStats()
         for (${ident}_State state = ${ident}_State_FIRST;
              state < ${ident}_State_NUM; ++state) {
 
-            transVec.push_back(std::vector<Stats::Vector *>());
+            transVec.push_back(std::vector<statistics::Vector *>());
 
             for (${ident}_Event event = ${ident}_Event_FIRST;
                  event < ${ident}_Event_NUM; ++event) {
-
-                Stats::Vector *t = new Stats::Vector();
+                std::string stat_name = "${c_ident}." +
+                    ${ident}_State_to_string(state) +
+                    "." + ${ident}_Event_to_string(event);
+                statistics::Vector *t = new statistics::Vector(
+                    profilerStatsPtr, stat_name.c_str());
                 t->init(m_num_controllers);
-                t->name(params()->ruby_system->name() + ".${c_ident}." +
-                        ${ident}_State_to_string(state) +
-                        "." + ${ident}_Event_to_string(event));
-
-                t->flags(Stats::pdf | Stats::total | Stats::oneline |
-                         Stats::nozero);
+                t->flags(statistics::pdf | statistics::total |
+                    statistics::oneline | statistics::nozero);
                 transVec[state].push_back(t);
+            }
+        }
+    }
+
+    for (${ident}_Event event = ${ident}_Event_FIRST;
+                 event < ${ident}_Event_NUM; ++event) {
+        std::string stat_name =
+            "outTransLatHist." + ${ident}_Event_to_string(event);
+        statistics::Histogram* t =
+            new statistics::Histogram(&stats, stat_name.c_str());
+        stats.outTransLatHist.push_back(t);
+        t->init(5);
+        t->flags(statistics::pdf | statistics::total |
+                 statistics::oneline | statistics::nozero);
+
+        statistics::Scalar* r = new statistics::Scalar(&stats,
+                                             (stat_name + ".retries").c_str());
+        stats.outTransLatHistRetries.push_back(r);
+        r->flags(statistics::nozero);
+    }
+
+    for (${ident}_Event event = ${ident}_Event_FIRST;
+                 event < ${ident}_Event_NUM; ++event) {
+        std::string stat_name = "inTransLatHist." +
+                                ${ident}_Event_to_string(event);
+        statistics::Scalar* r = new statistics::Scalar(&stats,
+                                             (stat_name + ".total").c_str());
+        stats.inTransLatTotal.push_back(r);
+        r->flags(statistics::nozero);
+
+        r = new statistics::Scalar(&stats,
+                              (stat_name + ".retries").c_str());
+        stats.inTransLatRetries.push_back(r);
+        r->flags(statistics::nozero);
+
+        stats.inTransLatHist.emplace_back();
+        for (${ident}_State initial_state = ${ident}_State_FIRST;
+             initial_state < ${ident}_State_NUM; ++initial_state) {
+            stats.inTransLatHist.back().emplace_back();
+            for (${ident}_State final_state = ${ident}_State_FIRST;
+                 final_state < ${ident}_State_NUM; ++final_state) {
+                std::string stat_name = "inTransLatHist." +
+                    ${ident}_Event_to_string(event) + "." +
+                    ${ident}_State_to_string(initial_state) + "." +
+                    ${ident}_State_to_string(final_state);
+                statistics::Histogram* t =
+                    new statistics::Histogram(&stats, stat_name.c_str());
+                stats.inTransLatHist.back().back().push_back(t);
+                t->init(5);
+                t->flags(statistics::pdf | statistics::total |
+                         statistics::oneline | statistics::nozero);
             }
         }
     }
@@ -879,7 +1040,7 @@ $c_ident::collateStats()
     for (${ident}_Event event = ${ident}_Event_FIRST;
          event < ${ident}_Event_NUM; ++event) {
         for (unsigned int i = 0; i < m_num_controllers; ++i) {
-            RubySystem *rs = params()->ruby_system;
+            RubySystem *rs = params().ruby_system;
             std::map<uint32_t, AbstractController *>::iterator it =
                      rs->m_abstract_controls[MachineType_${ident}].find(i);
             assert(it != rs->m_abstract_controls[MachineType_${ident}].end());
@@ -895,7 +1056,7 @@ $c_ident::collateStats()
              event < ${ident}_Event_NUM; ++event) {
 
             for (unsigned int i = 0; i < m_num_controllers; ++i) {
-                RubySystem *rs = params()->ruby_system;
+                RubySystem *rs = params().ruby_system;
                 std::map<uint32_t, AbstractController *>::iterator it =
                          rs->m_abstract_controls[MachineType_${ident}].find(i);
                 assert(it != rs->m_abstract_controls[MachineType_${ident}].end());
@@ -964,7 +1125,7 @@ $c_ident::getMemRespQueue() const
 }
 
 void
-$c_ident::print(ostream& out) const
+$c_ident::print(std::ostream& out) const
 {
     out << "[$c_ident " << m_version << "]";
 }
@@ -983,10 +1144,12 @@ void $c_ident::resetStats()
 
     ${abstract_controller_class_cc}::resetStats();
 }
-''')
+"""
+        )
 
         if self.EntryType != None:
-            code('''
+            code(
+                """
 
 // Set and Reset for cache_entry variable
 void
@@ -1000,10 +1163,12 @@ $c_ident::unset_cache_entry(${{self.EntryType.c_ident}}*& m_cache_entry_ptr)
 {
   m_cache_entry_ptr = 0;
 }
-''')
+"""
+            )
 
         if self.TBEType != None:
-            code('''
+            code(
+                """
 
 // Set and Reset for tbe variable
 void
@@ -1017,35 +1182,41 @@ $c_ident::unset_tbe(${{self.TBEType.c_ident}}*& m_tbe_ptr)
 {
   m_tbe_ptr = NULL;
 }
-''')
+"""
+            )
 
-        code('''
+        code(
+            """
 
 void
 $c_ident::recordCacheTrace(int cntrl, CacheRecorder* tr)
 {
-''')
+"""
+        )
         #
         # Record cache contents for all associated caches.
         #
         code.indent()
         for param in self.config_parameters:
             if param.type_ast.type.ident == "CacheMemory":
-                assert(param.pointer)
-                code('m_${{param.ident}}_ptr->recordCacheContents(cntrl, tr);')
+                assert param.pointer
+                code("m_${{param.ident}}_ptr->recordCacheContents(cntrl, tr);")
 
         code.dedent()
-        code('''
+        code(
+            """
 }
 
 // Actions
-''')
+"""
+        )
         if self.TBEType != None and self.EntryType != None:
             for action in self.actions.values():
                 if "c_code" not in action:
-                 continue
+                    continue
 
-                code('''
+                code(
+                    """
 /** \\brief ${{action.desc}} */
 void
 $c_ident::${{action.ident}}(${{self.TBEType.c_ident}}*& m_tbe_ptr, ${{self.EntryType.c_ident}}*& m_cache_entry_ptr, Addr addr)
@@ -1060,13 +1231,15 @@ $c_ident::${{action.ident}}(${{self.TBEType.c_ident}}*& m_tbe_ptr, ${{self.Entry
     }
 }
 
-''')
+"""
+                )
         elif self.TBEType != None:
             for action in self.actions.values():
                 if "c_code" not in action:
-                 continue
+                    continue
 
-                code('''
+                code(
+                    """
 /** \\brief ${{action.desc}} */
 void
 $c_ident::${{action.ident}}(${{self.TBEType.c_ident}}*& m_tbe_ptr, Addr addr)
@@ -1075,13 +1248,15 @@ $c_ident::${{action.ident}}(${{self.TBEType.c_ident}}*& m_tbe_ptr, Addr addr)
     ${{action["c_code"]}}
 }
 
-''')
+"""
+                )
         elif self.EntryType != None:
             for action in self.actions.values():
                 if "c_code" not in action:
-                 continue
+                    continue
 
-                code('''
+                code(
+                    """
 /** \\brief ${{action.desc}} */
 void
 $c_ident::${{action.ident}}(${{self.EntryType.c_ident}}*& m_cache_entry_ptr, Addr addr)
@@ -1090,13 +1265,15 @@ $c_ident::${{action.ident}}(${{self.EntryType.c_ident}}*& m_cache_entry_ptr, Add
     ${{action["c_code"]}}
 }
 
-''')
+"""
+                )
         else:
             for action in self.actions.values():
                 if "c_code" not in action:
-                 continue
+                    continue
 
-                code('''
+                code(
+                    """
 /** \\brief ${{action.desc}} */
 void
 $c_ident::${{action.ident}}(Addr addr)
@@ -1105,61 +1282,96 @@ $c_ident::${{action.ident}}(Addr addr)
     ${{action["c_code"]}}
 }
 
-''')
+"""
+                )
         for func in self.functions:
             code(func.generateCode())
 
         # Function for functional writes to messages buffered in the controller
-        code('''
+        code(
+            """
 int
 $c_ident::functionalWriteBuffers(PacketPtr& pkt)
 {
     int num_functional_writes = 0;
-''')
+"""
+        )
         for var in self.objects:
             vtype = var.type
             if vtype.isBuffer:
                 vid = "m_%s_ptr" % var.ident
-                code('num_functional_writes += $vid->functionalWrite(pkt);')
+                code("num_functional_writes += $vid->functionalWrite(pkt);")
 
         for var in self.config_parameters:
             vtype = var.type_ast.type
             if vtype.isBuffer:
                 vid = "m_%s_ptr" % var.ident
-                code('num_functional_writes += $vid->functionalWrite(pkt);')
+                code("num_functional_writes += $vid->functionalWrite(pkt);")
 
-        code('''
+        code(
+            """
     return num_functional_writes;
 }
-''')
+"""
+        )
 
         # Function for functional reads to messages buffered in the controller
-        code('''
+        code(
+            """
 bool
 $c_ident::functionalReadBuffers(PacketPtr& pkt)
 {
-''')
+"""
+        )
         for var in self.objects:
             vtype = var.type
             if vtype.isBuffer:
                 vid = "m_%s_ptr" % var.ident
-                code('if ($vid->functionalRead(pkt)) return true;')
+                code("if ($vid->functionalRead(pkt)) return true;")
 
         for var in self.config_parameters:
             vtype = var.type_ast.type
             if vtype.isBuffer:
                 vid = "m_%s_ptr" % var.ident
-                code('if ($vid->functionalRead(pkt)) return true;')
+                code("if ($vid->functionalRead(pkt)) return true;")
 
-        code('''
+        code(
+            """
     return false;
 }
-''')
+
+bool
+$c_ident::functionalReadBuffers(PacketPtr& pkt, WriteMask &mask)
+{
+    bool read = false;
+"""
+        )
+        for var in self.objects:
+            vtype = var.type
+            if vtype.isBuffer:
+                vid = "m_%s_ptr" % var.ident
+                code("if ($vid->functionalRead(pkt, mask)) read = true;")
+
+        for var in self.config_parameters:
+            vtype = var.type_ast.type
+            if vtype.isBuffer:
+                vid = "m_%s_ptr" % var.ident
+                code("if ($vid->functionalRead(pkt, mask)) read = true;")
+
+        code(
+            """
+    return read;
+}
+
+} // namespace ruby
+} // namespace gem5
+"""
+        )
 
         code.write(path, "%s.cc" % c_ident)
 
     def printCWakeup(self, path, includes):
-        '''Output the wakeup loop for the events'''
+        """Output the wakeup loop for the events"""
 
         code = self.symtab.codeFormatter()
         ident = self.ident
@@ -1168,8 +1380,8 @@ $c_ident::functionalReadBuffers(PacketPtr& pkt)
         if len(self.request_types) == 0:
             outputRequest_types = False
 
-        code('''
-// Auto generated C++ code started by $__file__:$__line__
+        code(
+            """
 // ${ident}: ${{self.short}}
 
 #include <sys/types.h>
@@ -1180,34 +1392,44 @@ $c_ident::functionalReadBuffers(PacketPtr& pkt)
 
 #include "base/logging.hh"
 
-''')
-        for f in self.debug_flags:
+"""
+        )
+        # We have to sort self.debug_flags in order to produce deterministic
+        # output and avoid unnecessary rebuilds of the generated files.
+        for f in sorted(self.debug_flags):
             code('#include "debug/${{f}}.hh"')
-        code('''
+        code(
+            """
 #include "mem/ruby/protocol/${ident}_Controller.hh"
 #include "mem/ruby/protocol/${ident}_Event.hh"
 #include "mem/ruby/protocol/${ident}_State.hh"
 
-''')
+"""
+        )
 
         if outputRequest_types:
             code('''#include "mem/ruby/protocol/${ident}_RequestType.hh"''')
 
-        code('''
+        code(
+            """
 #include "mem/ruby/protocol/Types.hh"
 #include "mem/ruby/system/RubySystem.hh"
 
-''')
-
+"""
+        )
 
         for include_path in includes:
             code('#include "${{include_path}}"')
 
         port_to_buf_map, in_msg_bufs, msg_bufs = self.getBufferMaps(ident)
 
-        code('''
+        code(
+            """
+namespace gem5
+{
 
-using namespace std;
+namespace ruby
+{
 
 void
 ${ident}_Controller::wakeup()
@@ -1224,13 +1446,14 @@ ${ident}_Controller::wakeup()
         assert(m_used_transitions <= m_transitions_per_cycle);
         if (m_used_transitions == m_transitions_per_cycle) {
             // Count how often we are fully utilized
-            m_fully_busy_cycles++;
+            stats.fullyBusyCycles++;
 
             // Wakeup in another cycle and try again
             scheduleEvent(Cycles(1));
             break;
         }
-''')
+"""
+        )
 
         code.indent()
         code.indent()
@@ -1239,35 +1462,40 @@ ${ident}_Controller::wakeup()
         #
         for port in self.in_ports:
             code.indent()
-            code('// ${ident}InPort $port')
+            code("// ${ident}InPort $port")
             if "rank" in port.pairs:
                 code('m_cur_in_port = ${{port.pairs["rank"]}};')
             else:
-                code('m_cur_in_port = 0;')
+                code("m_cur_in_port = 0;")
             if port in port_to_buf_map:
-                code('try {')
+                code("try {")
                 code.indent()
             code('${{port["c_code_in_port"]}}')
 
             if port in port_to_buf_map:
                 code.dedent()
-                code('''
+                code(
+                    """
             } catch (const RejectException & e) {
                 rejected[${{port_to_buf_map[port]}}]++;
             }
-''')
+"""
+                )
             code.dedent()
-            code('')
+            code("")
 
         code.dedent()
         code.dedent()
-        code('''
+        code(
+            """
         // If we got this far, we have nothing left todo or something went
-        // wrong''')
+        // wrong"""
+        )
         for buf_name, ports in in_msg_bufs.items():
             if len(ports) > 1:
                 # only produce checks when a buffer is shared by multiple ports
-                code('''
+                code(
+                    """
         if (${{buf_name}}->isReady(clockEdge()) && rejected[${{port_to_buf_map[ports[0]]}}] == ${{len(ports)}})
         {
             // no port claimed the message on the top of this buffer
@@ -1278,23 +1506,29 @@ ${ident}_Controller::wakeup()
                   "the incoming message type.\\n",
                   Cycles(1));
         }
-''')
-        code('''
+"""
+                )
+        code(
+            """
         break;
     }
 }
-''')
+
+} // namespace ruby
+} // namespace gem5
+"""
+        )
 
         code.write(path, "%s_Wakeup.cc" % self.ident)
 
     def printCSwitch(self, path):
-        '''Output switch statement for transition table'''
+        """Output switch statement for transition table"""
 
         code = self.symtab.codeFormatter()
         ident = self.ident
 
-        code('''
-// Auto generated C++ code started by $__file__:$__line__
+        code(
+            """
 // ${ident}: ${{self.short}}
 
 #include <cassert>
@@ -1314,33 +1548,49 @@ ${ident}_Controller::wakeup()
 #define GET_TRANSITION_COMMENT() (${ident}_transitionComment.str())
 #define CLEAR_TRANSITION_COMMENT() (${ident}_transitionComment.str(""))
 
+namespace gem5
+{
+
+namespace ruby
+{
+
 TransitionResult
 ${ident}_Controller::doTransition(${ident}_Event event,
-''')
+"""
+        )
         if self.EntryType != None:
-            code('''
+            code(
+                """
                                   ${{self.EntryType.c_ident}}* m_cache_entry_ptr,
-''')
+"""
+            )
         if self.TBEType != None:
-            code('''
+            code(
+                """
                                   ${{self.TBEType.c_ident}}* m_tbe_ptr,
-''')
-        code('''
+"""
+            )
+        code(
+            """
                                   Addr addr)
 {
-''')
+"""
+        )
         code.indent()
 
         if self.TBEType != None and self.EntryType != None:
-            code('${ident}_State state = getState(m_tbe_ptr, m_cache_entry_ptr, addr);')
+            code(
+                "${ident}_State state = getState(m_tbe_ptr, m_cache_entry_ptr, addr);"
+            )
         elif self.TBEType != None:
-            code('${ident}_State state = getState(m_tbe_ptr, addr);')
+            code("${ident}_State state = getState(m_tbe_ptr, addr);")
         elif self.EntryType != None:
-            code('${ident}_State state = getState(m_cache_entry_ptr, addr);')
+            code("${ident}_State state = getState(m_cache_entry_ptr, addr);")
         else:
-            code('${ident}_State state = getState(addr);')
+            code("${ident}_State state = getState(addr);")
 
-        code('''
+        code(
+            """
 ${ident}_State next_state = state;
 
 DPRINTF(RubyGenerated, "%s, Time: %lld, state: %s, event: %s, addr: %#x\\n",
@@ -1348,19 +1598,27 @@ DPRINTF(RubyGenerated, "%s, Time: %lld, state: %s, event: %s, addr: %#x\\n",
         ${ident}_Event_to_string(event), addr);
 
 TransitionResult result =
-''')
+"""
+        )
         if self.TBEType != None and self.EntryType != None:
-            code('doTransitionWorker(event, state, next_state, m_tbe_ptr, m_cache_entry_ptr, addr);')
+            code(
+                "doTransitionWorker(event, state, next_state, m_tbe_ptr, m_cache_entry_ptr, addr);"
+            )
         elif self.TBEType != None:
-            code('doTransitionWorker(event, state, next_state, m_tbe_ptr, addr);')
+            code(
+                "doTransitionWorker(event, state, next_state, m_tbe_ptr, addr);"
+            )
         elif self.EntryType != None:
-            code('doTransitionWorker(event, state, next_state, m_cache_entry_ptr, addr);')
+            code(
+                "doTransitionWorker(event, state, next_state, m_cache_entry_ptr, addr);"
+            )
         else:
-            code('doTransitionWorker(event, state, next_state, addr);')
+            code("doTransitionWorker(event, state, next_state, addr);")
 
         port_to_buf_map, in_msg_bufs, msg_bufs = self.getBufferMaps(ident)
 
-        code('''
+        code(
+            """
 
 if (result == TransitionResult_Valid) {
     DPRINTF(RubyGenerated, "next_state: %s\\n",
@@ -1375,21 +1633,23 @@ if (result == TransitionResult_Valid) {
              printAddress(addr), GET_TRANSITION_COMMENT());
 
     CLEAR_TRANSITION_COMMENT();
-''')
+"""
+        )
         if self.TBEType != None and self.EntryType != None:
-            code('setState(m_tbe_ptr, m_cache_entry_ptr, addr, next_state);')
-            code('setAccessPermission(m_cache_entry_ptr, addr, next_state);')
+            code("setState(m_tbe_ptr, m_cache_entry_ptr, addr, next_state);")
+            code("setAccessPermission(m_cache_entry_ptr, addr, next_state);")
         elif self.TBEType != None:
-            code('setState(m_tbe_ptr, addr, next_state);')
-            code('setAccessPermission(addr, next_state);')
+            code("setState(m_tbe_ptr, addr, next_state);")
+            code("setAccessPermission(addr, next_state);")
         elif self.EntryType != None:
-            code('setState(m_cache_entry_ptr, addr, next_state);')
-            code('setAccessPermission(m_cache_entry_ptr, addr, next_state);')
+            code("setState(m_cache_entry_ptr, addr, next_state);")
+            code("setAccessPermission(m_cache_entry_ptr, addr, next_state);")
         else:
-            code('setState(addr, next_state);')
-            code('setAccessPermission(addr, next_state);')
+            code("setState(addr, next_state);")
+            code("setAccessPermission(addr, next_state);")
 
-        code('''
+        code(
+            """
 } else if (result == TransitionResult_ResourceStall) {
     DPRINTFR(ProtocolTrace, "%15s %3s %10s%20s %6s>%-6s %#x %s\\n",
              curTick(), m_version, "${ident}",
@@ -1408,37 +1668,52 @@ if (result == TransitionResult_Valid) {
 }
 
 return result;
-''')
+"""
+        )
         code.dedent()
-        code('''
+        code(
+            """
 }
 
 TransitionResult
 ${ident}_Controller::doTransitionWorker(${ident}_Event event,
                                         ${ident}_State state,
                                         ${ident}_State& next_state,
-''')
+"""
+        )
 
         if self.TBEType != None:
-            code('''
+            code(
+                """
                                         ${{self.TBEType.c_ident}}*& m_tbe_ptr,
-''')
+"""
+            )
         if self.EntryType != None:
-                  code('''
+            code(
+                """
                                         ${{self.EntryType.c_ident}}*& m_cache_entry_ptr,
-''')
-        code('''
+"""
+            )
+        code(
+            """
                                         Addr addr)
 {
+    m_curTransitionEvent = event;
+    m_curTransitionNextState = next_state;
     switch(HASH_FUN(state, event)) {
-''')
+"""
+        )
 
         # This map will allow suppress generating duplicate code
         cases = OrderedDict()
 
         for trans in self.transitions:
-            case_string = "%s_State_%s, %s_Event_%s" % \
-                (self.ident, trans.state.ident, self.ident, trans.event.ident)
+            case_string = "%s_State_%s, %s_Event_%s" % (
+                self.ident,
+                trans.state.ident,
+                self.ident,
+                trans.event.ident,
+            )
 
             case = self.symtab.codeFormatter()
             # Only set next_state if it changes
@@ -1450,10 +1725,16 @@ ${ident}_Controller::doTransitionWorker(${ident}_Event event,
                     # is determined before any actions of the transition
                     # execute, and therefore the next state calculation cannot
                     # depend on any of the transitionactions.
-                    case('next_state = getNextState(addr);')
+                    case(
+                        "next_state = getNextState(addr); "
+                        "m_curTransitionNextState = next_state;"
+                    )
                 else:
                     ns_ident = trans.nextState.ident
-                    case('next_state = ${ident}_State_${ns_ident};')
+                    case(
+                        "next_state = ${ident}_State_${ns_ident}; "
+                        "m_curTransitionNextState = next_state;"
+                    )
 
             actions = trans.actions
             request_types = trans.request_types
@@ -1461,20 +1742,26 @@ ${ident}_Controller::doTransitionWorker(${ident}_Event event,
             # Check for resources
             case_sorter = []
             res = trans.resources
-            for key,val in res.items():
-                val = '''
+            for key, val in res.items():
+                val = """
 if (!%s.areNSlotsAvailable(%s, clockEdge()))
     return TransitionResult_ResourceStall;
-''' % (key.code, val)
+""" % (
+                    key.code,
+                    val,
+                )
                 case_sorter.append(val)
 
             # Check all of the request_types for resource constraints
             for request_type in request_types:
-                val = '''
+                val = """
 if (!checkResourceAvailable(%s_RequestType_%s, addr)) {
     return TransitionResult_ResourceStall;
 }
-''' % (self.ident, request_type.ident)
+""" % (
+                    self.ident,
+                    request_type.ident,
+                )
                 case_sorter.append(val)
 
             # Emit the code sequences in a sorted order.  This makes the
@@ -1485,7 +1772,9 @@ if (!checkResourceAvailable(%s_RequestType_%s, addr)) {
 
             # Record access types for this transition
             for request_type in request_types:
-                case('recordRequestType(${ident}_RequestType_${{request_type.ident}}, addr);')
+                case(
+                    "recordRequestType(${ident}_RequestType_${{request_type.ident}}, addr);"
+                )
 
             # Figure out if we stall
             stall = False
@@ -1495,21 +1784,23 @@ if (!checkResourceAvailable(%s_RequestType_%s, addr)) {
                     break
 
             if stall:
-                case('return TransitionResult_ProtocolStall;')
+                case("return TransitionResult_ProtocolStall;")
             else:
                 if self.TBEType != None and self.EntryType != None:
                     for action in actions:
-                        case('${{action.ident}}(m_tbe_ptr, m_cache_entry_ptr, addr);')
+                        case(
+                            "${{action.ident}}(m_tbe_ptr, m_cache_entry_ptr, addr);"
+                        )
                 elif self.TBEType != None:
                     for action in actions:
-                        case('${{action.ident}}(m_tbe_ptr, addr);')
+                        case("${{action.ident}}(m_tbe_ptr, addr);")
                 elif self.EntryType != None:
                     for action in actions:
-                        case('${{action.ident}}(m_cache_entry_ptr, addr);')
+                        case("${{action.ident}}(m_cache_entry_ptr, addr);")
                 else:
                     for action in actions:
-                        case('${{action.ident}}(addr);')
-                case('return TransitionResult_Valid;')
+                        case("${{action.ident}}(addr);")
+                case("return TransitionResult_Valid;")
 
             case = str(case)
 
@@ -1521,14 +1812,15 @@ if (!checkResourceAvailable(%s_RequestType_%s, addr)) {
 
         # Walk through all of the unique code blocks and spit out the
         # corresponding case statement elements
-        for case,transitions in cases.items():
+        for case, transitions in cases.items():
             # Iterative over all the multiple transitions that share
             # the same code
             for trans in transitions:
-                code('  case HASH_FUN($trans):')
-            code('    $case\n')
+                code("  case HASH_FUN($trans):")
+            code("    $case\n")
 
-        code('''
+        code(
+            """
       default:
         panic("Invalid transition\\n"
               "%s time: %d addr: %#x event: %s state: %s\\n",
@@ -1537,21 +1829,26 @@ if (!checkResourceAvailable(%s_RequestType_%s, addr)) {
 
     return TransitionResult_Valid;
 }
-''')
-        code.write(path, "%s_Transitions.cc" % self.ident)
 
+} // namespace ruby
+} // namespace gem5
+"""
+        )
+        code.write(path, "%s_Transitions.cc" % self.ident)
 
     # **************************
     # ******* HTML Files *******
     # **************************
     def frameRef(self, click_href, click_target, over_href, over_num, text):
         code = self.symtab.codeFormatter(fix_newlines=False)
-        code("""<A href=\"$click_href\" target=\"$click_target\" onmouseover=\"
+        code(
+            """<A href=\"$click_href\" target=\"$click_target\" onmouseover=\"
     if (parent.frames[$over_num].location != parent.location + '$over_href') {
         parent.frames[$over_num].location='$over_href'
     }\">
     ${{html.formatShorthand(text)}}
-    </A>""")
+    </A>"""
+        )
         return str(code)
 
     def writeHTMLFiles(self, path):
@@ -1583,39 +1880,45 @@ if (!checkResourceAvailable(%s_RequestType_%s, addr)) {
     def printHTMLTransitions(self, path, active_state):
         code = self.symtab.codeFormatter()
 
-        code('''
+        code(
+            """
 <HTML>
 <BODY link="blue" vlink="blue">
 
 <H1 align="center">${{html.formatShorthand(self.short)}}:
-''')
+"""
+        )
         code.indent()
-        for i,machine in enumerate(self.symtab.getAllType(StateMachine)):
+        for i, machine in enumerate(self.symtab.getAllType(StateMachine)):
             mid = machine.ident
             if i != 0:
                 extra = " - "
             else:
                 extra = ""
             if machine == self:
-                code('$extra$mid')
+                code("$extra$mid")
             else:
-                code('$extra<A target="Table" href="${mid}_table.html">$mid</A>')
+                code(
+                    '$extra<A target="Table" href="${mid}_table.html">$mid</A>'
+                )
         code.dedent()
 
-        code("""
+        code(
+            """
 </H1>
 
 <TABLE border=1>
 <TR>
   <TH> </TH>
-""")
+"""
+        )
 
         for event in self.events.values():
             href = "%s_Event_%s.html" % (self.ident, event.ident)
             ref = self.frameRef(href, "Status", href, "1", event.short)
-            code('<TH bgcolor=white>$ref</TH>')
+            code("<TH bgcolor=white>$ref</TH>")
 
-        code('</TR>')
+        code("</TR>")
         # -- Body of table
         for state in self.states.values():
             # -- Each row
@@ -1628,14 +1931,16 @@ if (!checkResourceAvailable(%s_RequestType_%s, addr)) {
             over = "%s_State_%s.html" % (self.ident, state.ident)
             text = html.formatShorthand(state.short)
             ref = self.frameRef(click, "Table", over, "1", state.short)
-            code('''
+            code(
+                """
 <TR>
   <TH bgcolor=$color>$ref</TH>
-''')
+"""
+            )
 
             # -- One column for each event
             for event in self.events.values():
-                trans = self.table.get((state,event), None)
+                trans = self.table.get((state, event), None)
                 if trans is None:
                     # This is the no transition case
                     if state == active_state:
@@ -1643,7 +1948,7 @@ if (!checkResourceAvailable(%s_RequestType_%s, addr)) {
                     else:
                         color = "lightgrey"
 
-                    code('<TD bgcolor=$color>&nbsp;</TD>')
+                    code("<TD bgcolor=$color>&nbsp;</TD>")
                     continue
 
                 next = trans.nextState
@@ -1651,8 +1956,10 @@ if (!checkResourceAvailable(%s_RequestType_%s, addr)) {
 
                 # -- Get the actions
                 for action in trans.actions:
-                    if action.ident == "z_stall" or \
-                       action.ident == "zz_recycleMandatoryQueue":
+                    if (
+                        action.ident == "z_stall"
+                        or action.ident == "zz_recycleMandatoryQueue"
+                    ):
                         stall_action = True
 
                 # -- Print out "actions/next-state"
@@ -1669,15 +1976,16 @@ if (!checkResourceAvailable(%s_RequestType_%s, addr)) {
                 else:
                     color = "white"
 
-                code('<TD bgcolor=$color>')
+                code("<TD bgcolor=$color>")
                 for action in trans.actions:
                     href = "%s_action_%s.html" % (self.ident, action.ident)
-                    ref = self.frameRef(href, "Status", href, "1",
-                                        action.short)
-                    code('  $ref')
+                    ref = self.frameRef(
+                        href, "Status", href, "1", action.short
+                    )
+                    code("  $ref")
                 if next != state:
                     if trans.actions:
-                        code('/')
+                        code("/")
                     click = "%s_table_%s.html" % (self.ident, next.ident)
                     over = "%s_State_%s.html" % (self.ident, next.ident)
                     ref = self.frameRef(click, "Table", over, "1", next.short)
@@ -1693,26 +2001,31 @@ if (!checkResourceAvailable(%s_RequestType_%s, addr)) {
             click = "%s_table_%s.html" % (self.ident, state.ident)
             over = "%s_State_%s.html" % (self.ident, state.ident)
             ref = self.frameRef(click, "Table", over, "1", state.short)
-            code('''
+            code(
+                """
   <TH bgcolor=$color>$ref</TH>
 </TR>
-''')
-        code('''
+"""
+            )
+        code(
+            """
 <!- Column footer->
 <TR>
   <TH> </TH>
-''')
+"""
+        )
 
         for event in self.events.values():
             href = "%s_Event_%s.html" % (self.ident, event.ident)
             ref = self.frameRef(href, "Status", href, "1", event.short)
-            code('<TH bgcolor=white>$ref</TH>')
-        code('''
+            code("<TH bgcolor=white>$ref</TH>")
+        code(
+            """
 </TR>
 </TABLE>
 </BODY></HTML>
-''')
-
+"""
+        )
 
         if active_state:
             name = "%s_table_%s.html" % (self.ident, active_state.ident)
@@ -1720,4 +2033,5 @@ if (!checkResourceAvailable(%s_RequestType_%s, addr)) {
             name = "%s_table.html" % self.ident
         code.write(path, name)
 
-__all__ = [ "StateMachine" ]
+
+__all__ = ["StateMachine"]

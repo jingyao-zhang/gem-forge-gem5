@@ -41,7 +41,7 @@ output header {{
         using MipsStaticInst::MipsStaticInst;
 
         std::string generateDisassembly(
-                Addr pc, const Loader::SymbolTable *symtab) const override;
+                Addr pc, const loader::SymbolTable *symtab) const override;
     };
     class TrapImm : public MipsStaticInst
     {
@@ -53,20 +53,20 @@ output header {{
         {}
 
         std::string generateDisassembly(
-                Addr pc, const Loader::SymbolTable *symtab) const override;
+                Addr pc, const loader::SymbolTable *symtab) const override;
     };
 }};
 
 output decoder {{
     std::string
     Trap::generateDisassembly(
-            Addr pc, const Loader::SymbolTable *symtab) const
+            Addr pc, const loader::SymbolTable *symtab) const
     {
         return "Disassembly of trap instruction\n";
     }
     std::string
     TrapImm::generateDisassembly(
-            Addr pc, const Loader::SymbolTable *symtab) const
+            Addr pc, const loader::SymbolTable *symtab) const
     {
         return "Disassembly of trap instruction\n";
     }
@@ -75,7 +75,7 @@ output decoder {{
 def template TrapExecute {{
     // Edit This Template When Traps Are Implemented
     Fault %(class_name)s::execute(
-        ExecContext *xc, Trace::InstRecord *traceData) const
+        ExecContext *xc, trace::InstRecord *traceData) const
     {
         //Write the resulting state to the execution context
         %(op_wb)s;

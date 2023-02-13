@@ -27,7 +27,9 @@
 
 #include <regex>
 
-McPATManager::McPATManager(const McPATManagerParams *params)
+namespace gem5 {
+
+McPATManager::McPATManager(const Params &params)
     : SimObject(params), L2Cache(nullptr), statsMap(nullptr) {
   this->xml = new ParseXML();
   this->xml->initialize();
@@ -1015,4 +1017,4 @@ void McPATManager::dump() {
   }
 }
 
-McPATManager *McPATManagerParams::create() { return new McPATManager(this); }
+} // namespace gem5

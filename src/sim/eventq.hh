@@ -40,15 +40,20 @@
 #include <climits>
 #include <functional>
 #include <iosfwd>
+#include <list>
 #include <memory>
-#include <mutex>
 #include <string>
 
 #include "base/debug.hh"
 #include "base/flags.hh"
 #include "base/types.hh"
+#include "base/uncontended_mutex.hh"
 #include "debug/Event.hh"
+#include "sim/cur_tick.hh"
 #include "sim/serialize.hh"
+
+namespace gem5
+{
 
 class EventQueue;       // forward declaration
 class BaseGlobalEvent;
@@ -81,7 +86,7 @@ extern bool inParallelMode;
 EventQueue *getEventQueue(uint32_t index);
 
 inline EventQueue *curEventQueue() { return _curEventQueue; }
-inline void curEventQueue(EventQueue *q) { _curEventQueue = q; }
+inline void curEventQueue(EventQueue *q);
 
 /**
  * Common base class for Event and GlobalEvent, so they can share flag
@@ -92,7 +97,7 @@ class EventBase
 {
   protected:
     typedef unsigned short FlagsType;
-    typedef ::Flags<FlagsType> Flags;
+    typedef ::gem5::Flags<FlagsType> Flags;
 
     static const FlagsType PublicRead    = 0x003f; // public readable flags
     static const FlagsType PublicWrite   = 0x001d; // public writable flags
@@ -617,12 +622,14 @@ operator!=(const Event &l, const Event &r)
 class EventQueue
 {
   private:
+    friend void curEventQueue(EventQueue *);
+
     std::string objName;
     Event *head;
     Tick _curTick;
 
     //! Mutex to protect async queue.
-    std::mutex async_queue_mutex;
+    UncontendedMutex async_queue_mutex;
 
     //! List of events added by other threads to this event queue.
     std::list<Event*> async_queue;
@@ -647,7 +654,7 @@ class EventQueue
      * @see EventQueue::lock()
      * @see EventQueue::unlock()
      */
-    std::mutex service_mutex;
+    UncontendedMutex service_mutex;
 
     //! Insert / remove event from the queue. Should only be called
     //! by thread operating this queue.
@@ -777,7 +784,7 @@ class EventQueue
         event->flags.set(Event::Scheduled);
         event->acquire();
 
-        if (DTRACE(Event))
+        if (debug::Event)
             event->trace("scheduled");
     }
 
@@ -798,7 +805,7 @@ class EventQueue
         event->flags.clear(Event::Squashed);
         event->flags.clear(Event::Scheduled);
 
-        if (DTRACE(Event))
+        if (debug::Event)
             event->trace("descheduled");
 
         event->release();
@@ -829,7 +836,7 @@ class EventQueue
         event->flags.clear(Event::Squashed);
         event->flags.set(Event::Scheduled);
 
-        if (DTRACE(Event))
+        if (debug::Event)
             event->trace("rescheduled");
     }
 
@@ -967,6 +974,13 @@ class EventQueue
             deschedule(getHead());
     }
 };
+
+inline void
+curEventQueue(EventQueue *q)
+{
+    _curEventQueue = q;
+    Gem5Internal::_curTickPtr = (q == nullptr) ? nullptr : &q->_curTick;
+}
 
 void dumpMainQueue();
 
@@ -1135,5 +1149,25 @@ class EventFunctionWrapper : public Event
      */
     const char *description() const { return "EventFunctionWrapped"; }
 };
+
+/**
+ * \def SERIALIZE_EVENT(event)
+ *
+ * @ingroup api_serialize
+ */
+#define SERIALIZE_EVENT(event) event.serializeSection(cp, #event);
+
+/**
+ * \def UNSERIALIZE_EVENT(event)
+ *
+ * @ingroup api_serialize
+ */
+#define UNSERIALIZE_EVENT(event)                        \
+    do {                                                \
+        event.unserializeSection(cp, #event);           \
+        eventQueue()->checkpointReschedule(&event);     \
+    } while (0)
+
+} // namespace gem5
 
 #endif // __SIM_EVENTQ_HH__

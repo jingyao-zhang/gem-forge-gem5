@@ -10,6 +10,8 @@
 
 #include <map>
 
+namespace gem5 {
+
 /**
  * This is in charge of mapping physical addresses to some banks.
  * It is implemented as a global static object to be easily accessed.
@@ -54,17 +56,17 @@ public:
 
   struct NonUniformNode {
     int routerId;
-    MachineID machineId;
+    ruby::MachineID machineId;
     AddrRange addrRange;
     std::vector<int> handleBanks;
-    NonUniformNode(int _routerId, MachineID _machineId,
+    NonUniformNode(int _routerId, ruby::MachineID _machineId,
                    const AddrRange &_addrRange,
                    const std::vector<int> &_handleBanks)
         : routerId(_routerId), machineId(_machineId), addrRange(_addrRange),
           handleBanks(_handleBanks) {}
   };
   using NonUniformNodeVec = std::vector<NonUniformNode>;
-  static void addNonUniformNode(int routerId, MachineID machineId,
+  static void addNonUniformNode(int routerId, ruby::MachineID machineId,
                                 const AddrRange &addrRange,
                                 const std::vector<int> &handleBanks);
   static const NonUniformNodeVec &getNUMANodes() { return numaNodes; }
@@ -210,5 +212,7 @@ private:
 
   static int getPUMSet(Addr paddr, const RangeMap &range);
 };
+
+} // namespace gem5
 
 #endif

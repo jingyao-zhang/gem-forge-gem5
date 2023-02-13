@@ -1,6 +1,6 @@
 def template AVXOpExecute {{
         Fault %(class_name)s::execute(
-            ExecContext *xc, Trace::InstRecord *traceData) const
+            ExecContext *xc, trace::InstRecord *traceData) const
         {
             Fault fault = NoFault;
 
@@ -24,16 +24,16 @@ def template AVXOpDeclare {{
       public:
         %(class_name)s(ExtMachInst _machInst, const char *_instMnem,
                   uint64_t _setFlags, SrcType _srcType,
-                  InstRegIndex _dest,
-                  InstRegIndex _src1,
-                  InstRegIndex _src2,
-                  InstRegIndex _src3,
+                  FpRegIndex _dest,
+                  FpRegIndex _src1,
+                  FpRegIndex _src2,
+                  FpRegIndex _src3,
                   uint8_t _destSize, uint8_t _destVL,
                   uint8_t _srcSize, uint8_t _srcVL,
                   uint8_t _imm8, uint8_t _ext,
-                  InstRegIndex _mask);
+                  GpRegIndex _mask);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const;
+        Fault execute(ExecContext *, trace::InstRecord *) const;
     };
 }};
 
@@ -41,14 +41,14 @@ def template AVXOpConstructor {{
     %(class_name)s::%(class_name)s(
         ExtMachInst _machInst, const char *_instMnem,
         uint64_t _setFlags, SrcType _srcType,
-        InstRegIndex _dest,
-        InstRegIndex _src1,
-        InstRegIndex _src2,
-        InstRegIndex _src3,
+        FpRegIndex _dest,
+        FpRegIndex _src1,
+        FpRegIndex _src2,
+        FpRegIndex _src3,
         uint8_t _destSize, uint8_t _destVL,
         uint8_t _srcSize, uint8_t _srcVL,
         uint8_t _imm8, uint8_t _ext,
-        InstRegIndex _mask)
+        GpRegIndex _mask)
         : %(base_class)s(_machInst, "%(mnemonic)s", _instMnem, _setFlags,
         %(op_class)s, _srcType, _dest, _src1, _src2, _src3,
         _destSize, _destVL, _srcSize, _srcVL,
@@ -141,16 +141,16 @@ let {{
         abstract = True
 
         def __init__(self, dest,
-            src1='InstRegIndex(0)',
-            src2='InstRegIndex(0)',
-            src3='InstRegIndex(0)',
+            src1='FpRegIndex(float_reg::xmmIdx(0, 0))',
+            src2='FpRegIndex(float_reg::xmmIdx(0, 0))',
+            src3='FpRegIndex(float_reg::xmmIdx(0, 0))',
             destSize=0,
             destVL=16,
             srcSize=0,
             srcVL=16,
             imm8=0,
             ext=0,
-            mask='InstRegIndex(MASKREG_K0)'):
+            mask='GpRegIndex(int_reg::K0)'):
             self.dest = dest
             self.src1 = src1
             self.src2 = src2
@@ -202,21 +202,22 @@ let {{
             assert(NumXMMSubRegs == 8 && "We assume 8 xmm sub regs.");
             _numDestRegs = NumXMMSubRegs - vRegs;
             assert(_numDestRegs <= MaxInstDestRegs && "DestRegs overflow.");
-            _numFPDestRegs = _numDestRegs;
             for (int i = 0; i < _numDestRegs; i++) {
-                _destRegIdx[i] = RegId(FloatRegClass, dest + i);
+                setDestRegIdx(i, floatRegClass[dest + i]);
+                _numTypedDestRegs[floatRegClass.type()]++;
             }
         '''
         code = '''
+            RegVal zero = 0;
             for (int i = 0; i < _numDestRegs; i++) {
-                xc->setFloatRegOperandBits(this, i, 0);
+                xc->setRegOperand(this, i, zero);
             }
         '''
 
     class Varithp(AVXOp):
         # Used in packed arithmetic ops, e.g. vaddps.
         abstract = True
-        def __init__(self, dest, src1, src2, size, VL, mask='InstRegIndex(MASKREG_K0)'):
+        def __init__(self, dest, src1, src2, size, VL, mask='GpRegIndex(int_reg::K0)'):
             super(Varithp, self).__init__(
                 dest=dest, src1=src1, src2=src2,
                 destSize=size, destVL=VL, srcSize=size, srcVL=VL,
@@ -229,14 +230,14 @@ let {{
             _numSrcRegs = 2 * vRegs;
             assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
             for (int i = 0; i < vRegs; i++) {
-                _srcRegIdx[i * 2 + 0] = RegId(FloatRegClass, src1 + i);
-                _srcRegIdx[i * 2 + 1] = RegId(FloatRegClass, src2 + i);
+                srcRegIdxArr[i * 2 + 0] = floatRegClass[src1 + i] ;
+                srcRegIdxArr[i * 2 + 1] = floatRegClass[src2 + i] ;
             }
-            if (mask != MASKREG_K0) {
+            if (mask != int_reg::_K0Idx) {
                 // We also need the dest regs as src.
                 this->addAVXDestAsSrcRegs();
                 assert(_numSrcRegs + 1 <= MaxInstSrcRegs && "MaskRegs overflow.");
-                _srcRegIdx[_numSrcRegs] = RegId(IntRegClass, mask);
+                srcRegIdxArr[_numSrcRegs] = intRegClass[mask];
                 _numSrcRegs++;
             }
         '''
@@ -382,9 +383,9 @@ let {{
             _numSrcRegs = 3 * vRegs;
             assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
             for (int i = 0; i < vRegs; i++) {
-                _srcRegIdx[i * 3 + 0] = RegId(FloatRegClass, src1 + i);
-                _srcRegIdx[i * 3 + 1] = RegId(FloatRegClass, src2 + i);
-                _srcRegIdx[i * 3 + 2] = RegId(FloatRegClass, src3 + i);
+                srcRegIdxArr[i * 3 + 0] = floatRegClass[src1 + i] ;
+                srcRegIdxArr[i * 3 + 1] = floatRegClass[src2 + i] ;
+                srcRegIdxArr[i * 3 + 2] = floatRegClass[src3 + i] ;
             }
         '''
 
@@ -404,11 +405,11 @@ let {{
             assert(vRegs == 1 && "Multi SrcRegs for Sfused op.");
             _numSrcRegs = 3 * vRegs + 1;
             assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
-            _srcRegIdx[0] = RegId(FloatRegClass, src1);
-            _srcRegIdx[1] = RegId(FloatRegClass, src2);
-            _srcRegIdx[2] = RegId(FloatRegClass, src3);
+            srcRegIdxArr[0] = floatRegClass[src1] ;
+            srcRegIdxArr[1] = floatRegClass[src2] ;
+            srcRegIdxArr[2] = floatRegClass[src3] ;
             // The last one is the dest register.
-            _srcRegIdx[3] = RegId(FloatRegClass, dest);
+            srcRegIdxArr[3] = floatRegClass[dest] ;
         '''
     
     class Vfmaddf(Vfused):
@@ -444,11 +445,11 @@ let {{
         constructorCode = '''
             this->addAVXDestRegs();
             _numSrcRegs = 1;
-            _srcRegIdx[0] = RegId(FloatRegClass, src1);
+            srcRegIdxArr[0] = floatRegClass[src1] ;
         '''
         code = '''
             FloatInt src;
-            src.ul = xc->readFloatRegOperandBits(this, 0);
+            src.ul = xc->getRegOperand(this, 0);
             src.uc.i2 = src.uc.i1;
             src.uc.i3 = src.uc.i1;
             src.uc.i4 = src.uc.i1;
@@ -458,7 +459,7 @@ let {{
             src.uc.i8 = src.uc.i1;
             auto vDestRegs = destVL / sizeof(uint64_t);
             for (int i = 0; i < vDestRegs; ++i) {
-                xc->setFloatRegOperandBits(this, i, src.ul);
+                xc->setRegOperand(this, i, src.ul);
             }
         '''
 
@@ -471,11 +472,11 @@ let {{
         constructorCode = '''
             this->addAVXDestRegs();
             _numSrcRegs = 1;
-            _srcRegIdx[0] = RegId(FloatRegClass, src1);
+            srcRegIdxArr[0] = floatRegClass[src1] ;
         '''
         code = '''
             FloatInt src;
-            src.ul = xc->readFloatRegOperandBits(this, 0);
+            src.ul = xc->getRegOperand(this, 0);
             auto vDestRegs = destVL / sizeof(uint64_t);
             if (srcSize == 4) {
                 src.ui.i2 = src.ui.i1;
@@ -499,7 +500,7 @@ let {{
                 panic("Invalid srcSize for broadcast.");
             }
             for (int i = 0; i < vDestRegs; ++i) {
-                xc->setFloatRegOperandBits(this, i, src.ul);
+                xc->setRegOperand(this, i, src.ul);
             }
         '''
 
@@ -514,7 +515,7 @@ let {{
             auto vRegs = destVL / sizeof(uint64_t);
             _numSrcRegs = vRegs / 2;
             for (int i = 0; i < vRegs / 2; ++i) {
-                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
+                srcRegIdxArr[i] = floatRegClass[src1 + i] ;
             }
         '''
         code = '''
@@ -523,18 +524,18 @@ let {{
                 // 1 byte. zero extension.
                 for (int i = 0; i < vDestRegs; i += 2) {
                     FloatInt src, dst;
-                    src.ul = xc->readFloatRegOperandBits(this, i / 2);
+                    src.ul = xc->getRegOperand(this, i / 2);
                     dst.us.i1 = src.uc.i1;
                     dst.us.i2 = src.uc.i2;
                     dst.us.i3 = src.uc.i3;
                     dst.us.i4 = src.uc.i4;
-                    xc->setFloatRegOperandBits(this, i, dst.ul);
+                    xc->setRegOperand(this, i, dst.ul);
 
                     dst.us.i1 = src.uc.i5;
                     dst.us.i2 = src.uc.i6;
                     dst.us.i3 = src.uc.i7;
                     dst.us.i4 = src.uc.i8;
-                    xc->setFloatRegOperandBits(this, i + 1, dst.ul);
+                    xc->setRegOperand(this, i + 1, dst.ul);
                 }
             } else {
                 panic("Invalid srcSize for movzx.");
@@ -552,7 +553,7 @@ let {{
             auto vRegs = destVL / sizeof(uint64_t);
             _numSrcRegs = vRegs * 2;
             for (int i = 0; i < vRegs * 2; ++i) {
-                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
+                srcRegIdxArr[i] = floatRegClass[src1 + i] ;
             }
         '''
         code = '''
@@ -561,19 +562,19 @@ let {{
                 // 2 byte -> 1 byte.
                 for (int i = 0; i < vRegs; ++i) {
                     FloatInt src, dst;
-                    src.ul = xc->readFloatRegOperandBits(this, i * 2);
+                    src.ul = xc->getRegOperand(this, i * 2);
                     dst.uc.i1 = src.us.i1;
                     dst.uc.i2 = src.us.i2;
                     dst.uc.i3 = src.us.i3;
                     dst.uc.i4 = src.us.i4;
 
-                    src.ul = xc->readFloatRegOperandBits(this, i * 2 + 1);
+                    src.ul = xc->getRegOperand(this, i * 2 + 1);
                     dst.uc.i5 = src.us.i1;
                     dst.uc.i6 = src.us.i2;
                     dst.uc.i7 = src.us.i3;
                     dst.uc.i8 = src.us.i4;
 
-                    xc->setFloatRegOperandBits(this, i, dst.ul);
+                    xc->setRegOperand(this, i, dst.ul);
                 }
             } else {
                 panic("Invalid srcSize for movtr.");
@@ -594,7 +595,7 @@ let {{
             _numSrcRegs = vRegs;
             assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
             for (int i = 0; i < vRegs; i++) {
-                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
+                srcRegIdxArr[i] = floatRegClass[src1 + i] ;
             }
         '''
 
@@ -613,7 +614,7 @@ let {{
             _numSrcRegs = vRegs;
             assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
             for (int i = 0; i < vRegs; i++) {
-                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
+                srcRegIdxArr[i] = floatRegClass[src1 + i] ;
             }
         '''
 
@@ -625,16 +626,16 @@ let {{
             FloatInt src, src2, dst, dst2;
             if (srcSize == 8) {
                 for (int i = 0; i < vDestRegs; ++i) {
-                    src.ul = xc->readFloatRegOperandBits(this, i);
+                    src.ul = xc->getRegOperand(this, i);
                     src.ul = src.ul << shift;
-                    xc->setFloatRegOperandBits(this, i, src.ul);
+                    xc->setRegOperand(this, i, src.ul);
                 }
             } else if (srcSize == 4) {
                 for (int i = 0; i < vDestRegs; ++i) {
-                    src.ul = xc->readFloatRegOperandBits(this, i);
+                    src.ul = xc->getRegOperand(this, i);
                     src.ui.i1 = src.ui.i1 << shift;
                     src.ui.i2 = src.ui.i2 << shift;
-                    xc->setFloatRegOperandBits(this, i, src.ul);
+                    xc->setRegOperand(this, i, src.ul);
                 }
             } else if (srcSize == 16) {
                 assert(vDestRegs == 2 || vDestRegs == 4 || vDestRegs == 8);
@@ -643,8 +644,8 @@ let {{
                     shift = 16;
                 }
                 for (int i = 0; i < vDestRegs; i += 2) {
-                    src.ul = xc->readFloatRegOperandBits(this, i);
-                    src2.ul = xc->readFloatRegOperandBits(this, i + 1);
+                    src.ul = xc->getRegOperand(this, i);
+                    src2.ul = xc->getRegOperand(this, i + 1);
                     dst.ul = src.ul << (shift * 8);
                     dst2.ul = src2.ul << (shift * 8);
                     if (shift <= 8) {
@@ -652,8 +653,8 @@ let {{
                     } else {
                         dst2.ul |= src.ul << ((shift - 8) * 8);
                     }
-                    xc->setFloatRegOperandBits(this, i, dst.ul);
-                    xc->setFloatRegOperandBits(this, i + 1, dst2.ul);
+                    xc->setRegOperand(this, i, dst.ul);
+                    xc->setRegOperand(this, i + 1, dst2.ul);
                 }
             }
         '''
@@ -667,16 +668,16 @@ let {{
             // Unsigned shift = Logical shift (zero extension).
             if (srcSize == 8) {
                 for (int i = 0; i < vDestRegs; ++i) {
-                    src.ul = xc->readFloatRegOperandBits(this, i);
+                    src.ul = xc->getRegOperand(this, i);
                     src.ul = src.ul >> shift;
-                    xc->setFloatRegOperandBits(this, i, src.ul);
+                    xc->setRegOperand(this, i, src.ul);
                 }
             } else if (srcSize == 4) {
                 for (int i = 0; i < vDestRegs; ++i) {
-                    src.ul = xc->readFloatRegOperandBits(this, i);
+                    src.ul = xc->getRegOperand(this, i);
                     src.ui.i1 = src.ui.i1 >> shift;
                     src.ui.i2 = src.ui.i2 >> shift;
-                    xc->setFloatRegOperandBits(this, i, src.ul);
+                    xc->setRegOperand(this, i, src.ul);
                 }
             }
         '''
@@ -690,16 +691,16 @@ let {{
             // Signed shift = Arithmetic shift (sign extension).
             if (srcSize == 8) {
                 for (int i = 0; i < vDestRegs; ++i) {
-                    src.ul = xc->readFloatRegOperandBits(this, i);
+                    src.ul = xc->getRegOperand(this, i);
                     src.sl = src.sl >> shift;
-                    xc->setFloatRegOperandBits(this, i, src.ul);
+                    xc->setRegOperand(this, i, src.ul);
                 }
             } else if (srcSize == 4) {
                 for (int i = 0; i < vDestRegs; ++i) {
-                    src.ul = xc->readFloatRegOperandBits(this, i);
+                    src.ul = xc->getRegOperand(this, i);
                     src.si.i1 = src.si.i1 >> shift;
                     src.si.i2 = src.si.i2 >> shift;
-                    xc->setFloatRegOperandBits(this, i, src.ul);
+                    xc->setRegOperand(this, i, src.ul);
                 }
             }
         '''
@@ -714,7 +715,9 @@ let {{
         # Compare two floating point vectors.
         def __init__(self, dest, src1, src2, imm8, VL, size):
             super(Vcmpf, self).__init__(
-                dest=dest, src1=src1, src2=src2, imm8=imm8,
+                # ! GemForge: Change from GpRegIndex to FpRegIndex
+                dest="FpRegIndex((%s).index)" % dest,
+                src1=src1, src2=src2, imm8=imm8,
                 srcVL=VL, destVL=8, srcSize=size, destSize=8,
             )
         srcType = 'AVXOpBase::SrcType::RegRegImm'
@@ -722,16 +725,17 @@ let {{
 
             auto vDestRegs = destVL / sizeof(uint64_t);
             assert(vDestRegs == 1 && "Invalid DestVL for Vcmpf.");
-            _numDestRegs = _numIntDestRegs = vDestRegs;
+            _numDestRegs = vDestRegs;
+            _numTypedDestRegs[intRegClass.type()] = vDestRegs;
             assert(_numDestRegs <= MaxInstDestRegs && "DestRegs overflow.");
-            _destRegIdx[0] = RegId(IntRegClass, dest);
+            destRegIdxArr[0] = intRegClass[dest];
 
             auto vRegs = srcVL / sizeof(uint64_t);
             _numSrcRegs = vRegs * 2;
             assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
             for (int i = 0; i < vRegs; i++) {
-                _srcRegIdx[i * 2 + 0] = RegId(FloatRegClass, src1 + i);
-                _srcRegIdx[i * 2 + 1] = RegId(FloatRegClass, src2 + i);
+                srcRegIdxArr[i * 2 + 0] = floatRegClass[src1 + i] ;
+                srcRegIdxArr[i * 2 + 1] = floatRegClass[src2 + i] ;
             }
         '''
 
@@ -744,7 +748,9 @@ let {{
         # Compare two floating point scalar.
         def __init__(self, dest, src1, src2, imm8, VL, size):
             super(Scmpf, self).__init__(
-                dest=dest, src1=src1, src2=src2, imm8=imm8,
+                # ! GemForge: Change from GpRegIndex to FpRegIndex
+                dest="FpRegIndex((%s).index)" % dest,
+                src1=src1, src2=src2, imm8=imm8,
                 srcVL=VL, destVL=8, srcSize=size, destSize=8,
             )
         srcType = 'AVXOpBase::SrcType::RegRegImm'
@@ -752,17 +758,18 @@ let {{
 
             auto vDestRegs = destVL / sizeof(uint64_t);
             assert(vDestRegs == 1 && "Invalid DestVL for Vcmpf.");
-            _numDestRegs = _numIntDestRegs = vDestRegs;
+            _numDestRegs = vDestRegs;
+            _numTypedDestRegs[intRegClass.type()] = vDestRegs;
             assert(_numDestRegs <= MaxInstDestRegs && "DestRegs overflow.");
-            _destRegIdx[0] = RegId(IntRegClass, dest);
+            destRegIdxArr[0] = intRegClass[dest];
 
             auto vRegs = srcVL / sizeof(uint64_t);
             _numSrcRegs = vRegs * 2;
             assert(_numSrcRegs == 2 && "SrcRegs more than 1.");
             assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
             for (int i = 0; i < vRegs; i++) {
-                _srcRegIdx[i * 2 + 0] = RegId(FloatRegClass, src1 + i);
-                _srcRegIdx[i * 2 + 1] = RegId(FloatRegClass, src2 + i);
+                srcRegIdxArr[i * 2 + 0] = floatRegClass[src1 + i] ;
+                srcRegIdxArr[i * 2 + 1] = floatRegClass[src2 + i] ;
             }
         '''
 
@@ -785,8 +792,8 @@ let {{
             assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
             // First src1, then src2.
             for (int i = 0; i < vRegs; i++) {
-                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
-                _srcRegIdx[i + vRegs] = RegId(FloatRegClass, src2 + i);
+                srcRegIdxArr[i] = floatRegClass[src1 + i] ;
+                srcRegIdxArr[i + vRegs] = floatRegClass[src2 + i] ;
             }
         '''
         code = '''
@@ -796,25 +803,25 @@ let {{
             if (srcSize == 8) {
                 for (int i = 0; i < vDestRegs; ++i) {
                     auto idx = i + shift;
-                    src.ul = xc->readFloatRegOperandBits(this, idx);
-                    xc->setFloatRegOperandBits(this, i, src.ul);
+                    src.ul = xc->getRegOperand(this, idx);
+                    xc->setRegOperand(this, i, src.ul);
                 }
             } else if (srcSize == 4) {
                 if (shift % 2 == 0) {
                     for (int i = 0; i < vDestRegs; ++i) {
                         auto idx = i + shift / 2;
-                        src.ul = xc->readFloatRegOperandBits(this, idx);
-                        xc->setFloatRegOperandBits(this, i, src.ul);
+                        src.ul = xc->getRegOperand(this, idx);
+                        xc->setRegOperand(this, i, src.ul);
                     }
                 } else {
                     for (int i = 0; i < vDestRegs; ++i) {
                         auto idx = i + shift / 2;
-                        src.ul = xc->readFloatRegOperandBits(this, idx);
+                        src.ul = xc->getRegOperand(this, idx);
                         FloatInt result;
                         result.ui.i1 = src.ui.i2;
-                        src.ul = xc->readFloatRegOperandBits(this, idx + 1);
+                        src.ul = xc->getRegOperand(this, idx + 1);
                         result.ui.i2 = src.ui.i1;
-                        xc->setFloatRegOperandBits(this, i, result.ul);
+                        xc->setRegOperand(this, i, result.ul);
                     }
                 }
             }
@@ -835,18 +842,18 @@ let {{
             assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
             // First dest, src1, then src2.
             for (int i = 0; i < vRegs; i++) {
-                _srcRegIdx[i * 3 + 0] = RegId(FloatRegClass, dest + i);
-                _srcRegIdx[i * 3 + 1] = RegId(FloatRegClass, src1 + i);
-                _srcRegIdx[i * 3 + 2] = RegId(FloatRegClass, src2 + i);
+                srcRegIdxArr[i * 3 + 0] = floatRegClass[dest + i] ;
+                srcRegIdxArr[i * 3 + 1] = floatRegClass[src1 + i] ;
+                srcRegIdxArr[i * 3 + 2] = floatRegClass[src2 + i] ;
             }
         '''
         code = '''
             auto vDestRegs = destVL / sizeof(uint64_t);
             for (int i = 0; i < vDestRegs; ++i) {
                 uint64_t result = 0;
-                uint64_t destValue = xc->readFloatRegOperandBits(this, i * 3 + 0);
-                uint64_t src1Value = xc->readFloatRegOperandBits(this, i * 3 + 1);
-                uint64_t src2Value = xc->readFloatRegOperandBits(this, i * 3 + 2);
+                uint64_t destValue = xc->getRegOperand(this, i * 3 + 0);
+                uint64_t src1Value = xc->getRegOperand(this, i * 3 + 1);
+                uint64_t src2Value = xc->getRegOperand(this, i * 3 + 2);
                 for (int bit = 0; bit < sizeof(uint64_t) * 8; ++bit) {
                     int destBit = (destValue >> bit) & 0x1;
                     int src1Bit = (src1Value >> bit) & 0x1;
@@ -855,7 +862,7 @@ let {{
                     int resultBit = (imm8 >> idx) & 0x1;
                     result |= (resultBit << bit);
                 }
-                xc->setFloatRegOperandBits(this, i, result);
+                xc->setRegOperand(this, i, result);
             }
         '''
 
@@ -863,7 +870,9 @@ let {{
         # Extra from the src.
         def __init__(self, dest, src, imm8, srcVL, destVL, size):
             super(Vextract, self).__init__(
-                dest=dest, src1=src, imm8=imm8,
+                # ! GemForge: Change from GpRegIndex to FpRegIndex
+                dest="FpRegIndex((%s).index)" % dest,
+                src1=src, imm8=imm8,
                 srcVL=srcVL, destVL=destVL, srcSize=size, destSize=size,
             )
         srcType = 'AVXOpBase::SrcType::RegImm'
@@ -873,12 +882,13 @@ let {{
             assert((srcSize == 1 || srcSize == 2 || srcSize == 4)
                    && "Unsupported vextract size.");
             _numDestRegs = 1;
-            _destRegIdx[0] = RegId(IntRegClass, dest);
+            destRegIdxArr[0] = intRegClass[dest];
+            _numTypedDestRegs[intRegClass.type()] = 1;
             auto vRegs = srcVL / sizeof(uint64_t);
             _numSrcRegs = vRegs;
             assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
             for (int i = 0; i < vRegs; i++) {
-                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
+                srcRegIdxArr[i] = floatRegClass[src1 + i] ;
             }
         '''
         code = '''
@@ -904,10 +914,10 @@ let {{
              * First src1 and then src2.
              */
             for (int i = 0; i < vSrcRegs; i++) {
-                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
+                srcRegIdxArr[i] = floatRegClass[src1 + i] ;
             }
             for (int i = 0; i < vDestRegs; i++) {
-                _srcRegIdx[i + vSrcRegs] = RegId(FloatRegClass, src2 + i);
+                srcRegIdxArr[i + vSrcRegs] = floatRegClass[src2 + i] ;
             }
         '''
         code = '''
@@ -917,7 +927,7 @@ let {{
     class AVXRegOp(AVXOp):
         # Support masked mov.
         abstract = True
-        def __init__(self, dest, src, size, VL, mask='InstRegIndex(MASKREG_K0)'):
+        def __init__(self, dest, src, size, VL, mask='GpRegIndex(int_reg::K0)'):
             super(AVXRegOp, self).__init__(
                 dest=dest, src1=src, 
                 destSize=size, destVL=VL, srcSize=size, srcVL=VL,
@@ -930,13 +940,13 @@ let {{
             _numSrcRegs = vRegs;
             assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
             for (int i = 0; i < vRegs; i++) {
-                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
+                srcRegIdxArr[i] = floatRegClass[src1 + i] ;
             }
-            if (mask != MASKREG_K0) {
+            if (mask != int_reg::_K0Idx) {
                 // We also need the dest regs as src.
                 this->addAVXDestAsSrcRegs();
                 assert(_numSrcRegs + 1 <= MaxInstSrcRegs && "MaskRegs overflow.");
-                _srcRegIdx[_numSrcRegs] = RegId(IntRegClass, mask);
+                srcRegIdxArr[_numSrcRegs] = intRegClass[mask];
                 _numSrcRegs++;
             }
         '''

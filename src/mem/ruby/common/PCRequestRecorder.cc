@@ -6,6 +6,9 @@
 #include <algorithm>
 #include <vector>
 
+namespace gem5 {
+namespace ruby {
+
 void PCRequestRecorder::recordReq(Addr pc, RubyRequestType type, bool isStream,
                                   const char *streamName, Cycles latency) {
   auto stat = this->pcLatencySet.emplace(pc, type, isStream, streamName).first;
@@ -57,3 +60,5 @@ void PCRequestRecorder::dump() {
              stat->streamName ? stat->streamName : "");
   }
 }
+} // namespace ruby
+} // namespace gem5

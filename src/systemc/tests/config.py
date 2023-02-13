@@ -23,8 +23,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from __future__ import print_function
-
 import argparse
 import m5
 import os
@@ -38,7 +36,7 @@ from m5.objects import SystemC_Kernel, Root
 kernel = SystemC_Kernel()
 root = Root(full_system=True, systemc_kernel=kernel)
 
-m5.systemc.sc_main('gem5_systemc_test');
+m5.systemc.sc_main("gem5_systemc_test")
 
 m5.instantiate(None)
 

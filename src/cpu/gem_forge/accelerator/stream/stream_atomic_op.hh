@@ -4,6 +4,8 @@
 #include "addr_gen_callback.hh"
 #include "fifo_entry_idx.hh"
 
+namespace gem5 {
+
 class Stream;
 class StreamAtomicOp : public AtomicOpFunctor {
 public:
@@ -41,5 +43,7 @@ private:
   // Whether this atomic actually changes the content.
   bool memoryModified = false;
 };
+
+} // namespace gem5
 
 #endif

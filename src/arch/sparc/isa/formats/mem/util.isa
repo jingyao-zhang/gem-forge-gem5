@@ -32,11 +32,10 @@
 // This template provides the execute functions for a load
 def template LoadExecute {{
         Fault %(class_name)s::execute(ExecContext *xc,
-                Trace::InstRecord *traceData) const
+                trace::InstRecord *traceData) const
         {
             Fault fault = NoFault;
             Addr EA;
-            %(fp_enable_check)s;
             %(op_decl)s;
             %(op_rd)s;
             %(ea_code)s;
@@ -60,11 +59,10 @@ def template LoadExecute {{
 
 def template LoadInitiateAcc {{
         Fault %(class_name)s::initiateAcc(ExecContext * xc,
-                Trace::InstRecord * traceData) const
+                trace::InstRecord * traceData) const
         {
             Fault fault = NoFault;
             Addr EA;
-            %(fp_enable_check)s;
             %(op_decl)s;
             %(op_rd)s;
             %(ea_code)s;
@@ -80,7 +78,7 @@ def template LoadInitiateAcc {{
 
 def template LoadCompleteAcc {{
         Fault %(class_name)s::completeAcc(PacketPtr pkt, ExecContext * xc,
-                Trace::InstRecord * traceData) const
+                trace::InstRecord * traceData) const
         {
             Fault fault = NoFault;
             %(op_decl)s;
@@ -97,14 +95,13 @@ def template LoadCompleteAcc {{
 // This template provides the execute functions for a store
 def template StoreExecute {{
         Fault %(class_name)s::execute(ExecContext *xc,
-                Trace::InstRecord *traceData) const
+                trace::InstRecord *traceData) const
         {
             Fault fault = NoFault;
             // This is to support the conditional store in cas instructions.
             // It should be optomized out in all the others
             bool storeCond = true;
             Addr EA;
-            %(fp_enable_check)s;
             %(op_decl)s;
             %(op_rd)s;
             %(ea_code)s;
@@ -129,12 +126,11 @@ def template StoreExecute {{
 
 def template StoreInitiateAcc {{
         Fault %(class_name)s::initiateAcc(ExecContext * xc,
-                Trace::InstRecord * traceData) const
+                trace::InstRecord * traceData) const
         {
             Fault fault = NoFault;
             bool storeCond = true;
             Addr EA;
-            %(fp_enable_check)s;
             %(op_decl)s;
 
             %(op_rd)s;
@@ -155,7 +151,7 @@ def template StoreInitiateAcc {{
 
 def template StoreCompleteAcc {{
         Fault %(class_name)s::completeAcc(PacketPtr, ExecContext * xc,
-                Trace::InstRecord * traceData) const
+                trace::InstRecord * traceData) const
         {
             return NoFault;
         }

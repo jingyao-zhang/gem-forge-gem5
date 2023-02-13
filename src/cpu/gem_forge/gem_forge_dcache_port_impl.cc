@@ -4,6 +4,8 @@
 
 #include "debug/GemForgeDcachePort.hh"
 
+namespace gem5 {
+
 /*********************************************************************
  * Implementation of the GemForgeDcachePort in the LSQ.
  ********************************************************************/
@@ -206,3 +208,4 @@ void GemForgeDcachePortImpl::drain() {
   }
 }
 } // namespace GemForge
+} // namespace gem5

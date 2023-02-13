@@ -6,8 +6,11 @@
 #endif
 
 // #include "base/misc.hh""
+#include "base/logging.hh"
 #include "base/trace.hh"
 #include "proto/protoio.hh"
+
+namespace gem5 {
 
 StreamPattern::StreamPattern(const std::string &_patternPath) {
   ProtoInputStream patternStream(_patternPath);
@@ -25,3 +28,4 @@ void StreamPattern::configure() {
   this->currentPattern = this->nextPattern;
   ++this->nextPattern;
 }
+} // namespace gem5

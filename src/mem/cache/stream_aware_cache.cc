@@ -13,6 +13,8 @@
 #include "mem/cache/tags/stream_lru.hh"
 #include "sim/sim_exit.hh"
 
+namespace gem5 {
+
 StreamAwareCache::StreamAwareCache(const StreamAwareCacheParams *p)
     : BaseCache(p, p->system->cacheLineSize()), tags(p->tags),
       prefetcher(p->prefetcher), size(p->size),
@@ -3121,3 +3123,5 @@ bool StreamAwareCache::recvTimingReqForStream(PacketPtr pkt) {
 
   return true;
 }
+} // namespace gem5
+

@@ -4,6 +4,8 @@
 #include "PUMCommand.hh"
 #include "PUMHWConfiguration.hh"
 
+namespace gem5 {
+
 class DataMoveCompiler {
 
   /**
@@ -332,5 +334,7 @@ private:
   PERF_NOINLINE void mapCmdsToLLCImpl(PUMCommandVecT &commands,
                                       CmdToLLCMapper<D, T> &mapper) const;
 };
+
+} // namespace gem5
 
 #endif

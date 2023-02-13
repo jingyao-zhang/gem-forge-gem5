@@ -5,6 +5,8 @@
 #include <functional>
 #include <iostream>
 
+namespace gem5 {
+
 /**
  * Uniquely identifies a dynamic stream in the system.
  * I try to define it as independent as implementation of stream.
@@ -82,5 +84,7 @@ struct DynStreamIdHasher {
     return ((x << (64 - yLZ)) | (x >> yLZ)) ^ y;
   }
 };
+
+} // namespace gem5
 
 #endif

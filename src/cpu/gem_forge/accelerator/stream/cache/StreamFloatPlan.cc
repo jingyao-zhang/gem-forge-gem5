@@ -2,9 +2,11 @@
 
 #include <sstream>
 
+namespace gem5 {
+
 std::ostream &operator<<(std::ostream &os, const StreamFloatPlan &plan) {
   if (plan.changePoints.empty()) {
-    os << "0 - " << MachineType_to_string(MachineType_NULL);
+    os << "0 - " << ruby::MachineType_to_string(ruby::MachineType_NULL);
   } else {
     for (const auto &entry : plan.changePoints) {
       os << entry.second.startElementIdx << " - "
@@ -21,7 +23,7 @@ std::string to_string(const StreamFloatPlan &plan) {
 }
 
 void StreamFloatPlan::addFloatChangePoint(ElementIdx startElementIdx,
-                                          MachineType floatMachineType) {
+                                          ruby::MachineType floatMachineType) {
   assert(!this->finalized && "Finalized.");
   this->changePoints.emplace(
       std::piecewise_construct, std::forward_as_tuple(startElementIdx),
@@ -46,7 +48,7 @@ void StreamFloatPlan::delayFloatUntil(ElementIdx firstFloatElementIdx) {
                               latestPoint.floatMachineType);
   }
   // Add the first Core segments.
-  this->addFloatChangePoint(0, MachineType::MachineType_NULL);
+  this->addFloatChangePoint(0, ruby::MachineType_NULL);
 }
 
 void StreamFloatPlan::finalize() {
@@ -64,7 +66,7 @@ bool StreamFloatPlan::isFloatedToMem() const {
     return this->finalizedFloatedToMem;
   }
   for (const auto &point : this->changePoints) {
-    if (point.second.floatMachineType == MachineType::MachineType_Directory) {
+    if (point.second.floatMachineType == ruby::MachineType_Directory) {
       return true;
     }
   }
@@ -85,18 +87,19 @@ StreamFloatPlan::ElementIdx StreamFloatPlan::getFirstFloatElementIdx() const {
   assert(!this->changePoints.empty() &&
          "Query FirstFloatElementIdx on Empty FloatPlan.");
   for (const auto &point : this->changePoints) {
-    if (point.second.floatMachineType != MachineType_NULL) {
+    if (point.second.floatMachineType != ruby::MachineType_NULL) {
       return point.first;
     }
   }
   assert(false && "Query FistFloatElementIdx on NotFloated FloatPlan.");
 }
 
-MachineType StreamFloatPlan::getMachineTypeAtElem(ElementIdx elementIdx) const {
+ruby::MachineType StreamFloatPlan::getMachineTypeAtElem(ElementIdx elementIdx) const {
   auto iter = this->changePoints.upper_bound(elementIdx);
   if (iter == this->changePoints.begin()) {
     panic("Somehow this element is not covered in FloatPlan.");
   }
   iter--;
   return iter->second.floatMachineType;
-}
+}} // namespace gem5
+

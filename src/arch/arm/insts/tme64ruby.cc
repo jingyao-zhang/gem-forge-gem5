@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 ARM Limited
+ * Copyright (c) 2020-2021 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -38,12 +38,13 @@
 #include "arch/arm/faults.hh"
 #include "arch/arm/htm.hh"
 #include "arch/arm/insts/tme64.hh"
-#include "arch/arm/registers.hh"
 #include "arch/generic/memhelpers.hh"
-#include "arch/locked_mem.hh"
 #include "debug/ArmTme.hh"
 #include "mem/packet_access.hh"
 #include "mem/request.hh"
+
+namespace gem5
+{
 
 using namespace ArmISA;
 
@@ -51,7 +52,7 @@ namespace ArmISAInst {
 
 Fault
 Tstart64::initiateAcc(ExecContext *xc,
-                      Trace::InstRecord *traceData) const
+                      trace::InstRecord *traceData) const
 {
     Fault fault = NoFault;
     const uint64_t htm_depth = xc->getHtmTransactionalDepth();
@@ -76,7 +77,7 @@ Tstart64::initiateAcc(ExecContext *xc,
             memAccessFlags = memAccessFlags | Request::NO_ACCESS;
         }
 
-        fault = xc->initiateHtmCmd(memAccessFlags);
+        fault = xc->initiateMemMgmtCmd(memAccessFlags);
     }
 
     return fault;
@@ -84,7 +85,7 @@ Tstart64::initiateAcc(ExecContext *xc,
 
 Fault
 Tstart64::completeAcc(PacketPtr pkt, ExecContext *xc,
-                      Trace::InstRecord *traceData) const
+                      trace::InstRecord *traceData) const
 {
     Fault fault = NoFault;
     uint64_t Mem;
@@ -118,21 +119,21 @@ Tstart64::completeAcc(PacketPtr pkt, ExecContext *xc,
             armcpt->save(tc);
             armcpt->destinationRegister(dest);
 
-            ArmISA::globalClearExclusive(tc);
+            tc->getIsaPtr()->globalClearExclusive();
         }
 
-        xc->setIntRegOperand(this, 0, (Dest64) & mask(intWidth));
+        xc->setRegOperand(this, 0, Dest64 & mask(intWidth));
 
 
         uint64_t final_val = Dest64;
-        if (traceData) { traceData->setData(final_val); }
+        if (traceData) { traceData->setData(intRegClass, final_val); }
     }
 
     return fault;
 }
 
 Fault
-Ttest64::execute(ExecContext *xc, Trace::InstRecord *traceData) const
+Ttest64::execute(ExecContext *xc, trace::InstRecord *traceData) const
 {
     Fault fault = NoFault;
     uint64_t Dest64 = 0;
@@ -154,15 +155,15 @@ Ttest64::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 
     if (fault == NoFault) {
         uint64_t final_val = Dest64;
-        xc->setIntRegOperand(this, 0, (Dest64) & mask(intWidth));
-        if (traceData) { traceData->setData(final_val); }
+        xc->setRegOperand(this, 0, Dest64 & mask(intWidth));
+        if (traceData) { traceData->setData(intRegClass, final_val); }
     }
 
     return fault;
 }
 
 Fault
-Tcancel64::initiateAcc(ExecContext *xc, Trace::InstRecord *traceData) const
+Tcancel64::initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
 {
     Fault fault = NoFault;
 
@@ -174,14 +175,14 @@ Tcancel64::initiateAcc(ExecContext *xc, Trace::InstRecord *traceData) const
     Request::Flags memAccessFlags =
         Request::STRICT_ORDER|Request::PHYSICAL|Request::HTM_CANCEL;
 
-    fault = xc->initiateHtmCmd(memAccessFlags);
+    fault = xc->initiateMemMgmtCmd(memAccessFlags);
 
     return fault;
 }
 
 Fault
 Tcancel64::completeAcc(PacketPtr pkt, ExecContext *xc,
-                       Trace::InstRecord *traceData) const
+                       trace::InstRecord *traceData) const
 {
     Fault fault = NoFault;
     uint64_t Mem;
@@ -208,7 +209,7 @@ Tcancel64::completeAcc(PacketPtr pkt, ExecContext *xc,
 
 Fault
 MicroTcommit64::initiateAcc(ExecContext *xc,
-                            Trace::InstRecord *traceData) const
+                            trace::InstRecord *traceData) const
 {
     Fault fault = NoFault;
     const uint64_t htm_depth = xc->getHtmTransactionalDepth();
@@ -230,14 +231,14 @@ MicroTcommit64::initiateAcc(ExecContext *xc,
         memAccessFlags = memAccessFlags | Request::NO_ACCESS;
     }
 
-    fault = xc->initiateHtmCmd(memAccessFlags);
+    fault = xc->initiateMemMgmtCmd(memAccessFlags);
 
     return fault;
 }
 
 Fault
 MicroTcommit64::completeAcc(PacketPtr pkt, ExecContext *xc,
-                            Trace::InstRecord *traceData) const
+                            trace::InstRecord *traceData) const
 {
     Fault fault = NoFault;
     uint64_t Mem;
@@ -260,11 +261,12 @@ MicroTcommit64::completeAcc(PacketPtr pkt, ExecContext *xc,
             assert(tme_checkpoint->valid());
 
             tme_checkpoint->reset();
-            ArmISA::globalClearExclusive(tc);
+            tc->getIsaPtr()->globalClearExclusive();
         }
     }
 
     return fault;
 }
 
-} // namespace
+} // namespace ArmISAInst
+} // namespace gem5

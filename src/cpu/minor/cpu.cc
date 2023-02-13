@@ -41,7 +41,6 @@
 #include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
 #include "cpu/gem_forge/gem_forge_packet_handler.hh"
 
-#include "arch/utility.hh"
 #include "cpu/minor/dyn_inst.hh"
 #include "cpu/minor/fetch1.hh"
 #include "cpu/minor/pipeline.hh"
@@ -49,23 +48,27 @@
 #include "debug/MinorCPU.hh"
 #include "debug/Quiesce.hh"
 
-MinorCPU::MinorCPU(MinorCPUParams *params) :
+namespace gem5
+{
+
+MinorCPU::MinorCPU(const BaseMinorCPUParams &params) :
     BaseCPU(params),
     pipelineStartupEvent([this]{ wakeupPipeline(); }, name()),
-    threadPolicy(params->threadPolicy)
+    threadPolicy(params.threadPolicy),
+    stats(this)
 {
     /* This is only written for one thread at the moment */
-    Minor::MinorThread *thread;
+    minor::MinorThread *thread;
 
     for (ThreadID i = 0; i < numThreads; i++) {
         if (FullSystem) {
-            thread = new Minor::MinorThread(this, i, params->system,
-                    params->itb, params->dtb, params->isa[i]);
+            thread = new minor::MinorThread(this, i, params.system,
+                    params.mmu, params.isa[i], params.decoder[i]);
             thread->setStatus(ThreadContext::Halted);
         } else {
-            thread = new Minor::MinorThread(this, i, params->system,
-                    params->workload[i], params->itb, params->dtb,
-                    params->isa[i]);
+            thread = new minor::MinorThread(this, i, params.system,
+                    params.workload[i], params.mmu,
+                    params.isa[i], params.decoder[i]);
         }
 
         threads.push_back(thread);
@@ -74,19 +77,22 @@ MinorCPU::MinorCPU(MinorCPUParams *params) :
     }
 
 
-    if (params->checker) {
+    if (params.checker) {
         fatal("The Minor model doesn't support checking (yet)\n");
     }
 
-    Minor::MinorDynInst::init();
-
-    pipeline = new Minor::Pipeline(*this, *params);
+    pipeline = new minor::Pipeline(*this, params);
     activityRecorder = pipeline->getActivityRecorder();
+
+    fetchEventWrapper = NULL;
 }
 
 MinorCPU::~MinorCPU()
 {
     delete pipeline;
+
+    if (fetchEventWrapper != NULL)
+        delete fetchEventWrapper;
 
     for (ThreadID thread_id = 0; thread_id < threads.size(); thread_id++) {
         delete threads[thread_id];
@@ -100,22 +106,13 @@ MinorCPU::init()
     // ! GemForge
     if (this->accelManager)
     {
-        this->cpuDelegator = m5::make_unique<MinorCPUDelegator>(this);
+        this->cpuDelegator = std::make_unique<MinorCPUDelegator>(this);
         this->accelManager->handshake(this->cpuDelegator.get());
     }
 
-    if (!params()->switched_out &&
-        system->getMemoryMode() != Enums::timing)
-    {
+    if (!params().switched_out && system->getMemoryMode() != enums::timing) {
         fatal("The Minor CPU requires the memory system to be in "
             "'timing' mode.\n");
-    }
-
-    /* Initialise the ThreadContext's memory proxies */
-    for (ThreadID thread_id = 0; thread_id < threads.size(); thread_id++) {
-        ThreadContext *tc = getContext(thread_id);
-
-        tc->initMemProxies(tc);
     }
 }
 
@@ -124,7 +121,6 @@ void
 MinorCPU::regStats()
 {
     BaseCPU::regStats();
-    stats.regStats(name(), *this);
     pipeline->regStats();
 }
 
@@ -287,6 +283,21 @@ MinorCPU::activateContext(ThreadID thread_id)
     readyThreads.push_back(thread_id);
     if (!pipelineStartupEvent.scheduled())
         schedule(pipelineStartupEvent, clockEdge(Cycles(0)));
+    /* Wake up the thread, wakeup the pipeline tick */
+    threads[thread_id]->activate();
+    wakeupOnEvent(minor::Pipeline::CPUStageId);
+
+    // ! Zhengrong: Not sure if this works with gem forge.
+    // if (!threads[thread_id]->getUseForClone())//the thread is not cloned
+    // {
+    //     pipeline->wakeupFetch(thread_id);
+    // } else { //the thread from clone
+    //     if (fetchEventWrapper != NULL)
+    //         delete fetchEventWrapper;
+    //     fetchEventWrapper = new EventFunctionWrapper([this, thread_id]
+    //               { pipeline->wakeupFetch(thread_id); }, "wakeupFetch");
+    //     schedule(*fetchEventWrapper, clockEdge(Cycles(0)));
+    // }
 }
 
 void
@@ -332,12 +343,6 @@ MinorCPU::wakeupOnEvent(unsigned int stage_id)
     pipeline->start();
 }
 
-MinorCPU *
-MinorCPUParams::create()
-{
-    return new MinorCPU(this);
-}
-
 Port &
 MinorCPU::getInstPort()
 {
@@ -379,3 +384,4 @@ GemForgeCPUDelegator *MinorCPU::getCPUDelegator()
 {
   return cpuDelegator.get();
 }
+} // namespace gem5

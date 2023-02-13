@@ -5,6 +5,8 @@
 
 #include "gem_forge_cpu_delegator.hh"
 
+namespace gem5 {
+
 /**
  * Drived from SenderState so that it's able to distinguish a GemForgePacket
  * from other normal packet.
@@ -66,5 +68,7 @@ private:
   GemForgePacketReleaseHandler() {}
   static GemForgePacketReleaseHandler instance;
 };
+
+} // namespace gem5
 
 #endif

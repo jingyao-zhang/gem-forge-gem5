@@ -14,6 +14,8 @@
 #include "params/StreamAwareCache.hh"
 #include "sim/eventq.hh"
 
+namespace gem5 {
+
 // Forward decleration
 class BasePrefetcher;
 
@@ -512,12 +514,12 @@ public:
   /**
    * Stats
    */
-  Stats::Vector coalescedStreamMisses[MemCmd::NUM_MEM_CMDS];
-  Stats::Vector coalescedStreamHits[MemCmd::NUM_MEM_CMDS];
-  Stats::Formula coalescedStreamDemandHits;
-  Stats::Formula coalescedStreamOverallHits;
-  Stats::Formula coalescedStreamDemandMisses;
-  Stats::Formula coalescedStreamOverallMisses;
+  statistics::Vector coalescedStreamMisses[MemCmd::NUM_MEM_CMDS];
+  statistics::Vector coalescedStreamHits[MemCmd::NUM_MEM_CMDS];
+  statistics::Formula coalescedStreamDemandHits;
+  statistics::Formula coalescedStreamOverallHits;
+  statistics::Formula coalescedStreamDemandMisses;
+  statistics::Formula coalescedStreamOverallMisses;
 
   Stats::Distribution numUsedBeforeEvicted;
 
@@ -526,13 +528,13 @@ public:
   /**
    * For stream-aware miss prediction.
    */
-  Stats::Scalar numCoalescedStreamPredictedMiss;
-  Stats::Scalar numCoalescedStreamPredictedMissWrong;
+  statistics::Scalar numCoalescedStreamPredictedMiss;
+  statistics::Scalar numCoalescedStreamPredictedMissWrong;
 
   /**
    * For stream-aware replacement.
    */
-  Stats::Scalar numUncachedStreamAccesses;
+  statistics::Scalar numUncachedStreamAccesses;
 
   std::unordered_map<Addr, uint64_t> blockUsedCountMap;
 };
@@ -590,5 +592,7 @@ public:
 private:
   bool _isDirty;
 };
+
+} // namespace gem5
 
 #endif // __MEM_CACHE_CACHE_HH__

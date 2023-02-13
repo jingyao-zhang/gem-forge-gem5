@@ -7,6 +7,8 @@
 #define DEBUG_TYPE StreamLoopBound
 #include "../stream_log.hh"
 
+namespace gem5 {
+
 CacheStreamConfigureData::CacheStreamConfigureData(
     Stream *_stream, const DynStreamId &_dynamicId, int _elementSize,
     const DynStreamFormalParamV &_addrGenFormalParams,
@@ -479,3 +481,5 @@ uint64_t CacheStreamConfigureData::getStreamElemIdxFromStrandElemIdx(
   StrandElemSplitIdx elemSplit(strandId.strandIdx, strandElemIdx);
   return this->strandSplit.mapStrandToStream(elemSplit);
 }
+} // namespace gem5
+

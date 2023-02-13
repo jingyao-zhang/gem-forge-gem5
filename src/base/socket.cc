@@ -43,7 +43,8 @@
 #include "base/types.hh"
 #include "sim/byteswap.hh"
 
-using namespace std;
+namespace gem5
+{
 
 bool ListenSocket::listeningDisabled = false;
 bool ListenSocket::anyListening = false;
@@ -80,6 +81,28 @@ ListenSocket::loopbackOnly()
     bindToLoopback = true;
 }
 
+// Wrappers to stub out SOCK_CLOEXEC/accept4 availability
+
+int
+ListenSocket::socketCloexec(int domain, int type, int protocol)
+{
+#ifdef SOCK_CLOEXEC
+    type |= SOCK_CLOEXEC;
+#endif
+    return ::socket(domain, type, protocol);
+}
+
+int
+ListenSocket::acceptCloexec(int sockfd, struct sockaddr *addr,
+                             socklen_t *addrlen)
+{
+#if defined(_GNU_SOURCE) && defined(SOCK_CLOEXEC)
+    return ::accept4(sockfd, addr, addrlen, SOCK_CLOEXEC);
+#else
+    return ::accept(sockfd, addr, addrlen);
+#endif
+}
+
 ////////////////////////////////////////////////////////////////////////
 //
 //
@@ -103,7 +126,7 @@ ListenSocket::listen(int port, bool reuse)
 
     // only create socket if not already created by a previous call
     if (fd == -1) {
-        fd = ::socket(PF_INET, SOCK_STREAM, 0);
+        fd = socketCloexec(PF_INET, SOCK_STREAM, 0);
         if (fd < 0)
             panic("Can't create socket:%s !", strerror(errno));
     }
@@ -121,7 +144,7 @@ ListenSocket::listen(int port, bool reuse)
         htobe<in_addr_t>(bindToLoopback ? INADDR_LOOPBACK : INADDR_ANY);
     sockaddr.sin_port = htons(port);
     // finally clear sin_zero
-    memset(&sockaddr.sin_zero, 0, sizeof(sockaddr.sin_zero));
+    std::memset(&sockaddr.sin_zero, 0, sizeof(sockaddr.sin_zero));
     int ret = ::bind(fd, (struct sockaddr *)&sockaddr, sizeof (sockaddr));
     if (ret != 0) {
         if (ret == -1 && errno != EADDRINUSE)
@@ -132,7 +155,12 @@ ListenSocket::listen(int port, bool reuse)
     if (::listen(fd, 1) == -1) {
         if (errno != EADDRINUSE)
             panic("ListenSocket(listen): listen() failed!");
-
+        // User may decide to retry with a different port later; however, the
+        // socket is already bound to a port and the next bind will surely
+        // fail. We'll close the socket and reset fd to -1 so our user can
+        // retry with a cleaner state.
+        close(fd);
+        fd = -1;
         return false;
     }
 
@@ -149,7 +177,7 @@ ListenSocket::accept(bool nodelay)
 {
     struct sockaddr_in sockaddr;
     socklen_t slen = sizeof (sockaddr);
-    int sfd = ::accept(fd, (struct sockaddr *)&sockaddr, &slen);
+    int sfd = acceptCloexec(fd, (struct sockaddr *)&sockaddr, &slen);
     if (sfd != -1 && nodelay) {
         int i = 1;
         if (::setsockopt(sfd, IPPROTO_TCP, TCP_NODELAY, (char *)&i,
@@ -159,3 +187,5 @@ ListenSocket::accept(bool nodelay)
 
     return sfd;
 }
+
+} // namespace gem5

@@ -54,6 +54,9 @@
 #include "params/Bridge.hh"
 #include "sim/clocked_object.hh"
 
+namespace gem5
+{
+
 /**
  * A bridge is used to interface two different crossbars (or in general a
  * memory-mapped requestor and responder), with buffering for requests and
@@ -322,7 +325,9 @@ class Bridge : public ClockedObject
 
     typedef BridgeParams Params;
 
-    Bridge(Params *p);
+    Bridge(const Params &p);
 };
+
+} // namespace gem5
 
 #endif //__MEM_BRIDGE_HH__

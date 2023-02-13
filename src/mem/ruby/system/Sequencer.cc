@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020 ARM Limited
+ * Copyright (c) 2019-2021 ARM Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -42,12 +42,14 @@
 #include "mem/ruby/system/Sequencer.hh"
 
 #include "arch/x86/ldstflags.hh"
+#include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/str.hh"
 #include "cpu/testers/rubytest/RubyTester.hh"
 #include "debug/LLSC.hh"
 #include "debug/MemoryAccess.hh"
 #include "debug/ProtocolTrace.hh"
+#include "debug/RubyHitMiss.hh"
 #include "debug/RubySequencer.hh"
 #include "debug/RubyStats.hh"
 #include "mem/cache/prefetch/base.hh"
@@ -61,42 +63,41 @@
 #include "mem/ruby/system/RubySystem.hh"
 #include "sim/system.hh"
 
-using namespace std;
-
-Sequencer *
-RubySequencerParams::create()
+namespace gem5
 {
-    return new Sequencer(this);
-}
 
-Sequencer::Sequencer(const Params *p)
-    : RubyPort(p), m_isIdeal(p->is_ideal), m_IncompleteTimes(MachineType_NUM),
-      pcReqRecorder(p->name),
+namespace ruby
+{
+
+Sequencer::Sequencer(const Params &p)
+    : RubyPort(p), m_isIdeal(p.is_ideal), m_IncompleteTimes(MachineType_NUM),
+      pcReqRecorder(p.name),
       deadlockCheckEvent([this]{ wakeup(); }, "Sequencer deadlock check"),
-      prefetcher(p->prefetcher),
+      prefetcher(p.prefetcher),
       issuePrefetchEvent([this]{ issuePrefetch(); }, "Sequencer issue prefetch")
 {
     m_outstanding_data_count = 0;
     m_outstanding_inst_count = 0;
 
-    m_instCache_ptr = p->icache;
-    m_dataCache_ptr = p->dcache;
-    m_max_outstanding_data_requests = p->max_outstanding_data_requests;
-    m_max_outstanding_inst_requests = p->max_outstanding_inst_requests;
-    m_deadlock_threshold = p->deadlock_threshold;
+    m_instCache_ptr = p.icache;
+    m_dataCache_ptr = p.dcache;
+    m_max_outstanding_data_requests = p.max_outstanding_data_requests;
+    m_max_outstanding_inst_requests = p.max_outstanding_inst_requests;
+    m_deadlock_threshold = p.deadlock_threshold;
 
-    m_coreId = p->coreid; // for tracking the two CorePair sequencers
+    m_coreId = p.coreid; // for tracking the two CorePair sequencers
     assert(m_max_outstanding_data_requests > 0);
     assert(m_max_outstanding_inst_requests > 0);
-    assert(m_deadlock_threshold > 0);
-    assert(m_instCache_ptr != NULL);
-    assert(m_dataCache_ptr != NULL);
 
-    m_runningGarnetStandalone = p->garnet_standalone;
+    assert(m_deadlock_threshold > 0);
+
+    m_unaddressedTransactionCnt = 0;
+
+    m_runningGarnetStandalone = p.garnet_standalone;
 
     if (m_isIdeal) {
-        this->m_idealSeq = m5::make_unique<IdealSequencer>(this);
-        assert(p->ruby_system->getAccessBackingStore() &&
+        this->m_idealSeq = std::make_unique<IdealSequencer>(this);
+        assert(p.ruby_system->getAccessBackingStore() &&
             "Ideal mode only works with backing store.");
     }
 
@@ -104,6 +105,80 @@ Sequencer::Sequencer(const Params *p)
         assert(!m_isIdeal && "Can not use prefetcher in ideal mode.");
         prefetcher->setCache(this);
     }
+
+
+    // These statistical variables are not for display.
+    // The profiler will collate these across different
+    // sequencers and display those collated statistics.
+    m_outstandReqHist.init(10);
+    m_latencyHist.init(10);
+    m_hitLatencyHist.init(10);
+    m_missLatencyHist.init(10);
+
+    for (int i = 0; i < RubyRequestType_NUM; i++) {
+        m_typeLatencyHist.push_back(new statistics::Histogram());
+        m_typeLatencyHist[i]->init(10);
+
+        m_hitTypeLatencyHist.push_back(new statistics::Histogram());
+        m_hitTypeLatencyHist[i]->init(10);
+
+        m_missTypeLatencyHist.push_back(new statistics::Histogram());
+        m_missTypeLatencyHist[i]->init(10);
+    }
+
+    for (int i = 0; i < MachineType_NUM; i++) {
+        m_hitMachLatencyHist.push_back(new statistics::Histogram());
+        m_hitMachLatencyHist[i]->init(10);
+
+        m_missMachLatencyHist.push_back(new statistics::Histogram());
+        m_missMachLatencyHist[i]->init(10);
+
+        m_IssueToInitialDelayHist.push_back(new statistics::Histogram());
+        m_IssueToInitialDelayHist[i]->init(10);
+
+        m_InitialToForwardDelayHist.push_back(new statistics::Histogram());
+        m_InitialToForwardDelayHist[i]->init(10);
+
+        m_ForwardToFirstResponseDelayHist.push_back(
+            new statistics::Histogram());
+        m_ForwardToFirstResponseDelayHist[i]->init(10);
+
+        m_FirstResponseToCompletionDelayHist.push_back(
+            new statistics::Histogram());
+        m_FirstResponseToCompletionDelayHist[i]->init(10);
+    }
+
+    for (int i = 0; i < RubyRequestType_NUM; i++) {
+        m_hitTypeMachLatencyHist.push_back(
+            std::vector<statistics::Histogram *>());
+        m_missTypeMachLatencyHist.push_back(
+            std::vector<statistics::Histogram *>());
+
+        for (int j = 0; j < MachineType_NUM; j++) {
+            m_hitTypeMachLatencyHist[i].push_back(new statistics::Histogram());
+            m_hitTypeMachLatencyHist[i][j]->init(10);
+
+            m_missTypeMachLatencyHist[i].push_back(
+                new statistics::Histogram());
+            m_missTypeMachLatencyHist[i][j]->init(10);
+        }
+    }
+
+#define scalar(stat, describe)                                                 \
+  this->stat.name(name() + ("." #stat)).desc(describe).prereq(this->stat)
+    scalar(m_IssuedPrefetchReqs, "Number of issued pf reqs");
+    scalar(m_DroppedPrefetchReqsAliased, "Number of dropped aliased pf reqs");
+    scalar(m_DroppedPrefetchReqsInCache, "Number of dropped in cache pf reqs");
+    scalar(m_DroppedPrefetchReqsOther, "Number of dropped other pf reqs");
+#undef scalar
+
+    // Register stats callback.
+    auto pcRR = &this->pcReqRecorder;
+    Stats::registerResetCallback(
+        [pcRR]() -> void { pcRR->reset(); });
+    Stats::registerDumpCallback(
+        [pcRR]() -> void { pcRR->dump(); });
+
 }
 
 Sequencer::~Sequencer()
@@ -113,6 +188,8 @@ Sequencer::~Sequencer()
 void
 Sequencer::llscLoadLinked(const Addr claddr)
 {
+    fatal_if(m_dataCache_ptr == NULL,
+        "%s must have a dcache object to support LLSC requests.", name());
     AbstractCacheEntry *line = m_dataCache_ptr->lookup(claddr);
     if (line) {
         line->setLocked(m_version);
@@ -124,6 +201,9 @@ Sequencer::llscLoadLinked(const Addr claddr)
 void
 Sequencer::llscClearMonitor(const Addr claddr)
 {
+    // clear monitor is called for all stores and evictions
+    if (m_dataCache_ptr == NULL)
+        return;
     AbstractCacheEntry *line = m_dataCache_ptr->lookup(claddr);
     if (line && line->isLocked(m_version)) {
         line->clearLocked();
@@ -135,6 +215,8 @@ Sequencer::llscClearMonitor(const Addr claddr)
 bool
 Sequencer::llscStoreConditional(const Addr claddr)
 {
+    fatal_if(m_dataCache_ptr == NULL,
+        "%s must have a dcache object to support LLSC requests.", name());
     AbstractCacheEntry *line = m_dataCache_ptr->lookup(claddr);
     if (!line)
         return false;
@@ -156,6 +238,7 @@ Sequencer::llscStoreConditional(const Addr claddr)
 bool
 Sequencer::llscCheckMonitor(const Addr address)
 {
+    assert(m_dataCache_ptr != NULL);
     const Addr claddr = makeLineAddress(address);
     AbstractCacheEntry *line = m_dataCache_ptr->lookup(claddr);
     if (!line)
@@ -183,7 +266,7 @@ Sequencer::wakeup()
     Cycles current_time = curCycle();
 
     // Check across all outstanding requests
-    int total_outstanding = 0;
+    GEM5_VAR_USED int total_outstanding = 0;
 
     for (const auto &table_entry : m_RequestTable) {
         for (const auto &seq_req : table_entry.second) {
@@ -266,6 +349,42 @@ Sequencer::insertRequest(PacketPtr pkt, RubyRequestType primary_type,
         schedule(deadlockCheckEvent, clockEdge(m_deadlock_threshold));
     }
 
+    if (isTlbiCmdRequest(primary_type)) {
+        assert(primary_type == secondary_type);
+
+        switch (primary_type) {
+        case RubyRequestType_TLBI_EXT_SYNC_COMP:
+            // Don't have to store any data on this
+            break;
+        case RubyRequestType_TLBI:
+        case RubyRequestType_TLBI_SYNC:
+            {
+                incrementUnaddressedTransactionCnt();
+
+                // returns pair<inserted element, was inserted>
+                [[maybe_unused]] auto insert_data = \
+                    m_UnaddressedRequestTable.emplace(
+                        getCurrentUnaddressedTransactionID(),
+                        SequencerRequest(
+                            pkt, primary_type, secondary_type, curCycle()));
+
+                // if insert_data.second is false, wasn't inserted
+                assert(insert_data.second &&
+                       "Another TLBI request with the same ID exists");
+
+                DPRINTF(RubySequencer, "Inserting TLBI request %016x\n",
+                        getCurrentUnaddressedTransactionID());
+
+                break;
+            }
+
+        default:
+            panic("Unexpected TLBI RubyRequestType");
+        }
+
+        return RequestStatus_Ready;
+    }
+
     Addr line_addr = makeLineAddress(pkt->getAddr());
     // Check if there is any outstanding request for the same cache line.
     auto &seq_req_list = m_RequestTable[line_addr];
@@ -313,7 +432,7 @@ Sequencer::recordMissLatency(SequencerRequest* srequest, bool llscSuccess,
     assert(curCycle() >= issued_time);
     Cycles total_lat = completion_time - issued_time;
 
-    if (initialRequestTime != 0 && initialRequestTime < issued_time) {
+    if ((initialRequestTime != 0) && (initialRequestTime < issued_time)) {
         // if the request was combined in the protocol with an earlier request
         // for the same address, it is possible that it will return an
         // initialRequestTime corresponding the earlier request.  Since Cycles
@@ -395,7 +514,8 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
                          const bool externalHit, const MachineType mach,
                          const Cycles initialRequestTime,
                          const Cycles forwardRequestTime,
-                         const Cycles firstResponseTime)
+                         const Cycles firstResponseTime,
+                         const bool noCoales)
 {
     //
     // Free the whole list as we assume we have had the exclusive access
@@ -415,6 +535,15 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
     int aliased_loads = 0;
     while (!seq_req_list.empty()) {
         SequencerRequest &seq_req = seq_req_list.front();
+
+        if (noCoales && !ruby_request) {
+            // Do not process follow-up requests
+            // (e.g. if full line no present)
+            // Reissue to the cache hierarchy
+            issueRequest(seq_req.pkt, seq_req.m_second_type);
+            break;
+        }
+
         if (ruby_request) {
             assert(seq_req.m_type != RubyRequestType_LD);
             assert(seq_req.m_type != RubyRequestType_Load_Linked);
@@ -483,7 +612,7 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
             markRemoved(isInstFetch);
             hitCallback(&seq_req, data, success, mach, externalHit,
                         initialRequestTime, forwardRequestTime,
-                        firstResponseTime, ruby_request);
+                        firstResponseTime, !ruby_request, ruby_request);
             ruby_request = false;
         } else {
             // handle read request
@@ -492,7 +621,7 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
             aliased_loads++;
             hitCallback(&seq_req, data, true, mach, externalHit,
                         initialRequestTime, forwardRequestTime,
-                        firstResponseTime, ruby_request);
+                        firstResponseTime, !ruby_request, ruby_request);
             ruby_request = false;
         }
         seq_req_list.pop_front();
@@ -561,7 +690,7 @@ Sequencer::readCallback(Addr address, DataBlock& data,
         markRemoved(isInstFetch);
         hitCallback(&seq_req, data, true, mach, externalHit,
                     initialRequestTime, forwardRequestTime,
-                    firstResponseTime, ruby_request);
+                    firstResponseTime, !ruby_request, ruby_request);
         ruby_request = false;
         seq_req_list.pop_front();
     }
@@ -579,6 +708,7 @@ Sequencer::hitCallback(SequencerRequest* srequest, DataBlock& data,
                        const Cycles initialRequestTime,
                        const Cycles forwardRequestTime,
                        const Cycles firstResponseTime,
+                       const bool was_coalesced,
                        bool issuedToCache)
 {
     warn_once("Replacement policy updates recently became the responsibility "
@@ -589,16 +719,27 @@ Sequencer::hitCallback(SequencerRequest* srequest, DataBlock& data,
     Addr request_address(pkt->getAddr());
     RubyRequestType type = srequest->m_type;
 
+    if (was_coalesced) {
+        // Notify the controller about a coalesced request so it can properly
+        // account for it in its hit/miss stats and/or train prefetchers
+        // (this is protocol-dependent)
+        m_controller->notifyCoalesced(request_address, type, pkt->req,
+                                      data, externalHit);
+    }
+
     // Load-linked handling
     if (type == RubyRequestType_Load_Linked) {
         Addr line_addr = makeLineAddress(request_address);
         llscLoadLinked(line_addr);
     }
 
+    DPRINTF(RubyHitMiss, "Cache %s at %#x\n",
+                         externalHit ? "miss" : "hit",
+                         printAddress(request_address));
+
     // update the data unless it is a non-data-carrying flush
     if (RubySystem::getWarmupEnabled()) {
-        data.setData(pkt->getConstPtr<uint8_t>(),
-                     getOffset(request_address), pkt->getSize());
+        data.setData(pkt);
     } else if (!pkt->isFlush()) {
         if ((type == RubyRequestType_LD) ||
             (type == RubyRequestType_IFETCH) ||
@@ -613,6 +754,7 @@ Sequencer::hitCallback(SequencerRequest* srequest, DataBlock& data,
             pkt->setData(
                 data.getData(getOffset(request_address), pkt->getSize()));
         } else if (pkt->req->isSwap()) {
+            assert(!pkt->isMaskedWrite());
             std::vector<uint8_t> overwrite_val(pkt->getSize());
             pkt->writeData(&overwrite_val[0]);
             pkt->setData(
@@ -668,10 +810,61 @@ Sequencer::hitCallback(SequencerRequest* srequest, DataBlock& data,
     }
 }
 
+void
+Sequencer::unaddressedCallback(Addr unaddressedReqId,
+                               RubyRequestType reqType,
+                               const MachineType mach,
+                               const Cycles initialRequestTime,
+                               const Cycles forwardRequestTime,
+                               const Cycles firstResponseTime)
+{
+    DPRINTF(RubySequencer, "unaddressedCallback ID:%08x type:%d\n",
+            unaddressedReqId, reqType);
+
+    switch (reqType) {
+      case RubyRequestType_TLBI_EXT_SYNC:
+      {
+        // This should trigger the CPU to wait for stale translations
+        // and send an EXT_SYNC_COMP once complete.
+
+        // Don't look for the ID in our requestTable.
+        // It won't be there because we didn't request this Sync
+        ruby_stale_translation_callback(unaddressedReqId);
+        break;
+      }
+      case RubyRequestType_TLBI:
+      case RubyRequestType_TLBI_SYNC:
+      {
+        // These signal that a TLBI operation that this core initiated
+        // of the respective type (TLBI or Sync) has finished.
+
+        assert(m_UnaddressedRequestTable.find(unaddressedReqId)
+               != m_UnaddressedRequestTable.end());
+
+        {
+            SequencerRequest &seq_req =
+                m_UnaddressedRequestTable.at(unaddressedReqId);
+            assert(seq_req.m_type == reqType);
+
+            PacketPtr pkt = seq_req.pkt;
+
+            ruby_unaddressed_callback(pkt);
+            testDrainComplete();
+        }
+
+        m_UnaddressedRequestTable.erase(unaddressedReqId);
+        break;
+      }
+      default:
+        panic("Unexpected TLBI RubyRequestType");
+    }
+}
+
 bool
 Sequencer::empty() const
 {
-    return m_RequestTable.empty();
+    return m_RequestTable.empty() &&
+           m_UnaddressedRequestTable.empty();
 }
 
 RequestStatus
@@ -748,6 +941,9 @@ Sequencer::makeRequest(PacketPtr pkt)
             primary_type = RubyRequestType_Locked_RMW_Read;
         }
         secondary_type = RubyRequestType_ST;
+    } else if (pkt->req->isTlbiCmd()) {
+        primary_type = secondary_type = tlbiCmdToRubyRequestType(pkt);
+        DPRINTF(RubySequencer, "Issuing TLBI\n");
     } else {
         //
         // To support SwapReq, we need to check isWrite() first: a SwapReq
@@ -770,14 +966,7 @@ Sequencer::makeRequest(PacketPtr pkt)
                 // ReadEx is treated as Store in Ruby.
                 primary_type = secondary_type = RubyRequestType_ST;
             } else {
-                bool storeCheck = false;
-                // only X86 need the store check
-                if (system->getArch() == Arch::X86ISA) {
-                    uint32_t flags = pkt->req->getFlags();
-                    storeCheck = flags &
-                        (X86ISA::StoreCheck << X86ISA::FlagShift);
-                }
-                if (storeCheck) {
+                if (pkt->req->isReadModifyWrite()) {
                     primary_type = RubyRequestType_RMW_Read;
                     secondary_type = RubyRequestType_ST;
                 } else {
@@ -792,7 +981,8 @@ Sequencer::makeRequest(PacketPtr pkt)
     }
 
     // Check if the line is blocked for a Locked_RMW
-    if (m_controller->isBlocked(makeLineAddress(pkt->getAddr())) &&
+    if (!pkt->req->isMemMgmt() &&
+        m_controller->isBlocked(makeLineAddress(pkt->getAddr())) &&
         (primary_type != RubyRequestType_Locked_RMW_Write)) {
         // Return that this request's cache line address aliases with
         // a prior request that locked the cache line. The request cannot
@@ -831,18 +1021,45 @@ Sequencer::issueRequest(PacketPtr pkt, RubyRequestType secondary_type)
 
     // check if the packet has data as for example prefetch and flush
     // requests do not
-    std::shared_ptr<RubyRequest> msg =
-        std::make_shared<RubyRequest>(clockEdge(), pkt->getAddr(),
-                                      pkt->isFlush() ?
-                                      nullptr : pkt->getPtr<uint8_t>(),
-                                      pkt->getSize(), pc, secondary_type,
-                                      RubyAccessMode_Supervisor, pkt,
-                                      PrefetchBit_No, proc_id, core_id);
+    std::shared_ptr<RubyRequest> msg;
+    if (pkt->req->isMemMgmt()) {
+        msg = std::make_shared<RubyRequest>(clockEdge(),
+                                            pc, secondary_type,
+                                            RubyAccessMode_Supervisor, pkt,
+                                            proc_id, core_id);
 
-    DPRINTFR(ProtocolTrace, "%15s %3s %10s%20s %6s>%-6s %#x %s\n",
-            curTick(), m_version, "Seq", "Begin", "", "",
-            printAddress(msg->getPhysicalAddress()),
-            RubyRequestType_to_string(secondary_type));
+        DPRINTFR(ProtocolTrace, "%15s %3s %10s%20s %6s>%-6s %s\n",
+                curTick(), m_version, "Seq", "Begin", "", "",
+                RubyRequestType_to_string(secondary_type));
+
+        if (pkt->req->isTlbiCmd()) {
+            msg->m_isTlbi = true;
+            switch (secondary_type) {
+              case RubyRequestType_TLBI_EXT_SYNC_COMP:
+                msg->m_tlbiTransactionUid = pkt->req->getExtraData();
+                break;
+              case RubyRequestType_TLBI:
+              case RubyRequestType_TLBI_SYNC:
+                msg->m_tlbiTransactionUid = \
+                    getCurrentUnaddressedTransactionID();
+                break;
+              default:
+                panic("Unexpected TLBI RubyRequestType");
+            }
+            DPRINTF(RubySequencer, "Issuing TLBI %016x\n",
+                    msg->m_tlbiTransactionUid);
+        }
+    } else {
+        msg = std::make_shared<RubyRequest>(clockEdge(), pkt->getAddr(),
+                                            pkt->getSize(), pc, secondary_type,
+                                            RubyAccessMode_Supervisor, pkt,
+                                            PrefetchBit_No, proc_id, core_id);
+
+        DPRINTFR(ProtocolTrace, "%15s %3s %10s%20s %6s>%-6s %#x %s\n",
+                curTick(), m_version, "Seq", "Begin", "", "",
+                printAddress(msg->getPhysicalAddress()),
+                RubyRequestType_to_string(secondary_type));
+    }
 
     // hardware transactional memory
     // If the request originates in a transaction,
@@ -867,7 +1084,7 @@ Sequencer::issueRequest(PacketPtr pkt, RubyRequestType secondary_type)
 
 template <class KEY, class VALUE>
 std::ostream &
-operator<<(ostream &out, const std::unordered_map<KEY, VALUE> &map)
+operator<<(std::ostream &out, const std::unordered_map<KEY, VALUE> &map)
 {
     for (const auto &table_entry : map) {
         out << "[ " << table_entry.first << " =";
@@ -881,7 +1098,7 @@ operator<<(ostream &out, const std::unordered_map<KEY, VALUE> &map)
 }
 
 void
-Sequencer::print(ostream& out) const
+Sequencer::print(std::ostream& out) const
 {
     out << "[Sequencer: " << m_version
         << ", out data: " << m_outstanding_data_count
@@ -904,76 +1121,17 @@ Sequencer::evictionCallback(Addr address)
 }
 
 void
-Sequencer::regStats()
+Sequencer::incrementUnaddressedTransactionCnt()
 {
-    RubyPort::regStats();
+    m_unaddressedTransactionCnt++;
+    // Limit m_unaddressedTransactionCnt to 32 bits,
+    // top 32 bits should always be zeroed out
+    uint64_t aligned_txid = \
+        m_unaddressedTransactionCnt << RubySystem::getBlockSizeBits();
 
-    // These statistical variables are not for display.
-    // The profiler will collate these across different
-    // sequencers and display those collated statistics.
-    m_outstandReqHist.init(10);
-    m_latencyHist.init(10);
-    m_hitLatencyHist.init(10);
-    m_missLatencyHist.init(10);
-
-    for (int i = 0; i < RubyRequestType_NUM; i++) {
-        m_typeLatencyHist.push_back(new Stats::Histogram());
-        m_typeLatencyHist[i]->init(10);
-
-        m_hitTypeLatencyHist.push_back(new Stats::Histogram());
-        m_hitTypeLatencyHist[i]->init(10);
-
-        m_missTypeLatencyHist.push_back(new Stats::Histogram());
-        m_missTypeLatencyHist[i]->init(10);
+    if (aligned_txid > 0xFFFFFFFFull) {
+        m_unaddressedTransactionCnt = 0;
     }
-
-    for (int i = 0; i < MachineType_NUM; i++) {
-        m_hitMachLatencyHist.push_back(new Stats::Histogram());
-        m_hitMachLatencyHist[i]->init(10);
-
-        m_missMachLatencyHist.push_back(new Stats::Histogram());
-        m_missMachLatencyHist[i]->init(10);
-
-        m_IssueToInitialDelayHist.push_back(new Stats::Histogram());
-        m_IssueToInitialDelayHist[i]->init(10);
-
-        m_InitialToForwardDelayHist.push_back(new Stats::Histogram());
-        m_InitialToForwardDelayHist[i]->init(10);
-
-        m_ForwardToFirstResponseDelayHist.push_back(new Stats::Histogram());
-        m_ForwardToFirstResponseDelayHist[i]->init(10);
-
-        m_FirstResponseToCompletionDelayHist.push_back(new Stats::Histogram());
-        m_FirstResponseToCompletionDelayHist[i]->init(10);
-    }
-
-    for (int i = 0; i < RubyRequestType_NUM; i++) {
-        m_hitTypeMachLatencyHist.push_back(std::vector<Stats::Histogram *>());
-        m_missTypeMachLatencyHist.push_back(std::vector<Stats::Histogram *>());
-
-        for (int j = 0; j < MachineType_NUM; j++) {
-            m_hitTypeMachLatencyHist[i].push_back(new Stats::Histogram());
-            m_hitTypeMachLatencyHist[i][j]->init(10);
-
-            m_missTypeMachLatencyHist[i].push_back(new Stats::Histogram());
-            m_missTypeMachLatencyHist[i][j]->init(10);
-        }
-    }
-
-#define scalar(stat, describe)                                                 \
-  this->stat.name(name() + ("." #stat)).desc(describe).prereq(this->stat)
-    scalar(m_IssuedPrefetchReqs, "Number of issued pf reqs");
-    scalar(m_DroppedPrefetchReqsAliased, "Number of dropped aliased pf reqs");
-    scalar(m_DroppedPrefetchReqsInCache, "Number of dropped in cache pf reqs");
-    scalar(m_DroppedPrefetchReqsOther, "Number of dropped other pf reqs");
-#undef scalar
-
-    // Register stats callback.
-    auto pcRR = &this->pcReqRecorder;
-    Stats::registerResetCallback(
-        [pcRR]() -> void { pcRR->reset(); });
-    Stats::registerDumpCallback(
-        [pcRR]() -> void { pcRR->dump(); });
 }
 
 unsigned Sequencer::getBlockSize() const {
@@ -1119,3 +1277,15 @@ void Sequencer::issuePrefetch() {
         schedule(issuePrefetchEvent, next_pf_time);
     }
 }
+
+uint64_t
+Sequencer::getCurrentUnaddressedTransactionID() const
+{
+    return (
+        uint64_t(m_version & 0xFFFFFFFF) << 32) |
+        (m_unaddressedTransactionCnt << RubySystem::getBlockSizeBits()
+    );
+}
+
+} // namespace ruby
+} // namespace gem5

@@ -9,8 +9,10 @@
  * Implementation of the GemForgeDcachePort in the LSQ.
  ********************************************************************/
 
-template <class Impl>
-bool LSQ<Impl>::GemForgeDcachePort::recvTimingResp(PacketPtr pkt) {
+namespace gem5 {
+namespace o3 {
+
+bool LSQ::GemForgeDcachePort::recvTimingResp(PacketPtr pkt) {
   // Intercept the GemForgePackets.
   if (GemForgePacketHandler::isGemForgePacket(pkt)) {
     GemForgePacketHandler::handleGemForgePacketResponse(
@@ -20,5 +22,7 @@ bool LSQ<Impl>::GemForgeDcachePort::recvTimingResp(PacketPtr pkt) {
   // Normally call base handler.
   return DcachePort::recvTimingResp(pkt);
 }
+} // namespace o3
+} // namespace gem5
 
 #endif

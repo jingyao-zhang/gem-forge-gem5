@@ -5,6 +5,8 @@
 
 #include <map>
 
+namespace gem5 {
+
 /**
  * Helper class to manager the floating streams.
  * So far this is only in charge of floating streams at configuration.
@@ -147,5 +149,7 @@ private:
   void allocateAddUsedAffineIV(CacheStreamConfigureDataPtr &config,
                                DynStream *dynS, Stream *affineIVS);
 };
+
+} // namespace gem5
 
 #endif

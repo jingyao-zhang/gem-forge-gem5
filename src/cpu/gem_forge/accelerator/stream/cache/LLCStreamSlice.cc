@@ -2,6 +2,8 @@
 
 #include "LLCStreamEngine.hh"
 
+namespace gem5 {
+
 LLCStreamSlice::LLCStreamSlice(Stream *_S, const DynStreamSliceId &_sliceId)
     : S(_S), sliceId(_sliceId) {}
 
@@ -19,8 +21,8 @@ void LLCStreamSlice::issue() {
   this->issuedCycle = this->llcSE->curCycle();
 }
 
-void LLCStreamSlice::responded(const DataBlock &loadBlock,
-                               const DataBlock &storeBlock) {
+void LLCStreamSlice::responded(const ruby::DataBlock &loadBlock,
+                               const ruby::DataBlock &storeBlock) {
   assert(this->state == State::ISSUED &&
          "Responded from state other than ISSUED.");
   this->state = State::RESPONDED;
@@ -33,7 +35,7 @@ void LLCStreamSlice::responded(const DataBlock &loadBlock,
    */
   if (S->isDirectMemStream()) {
     auto &statistic = this->S->statistic;
-    if (this->llcSE->myMachineType() == MachineType_Directory) {
+    if (this->llcSE->myMachineType() == ruby::MachineType_Directory) {
       statistic.memReqLat.sample(this->respondedCycle - this->issuedCycle);
     } else {
       statistic.llcReqLat.sample(this->respondedCycle - this->issuedCycle);
@@ -80,4 +82,5 @@ const char *LLCStreamSlice::stateToString(State state) {
   default:
     assert(false && "Invalid LLCStreamSlice::State.");
   }
-}
+}} // namespace gem5
+

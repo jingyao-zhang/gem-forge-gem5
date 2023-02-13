@@ -32,7 +32,6 @@
 //
 output header {{
 #include <iostream>
-    using namespace std;
     /**
      * Base class for integer operations.
      */
@@ -62,7 +61,7 @@ output header {{
 // Dsp instruction class execute method template.
 def template DspExecute {{
         Fault %(class_name)s::execute(
-            ExecContext *xc, Trace::InstRecord *traceData) const
+            ExecContext *xc, trace::InstRecord *traceData) const
         {
                 Fault fault = NoFault;
 
@@ -96,7 +95,7 @@ def template DspExecute {{
 // DspHiLo instruction class execute method template.
 def template DspHiLoExecute {{
         Fault %(class_name)s::execute(
-            ExecContext *xc, Trace::InstRecord *traceData) const
+            ExecContext *xc, trace::InstRecord *traceData) const
         {
                 Fault fault = NoFault;
 
@@ -148,7 +147,7 @@ output exec {{
     bool
     isDspEnabled(ExecContext *xc)
     {
-        return !FullSystem || bits(xc->readMiscReg(MISCREG_STATUS), 24);
+        return !FullSystem || bits(xc->readMiscReg(misc_reg::Status), 24);
     }
 }};
 
@@ -156,7 +155,7 @@ output exec {{
     bool
     isDspPresent(ExecContext *xc)
     {
-        return !FullSystem || bits(xc->readMiscReg(MISCREG_CONFIG3), 10);
+        return !FullSystem || bits(xc->readMiscReg(misc_reg::Config3), 10);
     }
 }};
 
@@ -172,8 +171,6 @@ def format DspIntOp(code, *opt_flags) {{
     write_code = 'DSPControl = dspctl;\n'
 
     code = decl_code + code + write_code
-
-    opt_flags += ('IsDspOp',)
 
     iop = InstObjParams(name, Name, 'DspIntOp', code, opt_flags)
     header_output = BasicDeclare.subst(iop)
@@ -204,8 +201,6 @@ def format DspHiLoOp(code, *opt_flags) {{
 
     code = decl_code + fetch_code + code + write_code
 
-    opt_flags += ('IsDspOp',)
-
     iop = InstObjParams(name, Name, 'DspHiLoOp', code, opt_flags)
     header_output = BasicDeclare.subst(iop)
     decoder_output = BasicConstructor.subst(iop)
@@ -213,6 +208,3 @@ def format DspHiLoOp(code, *opt_flags) {{
     exec_output = DspHiLoExecute.subst(iop)
 
 }};
-
-
-

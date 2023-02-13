@@ -7,6 +7,8 @@
 #define DEBUG_TYPE StreamFloatPolicy
 #include "stream_log.hh"
 
+namespace gem5 {
+
 OutputStream *StreamFloatPolicy::log = nullptr;
 
 namespace {
@@ -18,7 +20,9 @@ std::vector<uint64_t> getCacheCapacity(StreamEngine *se) {
   uint64_t l2Size = 0;
   uint64_t l3Size = 0;
   for (auto so : se->getSimObjectList()) {
-    auto cacheMemory = dynamic_cast<CacheMemory *>(so);
+    hack("Checking so %x.\n", so);
+    hack("Checking so %x %s.\n", so, so->name());
+    auto cacheMemory = dynamic_cast<ruby::CacheMemory *>(so);
     if (!cacheMemory) {
       continue;
     }
@@ -503,10 +507,10 @@ void StreamFloatPolicy::setFloatPlan(DynStream &dynS) {
    */
   if (this->levelPolicy == LevelPolicyE::LEVEL_STATIC) {
     if (this->enabledFloatMem) {
-      floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+      floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_Directory);
     } else {
       // By default we float to L2 cache (LLC in MESI_Three_Level).
-      floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+      floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_L2Cache);
     }
     return;
   } else if (this->levelPolicy == LevelPolicyE::LEVEL_MANUAL) {
@@ -516,4 +520,5 @@ void StreamFloatPolicy::setFloatPlan(DynStream &dynS) {
 
   panic("Smart FloatPlan not implemented.\n");
   return;
-}
+}} // namespace gem5
+

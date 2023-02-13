@@ -43,6 +43,9 @@
 
 #include "arch/arm/insts/static_inst.hh"
 
+namespace gem5
+{
+
 class DecoderFaultInst : public ArmISA::ArmStaticInst
 {
   protected:
@@ -54,10 +57,10 @@ class DecoderFaultInst : public ArmISA::ArmStaticInst
     DecoderFaultInst(ArmISA::ExtMachInst _machInst);
 
     Fault execute(ExecContext *xc,
-                  Trace::InstRecord *traceData) const override;
+                  trace::InstRecord *traceData) const override;
 
     std::string generateDisassembly(
-            Addr pc, const Loader::SymbolTable *symtab) const override;
+            Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -80,10 +83,10 @@ class FailUnimplemented : public ArmISA::ArmStaticInst
                       const std::string& _fullMnemonic);
 
     Fault execute(ExecContext *xc,
-                  Trace::InstRecord *traceData) const override;
+                  trace::InstRecord *traceData) const override;
 
     std::string generateDisassembly(
-            Addr pc, const Loader::SymbolTable *symtab) const override;
+            Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -110,10 +113,10 @@ class WarnUnimplemented : public ArmISA::ArmStaticInst
                       const std::string& _fullMnemonic);
 
     Fault execute(ExecContext *xc,
-                  Trace::InstRecord *traceData) const override;
+                  trace::InstRecord *traceData) const override;
 
     std::string generateDisassembly(
-            Addr pc, const Loader::SymbolTable *symtab) const override;
+            Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -129,7 +132,7 @@ class IllegalExecInst : public ArmISA::ArmStaticInst
     IllegalExecInst(ArmISA::ExtMachInst _machInst);
 
     Fault execute(ExecContext *xc,
-                  Trace::InstRecord *traceData) const override;
+                  trace::InstRecord *traceData) const override;
 };
 
 class DebugStep : public ArmISA::ArmStaticInst
@@ -138,7 +141,9 @@ class DebugStep : public ArmISA::ArmStaticInst
     DebugStep(ArmISA::ExtMachInst _machInst);
 
     Fault execute(ExecContext *xc,
-                  Trace::InstRecord *traceData) const override;
+                  trace::InstRecord *traceData) const override;
 };
+
+} // namespace gem5
 
 #endif

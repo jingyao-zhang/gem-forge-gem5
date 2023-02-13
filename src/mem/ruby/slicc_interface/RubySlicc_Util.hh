@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 ARM Limited
+ * Copyright (c) 2020-2021 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -47,7 +47,9 @@
 #define __MEM_RUBY_SLICC_INTERFACE_RUBYSLICC_UTIL_HH__
 
 #include <cassert>
+#include <climits>
 
+#include "debug/RubyProtocol.hh"
 #include "debug/RubySlicc.hh"
 #include "mem/packet.hh"
 #include "mem/ruby/common/Address.hh"
@@ -55,6 +57,7 @@
 #include "mem/ruby/common/DataBlock.hh"
 #include "mem/ruby/common/TypeDefines.hh"
 #include "mem/ruby/common/WriteMask.hh"
+#include "mem/ruby/protocol/RubyRequestType.hh"
 
 /**
  * ! Sean: StreamAwareCache.
@@ -63,7 +66,17 @@
  */
 #include "cpu/gem_forge/accelerator/stream/cache/LLCDynStream.hh"
 
+namespace gem5
+{
+
+namespace ruby
+{
+
 inline Cycles zero_time() { return Cycles(0); }
+
+inline Cycles intToCycles(int c) { return Cycles(c); }
+
+inline Tick intToTick(int c) { return c; }
 
 inline NodeID
 intToID(int nodenum)
@@ -156,6 +169,19 @@ isHtmCmdRequest(RubyRequestType type)
     }
 }
 
+inline bool
+isTlbiCmdRequest(RubyRequestType type)
+{
+    if ((type == RubyRequestType_TLBI)  ||
+        (type == RubyRequestType_TLBI_SYNC) ||
+        (type == RubyRequestType_TLBI_EXT_SYNC) ||
+        (type == RubyRequestType_TLBI_EXT_SYNC_COMP)) {
+            return true;
+    } else {
+            return false;
+    }
+}
+
 inline RubyRequestType
 htmCmdToRubyRequestType(const Packet *pkt)
 {
@@ -171,6 +197,32 @@ htmCmdToRubyRequestType(const Packet *pkt)
     else {
         panic("invalid ruby packet type\n");
     }
+}
+
+inline RubyRequestType
+tlbiCmdToRubyRequestType(const Packet *pkt)
+{
+    if (pkt->req->isTlbi()) {
+        return RubyRequestType_TLBI;
+    } else if (pkt->req->isTlbiSync()) {
+        return RubyRequestType_TLBI_SYNC;
+    } else if (pkt->req->isTlbiExtSync()) {
+        return RubyRequestType_TLBI_EXT_SYNC;
+    } else if (pkt->req->isTlbiExtSyncComp()) {
+        return RubyRequestType_TLBI_EXT_SYNC_COMP;
+    } else {
+        panic("invalid ruby packet type\n");
+    }
+}
+
+inline int
+addressOffset(Addr addr, Addr base)
+{
+    assert(addr >= base);
+    Addr offset = addr - base;
+    // sanity checks if fits in an int
+    assert(offset < INT_MAX);
+    return offset;
 }
 
 /**
@@ -270,5 +322,8 @@ countBoolVec(BoolVec bVec)
     }
     return count;
 }
+
+} // namespace ruby
+} // namespace gem5
 
 #endif //__MEM_RUBY_SLICC_INTERFACE_RUBYSLICC_UTIL_HH__

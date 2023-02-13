@@ -6,6 +6,8 @@
 #include <list>
 #include <string>
 
+namespace gem5 {
+
 class StreamPattern {
 public:
   StreamPattern(const std::string &_patternPath);
@@ -23,5 +25,7 @@ private:
   PatternList::const_iterator nextPattern;
   PatternList::const_iterator currentPattern;
 };
+
+} // namespace gem5
 
 #endif

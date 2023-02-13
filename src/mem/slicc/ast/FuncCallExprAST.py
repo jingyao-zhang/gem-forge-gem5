@@ -1,3 +1,15 @@
+# Copyright (c) 2020 ARM Limited
+# All rights reserved.
+#
+# The license below extends only to copyright in the software and shall
+# not be construed as granting a license to any other intellectual
+# property including but not limited to intellectual property relating
+# to a hardware implementation of the functionality of the software
+# licensed hereunder.  You may use the software subject to the license
+# terms below provided that you ensure that this notice is replicated
+# unmodified and in its entirety in all distributions of the software,
+# modified or unmodified, in source code or in binary form.
+#
 # Copyright (c) 1999-2008 Mark D. Hill and David A. Wood
 # Copyright (c) 2009 The Hewlett-Packard Development Company
 # Copyright (c) 2013 Advanced Micro Devices, Inc.
@@ -29,16 +41,19 @@
 from slicc.ast.ExprAST import ExprAST
 from slicc.symbols import Func, Type
 
+
 class FuncCallExprAST(ExprAST):
     def __init__(self, slicc, proc_name, exprs):
-        super(FuncCallExprAST, self).__init__(slicc)
+        super().__init__(slicc)
         self.proc_name = proc_name
         self.exprs = exprs
 
     def __repr__(self):
         return "[FuncCallExpr: %s %s]" % (self.proc_name, self.exprs)
 
-    def generate(self, code):
+    # When calling generate for statements in a in_port, the reference to
+    # the port must be provided as the in_port kwarg (see InPortDeclAST)
+    def generate(self, code, **kwargs):
         machine = self.state_machine
 
         if self.proc_name == "DPRINTF":
@@ -64,13 +79,20 @@ class FuncCallExprAST(ExprAST):
                 str_list.append("%s" % self.exprs[i].inline())
 
             if len(str_list) == 0:
-                code('DPRINTF($0, "$1: $2")',
-                     dflag, self.exprs[0].location, format[2:format_length-2])
+                code(
+                    'DPRINTF($0, "$1: $2")',
+                    dflag,
+                    self.exprs[0].location,
+                    format[2 : format_length - 2],
+                )
             else:
-                code('DPRINTF($0, "$1: $2", $3)',
-                     dflag,
-                     self.exprs[0].location, format[2:format_length-2],
-                     ', '.join(str_list))
+                code(
+                    'DPRINTF($0, "$1: $2", $3)',
+                    dflag,
+                    self.exprs[0].location,
+                    format[2 : format_length - 2],
+                    ", ".join(str_list),
+                )
 
             return self.symtab.find("void", Type)
 
@@ -83,12 +105,18 @@ class FuncCallExprAST(ExprAST):
                 str_list.append("%s" % self.exprs[i].inline())
 
             if len(str_list) == 0:
-                code('DPRINTFN("$0: $1")',
-                     self.exprs[0].location, format[2:format_length-2])
+                code(
+                    'DPRINTFN("$0: $1")',
+                    self.exprs[0].location,
+                    format[2 : format_length - 2],
+                )
             else:
-                code('DPRINTFN("$0: $1", $2)',
-                     self.exprs[0].location, format[2:format_length-2],
-                     ', '.join(str_list))
+                code(
+                    'DPRINTFN("$0: $1", $2)',
+                    self.exprs[0].location,
+                    format[2 : format_length - 2],
+                    ", ".join(str_list),
+                )
 
             return self.symtab.find("void", Type)
 
@@ -101,7 +129,7 @@ class FuncCallExprAST(ExprAST):
         func_name_args = self.proc_name
 
         for expr in self.exprs:
-            actual_type,param_code = expr.inline(True)
+            actual_type, param_code = expr.inline(True)
             func_name_args += "_" + str(actual_type.ident)
 
         # Look up the function in the symbol table
@@ -128,62 +156,123 @@ class FuncCallExprAST(ExprAST):
         # port. So as most of current protocols.
 
         if self.proc_name == "trigger":
-            code('''
+            code(
+                """
 {
-''')
+"""
+            )
             if machine.TBEType != None and machine.EntryType != None:
-                code('''
+                code(
+                    """
     TransitionResult result = doTransition(${{cvec[0]}}, ${{cvec[2]}}, ${{cvec[3]}}, ${{cvec[1]}});
-''')
+"""
+                )
             elif machine.TBEType != None:
-                code('''
+                code(
+                    """
     TransitionResult result = doTransition(${{cvec[0]}}, ${{cvec[2]}}, ${{cvec[1]}});
-''')
+"""
+                )
             elif machine.EntryType != None:
-                code('''
+                code(
+                    """
     TransitionResult result = doTransition(${{cvec[0]}}, ${{cvec[2]}}, ${{cvec[1]}});
-''')
+"""
+                )
             else:
-                code('''
+                code(
+                    """
     TransitionResult result = doTransition(${{cvec[0]}}, ${{cvec[1]}});
-''')
+"""
+                )
 
-            code('''
+            assert "in_port" in kwargs
+            in_port = kwargs["in_port"]
+
+            code(
+                """
     if (result == TransitionResult_Valid) {
         m_used_transitions++;
         continue; // Check the first port again
-    }
-
-    if (result == TransitionResult_ResourceStall ||
-        result == TransitionResult_ProtocolStall) {
+    } else if (result == TransitionResult_ResourceStall) {
+"""
+            )
+            if "rsc_stall_handler" in in_port.pairs:
+                stall_func_name = in_port.pairs["rsc_stall_handler"]
+                code(
+                    """
+        if (${{stall_func_name}}()) {
+            counter++;
+            continue; // Check the first port again
+        } else {
+            scheduleEvent(Cycles(1));
+            // Cannot do anything with this transition, go check next doable transition (mostly likely of next port)
+        }
+"""
+                )
+            else:
+                code(
+                    """
         scheduleEvent(Cycles(1));
-
+        // Cannot do anything with this transition, go check next doable transition (mostly likely of next port)
+"""
+                )
+            code(
+                """
+    } else if (result == TransitionResult_ProtocolStall) {
+"""
+            )
+            if "prot_stall_handler" in in_port.pairs:
+                stall_func_name = in_port.pairs["prot_stall_handler"]
+                code(
+                    """
+        if (${{stall_func_name}}()) {
+            counter++;
+            continue; // Check the first port again
+        } else {
+            scheduleEvent(Cycles(1));
+            // Cannot do anything with this transition, go check next doable transition (mostly likely of next port)
+        }
+"""
+                )
+            else:
+                code(
+                    """
+        scheduleEvent(Cycles(1));
         // Cannot do anything with this transition, go check next doable transition (mostly likely of next port)
         DPRINTF(RubyGenerated, "Resource stall on current in port %d, used_transitions %d.\\n",
             m_cur_in_port, m_used_transitions);
+"""
+                )
+            code(
+                """
     }
+
 }
-''')
+"""
+            )
         elif self.proc_name == "error":
             code("$0", self.exprs[0].embedError(cvec[0]))
         elif self.proc_name == "assert":
             error = self.exprs[0].embedError('"assert failure"')
-            code('''
+            code(
+                """
 #ifndef NDEBUG
 if (!(${{cvec[0]}})) {
     $error
 }
 #endif
-''')
+"""
+            )
 
         elif self.proc_name == "set_cache_entry":
-            code("set_cache_entry(m_cache_entry_ptr, %s);" %(cvec[0]));
+            code("set_cache_entry(m_cache_entry_ptr, %s);" % (cvec[0]))
         elif self.proc_name == "unset_cache_entry":
-            code("unset_cache_entry(m_cache_entry_ptr);");
+            code("unset_cache_entry(m_cache_entry_ptr);")
         elif self.proc_name == "set_tbe":
-            code("set_tbe(m_tbe_ptr, %s);" %(cvec[0]));
+            code("set_tbe(m_tbe_ptr, %s);" % (cvec[0]))
         elif self.proc_name == "unset_tbe":
-            code("unset_tbe(m_tbe_ptr);");
+            code("unset_tbe(m_tbe_ptr);")
         elif self.proc_name == "stallPort":
             code("scheduleEvent(Cycles(1));")
 
@@ -198,13 +287,13 @@ if (!(${{cvec[0]}})) {
             for (param_code, type) in zip(cvec, type_vec):
                 if first_param:
                     params = str(param_code)
-                    first_param  = False
+                    first_param = False
                 else:
-                    params += ', '
-                    params += str(param_code);
+                    params += ", "
+                    params += str(param_code)
 
             fix = code.nofix()
-            code('(${{func.c_name}}($params))')
+            code("(${{func.c_name}}($params))")
             code.fix(fix)
 
         return func.return_type

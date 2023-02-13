@@ -8,6 +8,8 @@
 #include <memory>
 #include <vector>
 
+namespace gem5 {
+
 /**
  * Trace floating stream event in LLC.
  */
@@ -18,7 +20,7 @@ public:
   StreamFloatTracer(Stream *_S) : S(_S) {}
 
   void traceEvent(
-      uint64_t cycle, MachineID machineId,
+      uint64_t cycle, ruby::MachineID machineId,
       const ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType &type) const;
 
   void dump() const {
@@ -40,5 +42,7 @@ private:
   mutable std::vector<::LLVM::TDG::StreamFloatEvent> buffer;
   mutable int used = 0;
 };
+
+} // namespace gem5
 
 #endif

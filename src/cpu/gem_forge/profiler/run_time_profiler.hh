@@ -6,6 +6,8 @@
 #include <string>
 #include <unordered_map>
 
+namespace gem5 {
+
 class RunTimeProfiler {
 public:
   RunTimeProfiler() = default;
@@ -29,5 +31,7 @@ private:
 
   std::unordered_map<Addr, LoadLatency> PCLoadLatencyMap;
 };
+
+} // namespace gem5
 
 #endif

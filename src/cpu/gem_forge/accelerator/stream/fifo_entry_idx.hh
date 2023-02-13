@@ -6,6 +6,8 @@
 
 #include <iostream>
 
+namespace gem5 {
+
 struct FIFOEntryIdx {
   DynStreamId streamId;
   uint64_t entryIdx;
@@ -39,5 +41,7 @@ struct FIFOEntryIdxHasher {
            std::hash<uint64_t>()(key.entryIdx);
   }
 };
+
+} // namespace gem5
 
 #endif

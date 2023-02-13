@@ -5,6 +5,8 @@
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "debug/AbstractDataFlowAccelerator.hh"
 
+namespace gem5 {
+
 ADFAConfigInst::ADFAConfigInst(const LLVM::TDG::TDGInstruction &_TDG)
     : LLVMDynamicInst(_TDG, 1), finished(false) {
   if (!this->TDG.has_adfa_config()) {
@@ -67,4 +69,5 @@ LLVMDynamicInst *parseADFAInst(LLVM::TDG::TDGInstruction &TDGInst) {
    */
 
   return nullptr;
-}
+}} // namespace gem5
+

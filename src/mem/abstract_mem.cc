@@ -42,27 +42,29 @@
 
 #include <vector>
 
-#include "arch/locked_mem.hh"
 #include "base/loader/memory_image.hh"
 #include "base/loader/object_file.hh"
-#include "cpu/base.hh"
 #include "cpu/thread_context.hh"
 #include "debug/LLSC.hh"
 #include "debug/MemoryAccess.hh"
 #include "mem/packet_access.hh"
 #include "sim/system.hh"
 
-using namespace std;
+namespace gem5
+{
+
+namespace memory
+{
 
 // #define DEBUG_PADDR
 
-AbstractMemory::AbstractMemory(const Params *p) :
-    ClockedObject(p), range(params()->range), pmemAddr(NULL),
-    backdoor(params()->range, nullptr,
+AbstractMemory::AbstractMemory(const Params &p) :
+    ClockedObject(p), range(p.range), pmemAddr(NULL),
+    backdoor(params().range, nullptr,
              (MemBackdoor::Flags)(MemBackdoor::Readable |
                                   MemBackdoor::Writeable)),
-    confTableReported(p->conf_table_reported), inAddrMap(p->in_addr_map),
-    kvmMap(p->kvm_map), _system(NULL),
+    confTableReported(p.conf_table_reported), inAddrMap(p.in_addr_map),
+    kvmMap(p.kvm_map), _system(NULL),
     stats(*this)
 {
     panic_if(!range.valid() || !range.size(),
@@ -75,15 +77,15 @@ AbstractMemory::initState()
 {
     ClockedObject::initState();
 
-    const auto &file = params()->image_file;
+    const auto &file = params().image_file;
     if (file == "")
         return;
 
-    auto *object = Loader::createObjectFile(file, true);
+    auto *object = loader::createObjectFile(file, true);
     fatal_if(!object, "%s: Could not load %s.", name(), file);
 
-    Loader::debugSymbolTable.insert(*object->symtab().globals());
-    Loader::MemoryImage image = object->buildImage();
+    loader::debugSymbolTable.insert(*object->symtab().globals());
+    loader::MemoryImage image = object->buildImage();
 
     AddrRange image_range(image.minAddr(), image.maxAddr());
     if (!range.contains(image_range.start())) {
@@ -115,36 +117,41 @@ AbstractMemory::setBackingStore(uint8_t* pmem_addr)
 }
 
 AbstractMemory::MemStats::MemStats(AbstractMemory &_mem)
-    : Stats::Group(&_mem), mem(_mem),
-    bytesRead(this, "bytes_read",
-              "Number of bytes read from this memory"),
-    bytesInstRead(this, "bytes_inst_read",
-                  "Number of instructions bytes read from this memory"),
-    bytesWritten(this, "bytes_written",
-                 "Number of bytes written to this memory"),
-    numReads(this, "num_reads",
+    : statistics::Group(&_mem), mem(_mem),
+    ADD_STAT(bytesRead, statistics::units::Byte::get(),
+             "Number of bytes read from this memory"),
+    ADD_STAT(bytesInstRead, statistics::units::Byte::get(),
+             "Number of instructions bytes read from this memory"),
+    ADD_STAT(bytesWritten, statistics::units::Byte::get(),
+             "Number of bytes written to this memory"),
+    ADD_STAT(numReads, statistics::units::Count::get(),
              "Number of read requests responded to by this memory"),
-    numWrites(this, "num_writes",
-              "Number of write requests responded to by this memory"),
-    numOther(this, "num_other",
+    ADD_STAT(numWrites, statistics::units::Count::get(),
+             "Number of write requests responded to by this memory"),
+    ADD_STAT(numOther, statistics::units::Count::get(),
              "Number of other requests responded to by this memory"),
-    bwRead(this, "bw_read",
-           "Total read bandwidth from this memory (bytes/s)"),
-    bwInstRead(this, "bw_inst_read",
-               "Instruction read bandwidth from this memory (bytes/s)"),
-    bwWrite(this, "bw_write",
-            "Write bandwidth from this memory (bytes/s)"),
-    bwTotal(this, "bw_total",
-            "Total bandwidth to/from this memory (bytes/s)")
+    ADD_STAT(bwRead, statistics::units::Rate<
+                statistics::units::Byte, statistics::units::Second>::get(),
+             "Total read bandwidth from this memory"),
+    ADD_STAT(bwInstRead,
+             statistics::units::Rate<
+                statistics::units::Byte, statistics::units::Second>::get(),
+             "Instruction read bandwidth from this memory"),
+    ADD_STAT(bwWrite, statistics::units::Rate<
+                statistics::units::Byte, statistics::units::Second>::get(),
+             "Write bandwidth from this memory"),
+    ADD_STAT(bwTotal, statistics::units::Rate<
+                statistics::units::Byte, statistics::units::Second>::get(),
+             "Total bandwidth to/from this memory")
 {
 }
 
 void
 AbstractMemory::MemStats::regStats()
 {
-    using namespace Stats;
+    using namespace statistics;
 
-    Stats::Group::regStats();
+    statistics::Group::regStats();
 
     System *sys = mem.system();
     assert(sys);
@@ -257,7 +264,7 @@ AbstractMemory::trackLoadLocked(PacketPtr pkt)
     // first we check if we already have a locked addr for this
     // xc.  Since each xc only gets one, we just update the
     // existing record with the new address.
-    list<LockedAddr>::iterator i;
+    std::list<LockedAddr>::iterator i;
 
     for (i = lockedAddrList.begin(); i != lockedAddrList.end(); ++i) {
         if (i->matchesContext(req)) {
@@ -272,6 +279,7 @@ AbstractMemory::trackLoadLocked(PacketPtr pkt)
     DPRINTF(LLSC, "Adding lock record: context %d addr %#x\n",
             req->contextId(), paddr);
     lockedAddrList.push_front(LockedAddr(req));
+    backdoor.invalidate();
 }
 
 
@@ -296,7 +304,7 @@ AbstractMemory::checkLockedAddrList(PacketPtr pkt)
     // Only remove records when we succeed in finding a record for (xc, addr);
     // then, remove all records with this address.  Failed store-conditionals do
     // not blow unrelated reservations.
-    list<LockedAddr>::iterator i = lockedAddrList.begin();
+    std::list<LockedAddr>::iterator i = lockedAddrList.begin();
 
     if (isLLSC) {
         while (i != lockedAddrList.end()) {
@@ -332,7 +340,7 @@ AbstractMemory::checkLockedAddrList(PacketPtr pkt)
                                            InvalidContextID;
                 if (owner_cid != requestor_cid) {
                     ThreadContext* ctx = system()->threads[owner_cid];
-                    TheISA::globalClearExclusive(ctx);
+                    ctx->getIsaPtr()->globalClearExclusive();
                 }
                 i = lockedAddrList.erase(i);
             } else {
@@ -349,17 +357,15 @@ static inline void
 tracePacket(System *sys, const char *label, PacketPtr pkt)
 {
     int size = pkt->getSize();
-#if THE_ISA != NULL_ISA
     if (size == 1 || size == 2 || size == 4 || size == 8) {
         ByteOrder byte_order = sys->getGuestByteOrder();
-        DPRINTF(MemoryAccess,"%s from %s of size %i on address %#x data "
+        DPRINTF(MemoryAccess, "%s from %s of size %i on address %#x data "
                 "%#x %c\n", label, sys->getRequestorName(pkt->req->
                 requestorId()), size, pkt->getAddr(),
-                size, pkt->getAddr(), pkt->getUintX(byte_order),
+                pkt->getUintX(byte_order),
                 pkt->req->isUncacheable() ? 'U' : 'C');
         return;
     }
-#endif
     DPRINTF(MemoryAccess, "%s from %s of size %i on address %#x %c\n",
             label, sys->getRequestorName(pkt->req->requestorId()),
             size, pkt->getAddr(), pkt->req->isUncacheable() ? 'U' : 'C');
@@ -548,3 +554,6 @@ AbstractMemory::functionalAccess(PacketPtr pkt)
               pkt->cmdString());
     }
 }
+
+} // namespace memory
+} // namespace gem5

@@ -14,6 +14,8 @@
 #define ALM_ELEMENT_PANIC(element, format, args...)                            \
   LLC_SE_PANIC("%s%llu-: " format, (element)->strandId, (element)->idx, ##args)
 
+namespace gem5 {
+
 LLCStreamAtomicLockManager::ElementLockPositionMap
     LLCStreamAtomicLockManager::elementQueuePositionMap;
 
@@ -457,4 +459,5 @@ void LLCStreamAtomicLockManager::checkDeadlock(
   if (foundDeadlock) {
     this->se->controller->m_statLLCDeadlockAtomics++;
   }
-}
+}} // namespace gem5
+

@@ -34,18 +34,15 @@ BUILDDIR = .
 DESTDIR = $(error Please set DESTDIR to wanted installation directory)
 
 CFLAGS = -march=armv8-a
-CPPFLAGS = -DPHYS_OFFSET=0x80000000 \
-		   -DUART_BASE=0x1c090000 -DSYSREGS_BASE=0x1c010000 \
-		   -Dkernel=0x80080000 \
-		   -Dmbox=0x8000fff8 -Ddtb=0x80000100
-
+CPPFLAGS = -DUART_BASE=0x1c090000 -DSYSREGS_BASE=0x1c010000
 LDFLAGS = -N -Ttext 0x00000010 -static
 
 .PHONY: all clean install mkdir
 
 all: mkdir $(BUILDDIR)/boot_emm.arm64 \
 	$(BUILDDIR)/boot.arm64  \
-	$(BUILDDIR)/boot_v2.arm64
+	$(BUILDDIR)/boot_v2.arm64 \
+	$(BUILDDIR)/boot_foundation.arm64
 
 #v1 has a GIC V2
 $(BUILDDIR)/boot_emm.o: CPPFLAGS += -UGICV3 -DGIC_CPU_BASE=0x2c002000 \
@@ -56,6 +53,10 @@ $(BUILDDIR)/boot.o: CPPFLAGS += -UGICV3 -DGIC_CPU_BASE=0x2c002000 \
 #V2 has a GIC V3
 $(BUILDDIR)/boot_v2.o: CPPFLAGS += -DGICV3 -DGIC_REDIST_BASE=0x2c010000 \
 	-DGIC_DIST_BASE=0x2c000000
+
+#Foundation has a GIC V3
+$(BUILDDIR)/boot_foundation.o: CPPFLAGS += -DGICV3 -DGIC_REDIST_BASE=0x2f100000 \
+	-DGIC_DIST_BASE=0x2f000000
 
 $(BUILDDIR)/%.arm64: $(BUILDDIR)/%.o
 	$(LD) -o $@ $< $(LDFLAGS)
@@ -68,6 +69,7 @@ install:
 	install -m 644 $(BUILDDIR)/boot_emm.arm64 \
 		$(BUILDDIR)/boot.arm64 \
 		$(BUILDDIR)/boot_v2.arm64 \
+		$(BUILDDIR)/boot_foundation.arm64 \
 		$(DESTDIR)/.
 
 mkdir:
@@ -75,4 +77,5 @@ mkdir:
 
 clean:
 	rm -f $(BUILDDIR)/*.o
-	rm -f $(BUILDDIR)/boot_emm.arm64 $(BUILDDIR)/boot.arm64 $(BUILDDIR)/boot_v2.arm64
+	rm -f $(BUILDDIR)/boot_emm.arm64 $(BUILDDIR)/boot.arm64 \
+        $(BUILDDIR)/boot_v2.arm64 $(BUILDDIR)/boot_foundation.arm64

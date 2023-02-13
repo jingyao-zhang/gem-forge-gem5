@@ -17,7 +17,7 @@ def template M5OpDeclare {{
             Trace::InstRecord *) const override;
         std::string generateDisassembly(
             Addr pc,
-            const ::Loader::SymbolTable *symtab) const override;
+            const gem5::loader::SymbolTable *symtab) const override;
     };
 }};
 
@@ -51,7 +51,7 @@ def template M5OpExecute {{
 
     std::string
     %(class_name)s::generateDisassembly(Addr pc,
-            const ::Loader::SymbolTable *symtab) const {
+            const gem5::loader::SymbolTable *symtab) const {
         std::vector<RegId> indices = {%(regs)s};
         std::stringstream ss;
         ss << mnemonic << ' ';

@@ -97,7 +97,7 @@ git checkout --track origin/develop
 
 Changes should be made to this develop branch. Changes to the stable branch
 will be blocked. Once a change on the develop branch is properly incorporated
-into the gem5 repo it will be merged into the stable Branch upon the next
+into the gem5 repo it will be merged into the stable branch upon the next
 release of gem5. New releases of gem5 occur three times a year. Ergo, changes
 made to the develop branch should appear on the stable branch within three to
 four months as part of a stable release.
@@ -109,7 +109,11 @@ There are a few repositories other than the main gem5 development repository.
 
  * public/m5threads: The code for a pthreads implementation that works with
    gem5's syscall emulation mode.
-
+ * public/gem5-resources: Resources to enable computer architecture research
+   with gem5. See the README.md file in the gem5-resources repository for more
+   information.
+ * public/gem5-website: The gem5.org website source. See the README.md file in
+   the gem5-website repository for more information.
 
 Making changes to gem5
 ======================
@@ -123,6 +127,46 @@ will be committing changes to your local branch. By using separate branches in
 git, you will be able to pull in and merge changes from mainline and simply
 keep up with upstream changes.
 
+We use a rebase-always model for contributions to the develop branch of gem5.
+In this model, the changes are rebased on top of the tip of develop instead of
+merged. This means that to contribute, you will have to frequently rebase any
+feature branches on top of develop. If you see a "merge conflict" in gerrit, it
+can often be solved with a simple rebase. To find out more information about
+rebasing and git, see the [git book].
+
+[git book]: https://git-scm.com/book/en/v2/Git-Branching-Rebasing
+
+
+Setting up pre-commit
+---------------------
+
+To help ensure the gem5 style guide is maintained, we use [pre-commit](
+https://pre-commit.com) to run checks on changes to be contributed.
+
+To setup pre-commit, run the following in your gem5 directory to install the
+pre-commit and commit message hooks.
+
+```sh
+pip install pre-commit
+pre-commit install -t pre-commit -t commit-msg
+```
+
+The hooks are also automatically installed when gem5 is compiled.
+
+When you run a `git commit` command the pre-commit hook will run checks on your
+committed code. The commit will be blocked if a check fails.
+
+The same checks are run as part of Gerrit's CI tests (those required to obtain
+a Verified label, necessary for a change to be accepted to the develop branch).
+Therefore setting up pre-commit in your local gem5 development environment is
+recommended.
+
+You can automatically format files to pass the pre-commit tests by running:
+
+```sh
+pre-commit run --files <files to format>
+```
+
 Requirements for change descriptions
 ------------------------------------
 To help reviewers and future contributors more easily understand and track
@@ -131,13 +175,17 @@ changes, we require all change descriptions be strictly formatted.
 A canonical commit message consists of three parts:
  * A short summary line describing the change. This line starts with one or
    more keywords (found in the MAINTAINERS file) separated by commas followed
-   by a colon and a description of the change. This line should be no more than
-   65 characters long since version control systems usually add a prefix that
-   causes line-wrapping for longer lines.
+   by a colon and a description of the change. This short description is
+   written in the imperative mood, and should say what happens when the patch
+   is applied. Keep it short and simple. Write it in sentence case preferably
+   not ending in a period. This line should be no more than 65 characters long
+   since version control systems usually add a prefix that causes line-wrapping
+   for longer lines.
  * (Optional, but highly recommended) A detailed description. This describes
    what you have done and why. If the change isn't obvious, you might want to
    motivate why it is needed. Lines need to be wrapped to 72 characters or
-   less.
+   less. Leave a blank line between the first short summary line and this
+   detailed description.
  * Tags describing patch metadata. You are highly recommended to use
    tags to acknowledge reviewers for their work. Gerrit will automatically add
    most tags.
@@ -165,10 +213,14 @@ We currently use the following tags:
    automatically with a commit hook by git.
  * Tested-by: Used to acknowledge people who tested a patch. Sometimes added
    automatically by review systems that integrate with CI systems.
+ * Issue-On: Used to link a commit to an issue in gem5's [issue tracker]. The
+   format should be https://gem5.atlassian.net/browse/GEM5-<NUMBER>
 
-Other than the "Signed-off-by", "Reported-by", and "Tested-by" tags, you
-generally don't need to add these manually as they are added automatically by
-Gerrit.
+[issue tracker]: https://gem5.atlassian.net/
+
+Other than the "Signed-off-by", "Issue-On", "Reported-by", and "Tested-by"
+tags, you generally don't need to add these manually as they are added
+automatically by Gerrit.
 
 It is encouraged for the author of the patch and the submitter to add a
 Signed-off-by tag to the commit message. By adding this line, the contributor
@@ -186,7 +238,10 @@ both tags and in the author field of the changeset.
 For significant changes, authors are encouraged to add copyright information
 and their names at the beginning of the file. The main purpose of the author
 names on the file is to track who is most knowledgeable about the file (e.g.,
-who has contributed a significant amount of code to the file).
+who has contributed a significant amount of code to the file). The
+`util/update-copyright.py` helper script can help to keep your copyright dates
+up-to-date when you make further changes to files which already have your
+copyright but with older dates.
 
 Note: If you do not follow these guidelines, the gerrit review site will
 automatically reject your patch.

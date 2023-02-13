@@ -7,11 +7,13 @@
 
 #include "params/IdealPrefetcher.hh"
 
+namespace gem5 {
+
 class IdealPrefetcher : public GemForgeAccelerator,
                         public GemForgePacketHandler {
 public:
-  using Params = IdealPrefetcherParams;
-  IdealPrefetcher(Params *params);
+  PARAMS(IdealPrefetcher)
+  IdealPrefetcher(const Params &params);
 
   void handshake(GemForgeCPUDelegator *_cpuDelegator,
                  GemForgeAcceleratorManager *_manager) override;
@@ -34,5 +36,7 @@ private:
   bool enabled;
   uint32_t prefetchDistance;
 };
+
+} // namespace gem5
 
 #endif

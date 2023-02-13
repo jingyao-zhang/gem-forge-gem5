@@ -30,28 +30,32 @@ from caches import *
 import sys
 import argparse
 
-parser = argparse.ArgumentParser(description='m5threads atomic tester')
-parser.add_argument('--cpu-type', default='DerivO3CPU')
-parser.add_argument('--num-cores', default='8')
-parser.add_argument('--cmd')
+parser = argparse.ArgumentParser(description="m5threads atomic tester")
+parser.add_argument("--cpu-type", default="DerivO3CPU")
+parser.add_argument("--num-cores", default="8")
+parser.add_argument("--cmd")
 
 args = parser.parse_args()
 
-root = Root(full_system = False)
+root = Root(full_system=False)
 root.system = System()
 
-root.system.clk_domain = SrcClockDomain()
-root.system.clk_domain.clock = '3GHz'
-root.system.clk_domain.voltage_domain = VoltageDomain()
-root.system.mem_mode = 'timing'
-root.system.mem_ranges = [AddrRange('512MB')]
+root.system.workload = SEWorkload.init_compatible(args.cmd)
 
-if args.cpu_type == 'DerivO3CPU':
-    root.system.cpu = [DerivO3CPU(cpu_id = i)
-                       for i in range (int(args.num_cores))]
-elif args.cpu_type == 'TimingSimpleCPU':
-    root.system.cpu = [TimingSimpleCPU(cpu_id=i)
-                       for i in range(int(args.num_cores))]
+root.system.clk_domain = SrcClockDomain()
+root.system.clk_domain.clock = "3GHz"
+root.system.clk_domain.voltage_domain = VoltageDomain()
+root.system.mem_mode = "timing"
+root.system.mem_ranges = [AddrRange("512MB")]
+
+if args.cpu_type == "DerivO3CPU":
+    root.system.cpu = [
+        SparcDerivO3CPU(cpu_id=i) for i in range(int(args.num_cores))
+    ]
+elif args.cpu_type == "TimingSimpleCPU":
+    root.system.cpu = [
+        SparcTimingSimpleCPU(cpu_id=i) for i in range(int(args.num_cores))
+    ]
 else:
     print("ERROR: CPU Type '" + args.cpu_type + "' not supported")
     sys.exit(1)
@@ -60,10 +64,9 @@ root.system.membus = SystemXBar()
 root.system.membus.badaddr_responder = BadAddr()
 root.system.membus.default = root.system.membus.badaddr_responder.pio
 
-root.system.system_port = root.system.membus.slave
+root.system.system_port = root.system.membus.cpu_side_ports
 
-process = Process(executable = args.cmd,
-                  cmd = [args.cmd, str(args.num_cores)])
+process = Process(executable=args.cmd, cmd=[args.cmd, str(args.num_cores)])
 
 for cpu in root.system.cpu:
     cpu.workload = process
@@ -94,7 +97,7 @@ for cpu in root.system.cpu:
 
 root.system.mem_ctrl = DDR3_1600_8x8()
 root.system.mem_ctrl.range = root.system.mem_ranges[0]
-root.system.mem_ctrl.port = root.system.membus.master
+root.system.mem_ctrl.port = root.system.membus.mem_side_ports
 
 m5.instantiate()
 exit_event = m5.simulate()

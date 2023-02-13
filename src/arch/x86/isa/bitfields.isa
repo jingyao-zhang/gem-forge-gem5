@@ -83,10 +83,13 @@ def bitfield ADDRSIZE addrSize;
 def bitfield STACKSIZE stackSize;
 
 def bitfield MODE mode;
+def bitfield CPL mode.cpl;
 def bitfield MODE_MODE mode.mode;
 def bitfield MODE_SUBMODE mode.submode;
 
 def bitfield VEX_PRESENT      evex.vex_present;
+def bitfield VEX_V            evex.v;
+def bitfield VEX_L            evex.l;
 def bitfield EVEX_PRESENT     evex.evex_present;
 def bitfield EVEX_PREFIX_TYPE evex.present;
 def bitfield EVEX_L           evex.l;

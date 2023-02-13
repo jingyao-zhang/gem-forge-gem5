@@ -7,9 +7,11 @@
 #include <utility>
 #include <vector>
 
+namespace gem5 {
+
 namespace {} // namespace
 
-LLVMTraceCPUDriver::LLVMTraceCPUDriver(LLVMTraceCPUDriverParams *p)
+LLVMTraceCPUDriver::LLVMTraceCPUDriver(const Params &p)
     : EmulatedDriver(p), llvm_trace_cpu(nullptr) {}
 
 void LLVMTraceCPUDriver::handshake(LLVMTraceCPU *llvm_trace_cpu) {
@@ -22,8 +24,7 @@ int LLVMTraceCPUDriver::open(ThreadContext *tc, int mode, int flags) {
   auto p = tc->getProcessPtr();
   static int tgt_fd = -1;
   if (tgt_fd == -1) {
-    std::shared_ptr<DeviceFDEntry> fdp;
-    fdp = std::make_shared<DeviceFDEntry>(this, filename);
+    auto fdp = std::make_shared<DeviceFDEntry>(this, filename);
     tgt_fd = p->fds->allocFD(fdp);
   }
   DPRINTF(LLVMTraceCPU, "open called return fd %d\n", tgt_fd);
@@ -86,6 +87,4 @@ void LLVMTraceCPUDriver::replay(Process *p, ThreadContext *tc, Addr trace_ptr,
   this->llvm_trace_cpu->handleReplay(p, tc, trace, vaddr, empty_maps);
 }
 
-LLVMTraceCPUDriver *LLVMTraceCPUDriverParams::create() {
-  return new LLVMTraceCPUDriver(this);
-}
+} // namespace gem5

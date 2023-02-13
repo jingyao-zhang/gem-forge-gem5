@@ -3,8 +3,10 @@
 #include "mem/port_proxy.hh"
 #include "params/BaseCPU.hh"
 
+namespace gem5 {
+
 std::string GemForgeCPUDelegator::readStringFromMem(Addr vaddr) {
-  PortProxy proxy(this->baseCPU->getSendFunctional(),
+  PortProxy proxy(dynamic_cast<RequestPort &>(this->baseCPU->getDataPort()),
                   this->baseCPU->cacheLineSize());
   std::string s;
   uint8_t c;
@@ -21,7 +23,7 @@ std::string GemForgeCPUDelegator::readStringFromMem(Addr vaddr) {
 }
 
 void GemForgeCPUDelegator::readFromMem(Addr vaddr, int size, uint8_t *data) {
-  PortProxy proxy(this->baseCPU->getSendFunctional(),
+  PortProxy proxy(dynamic_cast<RequestPort &>(this->baseCPU->getDataPort()),
                   this->baseCPU->cacheLineSize());
   for (int i = 0; i < size; ++i) {
     Addr paddr;
@@ -34,7 +36,7 @@ void GemForgeCPUDelegator::readFromMem(Addr vaddr, int size, uint8_t *data) {
 
 void GemForgeCPUDelegator::writeToMem(Addr vaddr, int size,
                                       const uint8_t *data) {
-  PortProxy proxy(this->baseCPU->getSendFunctional(),
+  PortProxy proxy(dynamic_cast<RequestPort &>(this->baseCPU->getDataPort()),
                   this->baseCPU->cacheLineSize());
   for (int i = 0; i < size; ++i) {
     Addr paddr;
@@ -47,20 +49,23 @@ void GemForgeCPUDelegator::writeToMem(Addr vaddr, int size,
 
 GemForgeCPUDelegator::GemForgeCPUDelegator(CPUTypeE _cpuType, BaseCPU *_baseCPU)
     : cpuType(_cpuType), baseCPU(_baseCPU) {
-  auto baseCPUParams = dynamic_cast<const BaseCPUParams *>(baseCPU->params());
-  if (baseCPUParams->enableIdeaInorderCPU) {
-    this->ideaInorderCPU = m5::make_unique<GemForgeIdeaInorderCPU>(
-        baseCPU->cpuId(), 4, true, true);
-    this->ideaInorderCPUNoFUTiming = m5::make_unique<GemForgeIdeaInorderCPU>(
-        baseCPU->cpuId(), 4, false, false);
-    this->ideaInorderCPUNoLDTiming = m5::make_unique<GemForgeIdeaInorderCPU>(
-        baseCPU->cpuId(), 4, true, false);
+  const auto &baseCPUParams = baseCPU->params();
+  if (baseCPUParams.enableIdeaInorderCPU) {
+    this->ideaInorderCPU = std::make_unique<GemForgeIdeaInorderCPU>(
+        baseCPU->cpuId(), baseCPU->params().isa[0]->regClasses(), 4, true,
+        true);
+    this->ideaInorderCPUNoFUTiming = std::make_unique<GemForgeIdeaInorderCPU>(
+        baseCPU->cpuId(), baseCPU->params().isa[0]->regClasses(), 4, false,
+        false);
+    this->ideaInorderCPUNoLDTiming = std::make_unique<GemForgeIdeaInorderCPU>(
+        baseCPU->cpuId(), baseCPU->params().isa[0]->regClasses(), 4, true,
+        false);
   }
   this->isaHandler = std::make_shared<GemForgeISAHandler>(this);
 
-  if (baseCPUParams->enableIdeaCache) {
+  if (baseCPUParams.enableIdeaCache) {
     // 256kB idea cache.
-    this->ideaCache = m5::make_unique<GemForgeIdeaCache>(256 * 1024);
+    this->ideaCache = std::make_unique<GemForgeIdeaCache>(256 * 1024);
   }
 }
 
@@ -87,3 +92,4 @@ void GemForgeCPUDelegator::takeOverISAHandlerFrom(
   // Make sure it now has myself as the new delegator.
   this->isaHandler->takeOverBy(this);
 }
+} // namespace gem5

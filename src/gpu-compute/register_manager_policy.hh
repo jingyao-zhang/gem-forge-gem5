@@ -2,8 +2,6 @@
  * Copyright (c) 2016 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -29,14 +27,15 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Mark Wyse
  */
 
 #ifndef __REGISTER_MANAGER_POLICY_HH__
 #define __REGISTER_MANAGER_POLICY_HH__
 
 #include <cstdint>
+
+namespace gem5
+{
 
 class ComputeUnit;
 class HSAQueueEntry;
@@ -76,11 +75,10 @@ class RegisterManagerPolicy
     // free all remaining registers held by specified WF
     virtual void freeRegisters(Wavefront *w) = 0;
 
-    // stats
-    virtual void regStats() = 0;
-
   protected:
     ComputeUnit *cu;
 };
+
+} // namespace gem5
 
 #endif // __REGISTER_MANAGER_POLICY_HH__

@@ -50,87 +50,92 @@
 
 #include <map>
 
+namespace gem5
+{
+
 class OutputDirectory;
 
-namespace Minor
+GEM5_DEPRECATED_NAMESPACE(Minor, minor);
+namespace minor
 {
 
 /** Currently unused stats class. */
-class MinorStats
+struct MinorStats : public statistics::Group
 {
   public:
-
-    /**
-     * Stats for fetch2 stage.
-     */
-    Stats::Scalar numFetch2Branches;
-
-    /**
-     * Stats for decode stage.
-     */
-    Stats::Scalar numDecodedInsts;
-    Stats::Scalar numDecodedOps;
-
-    /**
-     * Stats for execute lsq.
-     */
-    Stats::Scalar numLSQLoadOps;
-    Stats::Scalar numLSQStoreOps;
-    Stats::Scalar numIQIntReads;
-    Stats::Scalar numIQIntWrites;
-    Stats::Scalar numIQIntWakeups;
-    Stats::Scalar numIQFpReads;
-    Stats::Scalar numIQFpWrites;
-    Stats::Scalar numIQFpWakeups;
-    Stats::Scalar numIntRegReads;
-    Stats::Scalar numIntRegWrites;
-    Stats::Scalar numFpRegReads;
-    Stats::Scalar numFpRegWrites;
-
-    /**
-     * Stats for commit stage.
-     */
-    Stats::Scalar numCommittedIntOps;
-    Stats::Scalar numCommittedFpOps;
-    Stats::Scalar numCommittedCallInsts;
+    MinorStats(BaseCPU *parent);
 
     /** Number of simulated instructions */
-    Stats::Scalar numInsts;
+    statistics::Scalar numInsts;
 
     /** Number of simulated insts and microops */
-    Stats::Scalar numOps;
+    statistics::Scalar numOps;
 
     /** Number of ops discarded before committing */
-    Stats::Scalar numDiscardedOps;
+    statistics::Scalar numDiscardedOps;
 
     /** Number of times fetch was asked to suspend by Execute */
-    Stats::Scalar numFetchSuspends;
+    statistics::Scalar numFetchSuspends;
 
     /** Number of cycles in quiescent state */
-    Stats::Scalar quiesceCycles;
+    statistics::Scalar quiesceCycles;
 
     /**
      * ! GemForge
      * Number of cycles issue blocked by a load.
      */
-    Stats::Scalar loadBlockedIssueCycles;
-    Stats::Scalar loadBlockedIssueInsts;
-    Stats::Formula loadBlockedIssueCPI;
-    Stats::Formula loadBlockedIssueCyclesPercentage;
+    statistics::Scalar loadBlockedIssueCycles;
+    statistics::Scalar loadBlockedIssueInsts;
+    statistics::Formula loadBlockedIssueCPI;
+    statistics::Formula loadBlockedIssueCyclesPercentage;
 
     /**
      * Ideal inorder cpu's cycles.
      */
-    Stats::Scalar ideaCycles;
-    Stats::Scalar ideaCyclesNoFUTiming;
-    Stats::Scalar ideaCyclesNoLDTiming;
+    statistics::Scalar ideaCycles;
+    statistics::Scalar ideaCyclesNoFUTiming;
+    statistics::Scalar ideaCyclesNoLDTiming;
 
     /** CPI/IPC for total cycle counts and macro insts */
-    Stats::Formula cpi;
-    Stats::Formula ipc;
+    statistics::Formula cpi;
+    statistics::Formula ipc;
 
     /** Number of instructions by type (OpClass) */
-    Stats::Vector2d committedInstType;
+    statistics::Vector2d committedInstType;
+
+    /**
+     * Stats for fetch2 stage.
+     */
+    statistics::Scalar numFetch2Branches;
+
+    /**
+     * Stats for decode stage.
+     */
+    statistics::Scalar numDecodedInsts;
+    statistics::Scalar numDecodedOps;
+
+    /**
+     * Stats for execute lsq.
+     */
+    statistics::Scalar numLSQLoadOps;
+    statistics::Scalar numLSQStoreOps;
+    statistics::Scalar numIQIntReads;
+    statistics::Scalar numIQIntWrites;
+    statistics::Scalar numIQIntWakeups;
+    statistics::Scalar numIQFpReads;
+    statistics::Scalar numIQFpWrites;
+    statistics::Scalar numIQFpWakeups;
+    statistics::Scalar numIntRegReads;
+    statistics::Scalar numIntRegWrites;
+    statistics::Scalar numFpRegReads;
+    statistics::Scalar numFpRegWrites;
+
+    /**
+     * Stats for commit stage.
+     */
+    statistics::Scalar numCommittedIntOps;
+    statistics::Scalar numCommittedFpOps;
+    statistics::Scalar numCommittedCallInsts;
 
     struct BlockedStat {
       uint64_t cycles = 0;
@@ -147,13 +152,13 @@ class MinorStats
     int dumped = 0;
     OutputDirectory *loadBlockedDir;
 
-  public:
     MinorStats();
+    /** Number of branches commited */
+    statistics::Vector2d committedControl;
 
-  public:
-    void regStats(const std::string &name, BaseCPU &baseCpu);
 };
 
-}
+} // namespace minor
+} // namespace gem5
 
 #endif /* __CPU_MINOR_STATS_HH__ */

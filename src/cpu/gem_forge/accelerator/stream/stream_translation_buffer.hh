@@ -7,6 +7,8 @@
 #include <functional>
 #include <queue>
 
+namespace gem5 {
+
 /**
  * Represent a simple translation buffer for each stream.
  */
@@ -47,8 +49,8 @@ private:
   void startTranslation(StreamTranslation *translation) {
     assert(translation->state == StreamTranslation::State::INITIATED);
     translation->state = StreamTranslation::State::STARTED;
-    BaseTLB::Mode mode =
-        translation->pkt->isRead() ? BaseTLB::Mode::Read : BaseTLB::Mode::Write;
+    BaseMMU::Mode mode =
+        translation->pkt->isRead() ? BaseMMU::Mode::Read : BaseMMU::Mode::Write;
     if (this->accessLastLevelTLBOnly) {
       this->tlb->translateTimingAtLastLevel(translation->pkt->req,
                                             translation->tc, translation, mode);
@@ -89,7 +91,7 @@ private:
     }
   }
 
-  struct StreamTranslation : public BaseTLB::Translation {
+  struct StreamTranslation : public BaseMMU::Translation {
     PacketPtr pkt;
     ThreadContext *tc;
     T data;
@@ -113,7 +115,7 @@ private:
     }
 
     void finish(const Fault &fault, const RequestPtr &req, ThreadContext *tc,
-                BaseTLB::Mode mode) override {
+                BaseMMU::Mode mode) override {
       assert(fault == NoFault && "Fault for StreamTranslation.");
       this->buffer->finishTranslation(this);
     }
@@ -126,5 +128,7 @@ private:
 
   std::queue<StreamTranslation *> inflyTranslationQueue;
 };
+
+} // namespace gem5
 
 #endif

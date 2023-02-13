@@ -17,10 +17,12 @@
 #define DEBUG_TYPE MLCRubyStreamBase
 #include "../stream_log.hh"
 
+namespace gem5 {
+
 MLCDynStream::MLCDynStream(CacheStreamConfigureDataPtr _configData,
-                           AbstractStreamAwareController *_controller,
-                           MessageBuffer *_responseMsgBuffer,
-                           MessageBuffer *_requestToLLCMsgBuffer,
+                           ruby::AbstractStreamAwareController *_controller,
+                           ruby::MessageBuffer *_responseMsgBuffer,
+                           ruby::MessageBuffer *_requestToLLCMsgBuffer,
                            bool _isMLCDirect)
     : stream(_configData->stream),
       strandId(_configData->dynamicId, _configData->strandIdx,
@@ -156,7 +158,7 @@ void MLCDynStream::recvCoreReq(const DynStreamSliceId &sliceId) {
   if (slice->dataReady) {
     // Sanity check the address.
     // ! Core is line address.
-    if (slice->coreSliceId.vaddr != makeLineAddress(slice->sliceId.vaddr)) {
+    if (slice->coreSliceId.vaddr != ruby::makeLineAddress(slice->sliceId.vaddr)) {
       MLC_SLICE_PANIC(sliceId, "Mismatch between Core %#x and LLC %#x.\n",
                       slice->coreSliceId.vaddr, slice->sliceId.vaddr);
     }
@@ -383,17 +385,17 @@ void MLCDynStream::makeResponse(MLCStreamSlice &slice) {
   assert(slice.coreStatus == MLCStreamSlice::CoreStatusE::WAIT_DATA &&
          "Element core status should be WAIT_DATA to make response.");
   Addr paddr = this->translateVAddr(slice.sliceId.vaddr);
-  auto paddrLine = makeLineAddress(paddr);
+  auto paddrLine = ruby::makeLineAddress(paddr);
 
   auto selfMachineId = this->controller->getMachineID();
-  auto upperMachineId = MachineID(
-      static_cast<MachineType>(selfMachineId.type - 1), selfMachineId.num);
-  auto msg = std::make_shared<CoherenceMsg>(this->controller->clockEdge());
+  auto upperMachineId = ruby::MachineID(
+      static_cast<ruby::MachineType>(selfMachineId.type - 1), selfMachineId.num);
+  auto msg = std::make_shared<ruby::CoherenceMsg>(this->controller->clockEdge());
   msg->m_addr = paddrLine;
-  msg->m_Class = CoherenceClass_DATA_EXCLUSIVE;
+  msg->m_Class = ruby::CoherenceClass_DATA_EXCLUSIVE;
   msg->m_Sender = selfMachineId;
   msg->m_Dest = upperMachineId;
-  msg->m_MessageSize = MessageSizeType_Response_Data;
+  msg->m_MessageSize = ruby::MessageSizeType_Response_Data;
   msg->m_DataBlk = slice.dataBlock;
 
   /**
@@ -403,13 +405,13 @@ void MLCDynStream::makeResponse(MLCStreamSlice &slice) {
    */
   if (this->stream->isAtomicComputeStream() ||
       this->stream->isLoadComputeStream()) {
-    msg->m_Class = CoherenceClass_STREAM_FROM_MLC;
+    msg->m_Class = ruby::CoherenceClass_STREAM_FROM_MLC;
   }
 
   // Show the data.
   if (Debug::DEBUG_TYPE) {
     std::stringstream ss;
-    auto lineOffset = slice.sliceId.vaddr % RubySystem::getBlockSizeBytes();
+    auto lineOffset = slice.sliceId.vaddr % ruby::RubySystem::getBlockSizeBytes();
     auto dataStr = GemForgeUtils::dataToString(
         slice.dataBlock.getData(lineOffset, slice.sliceId.getSize()),
         slice.sliceId.getSize());
@@ -599,3 +601,5 @@ void MLCDynStream::panicDump() const {
                    MLCStreamSlice::convertCoreStatusToString(slice.coreStatus));
   }
 }
+} // namespace gem5
+

@@ -36,86 +36,58 @@ from m5.params import *
 # one of these two flags set, it is possible for an instruction to have
 # neither (e.g., direct unconditional branches, memory barriers) or both
 # (e.g., an FP/int conversion).
-# - If IsMemRef is set, then exactly one of IsLoad or IsStore will be set.
 # - If IsControl is set, then exactly one of IsDirectControl or IsIndirect
 # Control will be set, and exactly one of IsCondControl or IsUncondControl
 # will be set.
-# - IsSerializing, IsMemBarrier, and IsWriteBarrier are implemented as flags
-# since in the current model there's no other way for instructions to inject
-# behavior into the pipeline outside of fetch.  Once we go to an exec-in-exec
-# CPU model we should be able to get rid of these flags and implement this
-# behavior via the execute() methods.
+
 
 class StaticInstFlags(Enum):
-    wrapper_name = 'StaticInstFlags'
+    wrapper_name = "StaticInstFlags"
     wrapper_is_struct = True
-    enum_name = 'Flags'
+    enum_name = "Flags"
 
     vals = [
-        'IsNop',            # Is a no-op (no effect at all).
-
-        'IsInteger',        # References integer regs.
-        'IsFloating',       # References FP regs.
-        'IsCC',             # References CC regs.
-        'IsVector',         # References Vector regs.
-        'IsVectorElem',     # References Vector reg elems.
-
-        'IsMemRef',         # References memory (load, store, or prefetch)
-        'IsLoad',           # Reads from memory (load or prefetch).
-        'IsStore',          # Writes to memory.
-        'IsAtomic',         # Does atomic RMW to memory.
-        'IsStoreConditional',   # Store conditional instruction.
-        'IsIndexed',        # Accesses memory with an indexed address
-                            # computation
-        'IsInstPrefetch',   # Instruction-cache prefetch.
-        'IsDataPrefetch',   # Data-cache prefetch.
-
-        'IsControl',        # Control transfer instruction.
-        'IsDirectControl',  # PC relative control transfer.
-        'IsIndirectControl',# Register indirect control transfer.
-        'IsCondControl',    # Conditional control transfer.
-        'IsUncondControl',  # Unconditional control transfer.
-        'IsCall',           # Subroutine call.
-        'IsReturn',         # Subroutine return.
-
-        'IsCondDelaySlot',  # Conditional Delay-Slot Instruction
-
-        'IsThreadSync',     # Thread synchronization operation.
-
-        'IsSerializing',    # Serializes pipeline: won't execute until all
-                            # older instructions have committed.
-        'IsSerializeBefore',
-        'IsSerializeAfter',
-        'IsMemBarrier',     # Is a memory barrier
-        'IsWriteBarrier',   # Is a write barrier
-        'IsReadBarrier',    # Is a read barrier
-        'IsERET',           # <- Causes the IFU to stall (MIPS ISA)
-
-        'IsNonSpeculative', # Should not be executed speculatively
-        'IsQuiesce',        # Is a quiesce instruction
-
-        'IsIprAccess',      # Accesses IPRs
-        'IsUnverifiable',   # Can't be verified by a checker
-
-        'IsSyscall',        # Causes a system call to be emulated in syscall
-                            # emulation mode.
-
+        "IsNop",  # Is a no-op (no effect at all).
+        "IsInteger",  # References integer regs.
+        "IsFloating",  # References FP regs.
+        "IsVector",  # References Vector regs.
+        "IsVectorElem",  # References Vector reg elems.
+        "IsLoad",  # Reads from memory (load or prefetch).
+        "IsStore",  # Writes to memory.
+        "IsAtomic",  # Does atomic RMW to memory.
+        "IsStoreConditional",  # Store conditional instruction.
+        "IsInstPrefetch",  # Instruction-cache prefetch.
+        "IsDataPrefetch",  # Data-cache prefetch.
+        "IsControl",  # Control transfer instruction.
+        "IsDirectControl",  # PC relative control transfer.
+        "IsIndirectControl",  # Register indirect control transfer.
+        "IsCondControl",  # Conditional control transfer.
+        "IsUncondControl",  # Unconditional control transfer.
+        "IsCall",  # Subroutine call.
+        "IsReturn",  # Subroutine return.
+        "IsSerializing",  # Serializes pipeline: won't execute until all
+        # older instructions have committed.
+        "IsSerializeBefore",
+        "IsSerializeAfter",
+        "IsWriteBarrier",  # Is a write barrier
+        "IsReadBarrier",  # Is a read barrier
+        "IsNonSpeculative",  # Should not be executed speculatively
+        "IsQuiesce",  # Is a quiesce instruction
+        "IsUnverifiable",  # Can't be verified by a checker
+        "IsSyscall",  # Causes a system call to be emulated in syscall
+        # emulation mode.
         # Flags for microcode
-        'IsMacroop',        # Is a macroop containing microops
-        'IsMicroop',        # Is a microop
-        'IsDelayedCommit',  # This microop doesn't commit right away
-        'IsLastMicroop',    # This microop ends a microop sequence
-        'IsFirstMicroop',   # This microop begins a microop sequence
-        # This flag doesn't do anything yet
-        'IsMicroBranch',    # This microop branches within the microcode for
-                            # a macroop
-        'IsDspOp',
-        'IsSquashAfter',     # Squash all uncommitted state after executed
+        "IsMacroop",  # Is a macroop containing microops
+        "IsMicroop",  # Is a microop
+        "IsDelayedCommit",  # This microop doesn't commit right away
+        "IsLastMicroop",  # This microop ends a microop sequence
+        "IsFirstMicroop",  # This microop begins a microop sequence
+        "IsSquashAfter",  # Squash all uncommitted state after executed
         # hardware transactional memory
-        'IsHtmStart',       # Starts a HTM transaction
-        'IsHtmStop',        # Stops (commits) a HTM transaction
-        'IsHtmCancel',      # Explicitely aborts a HTM transaction
+        "IsHtmStart",  # Starts a HTM transaction
+        "IsHtmStop",  # Stops (commits) a HTM transaction
+        "IsHtmCancel",  # Explicitely aborts a HTM transaction
 
         "IsLockedRMW",      # X86 LockedRMW
         'IsGemForge',       # A GemForge instruction
-        ]
+    ]

@@ -1,8 +1,8 @@
 microcode = '''
 
 def macroop VPMOVDQ_XMM_XMM {
-    movfpl2l dest=xmm0, src1=xmm0m, dataSize=4
-    movfpl2h dest=xmm0, src1=xmm1m, dataSize=4
+    movfpl2l xmm0, xmm0m, dataSize=4
+    movfpl2h xmm0, xmm1m, dataSize=4
     vclear dest=xmm1, destVL=8
 };
 
@@ -18,10 +18,10 @@ def macroop VPMOVDQ_P_XMM {
 };
 
 def macroop VPMOVDQ_XMM_YMM {
-    movfpl2l dest=xmm0, src1=xmm0m, dataSize=4
-    movfpl2h dest=xmm0, src1=xmm1m, dataSize=4
-    movfpl2l dest=xmm1, src1=xmm2m, dataSize=4
-    movfpl2h dest=xmm1, src1=xmm3m, dataSize=4
+    movfpl2l xmm0, xmm0m, dataSize=4
+    movfpl2h xmm0, xmm1m, dataSize=4
+    movfpl2l xmm1, xmm2m, dataSize=4
+    movfpl2h xmm1, xmm3m, dataSize=4
     vclear dest=xmm2, destVL=16
 };
 
@@ -41,14 +41,14 @@ def macroop VPMOVDQ_P_YMM {
 };
 
 def macroop VPMOVDQ_YMM_ZMM {
-    movfpl2l dest=xmm0, src1=xmm0m, dataSize=4
-    movfpl2h dest=xmm0, src1=xmm1m, dataSize=4
-    movfpl2l dest=xmm1, src1=xmm2m, dataSize=4
-    movfpl2h dest=xmm1, src1=xmm3m, dataSize=4
-    movfpl2l dest=xmm2, src1=xmm4m, dataSize=4
-    movfpl2h dest=xmm2, src1=xmm5m, dataSize=4
-    movfpl2l dest=xmm3, src1=xmm6m, dataSize=4
-    movfpl2h dest=xmm3, src1=xmm7m, dataSize=4
+    movfpl2l xmm0, xmm0m, dataSize=4
+    movfpl2h xmm0, xmm1m, dataSize=4
+    movfpl2l xmm1, xmm2m, dataSize=4
+    movfpl2h xmm1, xmm3m, dataSize=4
+    movfpl2l xmm2, xmm4m, dataSize=4
+    movfpl2h xmm2, xmm5m, dataSize=4
+    movfpl2l xmm3, xmm6m, dataSize=4
+    movfpl2h xmm3, xmm7m, dataSize=4
     vclear dest=xmm4, destVL=32
 };
 

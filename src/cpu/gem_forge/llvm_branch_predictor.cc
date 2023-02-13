@@ -2,6 +2,8 @@
 #include "base/trace.hh"
 #include "debug/LLVMBranchPredictor.hh"
 
+namespace gem5 {
+
 bool LLVMBranchPredictor::predictAndUpdate(const LLVMDynamicInst *inst) {
   if (!inst->isBranchInst()) {
     panic("This is not a branch inst %s.\n", inst->getInstName().c_str());
@@ -53,3 +55,5 @@ void LLVMBranchPredictor::update(const LLVMDynamicInst *inst) {
     }
   }
 }
+} // namespace gem5
+

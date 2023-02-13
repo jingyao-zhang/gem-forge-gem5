@@ -5,6 +5,8 @@
 
 #include "cpu/gem_forge/accelerator/stream/stream_ndc_packet.hh"
 
+namespace gem5 {
+
 class LLCStreamNDCController {
 public:
   LLCStreamNDCController(LLCStreamEngine *_llcSE);
@@ -12,9 +14,9 @@ public:
   void receiveStreamNDCRequest(PacketPtr pkt);
 
   void receiveStreamData(const DynStreamSliceId &sliceId,
-                         const DataBlock &dataBlock,
-                         const DataBlock &storeValueBlock);
-  void receiveStreamForwardRequest(const RequestMsg &msg);
+                         const ruby::DataBlock &dataBlock,
+                         const ruby::DataBlock &storeValueBlock);
+  void receiveStreamForwardRequest(const ruby::RequestMsg &msg);
 
   /**
    * Compute the element value.
@@ -29,7 +31,7 @@ public:
   void completeComputation(const LLCStreamElementPtr &element,
                            const StreamValue &value);
 
-  static void allocateContext(AbstractStreamAwareController *mlcController,
+  static void allocateContext(ruby::AbstractStreamAwareController *mlcController,
                               StreamNDCPacketPtr &streamNDC);
 
 private:
@@ -65,13 +67,15 @@ private:
                                    int lineOffset, bool forceIdea);
 
   void handleNDC(NDCContext &context, const DynStreamSliceId &sliceId,
-                 const DataBlock &dataBlock);
+                 const ruby::DataBlock &dataBlock);
   void handleAtomicNDC(NDCContext &context,
                        const DynStreamSliceId &sliceId);
   void handleForwardNDC(NDCContext &context,
                         const DynStreamSliceId &sliceId,
-                        const DataBlock &dataBlock);
+                        const ruby::DataBlock &dataBlock);
   void handleStoreNDC(NDCContext &context);
 };
+
+} // namespace gem5
 
 #endif

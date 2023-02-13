@@ -4,6 +4,8 @@
 #define DEBUG_TYPE StreamRangeSync
 #include "../stream_log.hh"
 
+namespace gem5 {
+
 LLCStreamCommitController::LLCStreamCommitController(LLCStreamEngine *_se)
     : se(_se) {}
 
@@ -236,3 +238,5 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
   }
   return true;
 }
+} // namespace gem5
+

@@ -1,5 +1,7 @@
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_LOG_HH__
 #define __CPU_TDG_ACCELERATOR_STREAM_LOG_HH__
+namespace gem5 {
+
 /**
  * Include this in .cc and define DEBUG_TYPE
  */
@@ -131,4 +133,6 @@
   panic(LLC_ELEMENT_MSG(element, format, ##args))
 #define LLC_ELEMENT_HACK(element, format, args...)                             \
   hack(LLC_ELEMENT_MSG(element, format, ##args))
+} // namespace gem5
+
 #endif

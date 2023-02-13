@@ -1,3 +1,15 @@
+# Copyright (c) 2021 Arm Limited
+# All rights reserved.
+#
+# The license below extends only to copyright in the software and shall
+# not be construed as granting a license to any other intellectual
+# property including but not limited to intellectual property relating
+# to a hardware implementation of the functionality of the software
+# licensed hereunder.  You may use the software subject to the license
+# terms below provided that you ensure that this notice is replicated
+# unmodified and in its entirety in all distributions of the software,
+# modified or unmodified, in source code or in binary form.
+#
 # Copyright (c) 2005 The Regents of The University of Michigan
 # Copyright (c) 2010 Advanced Micro Devices, Inc.
 # All rights reserved.
@@ -25,15 +37,11 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import six
-if six.PY3:
-    long = int
-
 # metric prefixes
-atto  = 1.0e-18
+atto = 1.0e-18
 femto = 1.0e-15
-pico  = 1.0e-12
-nano  = 1.0e-9
+pico = 1.0e-12
+nano = 1.0e-9
 micro = 1.0e-6
 milli = 1.0e-3
 
@@ -42,7 +50,7 @@ mega = 1.0e6
 giga = 1.0e9
 tera = 1.0e12
 peta = 1.0e15
-exa  = 1.0e18
+exa = 1.0e18
 
 # power of 2 prefixes
 kibi = 1024
@@ -53,48 +61,80 @@ pebi = tebi * 1024
 exbi = pebi * 1024
 
 metric_prefixes = {
-    'Ei': exbi,
-    'E': exa,
-    'Pi': pebi,
-    'P': peta,
-    'Ti': tebi,
-    'T': tera,
-    'Gi': gibi,
-    'G': giga,
-    'M': mega,
-    'ki': kibi,
-    'k': kilo,
-    'Mi': mebi,
-    'm': milli,
-    'u': micro,
-    'n': nano,
-    'p': pico,
-    'f': femto,
-    'a': atto,
+    "Ei": exbi,
+    "E": exa,
+    "Pi": pebi,
+    "P": peta,
+    "Ti": tebi,
+    "T": tera,
+    "Gi": gibi,
+    "G": giga,
+    "M": mega,
+    "Ki": kibi,
+    "k": kilo,
+    "Mi": mebi,
+    "m": milli,
+    "u": micro,
+    "n": nano,
+    "p": pico,
+    "f": femto,
+    "a": atto,
 }
 
 binary_prefixes = {
-    'Ei': exbi,
-    'E' : exbi,
-    'Pi': pebi,
-    'P' : pebi,
-    'Ti': tebi,
-    'T' : tebi,
-    'Gi': gibi,
-    'G' : gibi,
-    'Mi': mebi,
-    'M' : mebi,
-    'ki': kibi,
-    'k' : kibi,
+    "Ei": exbi,
+    "E": exbi,
+    "Pi": pebi,
+    "P": pebi,
+    "Ti": tebi,
+    "T": tebi,
+    "Gi": gibi,
+    "G": gibi,
+    "Mi": mebi,
+    "M": mebi,
+    "Ki": kibi,
+    "k": kibi,
 }
+
 
 def assertStr(value):
     if not isinstance(value, str):
         raise TypeError("wrong type '%s' should be str" % type(value))
 
 
-# memory size configuration stuff
+def _split_suffix(value, suffixes):
+    """Split a string based on a suffix from a list of suffixes.
+
+    :param value: String value to test for a matching suffix.
+    :param suffixes: Container of suffixes to test.
+
+    :returns: A tuple of (value, suffix). Suffix is the empty string
+              if there is no match.
+
+    """
+    matches = [sfx for sfx in suffixes if value.endswith(sfx)]
+    assert len(matches) <= 1
+
+    return (value[: -len(matches[0])], matches[0]) if matches else (value, "")
+
+
 def toNum(value, target_type, units, prefixes, converter):
+    """Convert a string using units and prefixes to (typically) a float or
+    integer.
+
+    String values are assumed to either be a naked magnitude without a
+    unit or prefix, or a magnitude with a unit and an optional prefix.
+
+    :param value: String value to convert.
+    :param target_type: Type name for error messages.
+    :param units: Unit (string) or list of valid units.
+    :param prefixes: Mapping of prefixes to multipliers.
+    :param converter: Helper function to convert magnitude to native
+                      type.
+
+    :returns: Tuple of (converted value, unit)
+
+    """
     assertStr(value)
 
     def convert(val):
@@ -102,119 +142,157 @@ def toNum(value, target_type, units, prefixes, converter):
             return converter(val)
         except ValueError:
             raise ValueError(
-                "cannot convert '%s' to %s" % (value, target_type))
+                "cannot convert '%s' to %s" % (value, target_type)
+            )
 
-    if units and not value.endswith(units):
-        units = None
+    # Units can be None, the empty string, or a list/tuple. Convert
+    # to a tuple for consistent handling.
     if not units:
-        return convert(value)
+        units = tuple()
+    elif isinstance(units, str):
+        units = (units,)
+    else:
+        units = tuple(units)
 
-    value = value[:-len(units)]
+    magnitude_prefix, unit = _split_suffix(value, units)
 
-    prefix = next((p for p in prefixes.keys() if value.endswith(p)), None)
-    if not prefix:
-        return convert(value)
-    value = value[:-len(prefix)]
+    # We only allow a prefix if there is a unit
+    if unit:
+        magnitude, prefix = _split_suffix(magnitude_prefix, prefixes)
+        scale = prefixes[prefix] if prefix else 1
+    else:
+        magnitude, prefix, scale = magnitude_prefix, "", 1
 
-    return convert(value) * prefixes[prefix]
+    return convert(magnitude) * scale, unit
 
-def toFloat(value, target_type='float', units=None, prefixes=[]):
-    return toNum(value, target_type, units, prefixes, float)
 
-def toMetricFloat(value, target_type='float', units=None):
+def toFloat(value, target_type="float", units=None, prefixes=[]):
+    return toNum(value, target_type, units, prefixes, float)[0]
+
+
+def toMetricFloat(value, target_type="float", units=None):
     return toFloat(value, target_type, units, metric_prefixes)
 
-def toBinaryFloat(value, target_type='float', units=None):
+
+def toBinaryFloat(value, target_type="float", units=None):
     return toFloat(value, target_type, units, binary_prefixes)
 
-def toInteger(value, target_type='integer', units=None, prefixes=[]):
-    intifier = lambda x: int(x, 0)
-    return toNum(value, target_type, units, prefixes, intifier)
 
-def toMetricInteger(value, target_type='integer', units=None):
+def toInteger(value, target_type="integer", units=None, prefixes=[]):
+    return toNum(value, target_type, units, prefixes, lambda x: int(x, 0))[0]
+
+
+def toMetricInteger(value, target_type="integer", units=None):
     return toInteger(value, target_type, units, metric_prefixes)
 
-def toBinaryInteger(value, target_type='integer', units=None):
+
+def toBinaryInteger(value, target_type="integer", units=None):
     return toInteger(value, target_type, units, binary_prefixes)
+
 
 def toBool(value):
     assertStr(value)
 
     value = value.lower()
-    if value in ('true', 't', 'yes', 'y', '1'):
+    if value in ("true", "t", "yes", "y", "1"):
         return True
-    if value in ('false', 'f', 'no', 'n', '0'):
+    if value in ("false", "f", "no", "n", "0"):
         return False
-    return result
+    raise ValueError("cannot convert '%s' to bool" % value)
+
 
 def toFrequency(value):
-    return toMetricFloat(value, 'frequency', 'Hz')
+    return toMetricFloat(value, "frequency", "Hz")
+
 
 def toLatency(value):
-    return toMetricFloat(value, 'latency', 's')
+    return toMetricFloat(value, "latency", "s")
+
 
 def anyToLatency(value):
-    """result is a clock period"""
-    try:
-        return 1 / toFrequency(value)
-    except (ValueError, ZeroDivisionError):
-        pass
+    """Convert a magnitude and unit to a clock period."""
 
-    try:
-        return toLatency(value)
-    except ValueError:
-        pass
+    magnitude, unit = toNum(
+        value,
+        target_type="latency",
+        units=("Hz", "s"),
+        prefixes=metric_prefixes,
+        converter=float,
+    )
+    if unit == "s":
+        return magnitude
+    elif unit == "Hz":
+        try:
+            return 1.0 / magnitude
+        except ZeroDivisionError:
+            raise ValueError(f"cannot convert '{value}' to clock period")
+    else:
+        raise ValueError(f"'{value}' needs a valid unit to be unambiguous.")
 
-    raise ValueError("cannot convert '%s' to clock period" % value)
 
 def anyToFrequency(value):
-    """result is a clock period"""
-    try:
-        return toFrequency(value)
-    except ValueError:
-        pass
+    """Convert a magnitude and unit to a clock frequency."""
 
-    try:
-        return 1 / toLatency(value)
-    except ValueError as ZeroDivisionError:
-        pass
+    magnitude, unit = toNum(
+        value,
+        target_type="frequency",
+        units=("Hz", "s"),
+        prefixes=metric_prefixes,
+        converter=float,
+    )
+    if unit == "Hz":
+        return magnitude
+    elif unit == "s":
+        try:
+            return 1.0 / magnitude
+        except ZeroDivisionError:
+            raise ValueError(f"cannot convert '{value}' to frequency")
+    else:
+        raise ValueError(f"'{value}' needs a valid unit to be unambiguous.")
 
-    raise ValueError("cannot convert '%s' to clock period" % value)
 
 def toNetworkBandwidth(value):
-    return toMetricFloat(value, 'network bandwidth', 'bps')
+    return toMetricFloat(value, "network bandwidth", "bps")
+
 
 def toMemoryBandwidth(value):
-    return toBinaryFloat(value, 'memory bandwidth', 'B/s')
+    return toBinaryFloat(value, "memory bandwidth", "B/s")
+
 
 def toMemorySize(value):
-    return toBinaryInteger(value, 'memory size', 'B')
+    return toBinaryInteger(value, "memory size", "B")
+
 
 def toIpAddress(value):
     if not isinstance(value, str):
         raise TypeError("wrong type '%s' should be str" % type(value))
 
-    bytes = value.split('.')
+    bytes = value.split(".")
     if len(bytes) != 4:
-        raise ValueError('invalid ip address %s' % value)
+        raise ValueError("invalid ip address %s" % value)
 
     for byte in bytes:
-        if not 0 <= int(byte) <= 0xff:
-            raise ValueError('invalid ip address %s' % value)
+        if not 0 <= int(byte) <= 0xFF:
+            raise ValueError("invalid ip address %s" % value)
 
-    return (int(bytes[0]) << 24) | (int(bytes[1]) << 16) | \
-           (int(bytes[2]) << 8)  | (int(bytes[3]) << 0)
+    return (
+        (int(bytes[0]) << 24)
+        | (int(bytes[1]) << 16)
+        | (int(bytes[2]) << 8)
+        | (int(bytes[3]) << 0)
+    )
+
 
 def toIpNetmask(value):
     if not isinstance(value, str):
         raise TypeError("wrong type '%s' should be str" % type(value))
 
-    (ip, netmask) = value.split('/')
+    (ip, netmask) = value.split("/")
     ip = toIpAddress(ip)
-    netmaskParts = netmask.split('.')
+    netmaskParts = netmask.split(".")
     if len(netmaskParts) == 1:
         if not 0 <= int(netmask) <= 32:
-            raise ValueError('invalid netmask %s' % netmask)
+            raise ValueError("invalid netmask %s" % netmask)
         return (ip, int(netmask))
     elif len(netmaskParts) == 4:
         netmaskNum = toIpAddress(netmask)
@@ -222,28 +300,57 @@ def toIpNetmask(value):
             return (ip, 0)
         testVal = 0
         for i in range(32):
-            testVal |= (1 << (31 - i))
+            testVal |= 1 << (31 - i)
             if testVal == netmaskNum:
                 return (ip, i + 1)
-        raise ValueError('invalid netmask %s' % netmask)
+        raise ValueError("invalid netmask %s" % netmask)
     else:
-        raise ValueError('invalid netmask %s' % netmask)
+        raise ValueError("invalid netmask %s" % netmask)
+
 
 def toIpWithPort(value):
     if not isinstance(value, str):
         raise TypeError("wrong type '%s' should be str" % type(value))
 
-    (ip, port) = value.split(':')
+    (ip, port) = value.split(":")
     ip = toIpAddress(ip)
-    if not 0 <= int(port) <= 0xffff:
-        raise ValueError('invalid port %s' % port)
+    if not 0 <= int(port) <= 0xFFFF:
+        raise ValueError("invalid port %s" % port)
     return (ip, int(port))
 
+
 def toVoltage(value):
-    return toMetricFloat(value, 'voltage', 'V')
+    return toMetricFloat(value, "voltage", "V")
+
 
 def toCurrent(value):
-    return toMetricFloat(value, 'current', 'A')
+    return toMetricFloat(value, "current", "A")
+
 
 def toEnergy(value):
-    return toMetricFloat(value, 'energy', 'J')
+    return toMetricFloat(value, "energy", "J")
+
+
+def toTemperature(value):
+    """Convert a string value specified to a temperature in Kelvin"""
+
+    magnitude, unit = toNum(
+        value,
+        target_type="temperature",
+        units=("K", "C", "F"),
+        prefixes=metric_prefixes,
+        converter=float,
+    )
+    if unit == "K":
+        kelvin = magnitude
+    elif unit == "C":
+        kelvin = magnitude + 273.15
+    elif unit == "F":
+        kelvin = (magnitude + 459.67) / 1.8
+    else:
+        raise ValueError(f"'{value}' needs a valid temperature unit.")
+
+    if kelvin < 0:
+        raise ValueError(f"{value} is an invalid temperature")
+
+    return kelvin

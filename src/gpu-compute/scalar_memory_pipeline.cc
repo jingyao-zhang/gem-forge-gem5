@@ -2,8 +2,6 @@
  * Copyright (c) 2016-2017 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -29,8 +27,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: John Kalamatianos
  */
 
 #include "gpu-compute/scalar_memory_pipeline.hh"
@@ -43,10 +39,13 @@
 #include "gpu-compute/shader.hh"
 #include "gpu-compute/wavefront.hh"
 
-ScalarMemPipeline::ScalarMemPipeline(const ComputeUnitParams* p,
+namespace gem5
+{
+
+ScalarMemPipeline::ScalarMemPipeline(const ComputeUnitParams &p,
                                      ComputeUnit &cu)
     : computeUnit(cu), _name(cu.name() + ".ScalarMemPipeline"),
-      queueSize(p->scalar_mem_queue_size),
+      queueSize(p.scalar_mem_queue_size),
       inflightStores(0), inflightLoads(0)
 {
 }
@@ -144,6 +143,21 @@ ScalarMemPipeline::exec()
 }
 
 void
-ScalarMemPipeline::regStats()
+ScalarMemPipeline::issueRequest(GPUDynInstPtr gpuDynInst)
 {
+    Wavefront *wf = gpuDynInst->wavefront();
+    if (gpuDynInst->isLoad()) {
+        wf->scalarRdGmReqsInPipe--;
+        wf->scalarOutstandingReqsRdGm++;
+    } else if (gpuDynInst->isStore()) {
+        wf->scalarWrGmReqsInPipe--;
+        wf->scalarOutstandingReqsWrGm++;
+    }
+
+    wf->outstandingReqs++;
+    wf->validateRequestCounters();
+
+    issuedRequests.push(gpuDynInst);
 }
+
+} // namespace gem5

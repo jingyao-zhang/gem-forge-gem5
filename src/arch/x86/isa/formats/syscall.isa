@@ -54,27 +54,24 @@ output header {{
         }
 
         std::string generateDisassembly(Addr pc,
-                const Loader::SymbolTable *symtab) const override;
+                const loader::SymbolTable *symtab) const override;
     };
 }};
 
 output decoder {{
     std::string
     SyscallInst::generateDisassembly(
-            Addr PC, const Loader::SymbolTable *symtab) const
+            Addr PC, const loader::SymbolTable *symtab) const
     {
         std::stringstream response;
-
         printMnemonic(response, mnemonic);
-        ccprintf(response, " ");
-        printReg(response, _srcRegIdx[0], machInst.opSize);
         return response.str();
     }
 }};
 
 def template SyscallExecute {{
     Fault %(class_name)s::execute(ExecContext *xc,
-            Trace::InstRecord *traceData) const
+            trace::InstRecord *traceData) const
     {
         Fault fault = NoFault;
         %(op_decl)s;
@@ -91,4 +88,3 @@ def format SyscallInst(code, *opt_flags) {{
     decode_block = BasicDecode.subst(iop)
     exec_output = SyscallExecute.subst(iop)
 }};
-

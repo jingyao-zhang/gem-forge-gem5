@@ -3,6 +3,8 @@
 
 #include "sim/faults.hh"
 
+namespace gem5 {
+
 namespace GemForge {
 /**
  * Handle the case when there is translation fault on a stream element.
@@ -17,4 +19,6 @@ public:
   }
 };
 } // namespace GemForge
+} // namespace gem5
+
 #endif

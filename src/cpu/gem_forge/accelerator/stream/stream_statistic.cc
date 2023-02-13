@@ -3,6 +3,8 @@
 #include <cassert>
 #include <iomanip>
 
+namespace gem5 {
+
 std::map<uint64_t, StreamStatistic> StreamStatistic::staticStats;
 
 StreamStatistic &StreamStatistic::getStaticStat(uint64_t staticStreamId) {
@@ -325,4 +327,5 @@ void StreamStatistic::clear() {
   for (auto &pumCycles : this->pumCyclesBetweenSync) {
     pumCycles.clear();
   }
-}
+}} // namespace gem5
+

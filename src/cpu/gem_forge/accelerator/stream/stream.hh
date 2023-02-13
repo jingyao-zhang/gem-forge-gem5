@@ -25,6 +25,8 @@
 #include <list>
 #include <vector>
 
+namespace gem5 {
+
 class LLVMTraceCPU;
 class GemForgeCPUDelegator;
 
@@ -781,5 +783,7 @@ struct GetCoalescedStreamValue {
       : stream(_stream), streamValue(_streamValue) {}
   StreamValue operator()(uint64_t streamId) const;
 };
+
+} // namespace gem5
 
 #endif

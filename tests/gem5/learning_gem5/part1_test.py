@@ -26,24 +26,42 @@
 
 from testlib import *
 
-config_path = joinpath(config.base_dir, 'configs', 'learning_gem5', 'part1')
+config_path = joinpath(config.base_dir, "configs", "learning_gem5", "part1")
 
 # The "quick" simple tests.
 gem5_verify_config(
-    name='simple_test',
-    verifiers = (),
-    config=joinpath(config_path, 'simple.py'),
-    config_args = [],
-    length = constants.quick_tag,
-    valid_isas=('X86', 'RISCV', 'ARM'),
+    name="simple_test",
+    verifiers=(),
+    config=joinpath(config_path, "simple.py"),
+    config_args=[],
+    length=constants.quick_tag,
+    valid_isas=(constants.all_compiled_tag,),
+)
+
+gem5_verify_config(
+    name="simple_test_arm",
+    verifiers=(),
+    config=joinpath(config_path, "simple-arm.py"),
+    config_args=[],
+    length=constants.quick_tag,
+    valid_isas=(constants.all_compiled_tag,),
+)
+
+gem5_verify_config(
+    name="simple_test_riscv",
+    verifiers=(),
+    config=joinpath(config_path, "simple-riscv.py"),
+    config_args=[],
+    length=constants.quick_tag,
+    valid_isas=(constants.all_compiled_tag,),
 )
 
 # The "quick" two level tests.
 gem5_verify_config(
-    name='two_level_test',
-    verifiers = (),
-    config=joinpath(config_path, 'two_level.py'),
-    config_args = [],
-    length = constants.quick_tag,
-    valid_isas=('X86', 'RISCV', 'ARM'),
+    name="two_level_test",
+    verifiers=(),
+    config=joinpath(config_path, "two_level.py"),
+    config_args=[],
+    length=constants.quick_tag,
+    valid_isas=(constants.all_compiled_tag,),
 )

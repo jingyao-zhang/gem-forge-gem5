@@ -6,6 +6,8 @@
 #define DEBUG_TYPE StreamAtomicOp
 #include "stream_log.hh"
 
+namespace gem5 {
+
 void StreamAtomicOp::operator()(uint8_t *p) {
   // Read in the final atomic operand from p to params.
   StreamValue operand;
@@ -34,4 +36,5 @@ void StreamAtomicOp::operator()(uint8_t *p) {
             this->loadedValue.front());
 
   memcpy(p, result.uint8Ptr(), this->size);
-}
+}} // namespace gem5
+

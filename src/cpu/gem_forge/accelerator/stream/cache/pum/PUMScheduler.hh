@@ -3,6 +3,8 @@
 
 #include "MLCPUMManager.hh"
 
+namespace gem5 {
+
 /**
  * This class is in charge of scheduling and wordline allocation.
  */
@@ -25,7 +27,7 @@ public:
 private:
   using ConfigPtr = CacheStreamConfigureDataPtr;
   MLCStreamEngine *mlcSE;
-  AbstractStreamAwareController *controller;
+  ruby::AbstractStreamAwareController *controller;
   MLCPUMManager *manager;
 
   PUMDataGraphNodeVec schedulePUMDataGraphLinear(PUMContext &context);
@@ -51,5 +53,7 @@ private:
   const TriedUnisonSolution *
   searchPrevUnisonSolution(int numRegs, const std::string &raw) const;
 };
+
+} // namespace gem5
 
 #endif

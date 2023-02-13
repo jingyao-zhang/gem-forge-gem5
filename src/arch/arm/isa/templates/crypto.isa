@@ -39,7 +39,7 @@
 // storage/extraction here is fixed as constants.
 def template CryptoPredOpExecute {{
     Fault %(class_name)s::execute(ExecContext *xc,
-                                  Trace::InstRecord *traceData) const
+                                  trace::InstRecord *traceData) const
     {
         Fault fault = NoFault;
         %(op_decl)s;
@@ -47,15 +47,14 @@ def template CryptoPredOpExecute {{
 
         const unsigned rCount = %(r_count)d;
 
-        union RegVect {
+        union RegVect
+        {
             uint32_t regs[rCount];
         };
 
-        if (%(predicate_test)s)
-        {
+        if (%(predicate_test)s) {
             %(code)s;
-            if (fault == NoFault)
-            {
+            if (fault == NoFault) {
                 %(op_wb)s;
             }
         } else {

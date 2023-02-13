@@ -44,6 +44,9 @@
 #include "sim/sim_object.hh"
 #include "sim/system.hh"
 
+namespace gem5
+{
+
 /**
  * Implements a MemChecker monitor, to be inserted between two ports.
  */
@@ -52,16 +55,14 @@ class MemCheckerMonitor : public SimObject
   public:
 
     /** Parameters of memchecker monitor */
-    typedef MemCheckerMonitorParams Params;
-    const Params* params() const
-    { return reinterpret_cast<const Params*>(_params); }
+    using Params = MemCheckerMonitorParams;
 
     /**
      * Constructor based on the Python params
      *
      * @param params Python parameters
      */
-    MemCheckerMonitor(Params* params);
+    MemCheckerMonitor(const Params &params);
 
     /** Destructor */
     ~MemCheckerMonitor();
@@ -229,5 +230,7 @@ class MemCheckerMonitor : public SimObject
 
     MemChecker *memchecker;
 };
+
+} // namespace gem5
 
 #endif //__MEM_MEM_CHECKER_MONITOR_HH__

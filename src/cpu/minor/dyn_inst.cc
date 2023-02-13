@@ -40,15 +40,18 @@
 #include <iomanip>
 #include <sstream>
 
-#include "arch/isa.hh"
-#include "arch/registers.hh"
 #include "cpu/base.hh"
 #include "cpu/minor/trace.hh"
+#include "cpu/null_static_inst.hh"
 #include "cpu/reg_class.hh"
 #include "debug/MinorExecute.hh"
 #include "enums/OpClass.hh"
 
-namespace Minor
+namespace gem5
+{
+
+GEM5_DEPRECATED_NAMESPACE(Minor, minor);
+namespace minor
 {
 
 const InstSeqNum InstId::firstStreamSeqNum;
@@ -73,18 +76,13 @@ operator <<(std::ostream &os, const InstId &id)
     return os;
 }
 
-MinorDynInstPtr MinorDynInst::bubbleInst = NULL;
-
-void
-MinorDynInst::init()
-{
-    if (!bubbleInst) {
-        bubbleInst = new MinorDynInst();
-        assert(bubbleInst->isBubble());
-        /* Make bubbleInst immortal */
-        bubbleInst->incref();
-    }
-}
+MinorDynInstPtr MinorDynInst::bubbleInst = []() {
+    auto *inst = new MinorDynInst(nullStaticInstPtr);
+    assert(inst->isBubble());
+    // Make bubbleInst immortal.
+    inst->incref();
+    return inst;
+}();
 
 bool
 MinorDynInst::isLastOpInInst() const
@@ -116,7 +114,7 @@ std::ostream &
 operator <<(std::ostream &os, const MinorDynInst &inst)
 {
     os << inst.id << " pc: 0x"
-        << std::hex << inst.pc.instAddr() << std::dec << " (";
+        << std::hex << inst.pc->instAddr() << std::dec << " (";
 
     if (inst.isFault())
         os << "fault: \"" << inst.fault->name() << '"';
@@ -132,45 +130,35 @@ operator <<(std::ostream &os, const MinorDynInst &inst)
     return os;
 }
 
-/** Print a register in the form r<n>, f<n>, m<n>(<name>), z for integer,
- *  float, misc and zero registers given an 'architectural register number' */
+/** Print a register in the form r<n>, f<n>, m<n>(<name>) for integer,
+ *  float, and misc given an 'architectural register number' */
 static void
 printRegName(std::ostream &os, const RegId& reg)
 {
-    switch (reg.classValue())
-    {
+    switch (reg.classValue()) {
+      case InvalidRegClass:
+        os << 'z';
+        break;
       case MiscRegClass:
         {
             RegIndex misc_reg = reg.index();
-
-        /* This is an ugly test because not all archs. have miscRegName */
-#if THE_ISA == ARM_ISA
-            os << 'm' << misc_reg << '(' << TheISA::miscRegName[misc_reg] <<
-                ')';
-#else
-            os << 'n' << misc_reg;
-#endif
+            os << 'm' << misc_reg << '(' << reg << ')';
         }
         break;
       case FloatRegClass:
-        os << 'f' << static_cast<unsigned int>(reg.index());
+        os << 'f' << reg.index();
         break;
       case VecRegClass:
-        os << 'v' << static_cast<unsigned int>(reg.index());
+        os << 'v' << reg.index();
         break;
       case VecElemClass:
-        os << 'v' << static_cast<unsigned int>(reg.index()) << '[' <<
-              static_cast<unsigned int>(reg.elemIndex()) << ']';
+        os << reg;
         break;
       case IntRegClass:
-        if (reg.isZeroReg()) {
-            os << 'z';
-        } else {
-            os << 'r' << static_cast<unsigned int>(reg.index());
-        }
+        os << 'r' << reg.index();
         break;
       case CCRegClass:
-        os << 'c' << static_cast<unsigned int>(reg.index());
+        os << 'c' << reg.index();
         break;
       default:
         panic("Unknown register class: %d", (int)reg.classValue());
@@ -181,8 +169,8 @@ void
 MinorDynInst::minorTraceInst(const Named &named_object) const
 {
     if (isFault()) {
-        MINORINST(&named_object, "id=F;%s addr=0x%x fault=\"%s\"\n",
-            id, pc.instAddr(), fault->name());
+        minorInst(named_object, "id=F;%s addr=0x%x fault=\"%s\"\n",
+            id, pc->instAddr(), fault->name());
     } else {
         unsigned int num_src_regs = staticInst->numSrcRegs();
         unsigned int num_dest_regs = staticInst->numDestRegs();
@@ -214,21 +202,18 @@ MinorDynInst::minorTraceInst(const Named &named_object) const
                     regs_str << ',';
             }
 
-#if THE_ISA == ARM_ISA
-            regs_str << " extMachInst=" << std::hex << std::setw(16)
-                << std::setfill('0') << staticInst->machInst << std::dec;
-#endif
+            ccprintf(regs_str, " extMachInst=%160x", staticInst->getEMI());
         }
 
         std::ostringstream flags;
         staticInst->printFlags(flags, " ");
 
-        MINORINST(&named_object, "id=%s addr=0x%x inst=\"%s\" class=%s"
+        minorInst(named_object, "id=%s addr=0x%x inst=\"%s\" class=%s"
             " flags=\"%s\"%s%s\n",
-            id, pc.instAddr(),
+            id, pc->instAddr(),
             (staticInst->opClass() == No_OpClass ?
                 "(invalid)" : staticInst->disassemble(0,NULL)),
-            Enums::OpClassStrings[staticInst->opClass()],
+            enums::OpClassStrings[staticInst->opClass()],
             flags.str(),
             regs_str.str(),
             (predictedTaken ? " predictedTaken" : ""));
@@ -241,4 +226,5 @@ MinorDynInst::~MinorDynInst()
         delete traceData;
 }
 
-}
+} // namespace minor
+} // namespace gem5

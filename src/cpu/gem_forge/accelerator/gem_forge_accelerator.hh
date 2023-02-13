@@ -11,13 +11,15 @@
 
 #include <vector>
 
+namespace gem5 {
+
 class LLVMDynamicInst;
 class LLVMTraceCPU;
 class GemForgeAcceleratorManager;
 
 class GemForgeAccelerator : public SimObject {
 public:
-  GemForgeAccelerator(GemForgeAcceleratorParams *params)
+  GemForgeAccelerator(const GemForgeAcceleratorParams &params)
       : SimObject(params), cpuDelegator(nullptr), manager(nullptr) {}
   virtual ~GemForgeAccelerator() {}
 
@@ -64,7 +66,7 @@ class StreamEngine;
 class SpeculativePrecomputationManager;
 class GemForgeAcceleratorManager : public SimObject {
 public:
-  GemForgeAcceleratorManager(GemForgeAcceleratorManagerParams *params);
+  GemForgeAcceleratorManager(const GemForgeAcceleratorManagerParams &params);
   ~GemForgeAcceleratorManager();
 
   GemForgeAcceleratorManager(const GemForgeAcceleratorManager &other) = delete;
@@ -96,10 +98,12 @@ public:
   void regStats() override;
 
 private:
-  std::vector<GemForgeAccelerator *> &accelerators;
+  std::vector<GemForgeAccelerator *> accelerators;
   GemForgeCPUDelegator *cpuDelegator;
 
   EventFunctionWrapper tickEvent;
 };
+
+} // namespace gem5
 
 #endif

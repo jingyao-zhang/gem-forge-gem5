@@ -3,6 +3,8 @@
 
 #include "cpu/gem_forge/llvm_insts.hh"
 
+namespace gem5 {
+
 class StreamInst : public LLVMDynamicInst {
 public:
   StreamInst(const LLVM::TDG::TDGInstruction &_TDG);
@@ -68,5 +70,7 @@ public:
  */
 
 LLVMDynamicInst *parseStreamInst(LLVM::TDG::TDGInstruction &TDGInst);
+
+} // namespace gem5
 
 #endif

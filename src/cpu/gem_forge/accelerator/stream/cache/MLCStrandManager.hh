@@ -3,6 +3,8 @@
 
 #include "MLCStreamEngine.hh"
 
+namespace gem5 {
+
 class MLCStrandManager {
 private:
   using ConfigPtr = CacheStreamConfigureDataPtr;
@@ -53,7 +55,7 @@ public:
 
 private:
   MLCStreamEngine *mlcSE;
-  AbstractStreamAwareController *controller;
+  ruby::AbstractStreamAwareController *controller;
 
   std::unordered_map<DynStrandId, MLCDynStream *, DynStrandIdHasher> strandMap;
 
@@ -149,5 +151,7 @@ private:
    */
   void endStream(const DynStreamId &endId, RequestorID requestorId);
 };
+
+} // namespace gem5
 
 #endif

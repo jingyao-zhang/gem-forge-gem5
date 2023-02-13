@@ -9,6 +9,8 @@
 #define DEBUG_TYPE StreamElement
 #include "stream_log.hh"
 
+namespace gem5 {
+
 std::string CacheBlockBreakdownAccess::stateToString(StateE state) {
   switch (state) {
   default:
@@ -431,11 +433,11 @@ void StreamElement::handlePacketResponse(StreamMemAccess *memAccess,
 }
 
 bool StreamElement::isFirstUserDispatched() const {
-  return this->firstUserSeqNum != ::LLVMDynamicInst::INVALID_SEQ_NUM;
+  return this->firstUserSeqNum != LLVMDynamicInst::INVALID_SEQ_NUM;
 }
 
 bool StreamElement::isFirstStoreDispatched() const {
-  return this->firstStoreSeqNum != ::LLVMDynamicInst::INVALID_SEQ_NUM;
+  return this->firstStoreSeqNum != LLVMDynamicInst::INVALID_SEQ_NUM;
 }
 
 bool StreamElement::checkAddrBaseElementsReady(bool checkByCore) {
@@ -1137,4 +1139,5 @@ void StreamElement::dump() const {
          this->FIFOIdx.streamId.streamInstance, this->FIFOIdx.entryIdx,
          static_cast<int>(this->isAddrReady()),
          static_cast<int>(this->isValueReady));
-}
+}} // namespace gem5
+

@@ -3,6 +3,8 @@
 #include "exec_context.hh"
 #include "minimal_data_move_machine.hh"
 
+namespace gem5 {
+
 class SimpleCPUDelegator::Impl {
 public:
   Impl(BaseSimpleCPU *_cpu, SimpleCPUDelegator *_cpuDelegator)
@@ -200,4 +202,6 @@ void SimpleCPUDelegator::setInstSeqNum(InstSeqNum seqNum) {
 void SimpleCPUDelegator::recordStatsForFakeExecutedInst(
     const StaticInstPtr &inst) {
   // So far we do nothing.
+}
+
 }

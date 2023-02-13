@@ -28,26 +28,29 @@
 
 from slicc.ast.StatementAST import StatementAST
 
+
 class CheckProbeStatementAST(StatementAST):
     def __init__(self, slicc, in_port, address):
-        super(StatementAST, self).__init__(slicc)
+        super().__init__(slicc)
         self.in_port = in_port
         self.address = address
 
     def __repr__(self):
         return "[CheckProbeStatementAst: %r]" % self.in_port
 
-    def generate(self, code, return_type):
+    def generate(self, code, return_type, **kwargs):
         self.in_port.assertType("InPort")
         self.address.assertType("Addr")
 
         in_port_code = self.in_port.var.code
         address_code = self.address.var.code
-        code('''
+        code(
+            """
     if (m_is_blocking &&
         (m_block_map.count($address_code) == 1) &&
         (m_block_map[$address_code] == &$in_port_code)) {
             $in_port_code.delayHead(clockEdge(), cyclesToTicks(Cycles(1)));
             continue;
         }
-        ''')
+        """
+        )

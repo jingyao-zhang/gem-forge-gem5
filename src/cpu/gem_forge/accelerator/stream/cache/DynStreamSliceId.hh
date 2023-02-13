@@ -3,6 +3,8 @@
 
 #include "DynStrandElementRangeId.hh"
 
+namespace gem5 {
+
 /**
  * The core stream engine manages stream at granularity of element.
  * However, this is not ideal for cache stream engine, as we want to
@@ -77,5 +79,7 @@ struct DynStreamSliceIdHasher {
            std::hash<uint64_t>()(key.vaddr);
   }
 };
+
+} // namespace gem5
 
 #endif

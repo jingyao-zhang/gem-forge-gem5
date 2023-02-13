@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Hansson
  */
 
 #include "mem/dramsim3.hh"
@@ -45,15 +43,21 @@
 #include "debug/Drain.hh"
 #include "sim/system.hh"
 
-DRAMsim3::DRAMsim3(const Params* p) :
+namespace gem5
+{
+
+namespace memory
+{
+
+DRAMsim3::DRAMsim3(const Params &p) :
     AbstractMemory(p),
     port(name() + ".port", *this),
     read_cb(std::bind(&DRAMsim3::readComplete,
                       this, 0, std::placeholders::_1)),
     write_cb(std::bind(&DRAMsim3::writeComplete,
                        this, 0, std::placeholders::_1)),
-    wrapper(p->configFile, p->filePath, name(), read_cb, write_cb,
-            p->interleaveBitsLow, p->interleaveBitsHigh),
+    wrapper(p.configFile, p.filePath, name(), read_cb, write_cb,
+            p.interleaveBitsLow, p.interleaveBitsHigh),
     retryReq(false), retryResp(false), startTick(0),
     nbrOutstandingReads(0), nbrOutstandingWrites(0),
     sendResponseEvent([this]{ sendResponse(); }, name()),
@@ -150,7 +154,8 @@ DRAMsim3::tick()
         }
     }
 
-    schedule(tickEvent, curTick() + wrapper.clockPeriod() * SimClock::Int::ns);
+    schedule(tickEvent,
+        curTick() + wrapper.clockPeriod() * sim_clock::as_int::ns);
 }
 
 Tick
@@ -359,44 +364,41 @@ DRAMsim3::drain()
 
 DRAMsim3::MemoryPort::MemoryPort(const std::string& _name,
                                  DRAMsim3& _memory)
-    : ResponsePort(_name, &_memory), memory(_memory)
+    : ResponsePort(_name, &_memory), mem(_memory)
 { }
 
 AddrRangeList
 DRAMsim3::MemoryPort::getAddrRanges() const
 {
     AddrRangeList ranges;
-    ranges.push_back(memory.getAddrRange());
+    ranges.push_back(mem.getAddrRange());
     return ranges;
 }
 
 Tick
 DRAMsim3::MemoryPort::recvAtomic(PacketPtr pkt)
 {
-    return memory.recvAtomic(pkt);
+    return mem.recvAtomic(pkt);
 }
 
 void
 DRAMsim3::MemoryPort::recvFunctional(PacketPtr pkt)
 {
-    memory.recvFunctional(pkt);
+    mem.recvFunctional(pkt);
 }
 
 bool
 DRAMsim3::MemoryPort::recvTimingReq(PacketPtr pkt)
 {
     // pass it to the memory controller
-    return memory.recvTimingReq(pkt);
+    return mem.recvTimingReq(pkt);
 }
 
 void
 DRAMsim3::MemoryPort::recvRespRetry()
 {
-    memory.recvRespRetry();
+    mem.recvRespRetry();
 }
 
-DRAMsim3*
-DRAMsim3Params::create()
-{
-    return new DRAMsim3(this);
-}
+} // namespace memory
+} // namespace gem5

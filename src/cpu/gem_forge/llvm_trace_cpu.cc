@@ -9,25 +9,27 @@
 #include "debug/LLVMTraceCPU.hh"
 #include "proto/protoio.hh"
 #include "sim/process.hh"
+#include "sim/se_workload.hh"
 #include "sim/sim_exit.hh"
 #include "sim/stat_control.hh"
 
-LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
-    : BaseCPU(params), cpuParams(params),
-      pageTable(params->name + ".page_table", 0, params->system,
-                TheISA::PageBytes),
-      instPort(params->name + ".inst_port", this),
-      dataPort(params->name + ".data_port", this),
-      traceFileName(params->traceFile),
-      totalActiveCPUs(params->totalActiveCPUs),
-      cpuStatus(CPUStatusE::INITIALIZED), fuPool(params->fuPool),
+namespace gem5 {
+
+LLVMTraceCPU::LLVMTraceCPU(const Params &params)
+    : BaseCPU(params), cpuParams(&params),
+      pageTable(params.name + ".page_table", 0, params.system,
+                params.isa[0]->getPageBytes()),
+      instPort(params.name + ".inst_port", this),
+      dataPort(params.name + ".data_port", this),
+      traceFileName(params.traceFile), totalActiveCPUs(params.totalActiveCPUs),
+      cpuStatus(CPUStatusE::INITIALIZED), fuPool(params.fuPool),
       currentStackDepth(0), initializeMemorySnapshotDone(true),
       warmUpDone(false), cacheWarmer(nullptr), process(nullptr),
-      thread_context(nullptr), stackMin(0), fetchStage(params, this),
-      decodeStage(params, this), renameStage(params, this),
-      iewStage(params, this), commitStage(params, this), fetchToDecode(5, 5),
+      thread_context(nullptr), stackMin(0), fetchStage(&params, this),
+      decodeStage(&params, this), renameStage(&params, this),
+      iewStage(&params, this), commitStage(&params, this), fetchToDecode(5, 5),
       decodeToRename(5, 5), renameToIEW(5, 5), iewToCommit(5, 5),
-      signalBuffer(5, 5), driver(params->driver), tickEvent(*this) {
+      signalBuffer(5, 5), driver(params.driver), tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
 
   assert(this->numThreads < LLVMTraceCPUConstants::MaxContexts &&
@@ -59,7 +61,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   this->fetchStage.setSignal(&this->signalBuffer, -4);
 
   // Initialize the hardware contexts.
-  this->activeThreads.resize(params->hardwareContexts, nullptr);
+  this->activeThreads.resize(params.hardwareContexts, nullptr);
 
   this->runTimeProfiler = new RunTimeProfiler();
 
@@ -89,13 +91,13 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   if (this->mainThread->getRegionStats() != nullptr) {
     // Add the dump handler to dump region stats at the end.
     Stats::registerDumpCallback(
-      [this]() -> void { this->mainThread->getRegionStats(); });
+        [this]() -> void { this->mainThread->getRegionStats(); });
   }
   this->activateThread(mainThread);
 
   // Reset the initializeMemorySnapshotDone so that we will initialize the
   // memory.
-  this->initializeMemorySnapshotDone = !params->installMemorySnapshot;
+  this->initializeMemorySnapshotDone = !params.installMemorySnapshot;
 
   // Initialize the cache warmer.
   if (this->cpuParams->warmCache) {
@@ -117,11 +119,9 @@ LLVMTraceCPU::~LLVMTraceCPU() {
   this->mainThread = nullptr;
 }
 
-LLVMTraceCPU *LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
-
 void LLVMTraceCPU::init() {
   BaseCPU::init();
-  this->cpuDelegator = m5::make_unique<LLVMTraceCPUDelegator>(this);
+  this->cpuDelegator = std::make_unique<LLVMTraceCPUDelegator>(this);
   if (this->accelManager) {
     // Create the delegator and handshake with the accelerator manager.
     this->accelManager->handshake(this->cpuDelegator.get());
@@ -142,7 +142,7 @@ void LLVMTraceCPU::tick() {
    */
   this->dataPort.sendReq();
 
-  this->numCycles++;
+  this->baseStats.numCycles++;
 
   if (this->cacheWarmer != nullptr) {
     // Disable all tracing output.
@@ -150,13 +150,13 @@ void LLVMTraceCPU::tick() {
     if (this->cacheWarmer->isDoneWithPreviousRequest()) {
       if (this->cacheWarmer->isDone()) {
         // We are done warming up.
-        inform("Done cache warmup, %lu.\n", this->numCycles.value());
+        inform("Done cache warmup, %lu.\n", this->baseStats.numCycles.value());
         delete this->cacheWarmer;
         this->cacheWarmer = nullptr;
         this->warmUpDone = true;
         // Reset the stats.
         Stats::reset();
-        inform("Done reset, %lu.\n", this->numCycles.value());
+        inform("Done reset, %lu.\n", this->baseStats.numCycles.value());
         this->system->incWorkItemsEnd();
         this->cpuStatus = CPUStatusE::CACHE_WARMED;
       } else {
@@ -413,11 +413,11 @@ void LLVMTraceCPU::CPUPort::sendReq() {
       this->blocked = true;
     } else {
       // Only increase the inflyNumPackets if it needs a response.
-      if (::GemForgePacketHandler::needResponse(pkt)) {
+      if (GemForgePacketHandler::needResponse(pkt)) {
         this->inflyNumPackets++;
       }
       this->blockedPacketPtrs.pop();
-      ::GemForgePacketHandler::issueToMemory(this->owner->getDelegator(), pkt);
+      GemForgePacketHandler::issueToMemory(this->owner->getDelegator(), pkt);
       usedPorts++;
     }
   }
@@ -453,7 +453,7 @@ void LLVMTraceCPU::handleReplay(
   this->thread_context = tc;
 
   // Get the bottom of the stack.
-  this->stackMin = tc->readIntReg(TheISA::StackPointerReg);
+  this->stackMin = tc->getReg(this->params().isa[0]->getStackPointerReg());
 
   // Allocate a special stack slot for register spill.
   Addr spill = this->allocateStack(8, 8);
@@ -551,9 +551,11 @@ Addr LLVMTraceCPU::translateAndAllocatePhysMem(Addr vaddr) {
 
   if (!this->pageTable.translate(vaddr)) {
     // Handle the page fault.
-    Addr pageBytes = TheISA::PageBytes;
+    Addr pageBytes = this->pageTable.pageSize();
     Addr startVaddr = this->pageTable.pageAlign(vaddr);
-    Addr startPaddr = this->system->allocPhysPages(1);
+    assert(this->process);
+    assert(this->process->seWorkload);
+    auto startPaddr = this->process->seWorkload->allocPhysPages(1);
     this->pageTable.map(startVaddr, startPaddr, pageBytes);
     DPRINTF(LLVMTraceCPU, "Map vaddr 0x%x to paddr 0x%x\n", startVaddr,
             startPaddr);
@@ -694,3 +696,4 @@ Counter LLVMTraceCPU::totalInsts() const {
 Counter LLVMTraceCPU::totalOps() const {
   return this->commitStage.opsCommitted.total();
 }
+} // namespace gem5

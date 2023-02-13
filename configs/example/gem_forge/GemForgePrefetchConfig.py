@@ -1,21 +1,21 @@
 
 from m5.objects import *
 
-def initializePrefetch(options, system):
+def initializePrefetch(args, system):
     # Only works in classical memory system.
-    if options.ruby:
+    if args.ruby:
         return
-    if options.llvm_prefetch == 0:
+    if args.llvm_prefetch == 0:
         return
     for cpu in system.cpu:
-        cpu.dcache.prefetch_on_access = options.gem_forge_prefetch_on_access
-        if options.gem_forge_prefetcher == 'imp':
+        cpu.dcache.prefetch_on_access = args.gem_forge_prefetch_on_access
+        if args.gem_forge_prefetcher == 'imp':
             cpu.dcache.prefetcher = IndirectMemoryPrefetcher(
                 use_virtual_addresses=True,
                 index_queue_size=16,
                 on_inst=False,
-                max_prefetch_distance=options.gem_forge_prefetch_dist,
-                streaming_distance=options.gem_forge_prefetch_dist,
+                max_prefetch_distance=args.gem_forge_prefetch_dist,
+                streaming_distance=args.gem_forge_prefetch_dist,
             )
             if not cpu.dcache.prefetch_on_access:
                 raise ValueError('IMP must be used with PrefetchOnAccess.')
@@ -24,9 +24,9 @@ def initializePrefetch(options, system):
             cpu.dcache.prefetcher.registerTLB(cpu.dtb)
         else:
             cpu.dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
-        if options.l1_5dcache:
-            cpu.l1_5dcache.prefetch_on_access = options.gem_forge_prefetch_on_access
-            if options.gem_forge_prefetcher == 'isb':
+        if args.l1_5dcache:
+            cpu.l1_5dcache.prefetch_on_access = args.gem_forge_prefetch_on_access
+            if args.gem_forge_prefetcher == 'isb':
                 cpu.l1_5dcache.prefetcher = IrregularStreamBufferPrefetcher(
                     degree=8,
                     # address_map_cache_assoc=8,
@@ -37,8 +37,8 @@ def initializePrefetch(options, system):
                 )
             else:
                 cpu.l1_5dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
-    system.l2.prefetch_on_access = options.gem_forge_prefetch_on_access
-    if options.gem_forge_prefetcher == 'isb':
+    system.l2.prefetch_on_access = args.gem_forge_prefetch_on_access
+    if args.gem_forge_prefetcher == 'isb':
         # ISB should work at LLC.
         system.l2.prefetcher = IrregularStreamBufferPrefetcher(
             degree=8,

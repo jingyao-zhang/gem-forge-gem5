@@ -49,9 +49,13 @@
 #include <cstdint>
 #include <unordered_set>
 
+#include "base/compiler.hh"
 #include "base/types.hh"
 #include "mem/cache/base.hh"
 #include "mem/packet.hh"
+
+namespace gem5
+{
 
 class CacheBlk;
 struct CacheParams;
@@ -138,7 +142,7 @@ class Cache : public BaseCache
     uint32_t handleSnoop(PacketPtr pkt, CacheBlk *blk,
                          bool is_timing, bool is_deferred, bool pending_inval);
 
-    M5_NODISCARD PacketPtr evictBlock(CacheBlk *blk) override;
+    [[nodiscard]] PacketPtr evictBlock(CacheBlk *blk) override;
 
     /**
      * Create a CleanEvict request for the given block.
@@ -159,8 +163,9 @@ class Cache : public BaseCache
     bool isCachedAbove(PacketPtr pkt, bool is_timing = true);
 
   public:
+    PARAMS(Cache)
     /** Instantiates a basic cache object. */
-    Cache(const CacheParams *p);
+    Cache(const CacheParams &p);
 
     /**
      * Take an MSHR, turn it into a suitable downstream packet, and
@@ -242,5 +247,7 @@ class Cache : public BaseCache
   
     
 };
+
+} // namespace gem5
 
 #endif // __MEM_CACHE_CACHE_HH__

@@ -1,6 +1,6 @@
 // -*- mode:c++ -*-
 
-// Copyright (c) 2011-2013, 2016-2020 ARM Limited
+// Copyright (c) 2011-2013, 2016-2022 Arm Limited
 // All rights reserved
 //
 // The license below extends only to copyright in the software and shall
@@ -83,21 +83,21 @@ let {{
         "logic": '0'
     }
 
-    immOp2 = "uint64_t secOp M5_VAR_USED = imm;"
-    sRegOp2 = "uint64_t secOp M5_VAR_USED = " + \
+    immOp2 = "[[maybe_unused]] uint64_t secOp = imm;"
+    sRegOp2 = "[[maybe_unused]] uint64_t secOp = " + \
               "shiftReg64(Op264, shiftAmt, shiftType, intWidth);"
-    eRegOp2 = "uint64_t secOp M5_VAR_USED = " + \
+    eRegOp2 = "[[maybe_unused]] uint64_t secOp = " + \
               "extendReg64(Op264, extendType, shiftAmt, intWidth);"
 
     def buildDataWork(mnem, code, flagType, suffix, buildCc, buildNonCc,
                       base, templateBase):
         code = '''
-        uint64_t resTemp M5_VAR_USED = 0;
+        [[maybe_unused]] uint64_t resTemp = 0;
         ''' + code
         ccCode = createCcCode64(carryCode64[flagType], overflowCode64[flagType])
         Name = mnem.capitalize() + suffix
-        iop = InstObjParams(mnem, Name, base, code)
-        iopCc = InstObjParams(mnem + "s", Name + "Cc", base, code + ccCode)
+        iop = ArmInstObjParams(mnem, Name, base, code)
+        iopCc = ArmInstObjParams(mnem + "s", Name + "Cc", base, code + ccCode)
 
         def subst(iop):
             global header_output, decoder_output, exec_output
@@ -154,8 +154,8 @@ let {{
         global header_output, decoder_output, exec_output
         classNamePrefix = mnem[0].upper() + mnem[1:]
         templateBase = "DataXImm"
-        iop = InstObjParams(mnem, classNamePrefix + "64",
-                            templateBase + "Op", code, optArgs)
+        iop = ArmInstObjParams(mnem, classNamePrefix + "64",
+                               templateBase + "Op", code, optArgs)
         header_output += eval(templateBase + "Declare").subst(iop)
         decoder_output += eval(templateBase + "Constructor").subst(iop)
         exec_output += BasicExecute.subst(iop)
@@ -166,13 +166,14 @@ let {{
         templateBase = "DataX%dReg" % regOps
         classNamePrefix = mnem[0].upper() + mnem[1:]
         if overrideOpClass:
-            iop = InstObjParams(mnem, classNamePrefix + "64",
-                                templateBase + "Op",
-                                { 'code': code, 'op_class': overrideOpClass},
-                                optArgs)
+            iop = ArmInstObjParams(mnem, classNamePrefix + "64",
+                                   templateBase + "Op",
+                                   { 'code': code,
+                                     'op_class': overrideOpClass },
+                                   optArgs)
         else:
-            iop = InstObjParams(mnem, classNamePrefix + "64",
-                                templateBase + "Op", code, optArgs)
+            iop = ArmInstObjParams(mnem, classNamePrefix + "64",
+                                   templateBase + "Op", code, optArgs)
         header_output += eval(templateBase + "Declare").subst(iop)
         decoder_output += eval(templateBase + "Constructor").subst(iop)
         exec_output += BasicExecute.subst(iop)
@@ -310,41 +311,26 @@ let {{
     ''')
 
     msrMrs64EnabledCheckCode = '''
-        // Check for read/write access right
-        if (!can%sAArch64SysReg(flat_idx, Hcr64, Scr64, cpsr, xc->tcBase())) {
-            return std::make_shared<UndefinedInstruction>(machInst, false,
-                                                          mnemonic);
-        }
+        auto pre_flat = (MiscRegIndex)snsBankedIndex64(%s, xc->tcBase());
+        auto *isa = static_cast<ArmISA::ISA *>(xc->tcBase()->getIsaPtr());
+        auto flat_idx = (MiscRegIndex)isa->flattenMiscIndex(pre_flat);
 
-        fault = this->trap(xc->tcBase(), flat_idx, el, imm);
-        if (fault != NoFault) return fault;
+        // Check for read/write access right
+        if (fault = checkFaultAccessAArch64SysReg(flat_idx, Cpsr,
+            xc->tcBase(), *this); fault != NoFault) {
+            return fault;
+        }
     '''
 
-    msr_check_code = '''
-        auto pre_flat = (MiscRegIndex)snsBankedIndex64(dest, xc->tcBase());
-        MiscRegIndex flat_idx = (MiscRegIndex) xc->tcBase()->
-            flattenRegId(RegId(MiscRegClass, pre_flat)).index();
-        CPSR cpsr = Cpsr;
-        ExceptionLevel el = (ExceptionLevel) (uint8_t) cpsr.el;
-        %s
-    ''' % (msrMrs64EnabledCheckCode % ('Write'),)
-
-    mrs_check_code = '''
-        auto pre_flat = (MiscRegIndex)snsBankedIndex64(op1, xc->tcBase());
-        MiscRegIndex flat_idx = (MiscRegIndex) xc->tcBase()->
-            flattenRegId(RegId(MiscRegClass, pre_flat)).index();
-        CPSR cpsr = Cpsr;
-        ExceptionLevel el = (ExceptionLevel) (uint8_t) cpsr.el;
-        %s
-    ''' % (msrMrs64EnabledCheckCode % ('Read'),)
-
+    msr_check_code = msrMrs64EnabledCheckCode % 'dest'
+    mrs_check_code = msrMrs64EnabledCheckCode % 'op1'
 
     mrsCode = mrs_check_code + '''
         XDest = MiscOp1_ud;
     '''
-    mrsIop = InstObjParams("mrs", "Mrs64", "RegMiscRegImmOp64",
-                           mrsCode,
-                           ["IsSerializeBefore"])
+    mrsIop = ArmInstObjParams("mrs", "Mrs64", "RegMiscRegImmOp64",
+                              mrsCode,
+                              ["IsSerializeBefore"])
     header_output += RegMiscRegOp64Declare.subst(mrsIop)
     decoder_output += RegMiscRegOp64Constructor.subst(mrsIop)
     exec_output += BasicExecute.subst(mrsIop)
@@ -360,13 +346,41 @@ let {{
     msrCode = msr_check_code + '''
         MiscDest_ud = XOp1;
     '''
-    msrIop = InstObjParams("msr", "Msr64", "MiscRegRegImmOp64",
-                           msrCode,
-                           ["IsSerializeAfter", "IsNonSpeculative"])
+    msrIop = ArmInstObjParams("msr", "Msr64", "MiscRegRegImmOp64",
+                              msrCode,
+                              ["IsSerializeAfter", "IsNonSpeculative"])
     header_output += MiscRegRegOp64Declare.subst(msrIop)
     decoder_output += MiscRegRegOp64Constructor.subst(msrIop)
     exec_output += BasicExecute.subst(msrIop)
 
+    tlbiCode = msr_check_code + '''
+        performTlbi(xc, flat_idx, XOp1);
+    '''
+    msrTlbiIop = ArmInstObjParams("msr", "Tlbi64LocalHub", "TlbiOp64",
+                                  tlbiCode,
+                                  ["IsSerializeAfter", "IsNonSpeculative"])
+    header_output += MiscRegRegOp64Declare.subst(msrTlbiIop)
+    decoder_output += MiscRegRegOp64Constructor.subst(msrTlbiIop)
+    exec_output += BasicExecute.subst(msrTlbiIop)
+
+    dvmCode = '''
+    if (dvmEnabled) {
+        Request::Flags memAccessFlags =
+            Request::STRICT_ORDER | Request::TLBI;
+
+        fault = xc->initiateMemMgmtCmd(memAccessFlags);
+
+        PendingDvm = true;
+    }
+    '''
+    msrTlbiSIop = ArmInstObjParams("msr", "Tlbi64ShareableHub", "TlbiOp64",
+                                  { "code" : tlbiCode, "dvm_code" : dvmCode },
+                                  ["IsSerializeAfter", "IsNonSpeculative"])
+    header_output += DvmTlbiDeclare.subst(msrTlbiSIop)
+    decoder_output += DvmTlbiConstructor.subst(msrTlbiSIop)
+    exec_output += BasicExecute.subst(msrTlbiSIop)
+    exec_output += DvmInitiateAcc.subst(msrTlbiSIop)
+    exec_output += DvmCompleteAcc.subst(msrTlbiSIop)
 
     buildDataXRegInst("msrNZCV", 1, '''
         CPSR cpsr = XOp1;
@@ -380,18 +394,18 @@ let {{
            Request::Flags memAccessFlags = Request::CACHE_BLOCK_ZERO;
            EA = XBase;
            assert(!(Dczid & 0x10));
-           uint64_t op_size = power(2, Dczid + 2);
+           uint64_t op_size = 1ULL << (Dczid + 2);
            EA &= ~(op_size - 1);
 
    '''
 
-    msrDCZVAIop = InstObjParams("dc zva", "Dczva", "SysDC64",
-                                { "ea_code" : msrdczva_ea_code,
-                                  "memacc_code" : ';',
-                                  "use_uops" : 0,
-                                  "op_wb" : ";",
-                                  "fa_code" : ";"},
-                                ['IsStore', 'IsMemRef']);
+    msrDCZVAIop = ArmInstObjParams("dc zva", "Dczva", "SysDC64",
+                                   { "ea_code" : msrdczva_ea_code,
+                                     "memacc_code" : ';',
+                                     "use_uops" : 0,
+                                     "op_wb" : ";",
+                                     "fa_code" : ";"},
+                                   ['IsStore']);
     header_output += DCStore64Declare.subst(msrDCZVAIop);
     decoder_output += DCStore64Constructor.subst(msrDCZVAIop);
     exec_output += DCStore64Execute.subst(msrDCZVAIop);
@@ -416,13 +430,13 @@ let {{
            EA &= ~(op_size - 1);
     '''
 
-    msrDCCVAUIop = InstObjParams("dc cvau", "Dccvau", "SysDC64",
-                                 { "ea_code" : msrdccvau_ea_code,
-                                   "memacc_code" : ';',
-                                   "use_uops" : 0,
-                                   "op_wb" : ";",
-                                   "fa_code" : cachem_fa},
-                                 ['IsStore', 'IsMemRef']);
+    msrDCCVAUIop = ArmInstObjParams("dc cvau", "Dccvau", "SysDC64",
+                                    { "ea_code" : msrdccvau_ea_code,
+                                      "memacc_code" : ';',
+                                      "use_uops" : 0,
+                                      "op_wb" : ";",
+                                      "fa_code" : cachem_fa},
+                                    ['IsStore']);
     header_output += DCStore64Declare.subst(msrDCCVAUIop);
     decoder_output += DCStore64Constructor.subst(msrDCCVAUIop);
     exec_output += DCStore64Execute.subst(msrDCCVAUIop);
@@ -440,13 +454,13 @@ let {{
            EA &= ~(op_size - 1);
     '''
 
-    msrDCCVACIop = InstObjParams("dc cvac", "Dccvac", "SysDC64",
-                                 { "ea_code" : msrdccvac_ea_code,
-                                   "memacc_code" : ';',
-                                   "use_uops" : 0,
-                                   "op_wb" : ";",
-                                   "fa_code" : cachem_fa},
-                                 ['IsStore', 'IsMemRef']);
+    msrDCCVACIop = ArmInstObjParams("dc cvac", "Dccvac", "SysDC64",
+                                    { "ea_code" : msrdccvac_ea_code,
+                                      "memacc_code" : ';',
+                                      "use_uops" : 0,
+                                      "op_wb" : ";",
+                                      "fa_code" : cachem_fa},
+                                    ['IsStore']);
     header_output += DCStore64Declare.subst(msrDCCVACIop);
     decoder_output += DCStore64Constructor.subst(msrDCCVACIop);
     exec_output += DCStore64Execute.subst(msrDCCVACIop);
@@ -465,13 +479,13 @@ let {{
            EA &= ~(op_size - 1);
     '''
 
-    msrDCCIVACIop = InstObjParams("dc civac", "Dccivac", "SysDC64",
-                                  { "ea_code" : msrdccivac_ea_code,
-                                    "memacc_code" : ';',
-                                    "use_uops" : 0,
-                                    "op_wb" : ";",
-                                    "fa_code" : cachem_fa},
-                                  ['IsStore', 'IsMemRef']);
+    msrDCCIVACIop = ArmInstObjParams("dc civac", "Dccivac", "SysDC64",
+                                     { "ea_code" : msrdccivac_ea_code,
+                                       "memacc_code" : ';',
+                                       "use_uops" : 0,
+                                       "op_wb" : ";",
+                                       "fa_code" : cachem_fa},
+                                     ['IsStore']);
     header_output += DCStore64Declare.subst(msrDCCIVACIop);
     decoder_output += DCStore64Constructor.subst(msrDCCIVACIop);
     exec_output += DCStore64Execute.subst(msrDCCIVACIop);
@@ -487,8 +501,10 @@ let {{
            faultAddr = EA;
            HCR hcr = Hcr64;
            SCR scr = Scr64;
-           if (el == EL1 && ArmSystem::haveVirtualization(xc->tcBase()) &&
-               hcr.vm && (scr.ns || !ArmSystem::haveSecurity(xc->tcBase()))) {
+           CPSR cpsr = Cpsr;
+           ExceptionLevel el = (ExceptionLevel) (uint8_t) cpsr.el;
+           if (el == EL1 && ArmSystem::haveEL(xc->tcBase(), EL2) &&
+               hcr.vm && (scr.ns || !ArmSystem::haveEL(xc->tcBase(), EL3))) {
                memAccessFlags = memAccessFlags | Request::CLEAN;
            }
            System *sys = xc->tcBase()->getSystemPtr();
@@ -496,13 +512,13 @@ let {{
            EA &= ~(op_size - 1);
     '''
 
-    msrDCIVACIop = InstObjParams("dc ivac", "Dcivac", "SysDC64",
-                                 { "ea_code" : msrdcivac_ea_code,
-                                   "memacc_code" : ';',
-                                   "use_uops" : 0,
-                                   "op_wb" : ";",
-                                   "fa_code" : cachem_fa},
-                                 ['IsStore', 'IsMemRef']);
+    msrDCIVACIop = ArmInstObjParams("dc ivac", "Dcivac", "SysDC64",
+                                    { "ea_code" : msrdcivac_ea_code,
+                                      "memacc_code" : ';',
+                                      "use_uops" : 0,
+                                      "op_wb" : ";",
+                                      "fa_code" : cachem_fa},
+                                    ['IsStore']);
     header_output += DCStore64Declare.subst(msrDCIVACIop);
     decoder_output += DCStore64Constructor.subst(msrDCIVACIop);
     exec_output += DCStore64Execute.subst(msrDCIVACIop);
@@ -514,27 +530,18 @@ let {{
         msrImmPermission = '''
             auto pre_flat =
                 (MiscRegIndex)snsBankedIndex64(dest, xc->tcBase());
-            MiscRegIndex misc_index = (MiscRegIndex) xc->tcBase()->
-                flattenRegId(RegId(MiscRegClass, pre_flat)).index();
+            auto *isa = static_cast<ArmISA::ISA *>(xc->tcBase()->getIsaPtr());
+            auto misc_index = (MiscRegIndex)isa->flattenMiscIndex(pre_flat);
 
-            if (!miscRegInfo[misc_index][MISCREG_IMPLEMENTED]) {
-                    return std::make_shared<UndefinedInstruction>(
-                                    machInst, false,
-                                    mnemonic);
-            }
-
-            if (!canWriteAArch64SysReg(misc_index, Hcr64,
-                Scr64, Cpsr, xc->tcBase())) {
-
-                    return std::make_shared<UndefinedInstruction>(
-                                    machInst, 0, EC_TRAPPED_MSR_MRS_64,
-                                    mnemonic);
+            if (fault = checkFaultAccessAArch64SysReg(misc_index,
+                Cpsr, xc->tcBase(), *this); fault != NoFault) {
+                    return fault;
             }
 
         '''
-        msrIop = InstObjParams("msr", inst_name, "MiscRegImmOp64",
-                               msrImmPermission + code,
-                               ["IsSerializeAfter", "IsNonSpeculative"])
+        msrIop = ArmInstObjParams("msr", inst_name, "MiscRegImmOp64",
+                                  msrImmPermission + code,
+                                  ["IsSerializeAfter", "IsNonSpeculative"])
         header_output += MiscRegOp64Declare.subst(msrIop)
         decoder_output += MiscRegOp64Constructor.subst(msrIop)
         exec_output += BasicExecute.subst(msrIop)
@@ -560,8 +567,8 @@ let {{
     def buildDataXCompInst(mnem, instType, suffix, code):
         global header_output, decoder_output, exec_output
         templateBase = "DataXCond%s" % instType
-        iop = InstObjParams(mnem, mnem.capitalize() + suffix + "64",
-                            templateBase + "Op", code)
+        iop = ArmInstObjParams(mnem, mnem.capitalize() + suffix + "64",
+                               templateBase + "Op", code)
         header_output += eval(templateBase + "Declare").subst(iop)
         decoder_output += eval(templateBase + "Constructor").subst(iop)
         exec_output += BasicExecute.subst(iop)
@@ -575,9 +582,9 @@ let {{
 
     def condCompCode(flagType, op, imm):
         ccCode = createCcCode64(carryCode64[flagType], overflowCode64[flagType])
-        opDecl = "uint64_t secOp M5_VAR_USED = imm;"
+        opDecl = "[[maybe_unused]] uint64_t secOp = imm;"
         if not imm:
-            opDecl = "uint64_t secOp M5_VAR_USED = Op264;"
+            opDecl = "[[maybe_unused]] uint64_t secOp = Op264;"
         return opDecl + '''
             if (testPredicate(CondCodesNZ, CondCodesC, CondCodesV, condCode)) {
                 uint64_t resTemp = Op164 ''' + op + ''' secOp;

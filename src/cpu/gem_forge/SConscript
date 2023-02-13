@@ -10,13 +10,14 @@ DebugFlag('GemForgeDcachePort')
 DebugFlag('GemForgeIdeaInorderCPU')
 DebugFlag('RegionStats')
 
-if not env['HAVE_PROTOBUF']:
+if not env['CONF']['HAVE_PROTOBUF']:
     print('Require protobuf')
     assert False
 
 ProtoBuf('TDGInstruction.proto')
 
-SimObject('LLVMTraceCPU.py')
+SimObject('LLVMTraceCPU.py',
+    sim_objects=['LLVMTraceCPU', 'LLVMTraceCPUDriver'])
 Source('bank_manager.cc')
 Source('gem_forge_utils.cc')
 Source('gem_forge_packet_handler.cc')

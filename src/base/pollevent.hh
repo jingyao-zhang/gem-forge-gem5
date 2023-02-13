@@ -26,16 +26,18 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __POLLEVENT_H__
-#define __POLLEVENT_H__
+#ifndef __BASE_POLLEVENT_HH__
+#define __BASE_POLLEVENT_HH__
 
 #include <poll.h>
 
 #include <vector>
 
-#include "sim/core.hh"
+#include "sim/serialize.hh"
 
-class Checkpoint;
+namespace gem5
+{
+
 class PollQueue;
 
 class PollEvent : public Serializable
@@ -110,4 +112,6 @@ class PollQueue
  */
 extern PollQueue pollQueue;
 
-#endif // __POLLEVENT_H__
+} // namespace gem5
+
+#endif // __BASE_POLLEVENT_HH__

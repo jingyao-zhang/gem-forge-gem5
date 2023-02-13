@@ -5,12 +5,14 @@
  * This represents the float plan with a vector of changing levels:
  * (ElementIdx, Level).
  * This means that starting from ElementIdx, the stream is at Level.
- * We use MachineType_NULL to represent Core (not floated).
+ * We use ruby::MachineType_NULL to represent Core (not floated).
  */
 
 #include "mem/ruby/protocol/MachineType.hh"
 
 #include <map>
+
+namespace gem5 {
 
 struct StreamFloatPlan {
 
@@ -19,8 +21,8 @@ public:
 
   struct FloatChangePoint {
     ElementIdx startElementIdx;
-    MachineType floatMachineType;
-    FloatChangePoint(ElementIdx _startElementIdx, MachineType _floatMachineType)
+    ruby::MachineType floatMachineType;
+    FloatChangePoint(ElementIdx _startElementIdx, ruby::MachineType _floatMachineType)
         : startElementIdx(_startElementIdx),
           floatMachineType(_floatMachineType) {}
   };
@@ -31,7 +33,7 @@ public:
 
   void clear() { this->changePoints.clear(); }
   void addFloatChangePoint(ElementIdx startElementIdx,
-                           MachineType floatMachineType);
+                           ruby::MachineType floatMachineType);
 
   /**
    * Delay the FloatPlan until FirstFloatElementIdx.
@@ -51,7 +53,7 @@ public:
   bool isFloatedToMem() const;
   bool isMixedFloat() const;
   ElementIdx getFirstFloatElementIdx() const;
-  MachineType getMachineTypeAtElem(ElementIdx elementIdx) const;
+  ruby::MachineType getMachineTypeAtElem(ElementIdx elementIdx) const;
 
 private:
   bool finalized = false;
@@ -62,5 +64,7 @@ private:
 std::ostream &operator<<(std::ostream &os, const StreamFloatPlan &plan);
 
 std::string to_string(const StreamFloatPlan &plan);
+
+} // namespace gem5
 
 #endif

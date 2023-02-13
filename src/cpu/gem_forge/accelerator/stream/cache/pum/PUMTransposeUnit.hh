@@ -7,13 +7,15 @@
 
 #include <vector>
 
+namespace gem5 {
+
 /**
  * This class model the overheads of reading from a PUM transposed array.
  */
 
 class PUMTransposeUnit {
 public:
-  PUMTransposeUnit(AbstractStreamAwareController *_controller)
+  PUMTransposeUnit(ruby::AbstractStreamAwareController *_controller)
       : controller(_controller) {}
 
   /**
@@ -26,7 +28,7 @@ public:
   Cycles access(Addr paddrLine, Cycles defaultLat);
 
 private:
-  AbstractStreamAwareController *controller;
+  ruby::AbstractStreamAwareController *controller;
 
   bool initialized = false;
 
@@ -37,5 +39,7 @@ private:
 
   void initialize();
 };
+
+} // namespace gem5
 
 #endif

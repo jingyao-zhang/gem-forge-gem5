@@ -38,9 +38,14 @@
 #include "mem/cache/compressors/dictionary_compressor_impl.hh"
 #include "params/RepeatedQwordsCompressor.hh"
 
-namespace Compressor {
+namespace gem5
+{
 
-RepeatedQwords::RepeatedQwords(const Params *p)
+GEM5_DEPRECATED_NAMESPACE(Compressor, compression);
+namespace compression
+{
+
+RepeatedQwords::RepeatedQwords(const Params &p)
     : DictionaryCompressor<uint64_t>(p)
 {
 }
@@ -77,10 +82,5 @@ RepeatedQwords::compress(const std::vector<Chunk>& chunks,
     return comp_data;
 }
 
-} // namespace Compressor
-
-Compressor::RepeatedQwords*
-RepeatedQwordsCompressorParams::create()
-{
-    return new Compressor::RepeatedQwords(this);
-}
+} // namespace compression
+} // namespace gem5

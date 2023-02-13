@@ -2,8 +2,6 @@
  * Copyright (c) 2014-2017 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -34,14 +32,22 @@
 #ifndef __FETCH_UNIT_HH__
 #define __FETCH_UNIT_HH__
 
-#include <string>
+#include <cassert>
+#include <cstdint>
+#include <deque>
+#include <map>
 #include <utility>
+#include <vector>
 
 #include "arch/gpu_decoder.hh"
-#include "base/statistics.hh"
+#include "base/types.hh"
 #include "config/the_gpu_isa.hh"
 #include "gpu-compute/scheduler.hh"
 #include "mem/packet.hh"
+#include "sim/eventq.hh"
+
+namespace gem5
+{
 
 class ComputeUnit;
 class Wavefront;
@@ -49,7 +55,7 @@ class Wavefront;
 class FetchUnit
 {
   public:
-    FetchUnit(const ComputeUnitParams* p, ComputeUnit &cu);
+    FetchUnit(const ComputeUnitParams &p, ComputeUnit &cu);
     ~FetchUnit();
     void init();
     void exec();
@@ -233,6 +239,21 @@ class FetchUnit
         TheGpuISA::Decoder *_decoder;
     };
 
+    class SystemHubEvent : public Event
+    {
+      FetchUnit *fetchUnit;
+      PacketPtr reqPkt;
+
+      public:
+        SystemHubEvent(PacketPtr pkt, FetchUnit *fetch_unit)
+            : fetchUnit(fetch_unit), reqPkt(pkt)
+        {
+            setFlags(Event::AutoDelete);
+        }
+
+        void process();
+    };
+
     bool timingSim;
     ComputeUnit &computeUnit;
     TheGpuISA::Decoder decoder;
@@ -264,5 +285,7 @@ class FetchUnit
      */
     int fetchDepth;
 };
+
+} // namespace gem5
 
 #endif // __FETCH_UNIT_HH__

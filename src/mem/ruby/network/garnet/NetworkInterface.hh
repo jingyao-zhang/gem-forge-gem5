@@ -46,14 +46,24 @@
 #include "mem/ruby/slicc_interface/Message.hh"
 #include "params/GarnetNetworkInterface.hh"
 
+namespace gem5
+{
+
+namespace ruby
+{
+
 class MessageBuffer;
+
+namespace garnet
+{
+
 class flitBuffer;
 
 class NetworkInterface : public ClockedObject, public Consumer
 {
   public:
     typedef GarnetNetworkInterfaceParams Params;
-    NetworkInterface(const Params *p);
+    NetworkInterface(const Params &p);
     ~NetworkInterface() = default;
 
     void addInPort(NetworkLink *in_link, CreditLink *credit_link);
@@ -79,6 +89,7 @@ class NetworkInterface : public ClockedObject, public Consumer
     void injectMsgToInput(MsgPtr msg);
     void injectMsgToOutput(MsgPtr msg);
 
+    bool functionalRead(Packet *pkt, WriteMask &mask);
     uint32_t functionalWrite(Packet *);
 
     void scheduleFlit(flit *t_flit);
@@ -308,5 +319,9 @@ class NetworkInterface : public ClockedObject, public Consumer
 
     int getMessageStatsType(const MsgPtr &msg_ptr);
 };
+
+} // namespace garnet
+} // namespace ruby
+} // namespace gem5
 
 #endif // __MEM_RUBY_NETWORK_GARNET_0_NETWORKINTERFACE_HH__

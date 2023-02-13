@@ -51,10 +51,10 @@ output header {{
             flags[IsNonSpeculative] = true;
         }
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
 
         std::string generateDisassembly(
-                Addr pc, const Loader::SymbolTable *symtab) const override;
+                Addr pc, const loader::SymbolTable *symtab) const override;
     };
     class CP0Unimplemented : public MipsStaticInst
     {
@@ -68,10 +68,10 @@ output header {{
             flags[IsNonSpeculative] = true;
         }
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
 
         std::string generateDisassembly(
-                Addr pc, const Loader::SymbolTable *symtab) const override;
+                Addr pc, const loader::SymbolTable *symtab) const override;
     };
     class CP1Unimplemented : public MipsStaticInst
     {
@@ -85,10 +85,10 @@ output header {{
             flags[IsNonSpeculative] = true;
         }
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
 
         std::string generateDisassembly(
-                Addr pc, const Loader::SymbolTable *symtab) const override;
+                Addr pc, const loader::SymbolTable *symtab) const override;
     };
     class CP2Unimplemented : public MipsStaticInst
     {
@@ -102,10 +102,10 @@ output header {{
             flags[IsNonSpeculative] = true;
         }
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
 
         std::string generateDisassembly(
-                Addr pc, const Loader::SymbolTable *symtab) const override;
+                Addr pc, const loader::SymbolTable *symtab) const override;
     };
 
     /**
@@ -133,44 +133,44 @@ output header {{
             flags[IsNonSpeculative] = true;
         }
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
 
         std::string generateDisassembly(
-                Addr pc, const Loader::SymbolTable *symtab) const override;
+                Addr pc, const loader::SymbolTable *symtab) const override;
     };
 }};
 
 output decoder {{
     std::string
     FailUnimplemented::generateDisassembly(
-            Addr pc, const Loader::SymbolTable *symtab) const
+            Addr pc, const loader::SymbolTable *symtab) const
     {
         return csprintf("%-10s (unimplemented)", mnemonic);
     }
 
     std::string
     CP0Unimplemented::generateDisassembly(
-            Addr pc, const Loader::SymbolTable *symtab) const
+            Addr pc, const loader::SymbolTable *symtab) const
     {
         return csprintf("%-10s (unimplemented)", mnemonic);
     }
 
     std::string
     CP1Unimplemented::generateDisassembly(
-            Addr pc, const Loader::SymbolTable *symtab) const
+            Addr pc, const loader::SymbolTable *symtab) const
     {
         return csprintf("%-10s (unimplemented)", mnemonic);
     }
     std::string
     CP2Unimplemented::generateDisassembly(
-            Addr pc, const Loader::SymbolTable *symtab) const
+            Addr pc, const loader::SymbolTable *symtab) const
     {
         return csprintf("%-10s (unimplemented)", mnemonic);
     }
 
     std::string
     WarnUnimplemented::generateDisassembly(
-            Addr pc, const Loader::SymbolTable *symtab) const
+            Addr pc, const loader::SymbolTable *symtab) const
     {
         return csprintf("%-10s (unimplemented)", mnemonic);
     }
@@ -179,7 +179,7 @@ output decoder {{
 output exec {{
     Fault
     FailUnimplemented::execute(ExecContext *xc,
-                               Trace::InstRecord *traceData) const
+                               trace::InstRecord *traceData) const
     {
         panic("attempt to execute unimplemented instruction '%s' "
               "(inst 0x%08x, opcode 0x%x, binary:%s)", mnemonic, machInst, OPCODE,
@@ -189,7 +189,7 @@ output exec {{
 
     Fault
     CP0Unimplemented::execute(ExecContext *xc,
-                               Trace::InstRecord *traceData) const
+                               trace::InstRecord *traceData) const
     {
         if (FullSystem) {
             if (!isCoprocessorEnabled(xc, 0))
@@ -206,7 +206,7 @@ output exec {{
 
     Fault
     CP1Unimplemented::execute(ExecContext *xc,
-                               Trace::InstRecord *traceData) const
+                               trace::InstRecord *traceData) const
     {
         if (FullSystem) {
             if (!isCoprocessorEnabled(xc, 1))
@@ -223,7 +223,7 @@ output exec {{
 
     Fault
     CP2Unimplemented::execute(ExecContext *xc,
-                               Trace::InstRecord *traceData) const
+                               trace::InstRecord *traceData) const
     {
         if (FullSystem) {
             if (!isCoprocessorEnabled(xc, 2))
@@ -240,7 +240,7 @@ output exec {{
 
     Fault
     WarnUnimplemented::execute(ExecContext *xc,
-                               Trace::InstRecord *traceData) const
+                               trace::InstRecord *traceData) const
     {
         if (!warned) {
             warn("\tinstruction '%s' unimplemented\n", mnemonic);
@@ -273,4 +273,3 @@ def format WarnUnimpl() {{
     iop = InstObjParams(name, 'WarnUnimplemented')
     decode_block = BasicDecodeWithMnemonic.subst(iop)
 }};
-

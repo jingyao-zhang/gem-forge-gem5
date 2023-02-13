@@ -49,10 +49,14 @@
 #include "mem/ruby/system/RubySystem.hh"
 #include "sim/system.hh"
 
-using namespace std;
+namespace gem5
+{
 
-DirectoryMemory::DirectoryMemory(const Params *p)
-    : SimObject(p), addrRanges(p->addr_ranges.begin(), p->addr_ranges.end())
+namespace ruby
+{
+
+DirectoryMemory::DirectoryMemory(const Params &p)
+    : SimObject(p), addrRanges(p.addr_ranges.begin(), p.addr_ranges.end())
 {
     m_size_bytes = 0;
     for (const auto &r: addrRanges) {
@@ -149,7 +153,7 @@ DirectoryMemory::deallocate(Addr address)
 }
 
 void
-DirectoryMemory::print(ostream& out) const
+DirectoryMemory::print(std::ostream& out) const
 {
 }
 
@@ -159,8 +163,5 @@ DirectoryMemory::recordRequestType(DirectoryRequestType requestType) {
             DirectoryRequestType_to_string(requestType));
 }
 
-DirectoryMemory *
-RubyDirectoryMemoryParams::create()
-{
-    return new DirectoryMemory(this);
-}
+} // namespace ruby
+} // namespace gem5

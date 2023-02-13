@@ -47,7 +47,10 @@
 #include "params/FVPBasePwrCtrl.hh"
 #include "sim/system.hh"
 
-FVPBasePwrCtrl::FVPBasePwrCtrl(FVPBasePwrCtrlParams *const params)
+namespace gem5
+{
+
+FVPBasePwrCtrl::FVPBasePwrCtrl(const FVPBasePwrCtrlParams &params)
     : BasicPioDevice(params, 0x1000),
       regs(),
       system(*static_cast<ArmSystem *>(sys))
@@ -58,13 +61,13 @@ FVPBasePwrCtrl::FVPBasePwrCtrl(FVPBasePwrCtrlParams *const params)
 }
 
 void
-FVPBasePwrCtrl::init()
+FVPBasePwrCtrl::startup()
 {
     // All cores are ON by default (PwrStatus.{l0,l1} = 0b1)
     corePwrStatus.resize(sys->threads.size(), 0x60000000);
     for (const auto &tc : sys->threads)
         poweredCoresPerCluster[tc->socketId()] += 1;
-    BasicPioDevice::init();
+    BasicPioDevice::startup();
 }
 
 void
@@ -280,7 +283,7 @@ FVPBasePwrCtrl::powerCoreOn(ThreadContext *const tc, PwrStatus *const pwrs)
             npwrs->pc = 0;
         }
     }
-    tc->getCpuPtr()->powerState->set(Enums::PwrState::ON);
+    tc->getCpuPtr()->powerState->set(enums::PwrState::ON);
 }
 
 void
@@ -295,7 +298,7 @@ FVPBasePwrCtrl::powerCoreOff(ThreadContext *const tc, PwrStatus *const pwrs)
     pwrs->pc = 0;
     // Clear power-on reason
     pwrs->wk = 0;
-    tc->getCpuPtr()->powerState->set(Enums::PwrState::OFF);
+    tc->getCpuPtr()->powerState->set(enums::PwrState::OFF);
 }
 
 void
@@ -311,8 +314,4 @@ FVPBasePwrCtrl::startCoreUp(ThreadContext *const tc)
     tc->activate();
 }
 
-FVPBasePwrCtrl *
-FVPBasePwrCtrlParams::create()
-{
-    return new FVPBasePwrCtrl(this);
-}
+} // namespace gem5

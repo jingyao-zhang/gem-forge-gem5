@@ -5,6 +5,8 @@
 #include "MLCDynStream.hh"
 #include "SlicedDynStream.hh"
 
+namespace gem5 {
+
 class MLCDynIndirectStream;
 
 /**
@@ -15,19 +17,19 @@ class MLCDynDirectStream : public MLCDynStream {
 public:
   MLCDynDirectStream(
       CacheStreamConfigureDataPtr _configData,
-      AbstractStreamAwareController *_controller,
-      MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
+      ruby::AbstractStreamAwareController *_controller,
+      ruby::MessageBuffer *_responseMsgBuffer, ruby::MessageBuffer *_requestToLLCMsgBuffer,
       const std::vector<MLCDynIndirectStream *> &_indirectStreams);
 
   /**
    * Get where is the RemoteStream is at the end of current allocated credits.
    */
-  std::pair<Addr, MachineType>
+  std::pair<Addr, ruby::MachineType>
   getRemoteTailPAddrAndMachineType() const override;
 
   void receiveStreamData(const DynStreamSliceId &sliceId,
-                         const DataBlock &dataBlock, Addr paddrLine) override;
-  void receiveReuseStreamData(Addr vaddr, const DataBlock &dataBlock);
+                         const ruby::DataBlock &dataBlock, Addr paddrLine) override;
+  void receiveReuseStreamData(Addr vaddr, const ruby::DataBlock &dataBlock);
   void setLLCCutLineVAddr(Addr vaddr) { this->llcCutLineVAddr = vaddr; }
 
   void receiveStreamDone(const DynStreamSliceId &sliceId) override;
@@ -57,7 +59,7 @@ public:
     return this->slicedStream.hasInnerTripCount();
   }
   void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr,
-                         MachineType brokenMachineType) override;
+                         ruby::MachineType brokenMachineType) override;
 
 protected:
   SlicedDynStream slicedStream;
@@ -80,7 +82,7 @@ protected:
   // This stream has been cut by LLCStreamBound.
   bool llcStreamLoopBoundCutted = false;
   Addr llcStreamLoopBoundBrokenPAddr = 0;
-  MachineType llcStreamLoopBoundBrokenMachineType = MachineType_NULL;
+  ruby::MachineType llcStreamLoopBoundBrokenMachineType = ruby::MachineType_NULL;
 
   struct LLCSegmentPosition {
     /**
@@ -121,7 +123,7 @@ protected:
     return this->getLastLLCSegment().endSliceIdx;
   }
 
-  std::unordered_map<Addr, DataBlock> reuseBlockMap;
+  std::unordered_map<Addr, ruby::DataBlock> reuseBlockMap;
 
   std::vector<MLCDynIndirectStream *> indirectStreams;
 
@@ -148,7 +150,7 @@ protected:
      */
     if (this->config->isPointerChase) {
       return mlc.getStartIdx() == core.getStartIdx() &&
-             makeLineAddress(mlc.vaddr) == makeLineAddress(core.vaddr);
+             ruby::makeLineAddress(mlc.vaddr) == ruby::makeLineAddress(core.vaddr);
     } else {
       // By default match the vaddr.
       // TODO: This is really wrong.
@@ -206,5 +208,7 @@ protected:
   bool lastSegementValid = false;
   LLCSegmentPosition lastSegment;
 };
+
+} // namespace gem5
 
 #endif

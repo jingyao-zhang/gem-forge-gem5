@@ -21,6 +21,8 @@
 
 #include "TDFG.pb.h"
 
+namespace gem5 {
+
 class PUMScheduler;
 
 class MLCPUMManager {
@@ -80,7 +82,7 @@ public:
   void receivePrefetchPacket(int recvPackets);
   void reportProgress(int64_t contextId);
 
-  MachineID getMachineID() const { return this->controller->getMachineID(); }
+  ruby::MachineID getMachineID() const { return this->controller->getMachineID(); }
 
   /**
    * Whether we are in PUM stage.
@@ -90,7 +92,7 @@ public:
 private:
   using ConfigPtr = CacheStreamConfigureDataPtr;
   MLCStreamEngine *mlcSE;
-  AbstractStreamAwareController *controller;
+  ruby::AbstractStreamAwareController *controller;
 
   /**
    * So far we only model register pressure when using unison scheduler as it
@@ -741,7 +743,7 @@ private:
    * Send out an kick message to PUMEngine to continue execution.
    */
   void tryKickPUMEngine(PUMContext &context);
-  void kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
+  void kickPUMEngine(PUMContext &context, ruby::MessageSizeType sizeType,
                      bool isIdea);
 
   /**
@@ -824,5 +826,7 @@ std::ostream &operator<<(std::ostream &os,
                          const MLCPUMManager::PUMDataGraphNode &node);
 
 std::string to_string(const MLCPUMManager::PUMDataGraphNode &node);
+
+} // namespace gem5
 
 #endif

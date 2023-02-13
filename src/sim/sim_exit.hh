@@ -29,9 +29,13 @@
 #ifndef __SIM_EXIT_HH__
 #define __SIM_EXIT_HH__
 
+#include <functional>
 #include <string>
 
 #include "base/types.hh"
+
+namespace gem5
+{
 
 Tick curTick();
 
@@ -50,5 +54,7 @@ void exitSimLoop(const std::string &message, int exit_code = 0,
 /// any normal events which are schedule at the current time.
 void exitSimLoopNow(const std::string &message, int exit_code = 0,
                     Tick repeat = 0, bool serialize = false);
+
+} // namespace gem5
 
 #endif // __SIM_EXIT_HH__

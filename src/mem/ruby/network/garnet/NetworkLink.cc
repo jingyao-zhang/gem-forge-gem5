@@ -36,20 +36,27 @@
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/garnet/CreditLink.hh"
 
-#include "debug/RubyNetwork.hh"
+namespace gem5
+{
 
-NetworkLink::NetworkLink(const Params *p)
-    : ClockedObject(p), Consumer(this), m_id(p->link_id),
+namespace ruby
+{
+
+namespace garnet
+{
+
+NetworkLink::NetworkLink(const Params &p)
+    : ClockedObject(p), Consumer(this), m_id(p.link_id),
       m_type(NUM_LINK_TYPES_),
-      m_latency(p->link_latency), m_link_utilized(0),
-      m_virt_nets(p->virt_nets), linkBuffer(),
+      m_latency(p.link_latency), m_link_utilized(0),
+      m_virt_nets(p.virt_nets), linkBuffer(),
       link_consumer(nullptr), link_srcQueue(nullptr)
 {
-    int num_vnets = (p->supported_vnets).size();
+    int num_vnets = (p.supported_vnets).size();
     mVnets.resize(num_vnets);
-    bitWidth = p->width;
+    bitWidth = p.width;
     for (int i = 0; i < num_vnets; i++) {
-        mVnets[i] = p->supported_vnets[i];
+        mVnets[i] = p.supported_vnets[i];
     }
 }
 
@@ -114,16 +121,10 @@ NetworkLink::resetStats()
     m_link_utilized = 0;
 }
 
-NetworkLink *
-NetworkLinkParams::create()
+bool
+NetworkLink::functionalRead(Packet *pkt, WriteMask &mask)
 {
-    return new NetworkLink(this);
-}
-
-CreditLink *
-CreditLinkParams::create()
-{
-    return new CreditLink(this);
+    return linkBuffer.functionalRead(pkt, mask);
 }
 
 uint32_t
@@ -131,3 +132,7 @@ NetworkLink::functionalWrite(Packet *pkt)
 {
     return linkBuffer.functionalWrite(pkt);
 }
+
+} // namespace garnet
+} // namespace ruby
+} // namespace gem5

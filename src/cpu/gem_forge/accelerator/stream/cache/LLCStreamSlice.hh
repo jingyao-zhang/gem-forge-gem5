@@ -7,6 +7,8 @@
 
 #include <memory>
 
+namespace gem5 {
+
 class LLCStreamSlice;
 using LLCStreamSlicePtr = std::shared_ptr<LLCStreamSlice>;
 
@@ -72,14 +74,14 @@ public:
 
   void allocate(LLCStreamEngine *llcSE);
   void issue();
-  void responded(const DataBlock &loadBlock, const DataBlock &storeBlock);
+  void responded(const ruby::DataBlock &loadBlock, const ruby::DataBlock &storeBlock);
   void faulted();
   void released();
 
   const DynStreamSliceId &getSliceId() const { return this->sliceId; }
 
-  const DataBlock &getLoadBlock() const { return this->loadBlock; }
-  const DataBlock &getStoreBlock() const { return this->storeBlock; }
+  const ruby::DataBlock &getLoadBlock() const { return this->loadBlock; }
+  const ruby::DataBlock &getStoreBlock() const { return this->storeBlock; }
 
   bool isLoadComputeValueSent() const { return this->loadComputeValueSent; }
   void setLoadComputeValueSent();
@@ -89,8 +91,8 @@ private:
   DynStreamSliceId sliceId;
   State state = State::INITIALIZED;
   LLCStreamEngine *llcSE = nullptr;
-  DataBlock loadBlock;
-  DataBlock storeBlock;
+  ruby::DataBlock loadBlock;
+  ruby::DataBlock storeBlock;
 
   /**
    * Whether the LoadComputeValue has been sent to the core.
@@ -117,5 +119,7 @@ private:
   Cycles issuedCycle = Cycles(0);
   Cycles respondedCycle = Cycles(0);
 };
+
+} // namespace gem5
 
 #endif

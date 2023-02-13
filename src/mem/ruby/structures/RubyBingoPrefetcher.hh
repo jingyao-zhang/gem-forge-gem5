@@ -20,10 +20,14 @@ namespace L1D_PREF {
 class Bingo;
 }
 
+namespace gem5 {
+
+namespace ruby {
+
 class RubyBingoPrefetcher : public SimObject {
 public:
-  typedef RubyBingoPrefetcherParams Params;
-  RubyBingoPrefetcher(const Params *p);
+  PARAMS(RubyBingoPrefetcher)
+  RubyBingoPrefetcher(const Params &p);
   ~RubyBingoPrefetcher();
 
   void setController(AbstractController *_ctrl) { m_controller = _ctrl; }
@@ -87,26 +91,30 @@ private:
   int inqueuePfRequests = 0;
 
   //! Count of accesses to the prefetcher
-  Stats::Scalar numMissObserved;
+  statistics::Scalar numMissObserved;
   //! Count of accesses to the prefetcher
-  Stats::Scalar numReqObserved;
+  statistics::Scalar numReqObserved;
   //! Count of prefetch streams allocated
-  Stats::Scalar numAllocatedStreams;
+  statistics::Scalar numAllocatedStreams;
   //! Count of prefetch requests made
-  Stats::Scalar numPrefetchRequested;
+  statistics::Scalar numPrefetchRequested;
   //! Count of successful prefetches
-  Stats::Scalar numHits;
+  statistics::Scalar numHits;
   // Prefetched too late, so still missed.
-  Stats::Scalar numPartialHits;
+  statistics::Scalar numPartialHits;
   //! Count of pages crossed
-  Stats::Scalar numPagesCrossed;
+  statistics::Scalar numPagesCrossed;
   //! Count of misses incurred for blocks that were prefetched
-  Stats::Scalar numMissedPrefetchedBlocks;
+  statistics::Scalar numMissedPrefetchedBlocks;
 
   Addr pageAddress(Addr addr) const;
 
   // The actual prefetcher.
   std::unique_ptr<L1D_PREF::Bingo> bingo;
 };
+
+} // namespace ruby
+
+} // namespace gem5
 
 #endif // __MEM_RUBY_STRUCTURES_PREFETCHER_HH__

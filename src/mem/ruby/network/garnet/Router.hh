@@ -47,17 +47,27 @@
 #include "mem/ruby/network/garnet/flit.hh"
 #include "params/GarnetRouter.hh"
 
+namespace gem5
+{
+
+namespace ruby
+{
+
+class FaultModel;
+
+namespace garnet
+{
+
 class NetworkLink;
 class CreditLink;
 class InputUnit;
 class OutputUnit;
-class FaultModel;
 
 class Router : public BasicRouter, public Consumer
 {
   public:
     typedef GarnetRouterParams Params;
-    Router(const Params *p);
+    Router(const Params &p);
 
     ~Router() = default;
 
@@ -129,6 +139,7 @@ class Router : public BasicRouter, public Consumer
                                                       aggregate_fault_prob);
     }
 
+    bool functionalRead(Packet *pkt, WriteMask &mask);
     uint32_t functionalWrite(Packet *);
 
   private:
@@ -145,13 +156,17 @@ class Router : public BasicRouter, public Consumer
     std::vector<std::shared_ptr<OutputUnit>> m_output_unit;
 
     // Statistical variables required for power computations
-    Stats::Scalar m_buffer_reads;
-    Stats::Scalar m_buffer_writes;
+    statistics::Scalar m_buffer_reads;
+    statistics::Scalar m_buffer_writes;
 
-    Stats::Scalar m_sw_input_arbiter_activity;
-    Stats::Scalar m_sw_output_arbiter_activity;
+    statistics::Scalar m_sw_input_arbiter_activity;
+    statistics::Scalar m_sw_output_arbiter_activity;
 
-    Stats::Scalar m_crossbar_activity;
+    statistics::Scalar m_crossbar_activity;
 };
+
+} // namespace garnet
+} // namespace ruby
+} // namespace gem5
 
 #endif // __MEM_RUBY_NETWORK_GARNET_0_ROUTER_HH__

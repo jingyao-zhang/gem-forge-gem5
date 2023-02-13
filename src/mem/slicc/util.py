@@ -24,11 +24,9 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from __future__ import print_function
-from six import string_types
-
 import os
 import sys
+
 
 class PairContainer(object):
     def __init__(self, pairs=None):
@@ -48,27 +46,30 @@ class PairContainer(object):
     def get(self, item, failobj=None):
         return self.pairs.get(item, failobj)
 
+
 class Location(object):
     def __init__(self, filename, lineno, no_warning=False):
-        if not isinstance(filename, string_types):
+        if not isinstance(filename, str):
             raise AttributeError(
-                "filename must be a string, found {}".format(type(filename)))
+                "filename must be a string, found {}".format(type(filename))
+            )
         if not isinstance(lineno, int):
             raise AttributeError(
-                "filename must be an integer, found {}".format(type(lineno)))
+                "filename must be an integer, found {}".format(type(lineno))
+            )
         self.filename = filename
         self.lineno = lineno
         self.no_warning = no_warning
 
     def __str__(self):
-        return '%s:%d' % (os.path.basename(self.filename), self.lineno)
+        return "%s:%d" % (os.path.basename(self.filename), self.lineno)
 
     def warning(self, message, *args):
         if self.no_warning:
             return
         if args:
             message = message % args
-        #raise Exception, "%s: Warning: %s" % (self, message)
+        # raise Exception, "%s: Warning: %s" % (self, message)
         print("%s: Warning: %s" % (self, message), file=sys.stderr)
 
     def error(self, message, *args):
@@ -77,4 +78,5 @@ class Location(object):
         raise Exception("{}: Error: {}".format(self, message))
         sys.exit("\n%s: Error: %s" % (self, message))
 
-__all__ = [ 'PairContainer', 'Location' ]
+
+__all__ = ["PairContainer", "Location"]

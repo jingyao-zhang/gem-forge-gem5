@@ -40,6 +40,7 @@
 
 import sys
 import os
+import os.path
 import re
 
 from gem5_scons import Transform
@@ -50,33 +51,39 @@ Import('*')
 #
 # ISA "switch header" generation.
 #
-# Auto-generate arch headers that include the right ISA-specific
-# header based on the setting of THE_ISA preprocessor variable.
+# Auto-generate gpu headers that include the right GPU-specific
+# header based on the setting of TARGET_GPU_ISA setting.
 #
 #################################################################
 
-env.SwitchingHeaders(
-    Split('''
-        decoder.hh
-        isa.hh
-        isa_traits.hh
-        locked_mem.hh
-        pseudo_inst.hh
-        registers.hh
-        remote_gdb.hh
-        types.hh
-        utility.hh
-        '''),
-    env.subst('${TARGET_ISA}'))
+if env['CONF']['USE_ARM_ISA']:
+    isa = 'arm'
+elif env['CONF']['USE_MIPS_ISA']:
+    isa = 'mips'
+elif env['CONF']['USE_POWER_ISA']:
+    isa = 'power'
+elif env['CONF']['USE_RISCV_ISA']:
+    isa = 'riscv'
+elif env['CONF']['USE_SPARC_ISA']:
+    isa = 'sparc'
+elif env['CONF']['USE_X86_ISA']:
+    isa = 'x86'
+elif env['CONF']['USE_NULL_ISA']:
+    isa = 'null'
 
-if env['BUILD_GPU']:
+amdgpu_isa = ['gcn3', 'vega']
+
+if env['CONF']['BUILD_GPU']:
     env.SwitchingHeaders(
         Split('''
             gpu_decoder.hh
             gpu_isa.hh
+            gpu_registers.hh
             gpu_types.hh
             '''),
-        env.subst('${TARGET_GPU_ISA}'))
+        '{}'.format('amdgpu/' if
+            env['CONF']['TARGET_GPU_ISA'] in amdgpu_isa else '') +
+        env.subst('${CONF["TARGET_GPU_ISA"]}'))
 
 #################################################################
 #
@@ -104,16 +111,22 @@ SCons.Tool.SourceFileScanner.add_scanner('.cc.inc', SCons.Tool.CScanner)
 # Now create a Builder object that uses isa_parser.py to generate C++
 # output from the ISA description (*.isa) files.
 #
-
-parser_py = File('isa_parser.py')
+parser_files = []
+for root, dirnames, filenames in os.walk(Dir("isa_parser").srcnode().abspath):
+    for name in filenames:
+        _, ext = os.path.splitext(name)
+        if ext == '.py':
+            parser_files.append(os.path.join(root, name))
 micro_asm_py = File('micro_asm.py')
 
 # import ply here because SCons screws with sys.path when performing actions.
 import ply
 
+arch_dir = Dir('.')
+
 def run_parser(target, source, env):
     # Add the current directory to the system path so we can import files.
-    sys.path[0:0] = [ parser_py.dir.abspath ]
+    sys.path[0:0] = [ arch_dir.srcnode().abspath ]
     import isa_parser
 
     parser = isa_parser.ISAParser(target[0].dir.abspath)
@@ -126,7 +139,7 @@ IsaDescBuilder = Builder(action=desc_action)
 
 # ISAs should use this function to set up an IsaDescBuilder and not try to
 # set one up manually.
-def ISADesc(desc, decoder_splits=1, exec_splits=1):
+def ISADesc(desc, decoder_splits=1, exec_splits=1, tags=None, add_tags=None):
     '''Set up a builder for an ISA description.
 
     The decoder_splits and exec_splits parameters let us determine what
@@ -184,13 +197,14 @@ def ISADesc(desc, decoder_splits=1, exec_splits=1):
     add_gen('exec-g.cc.inc')
     add_gen('exec-ns.cc.inc')
 
-    add_gen('max_inst_regs.hh')
-
 
     # These generated files are also top level sources.
     def source_gen(name):
         add_gen(name)
-        Source(gen_file(name))
+        append = {}
+        if env['CLANG']:
+            append['CCFLAGS'] = ['-Wno-self-assign']
+        Source(gen_file(name), append=append, tags=tags, add_tags=add_tags)
 
     source_gen('decoder.cc')
 
@@ -207,7 +221,7 @@ def ISADesc(desc, decoder_splits=1, exec_splits=1):
             source_gen('generic_cpu_exec_%d.cc' % i)
 
     # Actually create the builder.
-    sources = [desc, parser_py, micro_asm_py]
+    sources = [desc, micro_asm_py] + parser_files
     IsaDescBuilder(target=gen, source=sources, env=env)
     return gen
 
@@ -221,3 +235,7 @@ DebugFlag('CCRegs')
 DebugFlag('MiscRegs')
 CompoundFlag('Registers', [ 'IntRegs', 'FloatRegs', 'VecRegs', 'VecPredRegs',
                             'CCRegs', 'MiscRegs' ])
+
+DebugFlag('Decoder', "Decoder debug output")
+DebugFlag('Faults', "Information about faults, exceptions, interrupts, etc")
+DebugFlag('TLBVerbose')

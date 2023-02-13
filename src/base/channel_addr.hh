@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 ARM Limited
+ * Copyright (c) 2019, 2021 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -41,6 +41,9 @@
 #include <ostream>
 
 #include "base/addr_range.hh"
+
+namespace gem5
+{
 
 /**
  * Class holding a guest address in a contiguous channel-local address
@@ -91,6 +94,14 @@ class ChannelAddr
 
     constexpr ChannelAddr operator<<(const int b) const {
         return ChannelAddr(a << b);
+    }
+
+    constexpr ChannelAddr operator^(const int b) const {
+        return ChannelAddr(a ^ b);
+    }
+
+    constexpr ChannelAddr operator%(const int b) const {
+        return ChannelAddr(a % b);
     }
 
     constexpr ChannelAddr operator*(const Type &b) const {
@@ -146,6 +157,7 @@ class ChannelAddr
 /**
  * The ChanneelAddrRange class describes a contiguous range of
  * addresses in a contiguous channel-local address space.
+ * The start is inclusive, the end is not.
  */
 class ChannelAddrRange
 {
@@ -165,15 +177,15 @@ class ChannelAddrRange
 
     constexpr ChannelAddrRange(const ChannelAddrRange &) = default;
 
-    constexpr ChannelAddr size() const { return _end - _start + 1; }
+    constexpr ChannelAddr size() const { return _end - _start; }
 
-    constexpr bool valid() const { return _start <= _end; }
+    constexpr bool valid() const { return _start < _end; }
 
     constexpr ChannelAddr start() const { return _start; }
     constexpr ChannelAddr end() const { return _end; }
 
     constexpr bool contains(ChannelAddr a) const {
-        return a >= _start && a <= _end;
+        return a >= _start && a < _end;
     }
 
     /** @} */ // end of api_channel_addr
@@ -183,25 +195,28 @@ class ChannelAddrRange
     ChannelAddr _end;
 };
 
+/**
+ * @ingroup api_channel_addr
+ */
+std::ostream &operator<<(std::ostream &out, const gem5::ChannelAddr &addr);
+
+} // namespace gem5
+
 namespace std
 {
     template<>
-    struct hash<ChannelAddr>
+    struct hash<gem5::ChannelAddr>
     {
-        typedef ChannelAddr argument_type;
+        typedef gem5::ChannelAddr argument_type;
         typedef std::size_t result_type;
 
         result_type
-        operator()(argument_type const &a) const noexcept {
-            return std::hash<ChannelAddr::Type>{}(
+        operator()(argument_type const &a) const noexcept
+        {
+            return std::hash<gem5::ChannelAddr::Type>{}(
                 static_cast<argument_type::Type>(a));
         }
     };
 }
-
-/**
- * @ingroup api_channel_addr
- */
-std::ostream &operator<<(std::ostream &out, const ChannelAddr &addr);
 
 #endif // __BASE_CHANNEL_ADDR_HH__

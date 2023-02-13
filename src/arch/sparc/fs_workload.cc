@@ -32,6 +32,9 @@
 #include "params/SparcFsWorkload.hh"
 #include "sim/system.hh"
 
+namespace gem5
+{
+
 namespace SparcISA
 {
 
@@ -50,9 +53,4 @@ FsWorkload::initState()
 }
 
 } // namespace SparcISA
-
-SparcISA::FsWorkload *
-SparcFsWorkloadParams::create()
-{
-    return new SparcISA::FsWorkload(this);
-}
+} // namespace gem5

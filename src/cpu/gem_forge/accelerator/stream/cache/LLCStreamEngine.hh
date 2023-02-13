@@ -20,7 +20,11 @@
 #include <memory>
 #include <set>
 
+namespace gem5 {
+
+namespace ruby {
 class AbstractStreamAwareController;
+}
 class MessageBuffer;
 class LLCStreamCommitController;
 class LLCStreamMigrationController;
@@ -29,13 +33,13 @@ class LLCStreamAtomicLockManager;
 class StreamRequestBuffer;
 class PUMEngine;
 
-class LLCStreamEngine : public Consumer {
+class LLCStreamEngine : public ruby::Consumer {
 public:
-  LLCStreamEngine(AbstractStreamAwareController *_controller,
-                  MessageBuffer *_streamMigrateMsgBuffer,
-                  MessageBuffer *_streamIssueMsgBuffer,
-                  MessageBuffer *_streamIndirectIssueMsgBuffer,
-                  MessageBuffer *_streamResponseMsgBuffer);
+  LLCStreamEngine(ruby::AbstractStreamAwareController *_controller,
+                  ruby::MessageBuffer *_streamMigrateMsgBuffer,
+                  ruby::MessageBuffer *_streamIssueMsgBuffer,
+                  ruby::MessageBuffer *_streamIndirectIssueMsgBuffer,
+                  ruby::MessageBuffer *_streamResponseMsgBuffer);
   ~LLCStreamEngine() override;
 
   void receiveStreamConfigure(PacketPtr pkt);
@@ -45,11 +49,11 @@ public:
   void receiveStreamCommit(const DynStreamSliceId &sliceId);
   void receiveStreamDataVec(Cycles delayCycles, Addr paddrLine,
                             const DynStreamSliceIdVec &sliceIds,
-                            const DataBlock &dataBlock,
-                            const DataBlock &storeValueBlock);
-  void receiveStreamIndirectRequest(const RequestMsg &req);
-  void receiveStreamIndirectRequestImpl(const RequestMsg &req);
-  void receiveStreamFwdReq(const RequestMsg &req);
+                            const ruby::DataBlock &dataBlock,
+                            const ruby::DataBlock &storeValueBlock);
+  void receiveStreamIndirectRequest(const ruby::RequestMsg &req);
+  void receiveStreamIndirectRequestImpl(const ruby::RequestMsg &req);
+  void receiveStreamFwdReq(const ruby::RequestMsg &req);
   void notifyStreamRequestMiss(const DynStreamSliceIdVec &sliceIds);
   void wakeup() override;
   void print(std::ostream &out) const override;
@@ -59,7 +63,7 @@ public:
       const DynStreamId &dynStreamId) const;
 
   int curRemoteBank() const;
-  MachineType myMachineType() const;
+  ruby::MachineType myMachineType() const;
   const char *curRemoteMachineType() const;
 
   Cycles curCycle() const { return this->controller->curCycle(); }
@@ -77,12 +81,12 @@ public:
   /**
    * Receive the PUM configure.
    */
-  void receivePUMConfigure(const RequestMsg &req);
+  void receivePUMConfigure(const ruby::RequestMsg &req);
 
   /**
    * Receive the PUM data.
    */
-  void receivePUMData(const RequestMsg &req);
+  void receivePUMData(const ruby::RequestMsg &req);
 
 private:
   friend class LLCDynStream;
@@ -91,15 +95,15 @@ private:
   friend class LLCStreamNDCController;
   friend class LLCStreamAtomicLockManager;
   friend class PUMEngine;
-  AbstractStreamAwareController *controller;
+  ruby::AbstractStreamAwareController *controller;
   // Out going stream migrate buffer.
-  MessageBuffer *streamMigrateMsgBuffer;
+  ruby::MessageBuffer *streamMigrateMsgBuffer;
   // Issue stream request here at the local bank.
-  MessageBuffer *streamIssueMsgBuffer;
+  ruby::MessageBuffer *streamIssueMsgBuffer;
   // Issue stream request to a remote bank.
-  MessageBuffer *streamIndirectIssueMsgBuffer;
+  ruby::MessageBuffer *streamIndirectIssueMsgBuffer;
   // Send response to MLC.
-  MessageBuffer *streamResponseMsgBuffer;
+  ruby::MessageBuffer *streamResponseMsgBuffer;
   // Stream commit controller.
   std::unique_ptr<LLCStreamCommitController> commitController;
   std::unique_ptr<LLCStreamMigrationController> migrateController;
@@ -152,27 +156,27 @@ private:
     const Cycles readyCycle;
     const Addr paddrLine;
     const DynStreamSliceId sliceId;
-    const DataBlock dataBlock;
-    const DataBlock storeValueBlock;
+    const ruby::DataBlock dataBlock;
+    const ruby::DataBlock storeValueBlock;
     IncomingElementDataMsg(Cycles _readyCycle, Addr _paddrLine,
                            const DynStreamSliceId &_sliceId,
-                           const DataBlock &_dataBlock,
-                           const DataBlock &_storeValueBlock)
+                           const ruby::DataBlock &_dataBlock,
+                           const ruby::DataBlock &_storeValueBlock)
         : readyCycle(_readyCycle), paddrLine(_paddrLine), sliceId(_sliceId),
           dataBlock(_dataBlock), storeValueBlock(_storeValueBlock) {}
   };
   std::list<IncomingElementDataMsg> incomingStreamDataQueue;
   void enqueueIncomingStreamDataMsg(Cycles readyCycle, Addr paddrLine,
                                     const DynStreamSliceId &sliceId,
-                                    const DataBlock &dataBlock,
-                                    const DataBlock &storeValueBlock);
+                                    const ruby::DataBlock &dataBlock,
+                                    const ruby::DataBlock &storeValueBlock);
   void drainIncomingStreamDataMsg();
   void receiveStreamData(Addr paddrLine, const DynStreamSliceId &sliceId,
-                         const DataBlock &dataBlock,
-                         const DataBlock &storeValueBlock);
+                         const ruby::DataBlock &dataBlock,
+                         const ruby::DataBlock &storeValueBlock);
   void receiveStoreStreamData(LLCDynStreamPtr dynS,
                               const DynStreamSliceId &sliceId,
-                              const DataBlock &storeValueBlock);
+                              const ruby::DataBlock &storeValueBlock);
 
   /**
    * Bidirectionaly map between streams that are identical but
@@ -275,7 +279,7 @@ private:
   /**
    * Get the request type for this stream.
    */
-  CoherenceRequestType getDirectStreamReqType(LLCDynStream *stream) const;
+  ruby::CoherenceRequestType getDirectStreamReqType(LLCDynStream *stream) const;
 
   /**
    * Generate indirect stream request.
@@ -306,8 +310,8 @@ private:
    */
   RequestQueueIter enqueueRequest(Stream *S, const DynStreamSliceId &sliceId,
                                   Addr vaddrLine, Addr paddrLine,
-                                  MachineType destMachineType,
-                                  CoherenceRequestType type);
+                                  ruby::MachineType destMachineType,
+                                  ruby::CoherenceRequestType type);
   void translationCallback(PacketPtr pkt, ThreadContext *tc,
                            RequestQueueIter reqIter);
 
@@ -316,7 +320,7 @@ private:
    */
   void issueStreamRequestToRemoteBank(const LLCStreamRequest &req);
 
-  using ResponseMsgPtr = std::shared_ptr<ResponseMsg>;
+  using ResponseMsgPtr = std::shared_ptr<ruby::ResponseMsg>;
   /**
    * Create the stream message to MLC SE.
    * @param payloadSize: the network should model the payload of this size,
@@ -325,7 +329,7 @@ private:
    * smaller.
    */
   ResponseMsgPtr createStreamMsgToMLC(const DynStreamSliceId &sliceId,
-                                      CoherenceResponseType type,
+                                      ruby::CoherenceResponseType type,
                                       Addr paddrLine, const uint8_t *data,
                                       int dataSize, int payloadSize,
                                       int lineOffset);
@@ -370,7 +374,7 @@ private:
    */
   void issueStreamDataToLLC(LLCDynStreamPtr dynS,
                             const DynStreamSliceId &sliceId,
-                            const DataBlock &dataBlock,
+                            const ruby::DataBlock &dataBlock,
                             const CacheStreamConfigureData::DepEdge &sendToEdge,
                             int payloadSize);
 
@@ -384,8 +388,8 @@ private:
    */
   void issueNonMigrateStreamDataToLLC(LLCDynStreamPtr dynS,
                                       const DynStreamSliceId &sliceId,
-                                      const DataBlock &dataBlock,
-                                      const DataBlock &storeValueBlock,
+                                      const ruby::DataBlock &dataBlock,
+                                      const ruby::DataBlock &storeValueBlock,
                                       int payloadSize);
 
   /**
@@ -396,7 +400,7 @@ private:
    */
   void issueStreamDataToPUM(LLCDynStreamPtr dynS,
                             const DynStreamSliceId &sliceId,
-                            const DataBlock &dataBlock,
+                            const ruby::DataBlock &dataBlock,
                             const CacheStreamConfigureData::DepEdge &sendToEdge,
                             int payloadSize);
 
@@ -405,7 +409,7 @@ private:
    */
   void issuePUMPrefetchStreamDataToLLC(LLCDynStreamPtr stream,
                                        const DynStreamSliceId &sliceId,
-                                       const DataBlock &dataBlock);
+                                       const ruby::DataBlock &dataBlock);
 
   /**
    * Notify the MLCPUMManager when a PUMPrefetchStream is done.
@@ -445,17 +449,17 @@ private:
    * Migrate a stream's commit head.
    */
   void migrateStreamCommit(LLCDynStream *stream, Addr paddr,
-                           MachineType machineType);
+                           ruby::MachineType machineType);
 
   /**
    * Helper function to map an address to a same level bank.
    */
-  MachineID mapPaddrToSameLevelBank(Addr paddr) const;
+  ruby::MachineID mapPaddrToSameLevelBank(Addr paddr) const;
 
   /**
    * Check if this address is handled by myself.
    */
-  bool isPAddrHandledByMe(Addr paddr, MachineType machineType) const;
+  bool isPAddrHandledByMe(Addr paddr, ruby::MachineType machineType) const;
 
   /**
    * Helper function to check if a stream should
@@ -470,11 +474,11 @@ private:
   void triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx);
   void triggerUpdate(LLCDynStreamPtr dynS, LLCStreamElementPtr elem,
                      const DynStreamSliceId &sliceId,
-                     const DataBlock &storeValueBlock,
-                     DataBlock &loadValueBlock, uint32_t &payloadSize);
+                     const ruby::DataBlock &storeValueBlock,
+                     ruby::DataBlock &loadValueBlock, uint32_t &payloadSize);
   void triggerAtomic(LLCDynStreamPtr dynS, LLCStreamElementPtr elem,
-                     const DynStreamSliceId &sliceId, DataBlock &loadValueBlock,
-                     uint32_t &payloadSize);
+                     const DynStreamSliceId &sliceId,
+                     ruby::DataBlock &loadValueBlock, uint32_t &payloadSize);
   /**
    * Helper function to handle predicated-off element.
    */
@@ -503,7 +507,7 @@ private:
                                       const LLCStreamElementPtr &element);
   void processIndirectUpdateSlice(LLCDynStreamPtr dynS,
                                   const DynStreamSliceId &sliceId,
-                                  const DataBlock &storeValueBlock);
+                                  const ruby::DataBlock &storeValueBlock);
 
   /**
    * Handle DirectUpdateSlice with the computation latency modelled.
@@ -539,14 +543,14 @@ private:
   /**
    * Process the StreamForward request.
    */
-  void processStreamFwdReq(const RequestMsg &req);
+  void processStreamFwdReq(const ruby::RequestMsg &req);
 
   /**
    * Check if this is the second request to lock the indirect atomic, if so
    * process it.
    * @return whether this message is processed.
    */
-  bool tryToProcessIndirectAtomicUnlockReq(const RequestMsg &req);
+  bool tryToProcessIndirectAtomicUnlockReq(const ruby::RequestMsg &req);
 
   /**
    * We handle the computation and charge its latency here.
@@ -581,5 +585,7 @@ private:
   void sampleLLCStream(LLCDynStreamPtr dynS);
   static Cycles lastSampleCycle;
 };
+
+} // namespace gem5
 
 #endif

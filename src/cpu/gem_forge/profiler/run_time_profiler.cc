@@ -2,6 +2,8 @@
 
 #include "base/output.hh"
 
+namespace gem5 {
+
 void RunTimeProfiler::profileLoadLatency(Addr pc, uint64_t latency) {
   auto &record =
       this->PCLoadLatencyMap
@@ -23,4 +25,5 @@ void RunTimeProfiler::dump(const std::string &fn) const {
            << '\n';
   }
   simout.close(outputStream);
-}
+}} // namespace gem5
+

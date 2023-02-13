@@ -35,6 +35,9 @@
 #include "arch/sparc/insts/static_inst.hh"
 #include "base/cprintf.hh"
 
+namespace gem5
+{
+
 namespace SparcISA
 {
 
@@ -59,7 +62,7 @@ class FailUnimplemented : public SparcStaticInst
     {}
 
     Fault
-    execute(ExecContext *xc, Trace::InstRecord *traceData) const override
+    execute(ExecContext *xc, trace::InstRecord *traceData) const override
     {
         return std::make_shared<GenericISA::M5PanicFault>(
             "attempt to execute unimplemented instruction '%s' (inst %#08x)",
@@ -68,7 +71,7 @@ class FailUnimplemented : public SparcStaticInst
 
     std::string
     generateDisassembly(
-            Addr pc, const Loader::SymbolTable *symtab) const override
+            Addr pc, const loader::SymbolTable *symtab) const override
     {
         return csprintf("%-10s (unimplemented)", mnemonic);
     }
@@ -96,7 +99,7 @@ class WarnUnimplemented : public SparcStaticInst
     {}
 
     Fault
-    execute(ExecContext *xc, Trace::InstRecord *traceData) const override
+    execute(ExecContext *xc, trace::InstRecord *traceData) const override
     {
         if (!warned) {
             return std::make_shared<GenericISA::M5WarnFault>(
@@ -108,12 +111,13 @@ class WarnUnimplemented : public SparcStaticInst
 
     std::string
     generateDisassembly(
-            Addr pc, const Loader::SymbolTable *symtab) const override
+            Addr pc, const loader::SymbolTable *symtab) const override
     {
         return csprintf("%-10s (unimplemented)", mnemonic);
     }
 };
 
-}
+} // namespace SparcISA
+} // namespace gem5
 
 #endif // __ARCH_SPARC_INSTS_UNIMP_HH__

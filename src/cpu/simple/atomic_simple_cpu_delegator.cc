@@ -6,6 +6,8 @@
  * AtomicSimpleCPUDelegator.
  *************************************************************************/
 
+namespace gem5 {
+
 AtomicSimpleCPUDelegator::AtomicSimpleCPUDelegator(AtomicSimpleCPU *_cpu)
     : SimpleCPUDelegator(CPUTypeE::ATOMIC_SIMPLE, _cpu) {}
 AtomicSimpleCPUDelegator::~AtomicSimpleCPUDelegator() = default;
@@ -21,4 +23,6 @@ void AtomicSimpleCPUDelegator::sendRequest(PacketPtr pkt) {
   (void)latency;
   // For simplicity now we immediately send back response.
   GemForgePacketHandler::handleGemForgePacketResponse(this, pkt);
+}
+
 }

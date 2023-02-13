@@ -1,5 +1,9 @@
 #include "Message.hh"
 
+namespace gem5 {
+
+namespace ruby {
+
 void Message::chainMsg(const MsgPtr &msg) {
   assert(!msg->m_chainMsg && "Already chained.");
   const auto &dest = msg->getDestination();
@@ -9,3 +13,7 @@ void Message::chainMsg(const MsgPtr &msg) {
   msg->m_chainMsg = this->m_chainMsg;
   this->m_chainMsg = msg;
 }
+
+} // namespace ruby
+
+} // namespace gem5

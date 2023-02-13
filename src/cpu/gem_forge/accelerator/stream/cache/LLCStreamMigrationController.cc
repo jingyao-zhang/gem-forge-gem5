@@ -6,10 +6,12 @@
 #define DEBUG_TYPE LLCStreamMigrationController
 #include "../stream_log.hh"
 
+namespace gem5 {
+
 const int LLCStreamMigrationController::MaxNeighbors;
 
 LLCStreamMigrationController::LLCStreamMigrationController(
-    AbstractStreamAwareController *_controller, int _neighborStreamsThreshold,
+    ruby::AbstractStreamAwareController *_controller, int _neighborStreamsThreshold,
     Cycles _delay)
     : controller(_controller),
       neighborStreamsThreshold(_neighborStreamsThreshold), delay(_delay) {
@@ -33,7 +35,7 @@ LLCStreamMigrationController::LLCStreamMigrationController(
 }
 
 void LLCStreamMigrationController::startMigrateTo(LLCDynStreamPtr dynS,
-                                                  MachineID machineId) {
+                                                  ruby::MachineID machineId) {
   if (this->neighborStreamsThreshold == 0) {
     // I am disabled.
     return;
@@ -47,7 +49,7 @@ void LLCStreamMigrationController::startMigrateTo(LLCDynStreamPtr dynS,
 }
 
 void LLCStreamMigrationController::migratedTo(LLCDynStreamPtr dynS,
-                                              MachineID machineId) {
+                                              ruby::MachineID machineId) {
   if (this->neighborStreamsThreshold == 0) {
     // I am disabled.
     return;
@@ -60,7 +62,7 @@ void LLCStreamMigrationController::migratedTo(LLCDynStreamPtr dynS,
 }
 
 bool LLCStreamMigrationController::canMigrateTo(LLCDynStreamPtr dynS,
-                                                MachineID machineId) {
+                                                ruby::MachineID machineId) {
   if (this->neighborStreamsThreshold == 0) {
     // I am disabled.
     return true;
@@ -104,7 +106,7 @@ bool LLCStreamMigrationController::canMigrateTo(LLCDynStreamPtr dynS,
 }
 
 int LLCStreamMigrationController::getLLCNeighborIndex(
-    MachineID machineId) const {
+    ruby::MachineID machineId) const {
   auto myBank = this->curRemoteBank();
   auto bank = machineId.getNum();
   if (this->controller->isMyNeighbor(machineId)) {
@@ -123,7 +125,7 @@ int LLCStreamMigrationController::getLLCNeighborIndex(
 }
 
 int LLCStreamMigrationController::getMCCNeighborIndex(
-    MachineID machineId) const {
+    ruby::MachineID machineId) const {
   auto myBank = this->curRemoteBank();
   auto bank = machineId.getNum();
   /**
@@ -146,7 +148,7 @@ int LLCStreamMigrationController::getMCCNeighborIndex(
   }
 }
 
-int LLCStreamMigrationController::getNeighborIndex(MachineID machineId) const {
+int LLCStreamMigrationController::getNeighborIndex(ruby::MachineID machineId) const {
   auto myMachineId = this->controller->getMachineID();
   if (myMachineId.getType() != machineId.getType()) {
     return -1;
@@ -156,11 +158,11 @@ int LLCStreamMigrationController::getNeighborIndex(MachineID machineId) const {
   }
   auto neighborIndex = -1;
   switch (myMachineId.getType()) {
-  case MachineType::MachineType_L2Cache: {
+  case ruby::MachineType_L2Cache: {
     neighborIndex = this->getLLCNeighborIndex(machineId);
     break;
   }
-  case MachineType::MachineType_Directory: {
+  case ruby::MachineType_Directory: {
     neighborIndex = this->getMCCNeighborIndex(machineId);
     break;
   }
@@ -175,8 +177,8 @@ int LLCStreamMigrationController::getNeighborIndex(MachineID machineId) const {
 }
 
 int LLCStreamMigrationController::countStreamsWithSameStaticId(
-    LLCDynStreamPtr dynS, MachineID machineId) const {
-  auto neighborSE = AbstractStreamAwareController::getController(machineId)
+    LLCDynStreamPtr dynS, ruby::MachineID machineId) const {
+  auto neighborSE = ruby::AbstractStreamAwareController::getController(machineId)
                         ->getLLCStreamEngine();
   auto neighborStreams =
       neighborSE->getNumNonOverflownDirectStreamsWithStaticId(
@@ -190,4 +192,5 @@ int LLCStreamMigrationController::countStreamsWithSameStaticId(
     }
   }
   return neighborStreams;
-}
+}} // namespace gem5
+

@@ -5,6 +5,8 @@
 
 #include "base/output.hh"
 
+namespace gem5 {
+
 class StreamFloatPolicy {
 public:
   StreamFloatPolicy(bool _enabled, bool _enabledFloatMem, bool _enabledHistory,
@@ -74,5 +76,7 @@ private:
 
   static const std::unordered_map<std::string, std::string> streamToRegionMap;
 };
+
+} // namespace gem5
 
 #endif

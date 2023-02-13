@@ -6,6 +6,8 @@
 #include <list>
 #include <unordered_map>
 
+namespace gem5 {
+
 /**
  * This is an ideal cache:
  * 1. Fully associative.
@@ -36,5 +38,7 @@ private:
    */
   int accessByte(Addr paddr);
 };
+
+} // namespace gem5
 
 #endif

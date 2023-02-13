@@ -3,6 +3,8 @@
 #include "base/trace.hh"
 #include "debug/MLCStreamPUM.hh"
 
+namespace gem5 {
+
 const size_t AffinePattern::MaxDimension;
 
 AffinePattern::AffinePattern(::LLVM::TDG::AffinePattern tdgAffinePattern) {
@@ -481,4 +483,5 @@ AffinePattern::recursive_break_continuous_range_into_canonical_sub_regions(
     }
   }
   return sub_regions;
-}
+}} // namespace gem5
+

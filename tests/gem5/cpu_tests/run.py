@@ -31,6 +31,7 @@ import argparse
 import m5
 from m5.objects import *
 
+
 class L1Cache(Cache):
     """Simple L1 Cache with default values"""
 
@@ -43,38 +44,41 @@ class L1Cache(Cache):
 
     def connectBus(self, bus):
         """Connect this cache to a memory-side bus"""
-        self.mem_side = bus.slave
+        self.mem_side = bus.cpu_side_ports
 
     def connectCPU(self, cpu):
         """Connect this cache's port to a CPU-side port
-           This must be defined in a subclass"""
+        This must be defined in a subclass"""
         raise NotImplementedError
+
 
 class L1ICache(L1Cache):
     """Simple L1 instruction cache with default values"""
 
     # Set the default size
-    size = '32kB'
+    size = "32kB"
 
     def connectCPU(self, cpu):
         """Connect this cache's port to a CPU icache port"""
         self.cpu_side = cpu.icache_port
 
+
 class L1DCache(L1Cache):
     """Simple L1 data cache with default values"""
 
     # Set the default size
-    size = '32kB'
+    size = "32kB"
 
     def connectCPU(self, cpu):
         """Connect this cache's port to a CPU dcache port"""
         self.cpu_side = cpu.dcache_port
 
+
 class L2Cache(Cache):
     """Simple L2 Cache with default values"""
 
     # Default parameters
-    size = '512kB'
+    size = "512kB"
     assoc = 16
     tag_latency = 10
     data_latency = 10
@@ -83,57 +87,66 @@ class L2Cache(Cache):
     tgts_per_mshr = 12
 
     def connectCPUSideBus(self, bus):
-        self.cpu_side = bus.master
+        self.cpu_side = bus.mem_side_ports
 
     def connectMemSideBus(self, bus):
-        self.mem_side = bus.slave
+        self.mem_side = bus.cpu_side_ports
 
 
 class MySimpleMemory(SimpleMemory):
-    latency = '1ns'
+    latency = "1ns"
 
-if buildEnv['TARGET_ISA'] == 'x86':
-  valid_cpu = {'AtomicSimpleCPU': AtomicSimpleCPU,
-               'TimingSimpleCPU': TimingSimpleCPU,
-               'DerivO3CPU': DerivO3CPU
-              }
-else:
-  valid_cpu = {'AtomicSimpleCPU': AtomicSimpleCPU,
-               'TimingSimpleCPU': TimingSimpleCPU,
-               'MinorCPU': MinorCPU,
-               'DerivO3CPU': DerivO3CPU,
-              }
 
-valid_mem = {'SimpleMemory': MySimpleMemory,
-             'DDR3_1600_8x8': DDR3_1600_8x8
-            }
+valid_cpu = {
+    "X86AtomicSimpleCPU": X86AtomicSimpleCPU,
+    "X86TimingSimpleCPU": X86TimingSimpleCPU,
+    "X86DerivO3CPU": X86O3CPU,
+    "ArmAtomicSimpleCPU": ArmAtomicSimpleCPU,
+    "ArmTimingSimpleCPU": ArmTimingSimpleCPU,
+    "ArmMinorCPU": ArmMinorCPU,
+    "ArmDerivO3CPU": ArmO3CPU,
+    "RiscvAtomicSimpleCPU": RiscvAtomicSimpleCPU,
+    "RiscvTimingSimpleCPU": RiscvTimingSimpleCPU,
+    "RiscvMinorCPU": RiscvMinorCPU,
+    "RiscvDerivO3CPU": RiscvO3CPU,
+}
+
+valid_mem = {"SimpleMemory": MySimpleMemory, "DDR3_1600_8x8": DDR3_1600_8x8}
 
 parser = argparse.ArgumentParser()
-parser.add_argument('binary', type = str)
-parser.add_argument('--cpu', choices = valid_cpu.keys(),
-                    default = 'TimingSimpleCPU')
-parser.add_argument('--mem', choices = valid_mem.keys(),
-                    default = 'SimpleMemory')
+parser.add_argument("binary", type=str)
+parser.add_argument("--cpu")
+parser.add_argument("--mem", choices=valid_mem.keys(), default="SimpleMemory")
 
 args = parser.parse_args()
 
 system = System()
 
+system.workload = SEWorkload.init_compatible(args.binary)
+
 system.clk_domain = SrcClockDomain()
-system.clk_domain.clock = '1GHz'
+system.clk_domain.clock = "1GHz"
 system.clk_domain.voltage_domain = VoltageDomain()
 
-if args.cpu != "AtomicSimpleCPU":
-        system.mem_mode = 'timing'
+if args.cpu not in (
+    "X86AtomicSimpleCPU",
+    "ArmAtomicSimpleCPU",
+    "RiscvAtomicSimpleCPU",
+):
+    system.mem_mode = "timing"
 
-system.mem_ranges = [AddrRange('512MB')]
+system.mem_ranges = [AddrRange("512MB")]
 
 system.cpu = valid_cpu[args.cpu]()
 
-if args.cpu == "AtomicSimpleCPU":
+if args.cpu in (
+    "X86AtomicSimpleCPU",
+    "ArmAtomicSimpleCPU",
+    "RiscvAtomicSimpleCPU",
+):
     system.membus = SystemXBar()
-    system.cpu.icache_port = system.membus.slave
-    system.cpu.dcache_port = system.membus.slave
+    system.cpu.icache_port = system.membus.cpu_side_ports
+    system.cpu.dcache_port = system.membus.cpu_side_ports
 else:
     system.cpu.l1d = L1DCache()
     system.cpu.l1i = L1ICache()
@@ -148,25 +161,25 @@ else:
     system.l2cache.connectMemSideBus(system.membus)
 
 system.cpu.createInterruptController()
-if m5.defines.buildEnv['TARGET_ISA'] == "x86":
-    system.cpu.interrupts[0].pio = system.membus.master
-    system.cpu.interrupts[0].int_master = system.membus.slave
-    system.cpu.interrupts[0].int_slave = system.membus.master
+if args.cpu in ("X86AtomicSimpleCPU", "X86TimingSimpleCPU", "X86DerivO3CPU"):
+    system.cpu.interrupts[0].pio = system.membus.mem_side_ports
+    system.cpu.interrupts[0].int_master = system.membus.cpu_side_ports
+    system.cpu.interrupts[0].int_slave = system.membus.mem_side_ports
 
 system.mem_ctrl = valid_mem[args.mem]()
 system.mem_ctrl.range = system.mem_ranges[0]
-system.mem_ctrl.port = system.membus.master
-system.system_port = system.membus.slave
+system.mem_ctrl.port = system.membus.mem_side_ports
+system.system_port = system.membus.cpu_side_ports
 
 process = Process()
 process.cmd = [args.binary]
 system.cpu.workload = process
 system.cpu.createThreads()
 
-root = Root(full_system = False, system = system)
+root = Root(full_system=False, system=system)
 m5.instantiate()
 
 exit_event = m5.simulate()
 
-if exit_event.getCause() != 'exiting with last active thread context':
+if exit_event.getCause() != "exiting with last active thread context":
     exit(1)

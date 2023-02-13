@@ -28,12 +28,21 @@
 #ifndef __SIM_WORKLOAD_HH__
 #define __SIM_WORKLOAD_HH__
 
+#include <set>
+#include <tuple>
+
 #include "base/loader/object_file.hh"
 #include "base/loader/symtab.hh"
+#include "enums/ByteOrder.hh"
+#include "params/StubWorkload.hh"
 #include "params/Workload.hh"
 #include "sim/sim_object.hh"
 #include "sim/stats.hh"
 
+namespace gem5
+{
+
+class BaseRemoteGDB;
 class System;
 class ThreadContext;
 
@@ -42,32 +51,72 @@ class Workload : public SimObject
   protected:
     virtual Addr fixFuncEventAddr(Addr addr) const { return addr; }
 
-    struct WorkloadStats : public Stats::Group
+    struct WorkloadStats : public statistics::Group
     {
-        Stats::Scalar arm;
-        Stats::Scalar quiesce;
+        struct InstStats: public statistics::Group
+        {
+            statistics::Scalar arm;
+            statistics::Scalar quiesce;
 
-        WorkloadStats(Workload *workload) : Stats::Group(workload),
-            arm(this, "inst.arm", "number of arm instructions executed"),
-            quiesce(this, "inst.quiesce",
-                    "number of quiesce instructions executed")
+            InstStats(statistics::Group *parent)
+              : statistics::Group(parent, "inst"),
+                ADD_STAT(arm, statistics::units::Count::get(),
+                         "number of arm instructions executed"),
+                ADD_STAT(quiesce, statistics::units::Count::get(),
+                         "number of quiesce instructions executed")
+            {}
+
+        } instStats;
+
+        WorkloadStats(Workload *workload) : statistics::Group(workload),
+            instStats(workload)
         {}
     } stats;
 
-  public:
-    Workload(const WorkloadParams *_params) : SimObject(_params), stats(this)
-    {}
-
-    void recordQuiesce() { stats.quiesce++; }
-    void recordArm() { stats.arm++; }
+    BaseRemoteGDB *gdb = nullptr;
+    bool waitForRemoteGDB = false;
+    std::set<ThreadContext *> threads;
 
     System *system = nullptr;
 
-    virtual Addr getEntry() const = 0;
-    virtual Loader::Arch getArch() const = 0;
+  public:
+    Workload(const WorkloadParams &params) : SimObject(params), stats(this),
+            waitForRemoteGDB(params.wait_for_remote_gdb)
+    {}
 
-    virtual const Loader::SymbolTable &symtab(ThreadContext *tc) = 0;
-    virtual bool insertSymbol(const Loader::Symbol &symbol) = 0;
+    virtual void setSystem(System *sys) { system = sys; }
+
+    void recordQuiesce() { stats.instStats.quiesce++; }
+    void recordArm() { stats.instStats.arm++; }
+
+    // Once trapping into GDB is no longer a special case routed through the
+    // system object, this helper can be removed.
+    bool trapToGdb(int signal, ContextID ctx_id);
+    bool sendToGdb(std::string msg);
+
+    virtual void registerThreadContext(ThreadContext *tc);
+    virtual void replaceThreadContext(ThreadContext *tc);
+
+    void startup() override;
+
+    virtual Addr getEntry() const = 0;
+    virtual ByteOrder byteOrder() const = 0;
+    virtual loader::Arch getArch() const = 0;
+
+    virtual const loader::SymbolTable &symtab(ThreadContext *tc) = 0;
+    virtual bool insertSymbol(const loader::Symbol &symbol) = 0;
+
+    virtual void
+    syscall(ThreadContext *tc)
+    {
+        panic("syscall() not implemented.");
+    }
+
+    virtual void
+    event(ThreadContext *tc)
+    {
+        warn("Unhandled workload event.");
+    }
 
     /** @{ */
     /**
@@ -84,7 +133,7 @@ class Workload : public SimObject
      */
     template <class T, typename... Args>
     T *
-    addFuncEvent(const Loader::SymbolTable &symtab, const char *lbl,
+    addFuncEvent(const loader::SymbolTable &symtab, const char *lbl,
                  const std::string &desc, Args... args)
     {
         auto it = symtab.find(lbl);
@@ -97,14 +146,14 @@ class Workload : public SimObject
 
     template <class T>
     T *
-    addFuncEvent(const Loader::SymbolTable &symtab, const char *lbl)
+    addFuncEvent(const loader::SymbolTable &symtab, const char *lbl)
     {
         return addFuncEvent<T>(symtab, lbl, lbl);
     }
 
     template <class T, typename... Args>
     T *
-    addFuncEventOrPanic(const Loader::SymbolTable &symtab, const char *lbl,
+    addFuncEventOrPanic(const loader::SymbolTable &symtab, const char *lbl,
                         Args... args)
     {
         T *e = addFuncEvent<T>(symtab, lbl, std::forward<Args>(args)...);
@@ -113,5 +162,31 @@ class Workload : public SimObject
     }
     /** @} */
 };
+
+class StubWorkload : public Workload
+{
+  private:
+    PARAMS(StubWorkload);
+    loader::SymbolTable _symtab;
+
+  public:
+    StubWorkload(const StubWorkloadParams &params) : Workload(params) {}
+
+    Addr getEntry() const override { return params().entry; }
+    ByteOrder byteOrder() const override { return params().byte_order; }
+    loader::Arch getArch() const override { return loader::UnknownArch; }
+    const loader::SymbolTable &
+    symtab(ThreadContext *tc) override
+    {
+        return _symtab;
+    }
+    bool
+    insertSymbol(const loader::Symbol &symbol) override
+    {
+        return _symtab.insert(symbol);
+    }
+};
+
+} // namespace gem5
 
 #endif // __SIM_WORKLOAD_HH__

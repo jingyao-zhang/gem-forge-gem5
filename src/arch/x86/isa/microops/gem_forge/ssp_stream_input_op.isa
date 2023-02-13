@@ -7,7 +7,7 @@
 
 def template MicroSSPInputOpExecute {{
         Fault %(class_name)s::execute(ExecContext *xc,
-                Trace::InstRecord *traceData) const
+                trace::InstRecord *traceData) const
         {
             %(op_decl)s;
             %(op_rd)s;
@@ -18,7 +18,7 @@ def template MicroSSPInputOpExecute {{
 }};
 
 def template MicroSSPInputOpDeclare {{
-    class %(class_name)s : public X86ISA::X86MicroopBase
+    class %(class_name)s : public X86ISA::GemForgeMicroopBase
     {
       protected:
         const RegIndex src1;
@@ -27,26 +27,26 @@ def template MicroSSPInputOpDeclare {{
         RegIndex foldOBit;
 
         std::string generateDisassembly(Addr pc,
-            const ::Loader::SymbolTable *symtab) const;
+            const gem5::loader::SymbolTable *symtab) const;
 
       public:
         %(class_name)s(ExtMachInst _machInst,
                 const char * instMnem,
-                uint64_t setFlags, InstRegIndex _src1,
+                uint64_t setFlags, RegIndex _src1,
                 uint64_t _imm, uint8_t _dataSize);
 
-        Fault execute(ExecContext *, Trace::InstRecord *) const;
+        Fault execute(ExecContext *, trace::InstRecord *) const;
     };
 }};
 
 def template MicroSSPInputOpDisassembly {{
     std::string %(class_name)s::generateDisassembly(Addr pc,
-            const ::Loader::SymbolTable *symtab) const
+            const gem5::loader::SymbolTable *symtab) const
     {
         std::stringstream response;
 
         printMnemonic(response, instMnem, mnemonic);
-        printSrcReg(response, 0, dataSize);
+        printReg(response, this->srcRegIdx(0), dataSize);
         response << ", ";
         ccprintf(response, "%#x", imm);
         return response.str();
@@ -56,10 +56,10 @@ def template MicroSSPInputOpDisassembly {{
 def template MicroSSPInputOpConstructor {{
     %(class_name)s::%(class_name)s(
             ExtMachInst machInst, const char * instMnem, uint64_t setFlags,
-            InstRegIndex _src1, uint64_t _imm, uint8_t _dataSize) :
+            RegIndex _src1, uint64_t _imm, uint8_t _dataSize) :
         %(base_class)s(machInst, "%(mnemonic)s", instMnem,
                 setFlags, %(op_class)s),
-                src1(_src1.index()), imm(_imm), dataSize(_dataSize)
+                src1(_src1), imm(_imm), dataSize(_dataSize)
     {
         foldOBit = (dataSize == 1 && !machInst.rex.present) ? 1 << 6 : 0;
         %(constructor)s;
@@ -67,30 +67,30 @@ def template MicroSSPInputOpConstructor {{
         switch(dataSize) {
         case 4:
         case 8:
-                _srcRegIdx[_numSrcRegs++] = RegId(IntRegClass, INTREG_FOLDED(src1, foldOBit));
+                srcRegIdxArr[_numSrcRegs++] = intRegClass[src1];
             break;
         case 16:
             // xmm
-                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 0);
-                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 1);
+                srcRegIdxArr[_numSrcRegs++] = floatRegClass[src1 + 0] ;
+                srcRegIdxArr[_numSrcRegs++] = floatRegClass[src1 + 1] ;
             break;
         case 32:
             // zmm
-                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 0);
-                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 1);
-                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 2);
-                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 3);
+                srcRegIdxArr[_numSrcRegs++] = floatRegClass[src1 + 0] ;
+                srcRegIdxArr[_numSrcRegs++] = floatRegClass[src1 + 1] ;
+                srcRegIdxArr[_numSrcRegs++] = floatRegClass[src1 + 2] ;
+                srcRegIdxArr[_numSrcRegs++] = floatRegClass[src1 + 3] ;
             break;
         case 64:
             // zmm
-                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 0);
-                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 1);
-                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 2);
-                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 3);
-                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 4);
-                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 5);
-                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 6);
-                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 7);
+                srcRegIdxArr[_numSrcRegs++] = floatRegClass[src1 + 0] ;
+                srcRegIdxArr[_numSrcRegs++] = floatRegClass[src1 + 1] ;
+                srcRegIdxArr[_numSrcRegs++] = floatRegClass[src1 + 2] ;
+                srcRegIdxArr[_numSrcRegs++] = floatRegClass[src1 + 3] ;
+                srcRegIdxArr[_numSrcRegs++] = floatRegClass[src1 + 4] ;
+                srcRegIdxArr[_numSrcRegs++] = floatRegClass[src1 + 5] ;
+                srcRegIdxArr[_numSrcRegs++] = floatRegClass[src1 + 6] ;
+                srcRegIdxArr[_numSrcRegs++] = floatRegClass[src1 + 7] ;
             break;
         default:
             panic("Unsupported dataSize %d for SSPStreamInput.\n", dataSize);
@@ -105,8 +105,10 @@ let {{
         def __init__(self, src, imm, dataSize="env.dataSize"):
             self.className = "SSPStreamInput"
             self.mnemonic = "ssp.stream.input"
-            self.src = src
-            if isinstance(imm, (int, long)):
+            # ! GemForge
+            # Get rid of the type and just use the index
+            self.src = "((%s).index)" % src
+            if isinstance(imm, int):
                 imm = "ULL(%d)" % imm
             self.imm = imm
             self.dataSize = dataSize
@@ -135,7 +137,7 @@ let {{
         InstObjParams(
             "ssp_stream_input",
             "SSPStreamInput",
-            'X86MicroopBase',
+            'GemForgeMicroopBase',
             {
                 'code' : '',
             },

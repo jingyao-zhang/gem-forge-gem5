@@ -36,12 +36,9 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from __future__ import print_function
-from __future__ import absolute_import
-
 import inspect
 import _m5
 
 for name, module in inspect.getmembers(_m5):
-    if name.startswith('param_') or name.startswith('enum_'):
+    if name.startswith("param_") or name.startswith("enum_"):
         exec("from _m5.%s import *" % name)

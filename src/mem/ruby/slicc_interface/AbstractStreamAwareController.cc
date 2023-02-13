@@ -6,32 +6,36 @@
 
 #include "RubySlicc_ComponentMapping.hh"
 
+namespace gem5 {
+
+namespace ruby {
+
 AbstractStreamAwareController::GlobalMap
     AbstractStreamAwareController::globalMap;
 std::list<AbstractStreamAwareController *>
     AbstractStreamAwareController::globalList;
 
-AbstractStreamAwareController::AbstractStreamAwareController(const Params *p)
-    : AbstractController(p), myParams(p), pcReqRecorder(p->name),
-      llcSelectLowBit(p->llc_select_low_bit),
-      llcSelectNumBits(p->llc_select_num_bits),
-      numCoresPerRow(p->num_cores_per_row),
-      enableStreamFloat(p->enable_stream_float),
-      enableStreamSubline(p->enable_stream_subline),
-      enableStreamIdeaAck(p->enable_stream_idea_ack),
-      enableStreamIdeaStore(p->enable_stream_idea_store),
-      enableStreamAdvanceMigrate(p->enable_stream_advance_migrate),
-      enableStreamMulticast(p->enable_stream_multicast),
-      mlcStreamBufferInitNumEntries(p->mlc_stream_buffer_init_num_entries) {
-  if (p->stream_multicast_issue_policy == "any") {
+AbstractStreamAwareController::AbstractStreamAwareController(const Params &p)
+    : AbstractController(p), myParams(&p), pcReqRecorder(p.name),
+      llcSelectLowBit(p.llc_select_low_bit),
+      llcSelectNumBits(p.llc_select_num_bits),
+      numCoresPerRow(p.num_cores_per_row),
+      enableStreamFloat(p.enable_stream_float),
+      enableStreamSubline(p.enable_stream_subline),
+      enableStreamIdeaAck(p.enable_stream_idea_ack),
+      enableStreamIdeaStore(p.enable_stream_idea_store),
+      enableStreamAdvanceMigrate(p.enable_stream_advance_migrate),
+      enableStreamMulticast(p.enable_stream_multicast),
+      mlcStreamBufferInitNumEntries(p.mlc_stream_buffer_init_num_entries) {
+  if (p.stream_multicast_issue_policy == "any") {
     this->streamMulticastIssuePolicy = MulticastIssuePolicy::Any;
-  } else if (p->stream_multicast_issue_policy == "first_allocated") {
+  } else if (p.stream_multicast_issue_policy == "first_allocated") {
     this->streamMulticastIssuePolicy = MulticastIssuePolicy::FirstAllocated;
-  } else if (p->stream_multicast_issue_policy == "first") {
+  } else if (p.stream_multicast_issue_policy == "first") {
     this->streamMulticastIssuePolicy = MulticastIssuePolicy::First;
   } else {
     panic("Illegal StreamMulticastIssuePolicy %s.\n",
-          p->stream_multicast_issue_policy);
+          p.stream_multicast_issue_policy);
   }
   /**
    * Register myself to the global map.
@@ -214,10 +218,8 @@ void AbstractStreamAwareController::regStats() {
 
   // Register stats callback.
   auto pcRR = &this->pcReqRecorder;
-  Stats::registerResetCallback(
-    [pcRR]() -> void { pcRR->reset(); });
-  Stats::registerDumpCallback(
-    [pcRR]() -> void { pcRR->dump(); });
+  Stats::registerResetCallback([pcRR]() -> void { pcRR->reset(); });
+  Stats::registerDumpCallback([pcRR]() -> void { pcRR->dump(); });
 }
 
 MachineID
@@ -333,16 +335,20 @@ void AbstractStreamAwareController::recordDeallocateNoReuseReqStats(
   auto nocCtrl = reqStat->nocControlMessages;
   auto nocCtrlEvict = reqStat->nocControlEvictMessages;
   auto nocData = reqStat->nocDataMessages;
-  cache.m_deallocated_no_reuse_noc_control_message += nocCtrl;
-  cache.m_deallocated_no_reuse_noc_control_evict_message += nocCtrlEvict;
-  cache.m_deallocated_no_reuse_noc_data_message += nocData;
+  cache.cacheMemoryStats.m_deallocated_no_reuse_noc_control_message += nocCtrl;
+  cache.cacheMemoryStats.m_deallocated_no_reuse_noc_control_evict_message +=
+      nocCtrlEvict;
+  cache.cacheMemoryStats.m_deallocated_no_reuse_noc_data_message += nocData;
   if (reqStat->isStream) {
     // Record this is from stream.
-    cache.m_deallocated_no_reuse_stream++;
-    cache.m_deallocated_no_reuse_stream_noc_control_message += nocCtrl;
-    cache.m_deallocated_no_reuse_stream_noc_control_evict_message +=
+    cache.cacheMemoryStats.m_deallocated_no_reuse_stream++;
+    cache.cacheMemoryStats.m_deallocated_no_reuse_stream_noc_control_message +=
+        nocCtrl;
+    cache.cacheMemoryStats
+        .m_deallocated_no_reuse_stream_noc_control_evict_message +=
         nocCtrlEvict;
-    cache.m_deallocated_no_reuse_stream_noc_data_message += nocData;
+    cache.cacheMemoryStats.m_deallocated_no_reuse_stream_noc_data_message +=
+        nocData;
   }
 }
 
@@ -375,7 +381,7 @@ void AbstractStreamAwareController::recordLLCReqQueueStats(
 
 int AbstractStreamAwareController::getNumRows() const {
   auto network = this->m_net_ptr;
-  auto garnet = dynamic_cast<GarnetNetwork *>(network);
+  auto garnet = dynamic_cast<garnet::GarnetNetwork *>(network);
   if (!garnet) {
     panic("Only works with Garnet to get NumRows/NumCols.");
   }
@@ -383,7 +389,7 @@ int AbstractStreamAwareController::getNumRows() const {
 }
 int AbstractStreamAwareController::getNumCols() const {
   auto network = this->m_net_ptr;
-  auto garnet = dynamic_cast<GarnetNetwork *>(network);
+  auto garnet = dynamic_cast<garnet::GarnetNetwork *>(network);
   if (!garnet) {
     panic("Only works with Garnet to get NumRows/NumCols.");
   }
@@ -408,3 +414,5 @@ Cycles AbstractStreamAwareController::adjustResponseLat(Cycles responseLat,
 void AbstractStreamAwareController::evictCleanLine(const Addr &paddrLine) {
   panic("EvictCleanLine not implemented.");
 }
+} // namespace ruby
+} // namespace gem5

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 ARM Limited
+ * Copyright (c) 2019-2021 ARM Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -49,15 +49,40 @@
 #include "debug/RubyQueue.hh"
 #include "mem/ruby/system/RubySystem.hh"
 
-using namespace std;
-using m5::stl_helpers::operator<<;
+namespace gem5
+{
 
-MessageBuffer::MessageBuffer(const Params *p)
-    : SimObject(p), m_stall_map_size(0),
-    m_max_size(p->buffer_size), m_time_last_time_size_checked(0),
+namespace ruby
+{
+
+using stl_helpers::operator<<;
+
+MessageBuffer::MessageBuffer(const Params &p)
+    : SimObject(p), m_stall_map_size(0), m_max_size(p.buffer_size),
+    m_max_dequeue_rate(p.max_dequeue_rate), m_dequeues_this_cy(0),
+    m_time_last_time_size_checked(0),
     m_time_last_time_enqueue(0), m_time_last_time_pop(0),
-    m_last_arrival_time(0), m_strict_fifo(p->ordered),
-    m_randomization(p->randomization)
+    m_last_arrival_time(0), m_strict_fifo(p.ordered),
+    m_randomization(p.randomization),
+    m_allow_zero_latency(p.allow_zero_latency),
+    m_routing_priority(p.routing_priority),
+    ADD_STAT(m_not_avail_count, statistics::units::Count::get(),
+             "Number of times this buffer did not have N slots available"),
+    ADD_STAT(m_msg_count, statistics::units::Count::get(),
+             "Number of messages passed the buffer"),
+    ADD_STAT(m_buf_msgs, statistics::units::Rate<
+                statistics::units::Count, statistics::units::Tick>::get(),
+             "Average number of messages in buffer"),
+    ADD_STAT(m_stall_time, statistics::units::Tick::get(),
+             "Total number of ticks messages were stalled in this buffer"),
+    ADD_STAT(m_stall_count, statistics::units::Count::get(),
+             "Number of times messages were stalled"),
+    ADD_STAT(m_avg_stall_time, statistics::units::Rate<
+                statistics::units::Tick, statistics::units::Count>::get(),
+             "Average stall ticks per message"),
+    ADD_STAT(m_occupancy, statistics::units::Rate<
+                statistics::units::Ratio, statistics::units::Tick>::get(),
+             "Average occupancy of buffer capacity")
 {
     m_msg_counter = 0;
     m_consumer = NULL;
@@ -75,6 +100,36 @@ MessageBuffer::MessageBuffer(const Params *p)
     m_stall_time = 0;
 
     m_dequeue_callback = nullptr;
+
+    // stats
+    m_not_avail_count
+        .flags(statistics::nozero);
+
+    m_msg_count
+        .flags(statistics::nozero);
+
+    m_buf_msgs
+        .flags(statistics::nozero);
+
+    m_stall_count
+        .flags(statistics::nozero);
+
+    m_avg_stall_time
+        .flags(statistics::nozero | statistics::nonan);
+
+    m_occupancy
+        .flags(statistics::nozero);
+
+    m_stall_time
+        .flags(statistics::nozero);
+
+    if (m_max_size > 0) {
+        m_occupancy = m_buf_msgs / m_max_size;
+    } else {
+        m_occupancy = 0;
+    }
+
+    m_avg_stall_time = m_stall_time / m_msg_count;
 }
 
 unsigned int
@@ -171,12 +226,15 @@ MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
 
     // Calculate the arrival time of the message, that is, the first
     // cycle the message can be dequeued.
-    assert(delta > 0);
+    panic_if((delta == 0) && !m_allow_zero_latency,
+           "Delta equals zero and allow_zero_latency is false during enqueue");
     Tick arrival_time = 0;
 
-    // random delays are inserted if either RubySystem level randomization flag
-    // is turned on, or the buffer level randomization is set
-    if (!RubySystem::getRandomization() && !m_randomization) {
+    // random delays are inserted if the RubySystem level randomization flag
+    // is turned on and this buffer allows it
+    if ((m_randomization == MessageRandomization::disabled) ||
+        ((m_randomization == MessageRandomization::ruby_system) &&
+          !RubySystem::getRandomization())) {
         // No randomization
         arrival_time = current_time + delta;
     } else {
@@ -192,7 +250,7 @@ MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
     }
 
     // Check the arrival time
-    assert(arrival_time > current_time);
+    assert(arrival_time >= current_time);
     if (m_strict_fifo) {
         if (arrival_time < m_last_arrival_time) {
             panic("FIFO ordering violated: %s name: %s current time: %d "
@@ -220,9 +278,12 @@ MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
 
     // Insert the message into the priority heap
     m_prio_heap.push_back(message);
-    push_heap(m_prio_heap.begin(), m_prio_heap.end(), greater<MsgPtr>());
+    push_heap(m_prio_heap.begin(), m_prio_heap.end(), std::greater<MsgPtr>());
     // Increment the number of messages statistic
     m_buf_msgs++;
+
+    assert((m_max_size == 0) ||
+           ((m_prio_heap.size() + m_stall_map_size) <= m_max_size));
 
     DPRINTF(RubyQueue, "Enqueue arrival_time: %lld, Message: %s\n",
             arrival_time, *(message.get()));
@@ -253,19 +314,23 @@ MessageBuffer::dequeue(Tick current_time, bool decrement_messages)
     message->updateDelayedTicks(current_time);
     Tick delay = message->getDelayedTicks();
 
-    m_stall_time = curTick() - message->getTime();
-
     // record previous size and time so the current buffer size isn't
     // adjusted until schd cycle
     if (m_time_last_time_pop < current_time) {
         m_size_at_cycle_start = m_prio_heap.size();
         m_stalled_at_cycle_start = m_stall_map_size;
         m_time_last_time_pop = current_time;
+        m_dequeues_this_cy = 0;
     }
+    ++m_dequeues_this_cy;
 
-    pop_heap(m_prio_heap.begin(), m_prio_heap.end(), greater<MsgPtr>());
+    pop_heap(m_prio_heap.begin(), m_prio_heap.end(), std::greater<MsgPtr>());
     m_prio_heap.pop_back();
     if (decrement_messages) {
+        // Record how much time is passed since the message was enqueued
+        m_stall_time += curTick() - message->getLastEnqueueTime();
+        m_msg_count++;
+
         // If the message will be removed from the queue, decrement the
         // number of message in the queue.
         m_buf_msgs--;
@@ -330,18 +395,18 @@ MessageBuffer::recycle(Tick current_time, Tick recycle_latency)
     DPRINTF(RubyQueue, "Recycling.\n");
     assert(isReady(current_time));
     MsgPtr node = m_prio_heap.front();
-    pop_heap(m_prio_heap.begin(), m_prio_heap.end(), greater<MsgPtr>());
+    pop_heap(m_prio_heap.begin(), m_prio_heap.end(), std::greater<MsgPtr>());
 
     Tick future_time = current_time + recycle_latency;
     node->setLastEnqueueTime(future_time);
 
     m_prio_heap.back() = node;
-    push_heap(m_prio_heap.begin(), m_prio_heap.end(), greater<MsgPtr>());
+    push_heap(m_prio_heap.begin(), m_prio_heap.end(), std::greater<MsgPtr>());
     m_consumer->scheduleEventAbsolute(future_time);
 }
 
 void
-MessageBuffer::reanalyzeList(list<MsgPtr> &lt, Tick schdTick)
+MessageBuffer::reanalyzeList(std::list<MsgPtr> &lt, Tick schdTick)
 {
     while (!lt.empty()) {
         MsgPtr m = lt.front();
@@ -349,7 +414,7 @@ MessageBuffer::reanalyzeList(list<MsgPtr> &lt, Tick schdTick)
 
         m_prio_heap.push_back(m);
         push_heap(m_prio_heap.begin(), m_prio_heap.end(),
-                  greater<MsgPtr>());
+                  std::greater<MsgPtr>());
 
         m_consumer->scheduleEventAbsolute(schdTick);
 
@@ -457,62 +522,45 @@ MessageBuffer::isDeferredMsgMapEmpty(Addr addr) const
 }
 
 void
-MessageBuffer::print(ostream& out) const
+MessageBuffer::print(std::ostream& out) const
 {
     ccprintf(out, "[MessageBuffer: ");
     if (m_consumer != NULL) {
         ccprintf(out, " consumer-yes ");
     }
 
-    vector<MsgPtr> copy(m_prio_heap);
-    sort_heap(copy.begin(), copy.end(), greater<MsgPtr>());
+    std::vector<MsgPtr> copy(m_prio_heap);
+    std::sort_heap(copy.begin(), copy.end(), std::greater<MsgPtr>());
     ccprintf(out, "%s] %s", copy, name());
 }
 
 bool
 MessageBuffer::isReady(Tick current_time) const
 {
-    return ((m_prio_heap.size() > 0) &&
-        (m_prio_heap.front()->getLastEnqueueTime() <= current_time));
+    assert(m_time_last_time_pop <= current_time);
+    bool can_dequeue = (m_max_dequeue_rate == 0) ||
+                       (m_time_last_time_pop < current_time) ||
+                       (m_dequeues_this_cy < m_max_dequeue_rate);
+    bool is_ready = (m_prio_heap.size() > 0) &&
+                   (m_prio_heap.front()->getLastEnqueueTime() <= current_time);
+    if (!can_dequeue && is_ready) {
+        // Make sure the Consumer executes next cycle to dequeue the ready msg
+        m_consumer->scheduleEvent(Cycles(1));
+    }
+    return can_dequeue && is_ready;
 }
 
-void
-MessageBuffer::regStats()
+Tick
+MessageBuffer::readyTime() const
 {
-    m_not_avail_count
-        .name(name() + ".not_avail_count")
-        .desc("Number of times this buffer did not have N slots available")
-        .flags(Stats::nozero);
-
-    m_buf_msgs
-        .name(name() + ".avg_buf_msgs")
-        .desc("Average number of messages in buffer")
-        .flags(Stats::nozero);
-
-    m_stall_count
-        .name(name() + ".num_msg_stalls")
-        .desc("Number of times messages were stalled")
-        .flags(Stats::nozero);
-
-    m_occupancy
-        .name(name() + ".avg_buf_occ")
-        .desc("Average occupancy of buffer capacity")
-        .flags(Stats::nozero);
-
-    m_stall_time
-        .name(name() + ".avg_stall_time")
-        .desc("Average number of cycles messages are stalled in this MB")
-        .flags(Stats::nozero);
-
-    if (m_max_size > 0) {
-        m_occupancy = m_buf_msgs / m_max_size;
-    } else {
-        m_occupancy = 0;
-    }
+    if (m_prio_heap.empty())
+        return MaxTick;
+    else
+        return m_prio_heap.front()->getLastEnqueueTime();
 }
 
 uint32_t
-MessageBuffer::functionalAccess(Packet *pkt, bool is_read)
+MessageBuffer::functionalAccess(Packet *pkt, bool is_read, WriteMask *mask)
 {
     DPRINTF(RubyQueue, "functional %s for %#x\n",
             is_read ? "read" : "write", pkt->getAddr());
@@ -523,8 +571,10 @@ MessageBuffer::functionalAccess(Packet *pkt, bool is_read)
     // correspond to the address in the packet.
     for (unsigned int i = 0; i < m_prio_heap.size(); ++i) {
         Message *msg = m_prio_heap[i].get();
-        if (is_read && msg->functionalRead(pkt))
+        if (is_read && !mask && msg->functionalRead(pkt))
             return 1;
+        else if (is_read && mask && msg->functionalRead(pkt, *mask))
+            num_functional_accesses++;
         else if (!is_read && msg->functionalWrite(pkt))
             num_functional_accesses++;
     }
@@ -539,8 +589,10 @@ MessageBuffer::functionalAccess(Packet *pkt, bool is_read)
             it != (map_iter->second).end(); ++it) {
 
             Message *msg = (*it).get();
-            if (is_read && msg->functionalRead(pkt))
+            if (is_read && !mask && msg->functionalRead(pkt))
                 return 1;
+            else if (is_read && mask && msg->functionalRead(pkt, *mask))
+                num_functional_accesses++;
             else if (!is_read && msg->functionalWrite(pkt))
                 num_functional_accesses++;
         }
@@ -591,8 +643,5 @@ MessageBuffer::delayHead(Tick current_time, Tick delta)
     enqueue(m, current_time, delta);
 }
 
-MessageBuffer *
-MessageBufferParams::create()
-{
-    return new MessageBuffer(this);
-}
+} // namespace ruby
+} // namespace gem5

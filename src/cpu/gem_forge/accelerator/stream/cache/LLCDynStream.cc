@@ -19,13 +19,15 @@
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
 
+namespace gem5 {
+
 LLCDynStream::GlobalLLCDynStreamMapT LLCDynStream::GlobalLLCDynStreamMap;
-std::unordered_map<NodeID, std::list<std::vector<LLCDynStream *>>>
+std::unordered_map<ruby::NodeID, std::list<std::vector<LLCDynStream *>>>
     LLCDynStream::GlobalMLCToLLCDynStreamGroupMap;
 
 // TODO: Support real flow control.
-LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
-                           AbstractStreamAwareController *_llcController,
+LLCDynStream::LLCDynStream(ruby::AbstractStreamAwareController *_mlcController,
+                           ruby::AbstractStreamAwareController *_llcController,
                            CacheStreamConfigureDataPtr _configData)
     : mlcController(_mlcController), llcController(_llcController),
       maxInflyRequests(_llcController->getLLCStreamMaxInflyRequest()),
@@ -35,7 +37,7 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
       initializedCycle(_mlcController->curCycle()), creditedSliceIdx(0) {
 
   // Allocate the range builder.
-  this->rangeBuilder = m5::make_unique<LLCStreamRangeBuilder>(
+  this->rangeBuilder = std::make_unique<LLCStreamRangeBuilder>(
       this, this->configData->totalTripCount);
 
   // Remember the SendTo configs.
@@ -191,7 +193,7 @@ void LLCDynStream::setTotalTripCount(int64_t totalTripCount) {
   }
 }
 
-MachineType LLCDynStream::getFloatMachineTypeAtElem(uint64_t elementIdx) const {
+ruby::MachineType LLCDynStream::getFloatMachineTypeAtElem(uint64_t elementIdx) const {
   if (this->isOneIterationBehind()) {
     if (elementIdx == 0) {
       LLC_S_PANIC(this->getDynStrandId(),
@@ -202,7 +204,7 @@ MachineType LLCDynStream::getFloatMachineTypeAtElem(uint64_t elementIdx) const {
   return this->configData->floatPlan.getMachineTypeAtElem(elementIdx);
 }
 
-std::pair<Addr, MachineType>
+std::pair<Addr, ruby::MachineType>
 LLCDynStream::peekNextInitVAddrAndMachineType() const {
   const auto &sliceId = this->slicedStream.peekNextSlice();
   auto startElemIdx = sliceId.getStartIdx();
@@ -457,7 +459,7 @@ const DynStreamSliceId &LLCDynStream::peekNextAllocSliceId() const {
   }
 }
 
-std::pair<Addr, MachineType>
+std::pair<Addr, ruby::MachineType>
 LLCDynStream::peekNextAllocVAddrAndMachineType() const {
   if (auto slice = this->getNextAllocSlice()) {
     const auto &sliceId = slice->getSliceId();
@@ -919,7 +921,7 @@ bool LLCDynStream::isBasedOn(const DynStreamId &baseId) const {
 void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
                                      const uint64_t sendStrandElemIdx,
                                      const DynStreamSliceId &sliceId,
-                                     const DataBlock &dataBlk) {
+                                     const ruby::DataBlock &dataBlk) {
   auto recvStrandElemIdx = sendStrandElemIdx;
   bool found = false;
   for (const auto &baseEdge : this->configData->baseEdges) {
@@ -1070,7 +1072,7 @@ void LLCDynStream::setState(State state) {
 }
 
 void LLCDynStream::remoteConfigured(
-    AbstractStreamAwareController *llcController) {
+    ruby::AbstractStreamAwareController *llcController) {
   this->setState(State::RUNNING);
   this->setLLCController(llcController);
   assert(this->prevConfiguredCycle == Cycles(0) && "Already RemoteConfigured.");
@@ -1093,7 +1095,7 @@ void LLCDynStream::migratingStart() {
 }
 
 void LLCDynStream::setLLCController(
-    AbstractStreamAwareController *llcController) {
+    ruby::AbstractStreamAwareController *llcController) {
   this->llcController = llcController;
   // Set the llcController for all indirect streams.
   for (auto dynIS : this->allIndirectStreams) {
@@ -1101,7 +1103,7 @@ void LLCDynStream::setLLCController(
   }
 }
 
-void LLCDynStream::migratingDone(AbstractStreamAwareController *llcController) {
+void LLCDynStream::migratingDone(ruby::AbstractStreamAwareController *llcController) {
 
   /**
    * Notify the previous LLC SE that I have arrived.
@@ -1136,7 +1138,7 @@ void LLCDynStream::terminate() {
 }
 
 void LLCDynStream::allocateLLCStreams(
-    AbstractStreamAwareController *mlcController,
+    ruby::AbstractStreamAwareController *mlcController,
     CacheStreamConfigureVec &configs) {
 
   /**
@@ -1259,13 +1261,13 @@ void LLCDynStream::allocateLLCStreams(
 }
 
 LLCDynStreamPtr
-LLCDynStream::allocateLLCStream(AbstractStreamAwareController *mlcController,
+LLCDynStream::allocateLLCStream(ruby::AbstractStreamAwareController *mlcController,
                                 CacheStreamConfigureDataPtr &config) {
 
   assert(config->initPAddrValid && "Initial paddr should be valid now.");
   auto initPAddr = config->initPAddr;
 
-  // Get the MachineType of FirstFloatElementIdx.
+  // Get the ruby::MachineType of FirstFloatElementIdx.
   auto firstFloatElemIdx = config->floatPlan.getFirstFloatElementIdx();
   auto firstFloatElemMachineType =
       config->floatPlan.getMachineTypeAtElem(firstFloatElemIdx);
@@ -1273,7 +1275,7 @@ LLCDynStream::allocateLLCStream(AbstractStreamAwareController *mlcController,
   auto llcMachineId =
       mlcController->mapAddressToLLCOrMem(initPAddr, firstFloatElemMachineType);
   auto llcController =
-      AbstractStreamAwareController::getController(llcMachineId);
+      ruby::AbstractStreamAwareController::getController(llcMachineId);
 
   // Create the stream.
   auto S = new LLCDynStream(mlcController, llcController, config);
@@ -1347,9 +1349,9 @@ int LLCDynStream::curRemoteBank() const {
 const char *LLCDynStream::curRemoteMachineType() const {
   if (this->llcController) {
     auto type = this->llcController->getMachineID().type;
-    if (type == MachineType::MachineType_L2Cache) {
+    if (type == ruby::MachineType_L2Cache) {
       return "LLC";
-    } else if (type == MachineType::MachineType_Directory) {
+    } else if (type == ruby::MachineType_Directory) {
       return "MEM";
     }
   }
@@ -1496,7 +1498,7 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
   const auto seMachineID = se->controller->getMachineID();
   auto floatMachineType = this->getFloatMachineTypeAtElem(elem->idx);
   if (seMachineID.getType() != floatMachineType) {
-    LLC_ELEMENT_PANIC(elem, "[CompleteCmp] Offload %s != SE MachineType %s.",
+    LLC_ELEMENT_PANIC(elem, "[CompleteCmp] Offload %s != SE ruby::MachineType %s.",
                       floatMachineType, seMachineID);
   }
 
@@ -1515,7 +1517,7 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
     Addr elementPAddr;
     assert(this->translateToPAddr(elementVAddr, elementPAddr) &&
            "Fault on vaddr of UpdateStream.");
-    const auto lineSize = RubySystem::getBlockSizeBytes();
+    const auto lineSize = ruby::RubySystem::getBlockSizeBytes();
 
     assert(elementMemSize <= sizeof(value) && "UpdateStream size overflow.");
     for (int storedSize = 0; storedSize < elementMemSize;) {
@@ -1648,7 +1650,7 @@ void LLCDynStream::tryComputeNextDirectReduceElem(
           auto llcMachineID = this->mlcController->mapAddressToLLCOrMem(
               paddr, seMachineID.getType());
           nextComputeSE =
-              AbstractStreamAwareController::getController(llcMachineID)
+              ruby::AbstractStreamAwareController::getController(llcMachineID)
                   ->getLLCStreamEngine();
         }
       }
@@ -1700,14 +1702,14 @@ void LLCDynStream::completeFinalReduction(LLCStreamEngine *se) {
   }
 
   // We also want to forward to any consuming streams.
-  DataBlock dataBlock;
+  ruby::DataBlock dataBlock;
   dataBlock.setData(finalReductionValue.uint8Ptr(), lineOffset, payloadSize);
 
   for (const auto &edge : this->sendToEdges) {
     LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReductionElem,
                          "[Reduce] Send result to %s.\n", edge.data->dynamicId);
     se->issueStreamDataToLLC(this, sliceId, dataBlock, edge,
-                             RubySystem::getBlockSizeBytes() /* PayloadSize */);
+                             ruby::RubySystem::getBlockSizeBytes() /* PayloadSize */);
   }
 }
 
@@ -2094,4 +2096,5 @@ LLCStreamElementPtr LLCDynStream::getElemPanic(uint64_t elemIdx,
                 elemIdx, errMsg);
   }
   return elem;
-}
+}} // namespace gem5
+

@@ -13,6 +13,8 @@
   DPRINTF(X, "[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 #define SE_DPRINTF(format, args...) SE_DPRINTF_(StreamRegion, format, ##args)
 
+namespace gem5 {
+
 StreamRegionController::StreamRegionController(StreamEngine *_se)
     : se(_se), isaHandler(_se->getCPUDelegator()) {}
 
@@ -318,4 +320,5 @@ void StreamRegionController::trySkipToStreamEnd(DynRegion &dynRegion) {
     SE_DPRINTF("[Region] Skip Group to End %llu.\n", group.totalTripCount);
     group.nextElemIdx = group.totalTripCount;
   }
-}
+}} // namespace gem5
+

@@ -5,7 +5,9 @@
 #define INST_DPRINTF(inst, format, args...)                                    \
   DPRINTF(MinorGemForgeLoadRequest, "[%s]: " format, *(inst), ##args)
 
-namespace Minor {
+namespace gem5 {
+
+namespace minor {
 
 void GemForgeLoadRequest::checkIsComplete() {
   // If already complete, then done.
@@ -29,4 +31,5 @@ void GemForgeLoadRequest::markDiscarded() {
   }
 }
 
-} // namespace Minor
+} // namespace minor
+} // namespace gem5

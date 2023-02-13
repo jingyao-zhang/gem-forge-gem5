@@ -23,13 +23,18 @@ class BaseCPU;
 class DerivO3CPU;
 class LLVMTraceCPU;
 
-namespace TheISA {
+namespace gem5 {
+namespace X86ISA {
 class TLB;
-} // namespace TheISA
+}
+} // namespace gem5
+
+namespace gem5 {
 
 class McPATManager : public SimObject {
 public:
-  McPATManager(const McPATManagerParams *params);
+  PARAMS(McPATManager)
+  McPATManager(const Params &params);
   ~McPATManager();
 
   void init() override;
@@ -93,5 +98,7 @@ private:
     return params;
   }
 };
+
+} // namespace gem5
 
 #endif

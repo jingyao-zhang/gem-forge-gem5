@@ -24,6 +24,8 @@
   DPRINTF(CoalescedStream, "C-Stream %s: " format,                             \
           this->getStreamName().c_str(), ##args)
 
+namespace gem5 {
+
 LogicalStream::LogicalStream(const std::string &_traceExtraFolder,
                              const LLVM::TDG::StreamInfo &_info)
     : info(_info) {
@@ -475,3 +477,5 @@ bool Stream::tryGetCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
   }
   return false;
 }
+} // namespace gem5
+

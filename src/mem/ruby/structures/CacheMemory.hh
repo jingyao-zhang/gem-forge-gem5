@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 ARM Limited
+ * Copyright (c) 2020-2021 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -60,12 +60,18 @@
 #include "params/RubyCache.hh"
 #include "sim/sim_object.hh"
 
+namespace gem5
+{
+
+namespace ruby
+{
+
 class CacheMemory : public SimObject
 {
   public:
     typedef RubyCacheParams Params;
-    typedef std::shared_ptr<ReplacementData> ReplData;
-    CacheMemory(const Params *p);
+    typedef std::shared_ptr<replacement_policy::ReplacementData> ReplData;
+    CacheMemory(const Params &p);
     ~CacheMemory();
 
     void init();
@@ -146,7 +152,6 @@ class CacheMemory : public SimObject
     void print(std::ostream& out) const;
     void printData(std::ostream& out) const;
 
-    void regStats();
     bool checkResourceAvailable(CacheResourceType res, Addr addr);
     void recordRequestType(CacheRequestType requestType, Addr addr);
 
@@ -155,43 +160,6 @@ class CacheMemory : public SimObject
     void htmCommitTransaction();
 
   public:
-    Stats::Scalar m_demand_hits;
-    Stats::Scalar m_demand_hits_prefetched;
-    Stats::Scalar m_demand_misses;
-    Stats::Formula m_demand_accesses;
-
-    Stats::Scalar m_sw_prefetches;
-    Stats::Scalar m_hw_prefetches;
-    Stats::Formula m_prefetches;
-
-    Stats::Vector m_accessModeType;
-
-    Stats::Scalar m_deallocated;
-    // No reuse also means data is evicted clean.
-    Stats::Scalar m_deallocated_no_reuse;
-    Stats::Scalar m_deallocated_no_reuse_no_req_stat;
-    Stats::Scalar m_deallocated_no_reuse_noc_control_message;
-    Stats::Scalar m_deallocated_no_reuse_noc_control_evict_message;
-    Stats::Scalar m_deallocated_no_reuse_noc_data_message;
-    Stats::Scalar m_deallocated_no_reuse_stream;
-    Stats::Scalar m_deallocated_no_reuse_stream_noc_control_message;
-    Stats::Scalar m_deallocated_no_reuse_stream_noc_control_evict_message;
-    Stats::Scalar m_deallocated_no_reuse_stream_noc_data_message;
-
-    Stats::Scalar numDataArrayReads;
-    Stats::Scalar numDataArrayWrites;
-    Stats::Scalar numTagArrayReads;
-    Stats::Scalar numTagArrayWrites;
-
-    Stats::Scalar numTagArrayStalls;
-    Stats::Scalar numDataArrayStalls;
-
-    // hardware transactional memory
-    Stats::Histogram htmTransCommitReadSet;
-    Stats::Histogram htmTransCommitWriteSet;
-    Stats::Histogram htmTransAbortReadSet;
-    Stats::Histogram htmTransAbortWriteSet;
-
     int getCacheSize() const { return m_cache_size; }
     int getCacheAssoc() const { return m_cache_assoc; }
     int getNumBlocks() const { return m_cache_num_sets * m_cache_assoc; }
@@ -219,11 +187,8 @@ class CacheMemory : public SimObject
     std::unordered_map<Addr, int> m_tag_index;
     std::vector<std::vector<AbstractCacheEntry*> > m_cache;
 
-    /**
-     * We use BaseReplacementPolicy from Classic system here, hence we can use
-     * different replacement policies from Classic system in Ruby system.
-     */
-    BaseReplacementPolicy *m_replacementPolicy_ptr;
+    /** We use the replacement policies from the Classic memory system. */
+    replacement_policy::Base *m_replacementPolicy_ptr;
 
     BankedArray dataArray;
     BankedArray tagArray;
@@ -256,8 +221,70 @@ class CacheMemory : public SimObject
      * false.
      */
     bool m_use_occupancy;
+
+    public:
+      struct CacheMemoryStats : public statistics::Group
+      {
+          CacheMemoryStats(statistics::Group *parent);
+
+          statistics::Scalar numDataArrayReads;
+          statistics::Scalar numDataArrayWrites;
+          statistics::Scalar numTagArrayReads;
+          statistics::Scalar numTagArrayWrites;
+
+          statistics::Scalar numTagArrayStalls;
+          statistics::Scalar numDataArrayStalls;
+
+          // hardware transactional memory
+          statistics::Histogram htmTransCommitReadSet;
+          statistics::Histogram htmTransCommitWriteSet;
+          statistics::Histogram htmTransAbortReadSet;
+          statistics::Histogram htmTransAbortWriteSet;
+
+          statistics::Scalar m_demand_hits;
+          statistics::Scalar m_demand_hits_prefetched;
+          statistics::Scalar m_demand_misses;
+          statistics::Formula m_demand_accesses;
+
+          statistics::Scalar m_sw_prefetches;
+          statistics::Scalar m_hw_prefetches;
+          statistics::Formula m_prefetches;
+
+          statistics::Scalar m_prefetch_hits;
+          statistics::Scalar m_prefetch_misses;
+          statistics::Formula m_prefetch_accesses;
+
+          statistics::Vector m_accessModeType;
+
+          statistics::Scalar m_deallocated;
+          // No reuse also means data is evicted clean.
+          statistics::Scalar m_deallocated_no_reuse;
+          statistics::Scalar m_deallocated_no_reuse_no_req_stat;
+          statistics::Scalar m_deallocated_no_reuse_noc_control_message;
+          statistics::Scalar m_deallocated_no_reuse_noc_control_evict_message;
+          statistics::Scalar m_deallocated_no_reuse_noc_data_message;
+          statistics::Scalar m_deallocated_no_reuse_stream;
+          statistics::Scalar m_deallocated_no_reuse_stream_noc_control_message;
+          statistics::Scalar m_deallocated_no_reuse_stream_noc_control_evict_message;
+          statistics::Scalar m_deallocated_no_reuse_stream_noc_data_message;
+      } cacheMemoryStats;
+
+    public:
+      // These function increment the number of demand hits/misses by one
+      // each time they are called
+      void profileDemandHit();
+      void profileDemandMiss();
+      void profilePrefetchHit();
+      void profilePrefetchMiss();
+      void profileDemandHitPrefetched();
+      void profileDealloc();
+      void profileDeallocNoReuse();
+      void profileDeallocNoReuseNoReqStat();
 };
 
 std::ostream& operator<<(std::ostream& out, const CacheMemory& obj);
+
+} // namespace ruby
+} // namespace gem5
 
 #endif // __MEM_RUBY_STRUCTURES_CACHEMEMORY_HH__

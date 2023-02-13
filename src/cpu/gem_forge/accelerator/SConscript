@@ -1,4 +1,12 @@
 Import('*')
 
-SimObject('GemForgeAccelerator.py')
+SimObject('GemForgeAccelerator.py', 
+    sim_objects=[
+        'GemForgeAccelerator',
+        'GemForgeAcceleratorManager',
+        'StreamEngine',
+        'SpeculativePrecomputationManager',
+        'IdealPrefetcher',
+        'AbstractDataFlowAccelerator',
+    ])
 Source('gem_forge_accelerator.cc')

@@ -11,6 +11,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+namespace gem5 {
+
 class Stream;
 class DynStream;
 class StreamEngine;
@@ -416,5 +418,7 @@ private:
    */
   void updateFirstValueCheckCycle(bool checkedByCore) const;
 };
+
+} // namespace gem5
 
 #endif

@@ -10,6 +10,8 @@
 #include <memory>
 #include <vector>
 
+namespace gem5 {
+
 class ThreadContext;
 
 class StreamElement;
@@ -504,5 +506,7 @@ private:
 std::ostream &operator<<(std::ostream &os,
                          const DynStream::StreamDepEdge::TypeE &type);
 std::string to_string(const DynStream::StreamDepEdge::TypeE &type);
+
+} // namespace gem5
 
 #endif

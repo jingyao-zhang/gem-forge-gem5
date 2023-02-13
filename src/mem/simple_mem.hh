@@ -52,6 +52,12 @@
 #include "mem/port.hh"
 #include "params/SimpleMemory.hh"
 
+namespace gem5
+{
+
+namespace memory
+{
+
 /**
  * The simple memory is a basic single-ported memory controller with
  * a configurable throughput and latency.
@@ -82,7 +88,7 @@ class SimpleMemory : public AbstractMemory
     class MemoryPort : public ResponsePort
     {
       private:
-        SimpleMemory& memory;
+        SimpleMemory& mem;
 
       public:
         MemoryPort(const std::string& _name, SimpleMemory& _memory);
@@ -173,7 +179,7 @@ class SimpleMemory : public AbstractMemory
 
   public:
 
-    SimpleMemory(const SimpleMemoryParams *p);
+    SimpleMemory(const SimpleMemoryParams &p);
 
     DrainState drain() override;
 
@@ -189,5 +195,8 @@ class SimpleMemory : public AbstractMemory
     bool recvTimingReq(PacketPtr pkt);
     void recvRespRetry();
 };
+
+} // namespace memory
+} // namespace gem5
 
 #endif //__MEM_SIMPLE_MEMORY_HH__

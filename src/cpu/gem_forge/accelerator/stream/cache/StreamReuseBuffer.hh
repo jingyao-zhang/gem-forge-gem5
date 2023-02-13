@@ -13,21 +13,23 @@
 #include <unordered_map>
 #include <vector>
 
+namespace gem5 {
+
 class ReuseBuffer {
 public:
   ReuseBuffer(int _maxNumLines);
 
-  void addLine(Addr paddrLine, const DataBlock &dataBlock);
+  void addLine(Addr paddrLine, const ruby::DataBlock &dataBlock);
   bool contains(Addr paddrLine);
-  const DataBlock &reuse(Addr paddrLine);
+  const ruby::DataBlock &reuse(Addr paddrLine);
 
 private:
   const int maxNumLines;
 
   struct CachedLine {
     Addr paddrLine;
-    DataBlock dataBlock;
-    CachedLine(Addr _paddrLine, const DataBlock &_dataBlock)
+    ruby::DataBlock dataBlock;
+    CachedLine(Addr _paddrLine, const ruby::DataBlock &_dataBlock)
         : paddrLine(_paddrLine), dataBlock(_dataBlock) {}
   };
 
@@ -39,19 +41,20 @@ private:
 
 class StreamReuseBuffer {
 public:
-  StreamReuseBuffer(MachineID _machineId, int _maxNumLines, bool _perCoreMode);
+  StreamReuseBuffer(ruby::MachineID _machineId, int _maxNumLines,
+                    bool _perCoreMode);
 
   void addLine(const DynStreamSliceId &sliceId, Addr paddrLine,
-               const DataBlock &dataBlock);
+               const ruby::DataBlock &dataBlock);
   bool contains(const DynStreamSliceId &reuseSliceId, Addr paddrLine);
-  const DataBlock &reuse(const DynStreamSliceId &reuseSliceId,
-                         Addr paddrLine);
+  const ruby::DataBlock &reuse(const DynStreamSliceId &reuseSliceId,
+                               Addr paddrLine);
 
   bool shouldCacheStream(Stream *S, const DynStreamId &dynSId) const;
   bool shouldCheckReuse(Stream *S, const DynStreamId &dynSId) const;
 
 private:
-  const MachineID machineId;
+  const ruby::MachineID machineId;
   const char *machineTypeStr;
   const int maxNumLines;
   const bool perCoreMode;
@@ -66,7 +69,7 @@ private:
    * For DPRINTF.
    */
   int curRemoteBank() const;
-  MachineType myMachineType() const;
+  ruby::MachineType myMachineType() const;
   const char *curRemoteMachineType() const;
 
   int getCoreId(const DynStreamId &dynSId) const;
@@ -76,5 +79,7 @@ private:
 
   ReuseBufferPtr &getReuseBuffer(const DynStreamId &dynSId);
 };
+
+} // namespace gem5
 
 #endif

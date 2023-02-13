@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited
+ * Copyright (c) 2017,2021 ARM Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -70,19 +70,22 @@
 #include "params/RubyNetwork.hh"
 #include "sim/clocked_object.hh"
 
+namespace gem5
+{
+
+namespace ruby
+{
+
 class NetDest;
 class MessageBuffer;
 
 class Network : public ClockedObject
 {
   public:
-    typedef RubyNetworkParams Params;
-    Network(const Params *p);
-    const Params * params() const
-    { return dynamic_cast<const Params *>(_params); }
+    PARAMS(RubyNetwork);
+    Network(const Params &p);
 
     virtual ~Network();
-    void init() override;
 
     static uint32_t getNumberOfVirtualNetworks() { return m_virtual_networks; }
     int getNumNodes() const { return m_nodes; }
@@ -118,6 +121,8 @@ class Network : public ClockedObject
      */
     virtual bool functionalRead(Packet *pkt)
     { fatal("Functional read not implemented.\n"); }
+    virtual bool functionalRead(Packet *pkt, WriteMask& mask)
+    { fatal("Masked functional read not implemented.\n"); }
     virtual uint32_t functionalWrite(Packet *pkt)
     { fatal("Functional write not implemented.\n"); }
 
@@ -162,7 +167,8 @@ class Network : public ClockedObject
 
   private:
     // Global address map
-    struct AddrMapNode {
+    struct AddrMapNode
+    {
         NodeID id;
         AddrRangeList ranges;
     };
@@ -180,5 +186,8 @@ operator<<(std::ostream& out, const Network& obj)
     out << std::flush;
     return out;
 }
+
+} // namespace ruby
+} // namespace gem5
 
 #endif // __MEM_RUBY_NETWORK_NETWORK_HH__

@@ -39,14 +39,20 @@
 
 #include <linux/kvm.h>
 
+#include "arch/arm/regs/int.hh"
+#include "arch/arm/regs/vec.hh"
+#include "arch/arm/utility.hh"
 #include "debug/KvmContext.hh"
 #include "params/ArmV8KvmCPU.hh"
+
+namespace gem5
+{
 
 using namespace ArmISA;
 
 // Unlike gem5, kvm doesn't count the SP as a normal integer register,
 // which means we only have 31 normal integer registers.
-constexpr static unsigned NUM_XREGS = NUM_ARCH_INTREGS - 1;
+constexpr static unsigned NUM_XREGS = int_reg::NumArchRegs - 1;
 static_assert(NUM_XREGS == 31, "Unexpected number of aarch64 int. regs.");
 
 // The KVM interface accesses vector registers of 4 single precision
@@ -81,13 +87,16 @@ kvmFPReg(const int num)
         (SIMD_REG(fp_regs.vregs[1]) - SIMD_REG(fp_regs.vregs[0])) * num;
 }
 
-union KvmFPReg {
-    union {
+union KvmFPReg
+{
+    union
+    {
         uint32_t i;
         float f;
     } s[4];
 
-    union {
+    union
+    {
         uint64_t i;
         double f;
     } d[2];
@@ -98,8 +107,8 @@ union KvmFPReg {
 #define FP_REGS_PER_VFP_REG 4
 
 const std::vector<ArmV8KvmCPU::IntRegInfo> ArmV8KvmCPU::intRegMap = {
-    { INT_REG(regs.sp), INTREG_SP0, "SP(EL0)" },
-    { INT_REG(sp_el1), INTREG_SP1, "SP(EL1)" },
+    { INT_REG(regs.sp), int_reg::Sp0, "SP(EL0)" },
+    { INT_REG(sp_el1), int_reg::Sp1, "SP(EL1)" },
 };
 
 const std::vector<ArmV8KvmCPU::MiscRegInfo> ArmV8KvmCPU::miscRegMap = {
@@ -123,7 +132,7 @@ const std::vector<ArmV8KvmCPU::MiscRegInfo> ArmV8KvmCPU::miscRegIdMap = {
     MiscRegInfo(SYS_MPIDR_EL1, MISCREG_MPIDR_EL1, "MPIDR(EL1)"),
 };
 
-ArmV8KvmCPU::ArmV8KvmCPU(ArmV8KvmCPUParams *params)
+ArmV8KvmCPU::ArmV8KvmCPU(const ArmV8KvmCPUParams &params)
     : BaseArmKvmCPU(params)
 {
 }
@@ -219,11 +228,11 @@ ArmV8KvmCPU::updateKvmState()
 
     // update pstate register state
     CPSR cpsr(tc->readMiscReg(MISCREG_CPSR));
-    cpsr.nz = tc->readCCReg(CCREG_NZ);
-    cpsr.c = tc->readCCReg(CCREG_C);
-    cpsr.v = tc->readCCReg(CCREG_V);
+    cpsr.nz = tc->getReg(cc_reg::Nz);
+    cpsr.c = tc->getReg(cc_reg::C);
+    cpsr.v = tc->getReg(cc_reg::V);
     if (cpsr.width) {
-        cpsr.ge = tc->readCCReg(CCREG_GE);
+        cpsr.ge = tc->getReg(cc_reg::Ge);
     } else {
         cpsr.ge = 0;
     }
@@ -237,20 +246,24 @@ ArmV8KvmCPU::updateKvmState()
     }
 
     for (int i = 0; i < NUM_XREGS; ++i) {
-        const uint64_t value(tc->readIntReg(INTREG_X0 + i));
+        const uint64_t value = tc->getReg(int_reg::x(i));
         DPRINTF(KvmContext, "  X%i := 0x%x\n", i, value);
         setOneReg(kvmXReg(i), value);
     }
 
     for (const auto &ri : intRegMap) {
-        const uint64_t value(tc->readIntReg(ri.idx));
+        const uint64_t value = tc->getReg(intRegClass[ri.idx]);
         DPRINTF(KvmContext, "  %s := 0x%x\n", ri.name, value);
         setOneReg(ri.kvm, value);
     }
 
     for (int i = 0; i < NUM_QREGS; ++i) {
         KvmFPReg reg;
-        auto v = tc->readVecReg(RegId(VecRegClass, i)).as<VecElem>();
+        if (!inAArch64(tc))
+            syncVecElemsToRegs(tc);
+        ArmISA::VecRegContainer vc;
+        tc->getReg(vecRegClass[i], &vc);
+        auto v = vc.as<VecElem>();
         for (int j = 0; j < FP_REGS_PER_VFP_REG; j++)
             reg.s[j].i = v[j];
 
@@ -274,8 +287,8 @@ ArmV8KvmCPU::updateKvmState()
         setOneReg(ri.kvm, value);
     }
 
-    setOneReg(INT_REG(regs.pc), tc->instAddr());
-    DPRINTF(KvmContext, "  PC := 0x%x\n", tc->instAddr());
+    setOneReg(INT_REG(regs.pc), tc->pcState().instAddr());
+    DPRINTF(KvmContext, "  PC := 0x%x\n", tc->pcState().instAddr());
 }
 
 void
@@ -287,11 +300,11 @@ ArmV8KvmCPU::updateThreadContext()
     const CPSR cpsr(getOneRegU64(INT_REG(regs.pstate)));
     DPRINTF(KvmContext, "  %s := 0x%x\n", "PSTATE", cpsr);
     tc->setMiscRegNoEffect(MISCREG_CPSR, cpsr);
-    tc->setCCReg(CCREG_NZ, cpsr.nz);
-    tc->setCCReg(CCREG_C, cpsr.c);
-    tc->setCCReg(CCREG_V, cpsr.v);
+    tc->setReg(cc_reg::Nz, cpsr.nz);
+    tc->setReg(cc_reg::C, cpsr.c);
+    tc->setReg(cc_reg::V, cpsr.v);
     if (cpsr.width) {
-        tc->setCCReg(CCREG_GE, cpsr.ge);
+        tc->setReg(cc_reg::Ge, cpsr.ge);
     }
 
     // Update core misc regs first as they
@@ -308,25 +321,29 @@ ArmV8KvmCPU::updateThreadContext()
         // KVM64 returns registers in 64-bit layout. If we are in aarch32
         // mode, we need to map these to banked ARM32 registers.
         if (inAArch64(tc)) {
-            tc->setIntReg(INTREG_X0 + i, value);
+            tc->setReg(int_reg::x(i), value);
         } else {
-            tc->setIntRegFlat(IntReg64Map[INTREG_X0 + i], value);
+            tc->setReg(flatIntRegClass[i], value);
         }
     }
 
     for (const auto &ri : intRegMap) {
         const auto value(getOneRegU64(ri.kvm));
         DPRINTF(KvmContext, "  %s := 0x%x\n", ri.name, value);
-        tc->setIntReg(ri.idx, value);
+        tc->setReg(intRegClass[ri.idx], value);
     }
 
     for (int i = 0; i < NUM_QREGS; ++i) {
         KvmFPReg reg;
         DPRINTF(KvmContext, "  Q%i: %s\n", i, getAndFormatOneReg(kvmFPReg(i)));
         getOneReg(kvmFPReg(i), reg.data);
-        auto v = tc->getWritableVecReg(RegId(VecRegClass, i)).as<VecElem>();
+        auto *vc = static_cast<ArmISA::VecRegContainer *>(
+            tc->getWritableReg(vecRegClass[i]));
+        auto v = vc->as<VecElem>();
         for (int j = 0; j < FP_REGS_PER_VFP_REG; j++)
             v[j] = reg.s[j].i;
+        if (!inAArch64(tc))
+            syncVecRegsToElems(tc);
     }
 
     for (const auto &ri : getSysRegMap()) {
@@ -377,11 +394,11 @@ ArmV8KvmCPU::getSysRegMap() const
         const uint64_t crm(EXTRACT_FIELD(reg, KVM_REG_ARM64_SYSREG_CRM));
         const uint64_t op2(EXTRACT_FIELD(reg, KVM_REG_ARM64_SYSREG_OP2));
         const MiscRegIndex idx(decodeAArch64SysReg(op0, op1, crn, crm, op2));
-        const auto &info(miscRegInfo[idx]);
+        const auto &info(lookUpMiscReg[idx].info);
         const bool writeable(
             info[MISCREG_USR_NS_WR] || info[MISCREG_USR_S_WR] ||
             info[MISCREG_PRI_S_WR] || info[MISCREG_PRI_NS_WR] ||
-            info[MISCREG_HYP_WR] ||
+            info[MISCREG_HYP_NS_WR] ||
             info[MISCREG_MON_NS0_WR] || info[MISCREG_MON_NS1_WR]);
         const bool implemented(
             info[MISCREG_IMPLEMENTED] || info[MISCREG_WARN_NOT_FAIL]);
@@ -396,8 +413,4 @@ ArmV8KvmCPU::getSysRegMap() const
     return sysRegMap;
 }
 
-ArmV8KvmCPU *
-ArmV8KvmCPUParams::create()
-{
-    return new ArmV8KvmCPU(this);
-}
+} // namespace gem5

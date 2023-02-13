@@ -6,6 +6,8 @@
 
 #include "debug/LLVMTraceCPU.hh"
 
+namespace gem5 {
+
 std::unordered_map<std::string, LLVMInstInfo> LLVMDynamicInst::instInfo = {
     // Binary operator.
     {"add", {.opClass = IntAluOp, .numOperands = 2, .numResults = 1}},
@@ -30,7 +32,7 @@ std::unordered_map<std::string, LLVMInstInfo> LLVMDynamicInst::instInfo = {
     // Conversion operator.
     // Truncation requires no FU.
     {"trunc",
-     {.opClass = Enums::No_OpClass, .numOperands = 1, .numResults = 1}},
+     {.opClass = enums::No_OpClass, .numOperands = 1, .numResults = 1}},
     {"zext", {.opClass = IntAluOp, .numOperands = 1, .numResults = 1}},
     {"sext", {.opClass = IntAluOp, .numOperands = 1, .numResults = 1}},
     {"fptrunc", {.opClass = FloatCvtOp, .numOperands = 1, .numResults = 1}},
@@ -40,25 +42,20 @@ std::unordered_map<std::string, LLVMInstInfo> LLVMDynamicInst::instInfo = {
     {"uitofp", {.opClass = FloatCvtOp, .numOperands = 1, .numResults = 1}},
     {"sitofp", {.opClass = FloatCvtOp, .numOperands = 1, .numResults = 1}},
     {"ptrtoint",
-     {.opClass = Enums::No_OpClass, .numOperands = 1, .numResults = 1}},
+     {.opClass = enums::No_OpClass, .numOperands = 1, .numResults = 1}},
     {"inttoptr",
-     {.opClass = Enums::No_OpClass, .numOperands = 1, .numResults = 1}},
+     {.opClass = enums::No_OpClass, .numOperands = 1, .numResults = 1}},
     {"bitcast",
-     {.opClass = Enums::No_OpClass, .numOperands = 1, .numResults = 1}},
+     {.opClass = enums::No_OpClass, .numOperands = 1, .numResults = 1}},
     // Other insts.
     {"icmp", {.opClass = IntAluOp, .numOperands = 2, .numResults = 1}},
     {"fcmp", {.opClass = FloatCmpOp, .numOperands = 2, .numResults = 1}},
     // We assume the branching requires address computation.
     {"br", {.opClass = IntAluOp, .numOperands = 1, .numResults = 0}},
     // Our special accelerator inst.
-    {"cca",
-     {.opClass = Enums::OpClass::Accelerator,
-      .numOperands = 2,
-      .numResults = 1}},
-    {"load",
-     {.opClass = Enums::OpClass::MemRead, .numOperands = 1, .numResults = 1}},
-    {"store",
-     {.opClass = Enums::OpClass::MemWrite, .numOperands = 2, .numResults = 0}},
+    {"cca", {.opClass = AcceleratorOp, .numOperands = 2, .numResults = 1}},
+    {"load", {.opClass = MemReadOp, .numOperands = 1, .numResults = 1}},
+    {"store", {.opClass = MemWriteOp, .numOperands = 2, .numResults = 0}},
 };
 
 LLVMDynamicInstId LLVMDynamicInst::currentDynamicInstId = 10000000000;
@@ -418,8 +415,8 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
     this->loadStartCycle = cpu->curCycle();
     for (const auto &packet : this->packets) {
       auto pkt = GemForgePacketHandler::createGemForgePacket(
-          packet.paddr, packet.size, this, packet.data, cpu->dataRequestorId(), 0,
-          this->TDG.pc());
+          packet.paddr, packet.size, this, packet.data, cpu->dataRequestorId(),
+          0, this->TDG.pc());
       // We want to set up the virtual address.
       // ! This currently does not work, as ADFA does not has a thread
       // ! associated with it. I need to improve the design.
@@ -603,3 +600,4 @@ void LLVMDynamicInstCompute::execute(LLVMTraceCPU *cpu) {
   //   ++this->fuLatency;
   // }
 }
+} // namespace gem5

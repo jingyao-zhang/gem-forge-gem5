@@ -42,9 +42,57 @@ from m5.proxy import *
 from m5.objects.Device import DmaDevice
 from m5.objects.PciHost import PciHost
 
+
+class PciBar(SimObject):
+    type = "PciBar"
+    cxx_class = "gem5::PciBar"
+    cxx_header = "dev/pci/device.hh"
+    abstract = True
+
+
+class PciBarNone(PciBar):
+    type = "PciBarNone"
+    cxx_class = "gem5::PciBarNone"
+    cxx_header = "dev/pci/device.hh"
+
+
+class PciIoBar(PciBar):
+    type = "PciIoBar"
+    cxx_class = "gem5::PciIoBar"
+    cxx_header = "dev/pci/device.hh"
+
+    size = Param.MemorySize32("IO region size")
+
+
+class PciLegacyIoBar(PciIoBar):
+    type = "PciLegacyIoBar"
+    cxx_class = "gem5::PciLegacyIoBar"
+    cxx_header = "dev/pci/device.hh"
+
+    addr = Param.UInt32("Legacy IO address")
+
+
+# To set up a 64 bit memory BAR, put a PciMemUpperBar immediately after
+# a PciMemBar. The pair will take up the right number of BARs, and will be
+# recognized by the device and turned into a 64 bit BAR when the config is
+# consumed.
+class PciMemBar(PciBar):
+    type = "PciMemBar"
+    cxx_class = "gem5::PciMemBar"
+    cxx_header = "dev/pci/device.hh"
+
+    size = Param.MemorySize("Memory region size")
+
+
+class PciMemUpperBar(PciBar):
+    type = "PciMemUpperBar"
+    cxx_class = "gem5::PciMemUpperBar"
+    cxx_header = "dev/pci/device.hh"
+
+
 class PciDevice(DmaDevice):
-    type = 'PciDevice'
-    cxx_class = 'PciDevice'
+    type = "PciDevice"
+    cxx_class = "gem5::PciDevice"
     cxx_header = "dev/pci/device.hh"
     abstract = True
 
@@ -53,8 +101,8 @@ class PciDevice(DmaDevice):
     pci_dev = Param.Int("PCI device number")
     pci_func = Param.Int("PCI function code")
 
-    pio_latency = Param.Latency('30ns', "Programmed IO latency")
-    config_latency = Param.Latency('20ns', "Config read or write latency")
+    pio_latency = Param.Latency("30ns", "Programmed IO latency")
+    config_latency = Param.Latency("20ns", "Config read or write latency")
 
     VendorID = Param.UInt16("Vendor ID")
     DeviceID = Param.UInt16("Device ID")
@@ -69,25 +117,12 @@ class PciDevice(DmaDevice):
     HeaderType = Param.UInt8(0, "PCI Header Type")
     BIST = Param.UInt8(0, "Built In Self Test")
 
-    BAR0 = Param.UInt32(0x00, "Base Address Register 0")
-    BAR1 = Param.UInt32(0x00, "Base Address Register 1")
-    BAR2 = Param.UInt32(0x00, "Base Address Register 2")
-    BAR3 = Param.UInt32(0x00, "Base Address Register 3")
-    BAR4 = Param.UInt32(0x00, "Base Address Register 4")
-    BAR5 = Param.UInt32(0x00, "Base Address Register 5")
-    BAR0Size = Param.MemorySize32('0B', "Base Address Register 0 Size")
-    BAR1Size = Param.MemorySize32('0B', "Base Address Register 1 Size")
-    BAR2Size = Param.MemorySize32('0B', "Base Address Register 2 Size")
-    BAR3Size = Param.MemorySize32('0B', "Base Address Register 3 Size")
-    BAR4Size = Param.MemorySize32('0B', "Base Address Register 4 Size")
-    BAR5Size = Param.MemorySize32('0B', "Base Address Register 5 Size")
-    BAR0LegacyIO = Param.Bool(False, "Whether BAR0 is hardwired legacy IO")
-    BAR1LegacyIO = Param.Bool(False, "Whether BAR1 is hardwired legacy IO")
-    BAR2LegacyIO = Param.Bool(False, "Whether BAR2 is hardwired legacy IO")
-    BAR3LegacyIO = Param.Bool(False, "Whether BAR3 is hardwired legacy IO")
-    BAR4LegacyIO = Param.Bool(False, "Whether BAR4 is hardwired legacy IO")
-    BAR5LegacyIO = Param.Bool(False, "Whether BAR5 is hardwired legacy IO")
-    LegacyIOBase = Param.Addr(0x0, "Base Address for Legacy IO")
+    BAR0 = Param.PciBar(PciBarNone(), "Base address register 0")
+    BAR1 = Param.PciBar(PciBarNone(), "Base address register 1")
+    BAR2 = Param.PciBar(PciBarNone(), "Base address register 2")
+    BAR3 = Param.PciBar(PciBarNone(), "Base address register 3")
+    BAR4 = Param.PciBar(PciBarNone(), "Base address register 4")
+    BAR5 = Param.PciBar(PciBarNone(), "Base address register 5")
 
     CardbusCIS = Param.UInt32(0x00, "Cardbus Card Information Structure")
     SubsystemID = Param.UInt16(0x00, "Subsystem ID")
@@ -101,22 +136,27 @@ class PciDevice(DmaDevice):
 
     # Capabilities List structures for PCIe devices
     # PMCAP - PCI Power Management Capability
-    PMCAPBaseOffset = \
-        Param.UInt8(0x00, "Base offset of PMCAP in PCI Config space")
-    PMCAPNextCapability = \
-        Param.UInt8(0x00, "Pointer to next capability block")
-    PMCAPCapId = \
-        Param.UInt8(0x00, "Specifies this is the Power Management capability")
-    PMCAPCapabilities = \
-        Param.UInt16(0x0000, "PCI Power Management Capabilities Register")
-    PMCAPCtrlStatus = \
-        Param.UInt16(0x0000, "PCI Power Management Control and Status")
+    PMCAPBaseOffset = Param.UInt8(
+        0x00, "Base offset of PMCAP in PCI Config space"
+    )
+    PMCAPNextCapability = Param.UInt8(0x00, "Pointer to next capability block")
+    PMCAPCapId = Param.UInt8(
+        0x00, "Specifies this is the Power Management capability"
+    )
+    PMCAPCapabilities = Param.UInt16(
+        0x0000, "PCI Power Management Capabilities Register"
+    )
+    PMCAPCtrlStatus = Param.UInt16(
+        0x0000, "PCI Power Management Control and Status"
+    )
 
     # MSICAP - Message Signaled Interrupt Capability
-    MSICAPBaseOffset = \
-        Param.UInt8(0x00, "Base offset of MSICAP in PCI Config space")
-    MSICAPNextCapability = \
-        Param.UInt8(0x00, "Pointer to next capability block")
+    MSICAPBaseOffset = Param.UInt8(
+        0x00, "Base offset of MSICAP in PCI Config space"
+    )
+    MSICAPNextCapability = Param.UInt8(
+        0x00, "Pointer to next capability block"
+    )
     MSICAPCapId = Param.UInt8(0x00, "Specifies this is the MSI Capability")
     MSICAPMsgCtrl = Param.UInt16(0x0000, "MSI Message Control")
     MSICAPMsgAddr = Param.UInt32(0x00000000, "MSI Message Address")
@@ -126,19 +166,23 @@ class PciDevice(DmaDevice):
     MSICAPPendingBits = Param.UInt32(0x00000000, "MSI Pending Bits")
 
     # MSIXCAP - MSI-X Capability
-    MSIXCAPBaseOffset = \
-        Param.UInt8(0x00, "Base offset of MSIXCAP in PCI Config space")
-    MSIXCAPNextCapability = \
-        Param.UInt8(0x00, "Pointer to next capability block")
+    MSIXCAPBaseOffset = Param.UInt8(
+        0x00, "Base offset of MSIXCAP in PCI Config space"
+    )
+    MSIXCAPNextCapability = Param.UInt8(
+        0x00, "Pointer to next capability block"
+    )
     MSIXCAPCapId = Param.UInt8(0x00, "Specifices this the MSI-X Capability")
     MSIXMsgCtrl = Param.UInt16(0x0000, "MSI-X Message Control")
-    MSIXTableOffset = \
-        Param.UInt32(0x00000000, "MSI-X Table Offset and Table BIR")
+    MSIXTableOffset = Param.UInt32(
+        0x00000000, "MSI-X Table Offset and Table BIR"
+    )
     MSIXPbaOffset = Param.UInt32(0x00000000, "MSI-X PBA Offset and PBA BIR")
 
     # PXCAP - PCI Express Capability
-    PXCAPBaseOffset = \
-        Param.UInt8(0x00, "Base offset of PXCAP in PCI Config space")
+    PXCAPBaseOffset = Param.UInt8(
+        0x00, "Base offset of PXCAP in PCI Config space"
+    )
     PXCAPNextCapability = Param.UInt8(0x00, "Pointer to next capability block")
     PXCAPCapId = Param.UInt8(0x00, "Specifies this is the PCIe Capability")
     PXCAPCapabilities = Param.UInt16(0x0000, "PCIe Capabilities")

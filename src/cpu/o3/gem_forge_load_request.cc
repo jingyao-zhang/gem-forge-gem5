@@ -1,5 +1,8 @@
 #include "gem_forge_load_request.hh"
-#include "cpu/o3/isa_specific.hh"
+
+#include "cpu/base.hh"
+#include "cpu/o3/dyn_inst.hh"
+#include "cpu/o3/o3_cpu_delegator.hh"
 
 #include "cpu/gem_forge/gem_forge_translation_fault.hh"
 #include "debug/O3CPUDelegator.hh"
@@ -9,7 +12,9 @@
 #define INST_PANIC(format, args...)                                            \
   panic("[%s]: " format, *(this->_inst), ##args)
 
-template <class Impl> void GemForgeLoadRequest<Impl>::release(Flag reason) {
+namespace gem5 {
+
+void GemForgeLoadRequest::release(Flag reason) {
   assert(reason == Flag::LSQEntryFreed || reason == Flag::Discarded);
   if (reason == Flag::LSQEntryFreed) {
     // Normal release.
@@ -43,26 +48,23 @@ template <class Impl> void GemForgeLoadRequest<Impl>::release(Flag reason) {
     // Simple case: we can just delete it as before.
     delete this;
   } else {
-    assert(this->_senderState);
-    this->_senderState->deleteRequest();
     this->flags.set(reason);
     // Now let's fake the response.
-    this->_senderState->outstanding--;
     this->packetReplied();
   }
 }
 
-template <class Impl> void GemForgeLoadRequest<Impl>::initiateTranslation() {
-  assert(this->_requests.size() == 0);
-  this->addRequest(this->_addr, this->_size, this->_byteEnable);
-  assert(this->_requests.size() == 1 && "Should have request.");
+void GemForgeLoadRequest::initiateTranslation() {
+  assert(this->_reqs.size() == 0);
+  this->addReq(this->_addr, this->_size, this->_byteEnable);
+  assert(this->_reqs.size() == 1 && "Should have request.");
 
-  this->_requests.back()->setReqInstSeqNum(this->_inst->seqNum);
-  this->_requests.back()->taskId(this->_taskId);
+  this->_reqs.back()->setReqInstSeqNum(this->_inst->seqNum);
+  this->_reqs.back()->taskId(this->_taskId);
   this->_inst->translationStarted(true);
   this->setState(State::Translation);
   this->flags.set(Flag::TranslationStarted);
-  this->_inst->savedReq = this;
+  this->_inst->savedRequest = this;
 
   // We do not initiate translation, as GemForge handles it.
   // Instead we immediately change the flag to finished.
@@ -88,9 +90,9 @@ template <class Impl> void GemForgeLoadRequest<Impl>::initiateTranslation() {
       this->setState(State::Fault);
     } else {
       // No translation fault.
-      this->_requests.back()->setPaddr(paddrLHS);
-      this->_inst->physEffAddr = this->_requests.back()->getPaddr();
-      this->_inst->memReqFlags = this->_requests.back()->getFlags();
+      this->_reqs.back()->setPaddr(paddrLHS);
+      this->_inst->physEffAddr = this->_reqs.back()->getPaddr();
+      this->_inst->memReqFlags = this->_reqs.back()->getFlags();
       this->setState(State::Request);
     }
     this->_inst->fault = fault;
@@ -98,27 +100,30 @@ template <class Impl> void GemForgeLoadRequest<Impl>::initiateTranslation() {
   }
 }
 
-template <class Impl>
-bool GemForgeLoadRequest<Impl>::recvTimingResp(PacketPtr pkt) {
+void GemForgeLoadRequest::markAsStaleTranslation() {
+  // GemForge do not translate,
+  // so cannot have stale translations
+  _hasStaleTranslation = false;
+}
+
+bool GemForgeLoadRequest::recvTimingResp(PacketPtr pkt) {
   // Never happens.
   panic("Not implemented.");
 }
 
-template <class Impl> void GemForgeLoadRequest<Impl>::buildPackets() {
-  assert(this->_senderState);
+void GemForgeLoadRequest::buildPackets() {
   /* Retries do not create new packets. */
   if (this->_packets.size() == 0) {
-    this->_packets.push_back(this->isLoad()
-                                 ? Packet::createRead(this->request())
-                                 : Packet::createWrite(this->request()));
+    this->_packets.push_back(this->isLoad() ? Packet::createRead(this->req())
+                                            : Packet::createWrite(this->req()));
     this->_packets.back()->dataStatic(this->_inst->memData);
-    this->_packets.back()->senderState = this->_senderState;
+    this->_packets.back()->senderState = this;
   }
   INST_DPRINTF("GFLoadReq: built packets.\n");
   assert(this->_packets.size() == 1);
 }
 
-template <class Impl> void GemForgeLoadRequest<Impl>::sendPacketToCache() {
+void GemForgeLoadRequest::sendPacketToCache() {
   assert(this->_numOutstandingPackets == 0);
   /**
    * We don't really sent the packet, which is GemForge's job.
@@ -127,9 +132,6 @@ template <class Impl> void GemForgeLoadRequest<Impl>::sendPacketToCache() {
   INST_DPRINTF("GFLoadReq: sendPacketToCache.\n");
   assert(!this->squashedInGemForge);
   assert(!this->rawMisspeculated);
-  auto *packet = this->_packets.at(0);
-  auto state = dynamic_cast<LSQSenderState *>(packet->senderState);
-  state->outstanding++;
   this->packetSent();
   this->_numOutstandingPackets = 1;
   /**
@@ -143,19 +145,16 @@ template <class Impl> void GemForgeLoadRequest<Impl>::sendPacketToCache() {
   this->cpuDelegator->schedule(&this->checkValueReadyEvent, Cycles(1));
 }
 
-template <class Impl>
-Cycles GemForgeLoadRequest<Impl>::handleLocalAccess(ThreadContext *thread,
-                                                    PacketPtr pkt) {
+Cycles GemForgeLoadRequest::handleLocalAccess(ThreadContext *thread,
+                                              PacketPtr pkt) {
   return pkt->req->localAccessor(thread, pkt);
 }
 
-template <class Impl>
-bool GemForgeLoadRequest<Impl>::isCacheBlockHit(Addr blockAddr,
-                                                Addr blockMask) {
-  return ((this->_requests[0]->getPaddr() & blockMask) == blockAddr);
+bool GemForgeLoadRequest::isCacheBlockHit(Addr blockAddr, Addr blockMask) {
+  return ((this->_reqs[0]->getPaddr() & blockMask) == blockAddr);
 }
 
-template <class Impl> void GemForgeLoadRequest<Impl>::checkValueReady() {
+void GemForgeLoadRequest::checkValueReady() {
   assert(this->_numOutstandingPackets == 1);
   assert(!this->squashedInGemForge && "CheckValueReady after squashed.");
   assert(!this->rawMisspeculated && "CheckValueReady after RAWMisspeculation.");
@@ -171,9 +170,7 @@ template <class Impl> void GemForgeLoadRequest<Impl>::checkValueReady() {
     return;
   } else {
     auto pkt = this->_packets.front();
-    auto state = dynamic_cast<LSQSenderState *>(pkt->senderState);
     this->flags.set(Flag::Complete);
-    state->outstanding--;
     // Remember to decrease _numOutstandingPackets here, otherwise myself
     // will not be released later.
     this->packetReplied();
@@ -181,8 +178,7 @@ template <class Impl> void GemForgeLoadRequest<Impl>::checkValueReady() {
   }
 }
 
-template <class Impl>
-bool GemForgeLoadRequest<Impl>::hasOverlap(Addr vaddr, int size) const {
+bool GemForgeLoadRequest::hasOverlap(Addr vaddr, int size) const {
   Addr myVAddr;
   uint32_t mySize;
   if (!this->callback->getAddrSize(myVAddr, mySize)) {
@@ -195,7 +191,7 @@ bool GemForgeLoadRequest<Impl>::hasOverlap(Addr vaddr, int size) const {
   return true;
 }
 
-template <class Impl> void GemForgeLoadRequest<Impl>::squashInGemForge() {
+void GemForgeLoadRequest::squashInGemForge() {
   assert(!this->squashedInGemForge && "Already squashed in GemForge.");
   this->squashedInGemForge = true;
   if (this->isAnyOutstandingRequest()) {
@@ -203,14 +199,11 @@ template <class Impl> void GemForgeLoadRequest<Impl>::squashInGemForge() {
     assert(this->checkValueReadyEvent.scheduled());
     this->cpuDelegator->deschedule(&this->checkValueReadyEvent);
     // 2. Fake response so that later we will be released.
-    assert(this->_senderState);
-    this->_senderState->deleteRequest();
-    this->_senderState->outstanding--;
     this->packetReplied();
   }
 }
 
-template <class Impl> void GemForgeLoadRequest<Impl>::foundRAWMisspeculation() {
+void GemForgeLoadRequest::foundRAWMisspeculation() {
   if (this->rawMisspeculated) {
     INST_PANIC("GFLoadReq: Multiple RAWMisspeculation on LSQCallback: %s.\n",
                *this->callback);
@@ -224,9 +217,6 @@ template <class Impl> void GemForgeLoadRequest<Impl>::foundRAWMisspeculation() {
     assert(this->checkValueReadyEvent.scheduled());
     this->cpuDelegator->deschedule(&this->checkValueReadyEvent);
     // 2. Fake response so that later we will be released.
-    assert(this->_senderState);
-    this->_senderState->deleteRequest();
-    this->_senderState->outstanding--;
     this->packetReplied();
   }
 }
@@ -234,5 +224,4 @@ template <class Impl> void GemForgeLoadRequest<Impl>::foundRAWMisspeculation() {
 #undef INST_PANIC
 #undef INST_DPRINTF
 
-// Force instantiate the class.
-template class GemForgeLoadRequest<O3CPUImpl>;
+} // namespace gem5

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 ARM Limited
+ * Copyright (c) 2020-2021 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -53,6 +53,12 @@
 #include "mem/ruby/protocol/RubyRequestType.hh"
 #include "mem/ruby/slicc_interface/RubyAddressBulk.hh"
 
+namespace gem5
+{
+
+namespace ruby
+{
+
 class RubyRequest : public Message
 {
   public:
@@ -63,7 +69,6 @@ class RubyRequest : public Message
     RubyAccessMode m_AccessMode;
     int m_Size;
     PrefetchBit m_Prefetch;
-    uint8_t* data;
     PacketPtr m_pkt;
     ContextID m_contextId;
     WriteMask m_writeMask;
@@ -76,8 +81,11 @@ class RubyRequest : public Message
     uint64_t m_instSeqNum;
     bool m_htmFromTransaction;
     uint64_t m_htmTransactionUid;
+    bool m_isTlbi;
+    // Should be uint64, but SLICC complains about casts
+    Addr m_tlbiTransactionUid;
 
-    RubyRequest(Tick curTime, uint64_t _paddr, uint8_t* _data, int _len,
+    RubyRequest(Tick curTime, uint64_t _paddr, int _len,
         uint64_t _pc, RubyRequestType _type, RubyAccessMode _access_mode,
         PacketPtr _pkt, PrefetchBit _pb = PrefetchBit_No,
         ContextID _proc_id = 100, ContextID _core_id = 99)
@@ -88,16 +96,38 @@ class RubyRequest : public Message
           m_AccessMode(_access_mode),
           m_Size(_len),
           m_Prefetch(_pb),
-          data(_data),
           m_pkt(_pkt),
           m_contextId(_core_id),
           m_htmFromTransaction(false),
-          m_htmTransactionUid(0)
+          m_htmTransactionUid(0),
+          m_isTlbi(false),
+          m_tlbiTransactionUid(0)
     {
         m_LineAddress = makeLineAddress(m_PhysicalAddress);
     }
 
-    RubyRequest(Tick curTime, uint64_t _paddr, uint8_t* _data, int _len,
+    /** RubyRequest for memory management commands */
+    RubyRequest(Tick curTime,
+        uint64_t _pc, RubyRequestType _type, RubyAccessMode _access_mode,
+        PacketPtr _pkt, ContextID _proc_id, ContextID _core_id)
+        : Message(curTime),
+          m_PhysicalAddress(0),
+          m_Type(_type),
+          m_ProgramCounter(_pc),
+          m_AccessMode(_access_mode),
+          m_Size(0),
+          m_Prefetch(PrefetchBit_No),
+          m_pkt(_pkt),
+          m_contextId(_core_id),
+          m_htmFromTransaction(false),
+          m_htmTransactionUid(0),
+          m_isTlbi(false),
+          m_tlbiTransactionUid(0)
+    {
+        assert(m_pkt->req->isMemMgmt());
+    }
+
+    RubyRequest(Tick curTime, uint64_t _paddr, int _len,
         uint64_t _pc, RubyRequestType _type,
         RubyAccessMode _access_mode, PacketPtr _pkt, PrefetchBit _pb,
         unsigned _proc_id, unsigned _core_id,
@@ -111,7 +141,6 @@ class RubyRequest : public Message
           m_AccessMode(_access_mode),
           m_Size(_len),
           m_Prefetch(_pb),
-          data(_data),
           m_pkt(_pkt),
           m_contextId(_core_id),
           m_writeMask(_wm_size,_wm_mask),
@@ -119,12 +148,14 @@ class RubyRequest : public Message
           m_wfid(_proc_id),
           m_instSeqNum(_instSeqNum),
           m_htmFromTransaction(false),
-          m_htmTransactionUid(0)
+          m_htmTransactionUid(0),
+          m_isTlbi(false),
+          m_tlbiTransactionUid(0)
     {
         m_LineAddress = makeLineAddress(m_PhysicalAddress);
     }
 
-    RubyRequest(Tick curTime, uint64_t _paddr, uint8_t* _data, int _len,
+    RubyRequest(Tick curTime, uint64_t _paddr, int _len,
         uint64_t _pc, RubyRequestType _type,
         RubyAccessMode _access_mode, PacketPtr _pkt, PrefetchBit _pb,
         unsigned _proc_id, unsigned _core_id,
@@ -139,7 +170,6 @@ class RubyRequest : public Message
           m_AccessMode(_access_mode),
           m_Size(_len),
           m_Prefetch(_pb),
-          data(_data),
           m_pkt(_pkt),
           m_contextId(_core_id),
           m_writeMask(_wm_size,_wm_mask,_atomicOps),
@@ -147,7 +177,9 @@ class RubyRequest : public Message
           m_wfid(_proc_id),
           m_instSeqNum(_instSeqNum),
           m_htmFromTransaction(false),
-          m_htmTransactionUid(0)
+          m_htmTransactionUid(0),
+          m_isTlbi(false),
+          m_tlbiTransactionUid(0)
     {
         m_LineAddress = makeLineAddress(m_PhysicalAddress);
     }
@@ -163,9 +195,11 @@ class RubyRequest : public Message
     const RubyAccessMode& getAccessMode() const { return m_AccessMode; }
     const int& getSize() const { return m_Size; }
     const PrefetchBit& getPrefetch() const { return m_Prefetch; }
+    RequestPtr getRequestPtr() const { return m_pkt->req; }
 
     void print(std::ostream& out) const;
     bool functionalRead(Packet *pkt);
+    bool functionalRead(Packet *pkt, WriteMask &mask);
     bool functionalWrite(Packet *pkt);
 };
 
@@ -176,5 +210,8 @@ operator<<(std::ostream& out, const RubyRequest& obj)
   out << std::flush;
   return out;
 }
+
+} // namespace ruby
+} // namespace gem5
 
 #endif  //__MEM_RUBY_SLICC_INTERFACE_RUBYREQUEST_HH__

@@ -7,6 +7,8 @@
 #include "accelerator/speculative_precomputation/insts.hh"
 #include "accelerator/stream/insts.hh"
 
+namespace gem5 {
+
 DynamicInstructionStreamDispatcher::DynamicInstructionStreamDispatcher(
     const std::string &_fn, bool _enableADFA)
     : fn(_fn), enableADFA(_enableADFA), input(nullptr), regionTable(nullptr),
@@ -223,4 +225,5 @@ void DynamicInstructionStreamDispatcher::dispatchADFA(Packet *packet) {
   }
   // Otherwise, normally push into the current buffer.
   this->currentBuffer->alloc_back();
-}
+}} // namespace gem5
+

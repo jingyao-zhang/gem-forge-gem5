@@ -37,6 +37,7 @@ class DefaultFUPool(FUPool):
 class LLVMTraceCPU(BaseCPU):
     type = 'LLVMTraceCPU'
     cxx_header = 'cpu/gem_forge/llvm_trace_cpu.hh'
+    cxx_class = 'gem5::LLVMTraceCPU'
 
     traceFile = Param.String('', 'The input llvm trace file.')
 
@@ -108,3 +109,4 @@ class LLVMTraceCPU(BaseCPU):
 class LLVMTraceCPUDriver(EmulatedDriver):
     type = 'LLVMTraceCPUDriver'
     cxx_header = 'cpu/gem_forge/llvm_trace_cpu_driver.hh'
+    cxx_class = 'gem5::LLVMTraceCPUDriver'

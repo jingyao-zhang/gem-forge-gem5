@@ -45,6 +45,7 @@
 
 #include "mem/coherent_xbar.hh"
 
+#include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/AddrRanges.hh"
@@ -66,22 +67,26 @@
                  element->FIFOIdx.entryIdx,                                    \
                  ##args)
 
-CoherentXBar::CoherentXBar(const CoherentXBarParams *p)
-    : BaseXBar(p), system(p->system), snoopFilter(p->snoop_filter),
-      snoopResponseLatency(p->snoop_response_latency),
-      maxOutstandingSnoopCheck(p->max_outstanding_snoops),
-      maxRoutingTableSizeCheck(p->max_routing_table_size),
-      pointOfCoherency(p->point_of_coherency),
-      pointOfUnification(p->point_of_unification),
+namespace gem5
+{
 
-      snoops(this, "snoops", "Total snoops (count)"),
-      snoopTraffic(this, "snoopTraffic", "Total snoop traffic (bytes)"),
-      snoopFanout(this, "snoop_fanout", "Request fanout histogram")
+CoherentXBar::CoherentXBar(const CoherentXBarParams &p)
+    : BaseXBar(p), system(p.system), snoopFilter(p.snoop_filter),
+      snoopResponseLatency(p.snoop_response_latency),
+      maxOutstandingSnoopCheck(p.max_outstanding_snoops),
+      maxRoutingTableSizeCheck(p.max_routing_table_size),
+      pointOfCoherency(p.point_of_coherency),
+      pointOfUnification(p.point_of_unification),
+
+      ADD_STAT(snoops, statistics::units::Count::get(), "Total snoops"),
+      ADD_STAT(snoopTraffic, statistics::units::Byte::get(), "Total snoop traffic"),
+      ADD_STAT(snoopFanout, statistics::units::Count::get(),
+               "Request fanout histogram")
 {
     // create the ports based on the size of the memory-side port and
     // CPU-side port vector ports, and the presence of the default port,
     // the ports are enumerated starting from zero
-    for (int i = 0; i < p->port_mem_side_ports_connection_count; ++i) {
+    for (int i = 0; i < p.port_mem_side_ports_connection_count; ++i) {
         std::string portName = csprintf("%s.mem_side_port[%d]", name(), i);
         RequestPort* bp = new CoherentXBarRequestPort(portName, *this, i);
         memSidePorts.push_back(bp);
@@ -93,7 +98,7 @@ CoherentXBar::CoherentXBar(const CoherentXBarParams *p)
 
     // see if we have a default CPU-side-port device connected and if so add
     // our corresponding memory-side port
-    if (p->port_default_connection_count) {
+    if (p.port_default_connection_count) {
         defaultPortID = memSidePorts.size();
         std::string portName = name() + ".default";
         RequestPort* bp = new CoherentXBarRequestPort(portName, *this,
@@ -107,13 +112,13 @@ CoherentXBar::CoherentXBar(const CoherentXBarParams *p)
     }
 
     // create the CPU-side ports, once again starting at zero
-    for (int i = 0; i < p->port_cpu_side_ports_connection_count; ++i) {
+    for (int i = 0; i < p.port_cpu_side_ports_connection_count; ++i) {
         std::string portName = csprintf("%s.cpu_side_port[%d]", name(), i);
         /**
          * ! Sean: StreamAwareCache.
          */
         QueuedResponsePort *bp;
-        if (p->use_stream_aware_cpu_port) {
+        if (p.use_stream_aware_cpu_port) {
             bp = new StreamAwareCoherentXBarResponsePort(portName, *this, i);
         } else {
             bp = new CoherentXBarResponsePort(portName, *this, i);
@@ -660,7 +665,7 @@ CoherentXBar::recvTimingSnoopResp(PacketPtr pkt, PortID cpu_side_port_id)
                             *memSidePorts[dest_port_id]);
         }
 
-        bool success M5_VAR_USED =
+        [[maybe_unused]] bool success =
             memSidePorts[dest_port_id]->sendTimingSnoopResp(pkt);
         pktCount[cpu_side_port_id][dest_port_id]++;
         pktSize[cpu_side_port_id][dest_port_id] += pkt_size;
@@ -880,7 +885,7 @@ CoherentXBar::recvAtomicBackdoor(PacketPtr pkt, PortID cpu_side_port_id,
         // if this is the destination of the operation, the xbar
         // sends the responce to the cache clean operation only
         // after having encountered the cache clean request
-        auto M5_VAR_USED ret = outstandingCMO.emplace(pkt->id, nullptr);
+        [[maybe_unused]] auto ret = outstandingCMO.emplace(pkt->id, nullptr);
         // in atomic mode we know that the WriteClean packet should
         // precede the clean request
         assert(ret.second);
@@ -1140,12 +1145,6 @@ CoherentXBar::regStats()
     snoopFanout.init(0, snoopPorts.size(), 1);
 }
 
-CoherentXBar *
-CoherentXBarParams::create()
-{
-    return new CoherentXBar(this);
-}
-
 /************************************************************************
  * ! Sean: StreamAwareCache.
  ***********************************************************************/
@@ -1235,3 +1234,4 @@ void CoherentXBar::StreamAwareCoherentXBarResponsePort::process() {
 
     return;
 }
+} // namespace gem5

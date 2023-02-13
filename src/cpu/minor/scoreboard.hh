@@ -44,11 +44,20 @@
 #ifndef __CPU_MINOR_SCOREBOARD_HH__
 #define __CPU_MINOR_SCOREBOARD_HH__
 
+#include <vector>
+
+#include "base/named.hh"
+#include "base/types.hh"
 #include "cpu/minor/cpu.hh"
 #include "cpu/minor/dyn_inst.hh"
 #include "cpu/minor/trace.hh"
+#include "cpu/reg_class.hh"
 
-namespace Minor
+namespace gem5
+{
+
+GEM5_DEPRECATED_NAMESPACE(Minor, minor);
+namespace minor
 {
 
 /** A scoreboard of register dependencies including, for each register:
@@ -57,6 +66,14 @@ namespace Minor
 class Scoreboard : public Named
 {
   public:
+    const BaseISA::RegClasses regClasses;
+
+    const unsigned intRegOffset;
+    const unsigned floatRegOffset;
+    const unsigned ccRegOffset;
+    const unsigned vecRegOffset;
+    const unsigned vecPredRegOffset;
+
     /** The number of registers in the Scoreboard.  These
      *  are just the integer, CC and float registers packed
      *  together with integer regs in the range [0,NumIntRegs-1],
@@ -77,6 +94,7 @@ class Scoreboard : public Named
 
     /** Index of the FU generating this result */
     std::vector<int> fuIndices;
+    static constexpr int invalidFUIndex = -1;
 
     /** The estimated cycle number that the result will be presented.
      *  This can be offset from to allow forwarding to be simulated as
@@ -89,15 +107,20 @@ class Scoreboard : public Named
     std::vector<InstSeqNum> writingInst;
 
   public:
-    Scoreboard(const std::string &name) :
+    Scoreboard(const std::string &name,
+            const BaseISA::RegClasses& reg_classes) :
         Named(name),
-        numRegs(TheISA::NumIntRegs + TheISA::NumCCRegs +
-            TheISA::NumFloatRegs +
-            (TheISA::NumVecRegs * TheISA::NumVecElemPerVecReg) +
-            TheISA::NumVecPredRegs),
+        regClasses(reg_classes),
+        intRegOffset(0),
+        floatRegOffset(intRegOffset + reg_classes.at(IntRegClass)->numRegs()),
+        ccRegOffset(floatRegOffset + reg_classes.at(FloatRegClass)->numRegs()),
+        vecRegOffset(ccRegOffset + reg_classes.at(CCRegClass)->numRegs()),
+        vecPredRegOffset(vecRegOffset +
+                reg_classes.at(VecElemClass)->numRegs()),
+        numRegs(vecPredRegOffset + reg_classes.at(VecPredRegClass)->numRegs()),
         numResults(numRegs, 0),
         numUnpredictableResults(numRegs, 0),
-        fuIndices(numRegs, 0),
+        fuIndices(numRegs, invalidFUIndex),
         returnCycle(numRegs, Cycles(0)),
         writingInst(numRegs, 0)
     { }
@@ -143,6 +166,7 @@ class Scoreboard : public Named
     void minorTrace() const;
 };
 
-}
+} // namespace minor
+} // namespace gem5
 
 #endif /* __CPU_MINOR_SCOREBOARD_HH__ */

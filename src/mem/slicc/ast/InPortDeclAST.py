@@ -1,3 +1,15 @@
+# Copyright (c) 2020 ARM Limited
+# All rights reserved.
+#
+# The license below extends only to copyright in the software and shall
+# not be construed as granting a license to any other intellectual
+# property including but not limited to intellectual property relating
+# to a hardware implementation of the functionality of the software
+# licensed hereunder.  You may use the software subject to the license
+# terms below provided that you ensure that this notice is replicated
+# unmodified and in its entirety in all distributions of the software,
+# modified or unmodified, in source code or in binary form.
+#
 # Copyright (c) 1999-2008 Mark D. Hill and David A. Wood
 # Copyright (c) 2009 The Hewlett-Packard Development Company
 # All rights reserved.
@@ -29,9 +41,10 @@ from slicc.ast.DeclAST import DeclAST
 from slicc.ast.TypeAST import TypeAST
 from slicc.symbols import Func, Type, Var
 
+
 class InPortDeclAST(DeclAST):
     def __init__(self, slicc, ident, msg_type, var_expr, pairs, statements):
-        super(InPortDeclAST, self).__init__(slicc, pairs)
+        super().__init__(slicc, pairs)
 
         self.ident = ident
         self.msg_type = msg_type
@@ -53,14 +66,23 @@ class InPortDeclAST(DeclAST):
         code = self.slicc.codeFormatter()
         queue_type = self.var_expr.generate(code)
         if not queue_type.isInPort:
-            self.error("The inport queue's type must have the 'inport' " + \
-                       "attribute.  Type '%s' does not have this attribute.",
-                       queue_type)
+            self.error(
+                "The inport queue's type must have the 'inport' "
+                + "attribute.  Type '%s' does not have this attribute.",
+                queue_type,
+            )
 
         type = self.queue_type.type
         self.pairs["buffer_expr"] = self.var_expr
-        in_port = Var(self.symtab, self.ident, self.location, type, str(code),
-                      self.pairs, machine)
+        in_port = Var(
+            self.symtab,
+            self.ident,
+            self.location,
+            type,
+            str(code),
+            self.pairs,
+            machine,
+        )
         symtab.newSymbol(in_port)
 
         symtab.pushFrame()
@@ -85,18 +107,36 @@ class InPortDeclAST(DeclAST):
             param_types.append(machine.TBEType)
 
         # Add the trigger method - FIXME, this is a bit dirty
-        pairs = { "external" : "yes" }
+        pairs = {"external": "yes"}
         trigger_func_name = "trigger"
         for param in param_types:
             trigger_func_name += "_" + param.ident
-        func = Func(self.symtab, trigger_func_name, "trigger", self.location,
-                    void_type, param_types, [], "", pairs)
+        func = Func(
+            self.symtab,
+            trigger_func_name,
+            "trigger",
+            self.location,
+            void_type,
+            param_types,
+            [],
+            "",
+            pairs,
+        )
         symtab.newSymbol(func)
 
         # Add the stallPort method - this hacks reschedules the controller
         # for stalled messages that don't trigger events
-        func = Func(self.symtab, "stallPort", "stallPort", self.location,
-                    void_type, [], [], "", pairs)
+        func = Func(
+            self.symtab,
+            "stallPort",
+            "stallPort",
+            self.location,
+            void_type,
+            [],
+            [],
+            "",
+            pairs,
+        )
         symtab.newSymbol(func)
 
         param_types = []
@@ -118,7 +158,7 @@ class InPortDeclAST(DeclAST):
             rcode = self.slicc.codeFormatter()
             rcode.indent()
             rcode.indent()
-            self.statements.generate(rcode, None)
+            self.statements.generate(rcode, None, in_port=in_port)
             in_port["c_code_in_port"] = str(rcode)
 
         symtab.popFrame()

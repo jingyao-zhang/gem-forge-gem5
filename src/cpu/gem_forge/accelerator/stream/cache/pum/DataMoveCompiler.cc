@@ -3,6 +3,8 @@
 #include "base/trace.hh"
 #include "debug/MLCStreamPUM.hh"
 
+namespace gem5 {
+
 DataMoveCompiler::DataMoveCompiler(const PUMHWConfiguration &_llc_config,
                                    const AffinePattern &_tile_pattern)
     : llc_config(_llc_config), tile_pattern(_tile_pattern) {
@@ -1577,3 +1579,5 @@ DataMoveCompiler::filterEmptyCmds(const PUMCommandVecT &commands) const {
   }
   return ret;
 }
+} // namespace gem5
+

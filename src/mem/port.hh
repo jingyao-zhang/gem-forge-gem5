@@ -54,6 +54,9 @@
 #include "mem/protocol/timing.hh"
 #include "sim/port.hh"
 
+namespace gem5
+{
+
 class SimObject;
 
 /** Forward declaration */
@@ -246,7 +249,7 @@ class RequestPort: public Port, public AtomicRequestProtocol,
     }
 };
 
-class M5_DEPRECATED MasterPort : public RequestPort
+class [[deprecated]] MasterPort : public RequestPort
 {
   public:
     MasterPort(const std::string& name, SimObject* _owner,
@@ -450,7 +453,7 @@ class ResponsePort : public Port, public AtomicResponseProtocol,
     }
 };
 
-class M5_DEPRECATED SlavePort : public ResponsePort
+class [[deprecated]] SlavePort : public ResponsePort
 {
   public:
     SlavePort(const std::string& name, SimObject* _owner,
@@ -528,5 +531,7 @@ RequestPort::sendRetryResp()
         reportUnbound();
     }
 }
+
+} // namespace gem5
 
 #endif //__MEM_PORT_HH__

@@ -8,6 +8,8 @@
 #include "mem/cache/cache.hh"
 #include "mem/coherent_xbar.hh"
 
+namespace gem5 {
+
 StreamPlacementManager::StreamPlacementManager(StreamEngine *_se)
     : se(_se), L2Bus(nullptr), L2BusWidth(0) {
 
@@ -29,9 +31,9 @@ StreamPlacementManager::StreamPlacementManager(StreamEngine *_se)
     } else if (so->name() == "system.tol2bus") {
       // L2 bus.
       this->L2Bus = dynamic_cast<CoherentXBar *>(so);
-      const auto *XBarParam =
-          dynamic_cast<const BaseXBarParams *>(so->params());
-      this->L2BusWidth = XBarParam->width;
+      const auto &XBarParam =
+          dynamic_cast<const CoherentXBarParams &>(so->params());
+      this->L2BusWidth = XBarParam.width;
     }
   }
 
@@ -523,3 +525,4 @@ void StreamPlacementManager::dumpStreamCacheStats() {
     cache->dumpStreamStats(o);
   }
 }
+} // namespace gem5

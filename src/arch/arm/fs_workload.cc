@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2012-2013, 2015,2017-2019 ARM Limited
+ * Copyright (c) 2010, 2012-2013, 2015,2017-2020 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -48,38 +48,41 @@
 #include "kern/system_events.hh"
 #include "params/ArmFsWorkload.hh"
 
+namespace gem5
+{
+
 namespace ArmISA
 {
 
 void
 SkipFunc::returnFromFuncIn(ThreadContext *tc)
 {
-    PCState newPC = tc->pcState();
+    PCState new_pc = tc->pcState().as<PCState>();
     if (inAArch64(tc)) {
-        newPC.set(tc->readIntReg(INTREG_X30));
+        new_pc.set(tc->getReg(int_reg::X30));
     } else {
-        newPC.set(tc->readIntReg(ReturnAddressReg) & ~ULL(1));
+        new_pc.set(tc->getReg(ReturnAddressReg) & ~1ULL);
     }
 
     CheckerCPU *checker = tc->getCheckerCpuPtr();
     if (checker) {
-        tc->pcStateNoRecord(newPC);
+        tc->pcStateNoRecord(new_pc);
     } else {
-        tc->pcState(newPC);
+        tc->pcState(new_pc);
     }
 }
 
-FsWorkload::FsWorkload(Params *p) : KernelWorkload(*p)
+FsWorkload::FsWorkload(const Params &p) : KernelWorkload(p)
 {
     if (kernelObj) {
         kernelEntry = (kernelObj->entryPoint() & loadAddrMask()) +
             loadAddrOffset();
     }
 
-    bootLoaders.reserve(p->boot_loader.size());
-    for (const auto &bl : p->boot_loader) {
-        std::unique_ptr<Loader::ObjectFile> bl_obj;
-        bl_obj.reset(Loader::createObjectFile(bl));
+    bootLoaders.reserve(p.boot_loader.size());
+    for (const auto &bl : p.boot_loader) {
+        std::unique_ptr<loader::ObjectFile> bl_obj;
+        bl_obj.reset(loader::createObjectFile(bl));
 
         fatal_if(!bl_obj, "Could not read bootloader: %s", bl);
         bootLoaders.emplace_back(std::move(bl_obj));
@@ -91,7 +94,7 @@ FsWorkload::FsWorkload(Params *p) : KernelWorkload(*p)
              "Can't find a matching boot loader / kernel combination!");
 
     if (bootldr)
-        Loader::debugSymbolTable.insert(*bootldr->symtab().globals());
+        loader::debugSymbolTable.insert(*bootldr->symtab().globals());
 }
 
 void
@@ -117,21 +120,21 @@ FsWorkload::initState()
 
         inform("Using bootloader at address %#x", bootldr->entryPoint());
 
-        // Put the address of the boot loader into r7 so we know
+        // The address of the boot loader so we know
         // where to branch to after the reset fault
         // All other values needed by the boot loader to know what to do
-        fatal_if(!arm_sys->params()->flags_addr,
-                 "flags_addr must be set with bootloader");
+        fatal_if(!params().cpu_release_addr,
+                 "cpu_release_addr must be set with bootloader");
 
-        fatal_if(!arm_sys->params()->gic_cpu_addr && is_gic_v2,
+        fatal_if(!arm_sys->params().gic_cpu_addr && is_gic_v2,
                  "gic_cpu_addr must be set with bootloader");
 
         for (auto *tc: arm_sys->threads) {
-            if (!arm_sys->highestELIs64())
-                tc->setIntReg(3, kernelEntry);
+            tc->setReg(int_reg::R3, kernelEntry);
             if (is_gic_v2)
-                tc->setIntReg(4, arm_sys->params()->gic_cpu_addr);
-            tc->setIntReg(5, arm_sys->params()->flags_addr);
+                tc->setReg(int_reg::R4, arm_sys->params().gic_cpu_addr);
+            if (getArch() == loader::Arm)
+                tc->setReg(int_reg::R5, params().cpu_release_addr);
         }
         inform("Using kernel entry physical address at %#x\n", kernelEntry);
     } else {
@@ -141,8 +144,8 @@ FsWorkload::initState()
     }
 }
 
-    Loader::ObjectFile *
-FsWorkload::getBootLoader(Loader::ObjectFile *const obj)
+loader::ObjectFile *
+FsWorkload::getBootLoader(loader::ObjectFile *const obj)
 {
     if (obj) {
         for (auto &bl : bootLoaders) {
@@ -157,9 +160,4 @@ FsWorkload::getBootLoader(Loader::ObjectFile *const obj)
 }
 
 } // namespace ArmISA
-
-ArmISA::FsWorkload *
-ArmFsWorkloadParams::create()
-{
-    return new ArmISA::FsWorkload(this);
-}
+} // namespace gem5

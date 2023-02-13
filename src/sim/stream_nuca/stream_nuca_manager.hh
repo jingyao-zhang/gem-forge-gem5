@@ -6,9 +6,11 @@
 #include <map>
 #include <vector>
 
+namespace gem5 {
+
 class StreamNUCAManager {
 public:
-  StreamNUCAManager(Process *_process, ProcessParams *_params);
+  StreamNUCAManager(Process *_process, const ProcessParams *_params);
 
   /**
    * We panic on copy. Required for process clone.
@@ -276,8 +278,8 @@ private:
 
 public:
   // There is only one StreamNUCAManager.
-  static std::shared_ptr<StreamNUCAManager> initialize(Process *_process,
-                                                       ProcessParams *_params);
+  static std::shared_ptr<StreamNUCAManager>
+  initialize(Process *_process, const ProcessParams *_params);
 
 private:
   bool statsRegisterd = false;
@@ -299,5 +301,7 @@ private:
   Stats::ScalarNoReset csrReorderEdgeMigrations;
   Stats::ScalarNoReset csrReorderEdgeMigrationHops;
 };
+
+} // namespace gem5
 
 #endif

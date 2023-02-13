@@ -1,5 +1,6 @@
 Import('*')
 
 Source('gem_forge_isa_handler.cc')
+Source('exec_func_context.cc')
 
 DebugFlag('ExecFunc')

@@ -4,6 +4,8 @@
  * TimingSimpleCPUDelegator.
  *************************************************************************/
 
+namespace gem5 {
+
 TimingSimpleCPUDelegator::TimingSimpleCPUDelegator(TimingSimpleCPU *_cpu)
     : SimpleCPUDelegator(CPUTypeE::TIMING_SIMPLE, _cpu) {}
 TimingSimpleCPUDelegator::~TimingSimpleCPUDelegator() = default;
@@ -18,4 +20,6 @@ void TimingSimpleCPUDelegator::sendRequest(PacketPtr pkt) {
          "a GemForge port.");
   auto succeed = cpu->dcachePort->sendTimingReqVirtual(pkt);
   assert(succeed && "GemForgePort should always succeed on sending TimingReq.");
+}
+
 }

@@ -4,6 +4,8 @@
 
 #include "stream_engine.hh"
 
+namespace gem5 {
+
 class StreamRegionController {
 public:
   StreamRegionController(StreamEngine *_se);
@@ -298,5 +300,7 @@ private:
                                DynRegion &dynRegion);
   bool canCommitStreamEndImpl(StaticRegion &staticRegion, DynRegion &dynRegion);
 };
+
+} // namespace gem5
 
 #endif

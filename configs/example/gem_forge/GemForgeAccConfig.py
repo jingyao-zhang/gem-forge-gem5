@@ -1,113 +1,113 @@
 
 from m5.objects import *
 
-def initializeADFA(options):
+def initializeADFA(args):
     adfa = AbstractDataFlowAccelerator()
-    adfa.adfaCoreIssueWidth = options.gem_forge_adfa_core_issue_width
-    adfa.adfaEnableSpeculation = options.gem_forge_adfa_enable_speculation
-    adfa.adfaBreakIVDep = options.gem_forge_adfa_break_iv_dep
-    adfa.adfaBreakRVDep = options.gem_forge_adfa_break_rv_dep
+    adfa.adfaCoreIssueWidth = args.gem_forge_adfa_core_issue_width
+    adfa.adfaEnableSpeculation = args.gem_forge_adfa_enable_speculation
+    adfa.adfaBreakIVDep = args.gem_forge_adfa_break_iv_dep
+    adfa.adfaBreakRVDep = args.gem_forge_adfa_break_rv_dep
     adfa.adfaBreakUnrollableControlDep = \
-        options.gem_forge_adfa_break_unrollable_ctr_dep
-    adfa.adfaNumBanks = options.gem_forge_adfa_num_banks
-    adfa.adfaNumPortsPerBank = options.gem_forge_adfa_num_ports_per_bank
-    adfa.adfaNumCores = options.gem_forge_adfa_num_cores
-    adfa.adfaEnableTLS = (options.gem_forge_adfa_enable_tls == 1)
-    adfa.adfaIdealMem = (options.gem_forge_adfa_ideal_mem == 1)
+        args.gem_forge_adfa_break_unrollable_ctr_dep
+    adfa.adfaNumBanks = args.gem_forge_adfa_num_banks
+    adfa.adfaNumPortsPerBank = args.gem_forge_adfa_num_ports_per_bank
+    adfa.adfaNumCores = args.gem_forge_adfa_num_cores
+    adfa.adfaEnableTLS = (args.gem_forge_adfa_enable_tls == 1)
+    adfa.adfaIdealMem = (args.gem_forge_adfa_ideal_mem == 1)
     return adfa
 
-def initializeIdealPrefetcher(options):
+def initializeIdealPrefetcher(args):
     idealPrefetcher = IdealPrefetcher()
-    idealPrefetcher.enableIdealPrefetcher = options.gem_forge_ideal_prefetcher
-    idealPrefetcher.idealPrefetcherDistance = options.gem_forge_ideal_prefetcher_distance
+    idealPrefetcher.enableIdealPrefetcher = args.gem_forge_ideal_prefetcher
+    idealPrefetcher.idealPrefetcherDistance = args.gem_forge_ideal_prefetcher_distance
     return idealPrefetcher
 
-def initializeStreamEngine(options):
+def initializeStreamEngine(args):
     se = StreamEngine()
     se.streamEngineIsOracle = (
-        options.gem_forge_stream_engine_is_oracle != 0)
+        args.gem_forge_stream_engine_is_oracle != 0)
     se.defaultRunAheadLength = \
-        options.gem_forge_stream_engine_default_run_ahead_length
+        args.gem_forge_stream_engine_default_run_ahead_length
     se.totalRunAheadLength = \
-        options.gem_forge_stream_engine_total_run_ahead_length
+        args.gem_forge_stream_engine_total_run_ahead_length
     se.totalRunAheadBytes = \
-        options.gem_forge_stream_engine_total_run_ahead_bytes
+        args.gem_forge_stream_engine_total_run_ahead_bytes
     se.maxNumElementsPrefetchForAtomic = \
-        options.gem_forge_stream_engine_max_num_elements_prefetch_for_atomic
-    se.throttling = options.gem_forge_stream_engine_throttling
-    se.streamEngineEnableLSQ = options.gem_forge_stream_engine_enable_lsq
+        args.gem_forge_stream_engine_max_num_elements_prefetch_for_atomic
+    se.throttling = args.gem_forge_stream_engine_throttling
+    se.streamEngineEnableLSQ = args.gem_forge_stream_engine_enable_lsq
     se.enableO3ElimStreamEnd = \
-        options.gem_forge_stream_engine_enable_o3_elim_stream_end
-    se.streamEngineForceNoFlushPEB = options.gem_forge_stream_engine_force_no_flush_peb
-    se.streamEngineEnableCoalesce = options.gem_forge_stream_engine_enable_coalesce
-    se.streamEngineEnableMerge = options.gem_forge_stream_engine_enable_merge
+        args.gem_forge_stream_engine_enable_o3_elim_stream_end
+    se.streamEngineForceNoFlushPEB = args.gem_forge_stream_engine_force_no_flush_peb
+    se.streamEngineEnableCoalesce = args.gem_forge_stream_engine_enable_coalesce
+    se.streamEngineEnableMerge = args.gem_forge_stream_engine_enable_merge
     se.elimNestStreamInstances = \
-        options.gem_forge_stream_engine_elim_nest_stream_instances
+        args.gem_forge_stream_engine_elim_nest_stream_instances
     se.elimNestOuterStreamElems = \
-        options.gem_forge_stream_engine_elim_nest_outer_stream_elems
+        args.gem_forge_stream_engine_elim_nest_outer_stream_elems
 
-    se.streamEngineEnableFloat = options.gem_forge_stream_engine_enable_float
-    se.streamEngineFloatPolicy = options.gem_forge_stream_engine_float_policy
-    se.enableFloatHistory = options.gem_forge_stream_engine_enable_float_history
+    se.streamEngineEnableFloat = args.gem_forge_stream_engine_enable_float
+    se.streamEngineFloatPolicy = args.gem_forge_stream_engine_float_policy
+    se.enableFloatHistory = args.gem_forge_stream_engine_enable_float_history
     se.streamEngineEnableFloatIndirect = \
-        options.gem_forge_stream_engine_enable_float_indirect
+        args.gem_forge_stream_engine_enable_float_indirect
     se.streamEngineEnableFloatPseudo = \
-        options.gem_forge_stream_engine_enable_float_pseudo
+        args.gem_forge_stream_engine_enable_float_pseudo
     se.streamEngineEnableFloatCancel = \
-        options.gem_forge_stream_engine_enable_float_cancel
-    if options.gem_forge_stream_engine_enable_float_indirect:
-        assert(options.gem_forge_stream_engine_enable_float)
-    if options.gem_forge_stream_engine_enable_float_pseudo:
-        assert(options.gem_forge_stream_engine_enable_float_indirect)
+        args.gem_forge_stream_engine_enable_float_cancel
+    if args.gem_forge_stream_engine_enable_float_indirect:
+        assert(args.gem_forge_stream_engine_enable_float)
+    if args.gem_forge_stream_engine_enable_float_pseudo:
+        assert(args.gem_forge_stream_engine_enable_float_indirect)
     se.mlc_stream_buffer_init_num_entries = \
-        options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries
+        args.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries
 
     se.streamEngineEnableMidwayFloat = \
-        options.gem_forge_stream_engine_enable_midway_float
+        args.gem_forge_stream_engine_enable_midway_float
     se.streamEngineMidwayFloatElementIdx = \
-        options.gem_forge_stream_engine_midway_float_element_idx
+        args.gem_forge_stream_engine_midway_float_element_idx
 
     se.computeWidth =\
-        options.gem_forge_stream_engine_compute_width
+        args.gem_forge_stream_engine_compute_width
     # So far we reuse the LLC SIMD delay parameter.
     simd_delay =\
-        options.gem_forge_stream_engine_llc_access_core_simd_delay
+        args.gem_forge_stream_engine_llc_access_core_simd_delay
     if simd_delay >= 2:
         # Half the latency for LLC SIMD Delay, as we are closer to core.
         simd_delay = simd_delay // 2
     se.computeSIMDDelay = simd_delay
-    se.hasScalarALU = options.gem_forge_stream_engine_has_scalar_alu
+    se.hasScalarALU = args.gem_forge_stream_engine_has_scalar_alu
     se.computeMaxInflyComputation =\
-        options.gem_forge_stream_engine_llc_max_infly_computation
+        args.gem_forge_stream_engine_llc_max_infly_computation
     se.enableZeroComputeLatency =\
-        options.gem_forge_enable_stream_zero_compute_latency
+        args.gem_forge_enable_stream_zero_compute_latency
     se.enableRangeSync =\
-        options.gem_forge_enable_stream_range_sync
+        args.gem_forge_enable_stream_range_sync
     se.enableFloatIndirectReduction =\
-        options.gem_forge_enable_stream_float_indirect_reduction
+        args.gem_forge_enable_stream_float_indirect_reduction
     se.enableFloatMultiLevelIndirectStoreCompute =\
-        options.gem_forge_enable_stream_float_multi_level_indirect_store_compute
+        args.gem_forge_enable_stream_float_multi_level_indirect_store_compute
     se.enableFineGrainedNearDataComputing =\
-        options.gem_forge_stream_engine_enable_fine_grained_near_data_computing
+        args.gem_forge_stream_engine_enable_fine_grained_near_data_computing
 
     se.enableFloatMem =\
-        options.gem_forge_stream_engine_enable_float_mem
-    se.floatLevelPolicy = options.gem_forge_stream_engine_float_level_policy
+        args.gem_forge_stream_engine_enable_float_mem
+    se.floatLevelPolicy = args.gem_forge_stream_engine_float_level_policy
 
     return se
 
-def initializeEmptyGemForgeAcceleratorManager(options):
+def initializeEmptyGemForgeAcceleratorManager(args):
     has_accelerator = False
-    if options.gem_forge_adfa_enable:
+    if args.gem_forge_adfa_enable:
         has_accelerator = True
-    if options.gem_forge_ideal_prefetcher:
+    if args.gem_forge_ideal_prefetcher:
         has_accelerator = True
-    # accelerators.append(SpeculativePrecomputationManager(options))
-    if options.gem_forge_stream_engine_enable:
+    # accelerators.append(SpeculativePrecomputationManager(args))
+    if args.gem_forge_stream_engine_enable:
         has_accelerator = True
     if has_accelerator:
         return GemForgeAcceleratorManager(accelerators=list())
-    elif options.gem_forge_idea_inorder_cpu:
+    elif args.gem_forge_idea_inorder_cpu:
         # IdeaInorderCPU is implemented in CPU delegator, which is
         # dependent on accelManaguer.
         return GemForgeAcceleratorManager(accelerators=list())
@@ -115,18 +115,18 @@ def initializeEmptyGemForgeAcceleratorManager(options):
         # Disable this in default.
         return NULL
 
-def initializeGemForgeAcceleratorManager(options):
+def initializeGemForgeAcceleratorManager(args):
     accelerators = list()
-    if options.gem_forge_adfa_enable:
-        accelerators.append(initializeADFA(options))
-    if options.gem_forge_ideal_prefetcher:
-        accelerators.append(initializeIdealPrefetcher(options))
-    # accelerators.append(SpeculativePrecomputationManager(options))
-    if options.gem_forge_stream_engine_enable:
-        accelerators.append(initializeStreamEngine(options))
+    if args.gem_forge_adfa_enable:
+        accelerators.append(initializeADFA(args))
+    if args.gem_forge_ideal_prefetcher:
+        accelerators.append(initializeIdealPrefetcher(args))
+    # accelerators.append(SpeculativePrecomputationManager(args))
+    if args.gem_forge_stream_engine_enable:
+        accelerators.append(initializeStreamEngine(args))
     if accelerators:
         return GemForgeAcceleratorManager(accelerators=accelerators)
-    elif options.gem_forge_idea_inorder_cpu:
+    elif args.gem_forge_idea_inorder_cpu:
         # IdeaInorderCPU is implemented in CPU delegator, which is
         # dependent on accelManaguer.
         return GemForgeAcceleratorManager(accelerators=accelerators)

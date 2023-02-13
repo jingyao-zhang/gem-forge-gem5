@@ -28,5 +28,6 @@
 
 Import('*')
 
-if env['TARGET_ISA'] == 'x86':
-    Source('msr.cc')
+Source('float.cc', tags='x86 isa')
+Source('int.cc', tags='x86 isa')
+Source('msr.cc', tags='x86 isa')

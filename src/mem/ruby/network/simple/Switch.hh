@@ -1,4 +1,16 @@
 /*
+ * Copyright (c) 2021 ARM Limited
+ * All rights reserved.
+ *
+ * The license below extends only to copyright in the software and shall
+ * not be construed as granting a license to any other intellectual
+ * property including but not limited to intellectual property relating
+ * to a hardware implementation of the functionality of the software
+ * licensed hereunder.  You may use the software subject to the license
+ * terms below provided that you ensure that this notice is replicated
+ * unmodified and in its entirety in all distributions of the software,
+ * modified or unmodified, in source code or in binary form.
+ *
  * Copyright (c) 2020 Inria
  * Copyright (c) 1999-2008 Mark D. Hill and David A. Wood
  * All rights reserved.
@@ -49,8 +61,15 @@
 #include "mem/ruby/network/BasicRouter.hh"
 #include "mem/ruby/network/simple/PerfectSwitch.hh"
 #include "mem/ruby/network/simple/Throttle.hh"
+#include "mem/ruby/network/simple/routing/BaseRoutingUnit.hh"
 #include "mem/ruby/protocol/MessageSizeType.hh"
 #include "params/Switch.hh"
+
+namespace gem5
+{
+
+namespace ruby
+{
 
 class MessageBuffer;
 class NetDest;
@@ -59,27 +78,38 @@ class SimpleNetwork;
 class Switch : public BasicRouter
 {
   public:
+
+    // Makes sure throttle sends messages to the links after the switch is
+    // done forwarding the messages in the same cycle
+    static constexpr Event::Priority PERFECTSWITCH_EV_PRI = Event::Default_Pri;
+    static constexpr Event::Priority THROTTLE_EV_PRI = Event::Default_Pri + 1;
+
     typedef SwitchParams Params;
-    Switch(const Params *p);
+    Switch(const Params &p);
     ~Switch() = default;
     void init();
 
     void addInPort(const std::vector<MessageBuffer*>& in);
     void addOutPort(const std::vector<MessageBuffer*>& out,
                     const NetDest& routing_table_entry,
-                    Cycles link_latency, int bw_multiplier);
+                    Cycles link_latency, int link_weight, int bw_multiplier,
+                    bool is_external,
+                    PortDirection dst_inport = "");
 
     void resetStats();
     void collateStats();
     void regStats();
-    const Stats::Formula & getMsgCount(unsigned int type) const
-    { return m_msg_counts[type]; }
+    const statistics::Formula & getMsgCount(unsigned int type) const
+    { return *(switchStats.m_msg_counts[type]); }
 
     void print(std::ostream& out) const;
     void init_net_ptr(SimpleNetwork* net_ptr) { m_network_ptr = net_ptr; }
 
     bool functionalRead(Packet *);
+    bool functionalRead(Packet *, WriteMask&);
     uint32_t functionalWrite(Packet *);
+
+    BaseRoutingUnit& getRoutingUnit() { return m_routing_unit; }
 
   private:
     // Private copy constructor and assignment operator
@@ -90,13 +120,25 @@ class Switch : public BasicRouter
     SimpleNetwork* m_network_ptr;
     std::list<Throttle> throttles;
 
+    const Cycles m_int_routing_latency;
+    const Cycles m_ext_routing_latency;
+
+    BaseRoutingUnit &m_routing_unit;
+
     unsigned m_num_connected_buffers;
     std::vector<MessageBuffer*> m_port_buffers;
 
-    // Statistical variables
-    Stats::Formula m_avg_utilization;
-    Stats::Formula m_msg_counts[MessageSizeType_NUM];
-    Stats::Formula m_msg_bytes[MessageSizeType_NUM];
+
+  public:
+    struct SwitchStats : public statistics::Group
+    {
+        SwitchStats(statistics::Group *parent);
+
+        // Statistical variables
+        statistics::Formula m_avg_utilization;
+        statistics::Formula* m_msg_counts[MessageSizeType_NUM];
+        statistics::Formula* m_msg_bytes[MessageSizeType_NUM];
+    } switchStats;
 };
 
 inline std::ostream&
@@ -106,5 +148,8 @@ operator<<(std::ostream& out, const Switch& obj)
     out << std::flush;
     return out;
 }
+
+} // namespace ruby
+} // namespace gem5
 
 #endif // __MEM_RUBY_NETWORK_SIMPLE_SWITCH_HH__

@@ -98,26 +98,30 @@ let {{
 def template FpRegRegOpDeclare {{
 class %(class_name)s : public %(base_class)s
 {
+  private:
+    %(reg_idx_arr_decl)s;
+
   public:
     // Constructor
     %(class_name)s(ExtMachInst machInst,
-                   IntRegIndex _dest, IntRegIndex _op1,
+                   RegIndex _dest, RegIndex _op1,
                    VfpMicroMode mode = VfpNotAMicroop);
-    Fault execute(ExecContext *, Trace::InstRecord *) const override;
+    Fault execute(ExecContext *, trace::InstRecord *) const override;
 };
 }};
 
 def template FpRegRegOpConstructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-                                          IntRegIndex _dest, IntRegIndex _op1,
+                                          RegIndex _dest, RegIndex _op1,
                                           VfpMicroMode mode)
         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
                 _dest, _op1, mode)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
         if (!(condCode == COND_AL || condCode == COND_UC)) {
             for (int x = 0; x < _numDestRegs; x++) {
-                _srcRegIdx[_numSrcRegs++] = _destRegIdx[x];
+                setSrcRegIdx(_numSrcRegs++, destRegIdx(x));
             }
         }
     }
@@ -126,24 +130,28 @@ def template FpRegRegOpConstructor {{
 def template FpRegImmOpDeclare {{
 class %(class_name)s : public %(base_class)s
 {
+  private:
+    %(reg_idx_arr_decl)s;
+
   public:
     // Constructor
-    %(class_name)s(ExtMachInst machInst, IntRegIndex _dest,
+    %(class_name)s(ExtMachInst machInst, RegIndex _dest,
             uint64_t _imm, VfpMicroMode mode = VfpNotAMicroop);
-    Fault execute(ExecContext *, Trace::InstRecord *) const override;
+    Fault execute(ExecContext *, trace::InstRecord *) const override;
 };
 }};
 
 def template FpRegImmOpConstructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-            IntRegIndex _dest, uint64_t _imm, VfpMicroMode mode)
+            RegIndex _dest, uint64_t _imm, VfpMicroMode mode)
         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
                 _dest, _imm, mode)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
         if (!(condCode == COND_AL || condCode == COND_UC)) {
             for (int x = 0; x < _numDestRegs; x++) {
-                _srcRegIdx[_numSrcRegs++] = _destRegIdx[x];
+                setSrcRegIdx(_numSrcRegs++, destRegIdx(x));
             }
         }
     }
@@ -152,28 +160,32 @@ def template FpRegImmOpConstructor {{
 def template FpRegRegImmOpDeclare {{
 class %(class_name)s : public %(base_class)s
 {
+  private:
+    %(reg_idx_arr_decl)s;
+
   public:
     // Constructor
     %(class_name)s(ExtMachInst machInst,
-                   IntRegIndex _dest, IntRegIndex _op1,
+                   RegIndex _dest, RegIndex _op1,
                    uint64_t _imm, VfpMicroMode mode = VfpNotAMicroop);
-    Fault execute(ExecContext *, Trace::InstRecord *) const override;
+    Fault execute(ExecContext *, trace::InstRecord *) const override;
 };
 }};
 
 def template FpRegRegImmOpConstructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-                                          IntRegIndex _dest,
-                                          IntRegIndex _op1,
+                                          RegIndex _dest,
+                                          RegIndex _op1,
                                           uint64_t _imm,
                                           VfpMicroMode mode)
         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
                          _dest, _op1, _imm, mode)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
         if (!(condCode == COND_AL || condCode == COND_UC)) {
             for (int x = 0; x < _numDestRegs; x++) {
-                _srcRegIdx[_numSrcRegs++] = _destRegIdx[x];
+                setSrcRegIdx(_numSrcRegs++, destRegIdx(x));
             }
         }
     }
@@ -182,28 +194,32 @@ def template FpRegRegImmOpConstructor {{
 def template FpRegRegRegOpDeclare {{
 class %(class_name)s : public %(base_class)s
 {
+  private:
+    %(reg_idx_arr_decl)s;
+
   public:
     // Constructor
     %(class_name)s(ExtMachInst machInst,
-                   IntRegIndex _dest, IntRegIndex _op1, IntRegIndex _op2,
+                   RegIndex _dest, RegIndex _op1, RegIndex _op2,
                    VfpMicroMode mode = VfpNotAMicroop);
-    Fault execute(ExecContext *, Trace::InstRecord *) const override;
+    Fault execute(ExecContext *, trace::InstRecord *) const override;
 };
 }};
 
 def template FpRegRegRegOpConstructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-                                          IntRegIndex _dest,
-                                          IntRegIndex _op1,
-                                          IntRegIndex _op2,
+                                          RegIndex _dest,
+                                          RegIndex _op1,
+                                          RegIndex _op2,
                                           VfpMicroMode mode)
         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
                          _dest, _op1, _op2, mode)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
         if (!(condCode == COND_AL || condCode == COND_UC)) {
             for (int x = 0; x < _numDestRegs; x++) {
-                _srcRegIdx[_numSrcRegs++] = _destRegIdx[x];
+                setSrcRegIdx(_numSrcRegs++, destRegIdx(x));
             }
         }
     }
@@ -212,26 +228,30 @@ def template FpRegRegRegOpConstructor {{
 def template FpRegRegRegCondOpDeclare {{
 class %(class_name)s : public %(base_class)s
 {
+  private:
+    %(reg_idx_arr_decl)s;
+
   public:
     // Constructor
     %(class_name)s(ExtMachInst machInst,
-                   IntRegIndex _dest, IntRegIndex _op1, IntRegIndex _op2,
+                   RegIndex _dest, RegIndex _op1, RegIndex _op2,
                   ConditionCode _cond,
                    VfpMicroMode mode = VfpNotAMicroop);
-    Fault execute(ExecContext *, Trace::InstRecord *) const override;
+    Fault execute(ExecContext *, trace::InstRecord *) const override;
 };
 }};
 
 def template FpRegRegRegCondOpConstructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
-                                          IntRegIndex _dest,
-                                          IntRegIndex _op1,
-                                          IntRegIndex _op2,
+                                          RegIndex _dest,
+                                          RegIndex _op1,
+                                          RegIndex _op2,
                                           ConditionCode _cond,
                                           VfpMicroMode mode)
         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
                          _dest, _op1, _op2, _cond, mode)
     {
+        %(set_reg_idx_arr)s;
         %(constructor)s;
     }
 }};

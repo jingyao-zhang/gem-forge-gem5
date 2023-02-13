@@ -12,6 +12,8 @@
 
 #include <memory>
 
+namespace gem5 {
+
 class Stream;
 
 struct CacheStreamConfigureData;
@@ -403,4 +405,6 @@ public:
    */
   bool disableMigration = false;
 };
+} // namespace gem5
+
 #endif

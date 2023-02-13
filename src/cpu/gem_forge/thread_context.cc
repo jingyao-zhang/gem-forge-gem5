@@ -1,5 +1,7 @@
 #include "thread_context.hh"
 
+namespace gem5 {
+
 LLVMTraceThreadContext::LLVMTraceThreadContext(
     ContextID _contextId, const std::string &_traceFileName, bool _isIdeal,
     bool _enableADFA)
@@ -51,4 +53,5 @@ void LLVMTraceThreadContext::activate(LLVMTraceCPU *cpu, ThreadID threadId) {
 void LLVMTraceThreadContext::deactivate() {
   this->cpu = nullptr;
   this->threadId = InvalidThreadID;
-}
+}} // namespace gem5
+

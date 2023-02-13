@@ -3,11 +3,13 @@
 #include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
 #include "debug/IdealPrefetcher.hh"
 
-IdealPrefetcher::IdealPrefetcher(Params *params)
+namespace gem5 {
+
+IdealPrefetcher::IdealPrefetcher(const Params &params)
     : GemForgeAccelerator(params), prefetchedIdx(0), enabled(false),
       prefetchDistance(0) {
-  this->enabled = params->enableIdealPrefetcher;
-  this->prefetchDistance = params->idealPrefetcherDistance;
+  this->enabled = params.enableIdealPrefetcher;
+  this->prefetchDistance = params.idealPrefetcherDistance;
 }
 
 void IdealPrefetcher::handshake(GemForgeCPUDelegator *_cpuDelegator,
@@ -90,6 +92,5 @@ void IdealPrefetcher::tick() {
   }
 }
 
-IdealPrefetcher *IdealPrefetcherParams::create() {
-  return new IdealPrefetcher(this);
-}
+} // namespace gem5
+

@@ -5,10 +5,12 @@
 #include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
 #include "debug/AbstractDataFlowAccelerator.hh"
 
+namespace gem5 {
+
 AbstractDataFlowCore::AbstractDataFlowCore(
     const std::string &_id, LLVMTraceCPU *_cpu,
     GemForgeCPUDelegator *_cpuDelegator,
-    AbstractDataFlowAcceleratorParams *params)
+    const AbstractDataFlowAcceleratorParams *params)
     : id(_id), cpu(_cpu), cpuDelegator(_cpuDelegator), busy(false),
       dataFlow(nullptr), issueWidth(16), fetchQueueSize(64), robSize(512) {
   this->issueWidth = params->adfaCoreIssueWidth;
@@ -439,11 +441,10 @@ void AbstractDataFlowCore::release() {
   this->numCommittedDist.sample(committed);
 }
 
-AbstractDataFlowAccelerator::AbstractDataFlowAccelerator(Params *_params)
-    : GemForgeAccelerator(_params), params(_params), handling(NONE),
-      dataFlow(nullptr) {
-  this->numCores = this->params->adfaNumCores;
-  this->enableTLS = this->params->adfaEnableTLS;
+AbstractDataFlowAccelerator::AbstractDataFlowAccelerator(const Params &_params)
+    : GemForgeAccelerator(_params), handling(NONE), dataFlow(nullptr) {
+  this->numCores = _params.adfaNumCores;
+  this->enableTLS = _params.adfaEnableTLS;
 }
 AbstractDataFlowAccelerator::~AbstractDataFlowAccelerator() {
   if (this->dataFlow != nullptr) {
@@ -478,7 +479,7 @@ void AbstractDataFlowAccelerator::handshake(
   for (int i = 0; i < this->numCores; ++i) {
     auto id = this->manager->name() + ".adfa.core" + std::to_string(i);
     this->cores.push_back(
-        new AbstractDataFlowCore(id, _cpu, _cpuDelegator, this->params));
+        new AbstractDataFlowCore(id, _cpu, _cpuDelegator, &this->params()));
   }
 }
 
@@ -773,6 +774,4 @@ bool AbstractDataFlowAccelerator::hasTLSDependence(
   return false;
 }
 
-AbstractDataFlowAccelerator *AbstractDataFlowAcceleratorParams::create() {
-  return new AbstractDataFlowAccelerator(this);
-}
+} // namespace gem5

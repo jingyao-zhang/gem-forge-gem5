@@ -2,6 +2,7 @@
 #define __CPU_O3_GEM_FORGE_LOAD_REQUEST_HH__
 
 #include "lsq.hh"
+#include "dyn_inst.hh"
 
 #include "cpu/gem_forge/gem_forge_lsq_callback.hh"
 
@@ -10,25 +11,27 @@
  * Used to implement special GemForgeLoadRequest.
  * ! This is abused to implement GemForgeAtomic.
  */
-template <class Impl> class GemForgeLoadRequest : public LSQ<Impl>::LSQRequest {
+
+namespace gem5 {
+
+class GemForgeLoadRequest : public o3::LSQ::LSQRequest {
 public:
   /**
    * We have to explicit declare these names in template parent class.
    */
-  using Flag = typename LSQ<Impl>::LSQRequest::Flag;
-  using State = typename LSQ<Impl>::LSQRequest::State;
-  using DynInstPtr = typename LSQ<Impl>::DynInstPtr;
-  using LSQUnit = typename LSQ<Impl>::LSQUnit;
-  using LSQSenderState = typename LSQ<Impl>::LSQSenderState;
-  using O3CPUDelegator = typename Impl::CPUPol::O3CPUDelegator;
+  using Flag = o3::LSQ::LSQRequest::Flag;
+  using State = o3::LSQ::LSQRequest::State;
+  using DynInstPtr = o3::DynInstPtr;
+  using LSQUnit = o3::LSQUnit;
+  using LSQSenderState = o3::LSQ::LSQRequest;
 
   GemForgeLoadRequest(LSQUnit *port, const DynInstPtr &inst,
                       O3CPUDelegator *_cpuDelegator,
                       GemForgeLSQCallbackPtr _callback)
-      : LSQ<Impl>::LSQRequest(port, inst, inst->isLoad() /* isLoad */,
-                              _callback->getAddr(), _callback->getSize(),
-                              inst->isAtomic() ? Request::ATOMIC_RETURN_OP
-                                               : Request::Flags(0) /* Flags */),
+      : o3::LSQ::LSQRequest(port, inst, inst->isLoad() /* isLoad */,
+                            _callback->getAddr(), _callback->getSize(),
+                            inst->isAtomic() ? Request::ATOMIC_RETURN_OP
+                                             : Request::Flags(0) /* Flags */),
         cpuDelegator(_cpuDelegator), callback(std::move(_callback)),
         checkValueReadyEvent([this]() -> void { this->checkValueReady(); },
                              port->name()) {}
@@ -37,9 +40,10 @@ public:
   bool isGemForgeLoadRequest() const override { return true; }
   void initiateTranslation() override;
   void finish(const Fault &fault, const RequestPtr &req, ThreadContext *tc,
-              BaseTLB::Mode mode) override {
+              BaseMMU::Mode mode) override {
     panic("GemForgeLoadRequest::finish should never be called.");
   }
+  void markAsStaleTranslation() override;
   void release(Flag reason) override;
   bool recvTimingResp(PacketPtr pkt) override;
   void sendPacketToCache() override;
@@ -85,4 +89,5 @@ protected:
    */
   bool rawMisspeculated = false;
 };
+} // namespace gem5
 #endif

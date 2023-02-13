@@ -16,6 +16,8 @@
 #define SE_PANIC(format, args...)                                              \
   panic("[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 
+namespace gem5 {
+
 void StreamRegionController::initializeNestStreams(
     const ::LLVM::TDG::StreamRegion &region, StaticRegion &staticRegion) {
 
@@ -349,3 +351,5 @@ InstSeqNum StreamRegionController::DynRegion::DynNestConfig::getConfigSeqNum(
 
   return ret;
 }
+} // namespace gem5
+

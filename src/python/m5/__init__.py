@@ -24,9 +24,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from __future__ import print_function
-from __future__ import absolute_import
-
 # Import useful subpackages of M5, but *only* when run as an m5
 # script.  This is mostly to keep backward compatibility with existing
 # scripts while allowing new SCons code to operate properly.
@@ -49,7 +46,8 @@ if in_gem5:
     from . import objects
     from . import params
     from . import stats
-    if defines.buildEnv['USE_SYSTEMC']:
+
+    if defines.buildEnv["USE_SYSTEMC"]:
         from . import systemc
         from . import tlm
     from . import util
@@ -57,4 +55,3 @@ if in_gem5:
     from .event import *
     from .main import main
     from .simulate import *
-

@@ -1,5 +1,6 @@
 #include "isa_stream_engine.hh"
 
+#include "arch/x86/insts/static_inst.hh"
 #include "cpu/base.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
@@ -20,6 +21,8 @@
   ISA_SE_DPRINTF("%llu %s " format, dynInfo.seqNum, dynInfo.pc, ##args)
 #define DYN_INST_PANIC(format, args...)                                        \
   ISA_SE_PANIC("%llu %s " format, dynInfo.seqNum, dynInfo.pc, ##args)
+
+namespace gem5 {
 
 constexpr uint64_t ISAStreamEngine::InvalidStreamId;
 constexpr int ISAStreamEngine::DynStreamUserInstInfo::MaxUsedStreams;
@@ -261,14 +264,7 @@ void ISAStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
 
   auto &inputValue = inputVec.at(inputInfo.inputIdx);
   for (int srcIdx = 0; srcIdx < dynInfo.staticInst->numSrcRegs(); ++srcIdx) {
-    const auto &regId = dynInfo.staticInst->srcRegIdx(srcIdx);
-    RegVal regValue = 0;
-    if (regId.isIntReg()) {
-      regValue = xc.readIntRegOperand(dynInfo.staticInst, srcIdx);
-    } else {
-      assert(regId.isFloatReg());
-      regValue = xc.readFloatRegOperandBits(dynInfo.staticInst, srcIdx);
-    }
+    RegVal regValue = xc.getRegOperand(dynInfo.staticInst, srcIdx);
     DYN_INST_DPRINTF("Record input StreamId %llu #%d-%d Val %llu.\n",
                      inputInfo.translatedStreamId, inputInfo.inputIdx, srcIdx,
                      regValue);
@@ -348,7 +344,7 @@ bool ISAStreamEngine::canDispatchStreamReady(
     return true;
   }
   const auto &infoRelativePath = this->curStreamRegionInfo->infoRelativePath;
-  ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath);
+  StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath);
   auto se = this->getStreamEngine();
   if (se->canStreamConfig(args)) {
     DYN_INST_DPRINTF("[canDispatch] StreamReady %s.\n", infoRelativePath);
@@ -378,8 +374,8 @@ void ISAStreamEngine::dispatchStreamReady(
   }
 
   const auto &infoRelativePath = this->curStreamRegionInfo->infoRelativePath;
-  ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath,
-                                        nullptr /* InputVec */, dynInfo.tc);
+  StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath,
+                                      nullptr /* InputVec */, dynInfo.tc);
   auto se = this->getStreamEngine();
   se->dispatchStreamConfig(args);
 
@@ -432,7 +428,7 @@ void ISAStreamEngine::commitStreamReady(const GemForgeDynInstInfo &dynInfo) {
   auto &configInfo = instInfo.configInfo;
   auto infoRelativePath = configInfo.dynStreamRegionInfo->infoRelativePath;
 
-  ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath);
+  StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath);
   auto se = this->getStreamEngine();
   se->commitStreamConfig(args);
   DYN_INST_DPRINTF("[commit] StreamReady %s.\n", infoRelativePath);
@@ -463,9 +459,9 @@ void ISAStreamEngine::rewindStreamReady(const GemForgeDynInstInfo &dynInfo) {
   if (instInfo.executed) {
     regionInfo->numExecutedInsts--;
   }
-  ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum,
-                                        regionInfo->infoRelativePath,
-                                        nullptr /* InputVec */, dynInfo.tc);
+  StreamEngine::StreamConfigArgs args(dynInfo.seqNum,
+                                      regionInfo->infoRelativePath,
+                                      nullptr /* InputVec */, dynInfo.tc);
   auto se = this->getStreamEngine();
   se->rewindStreamConfig(args);
 
@@ -508,7 +504,7 @@ bool ISAStreamEngine::canDispatchStreamEnd(const GemForgeDynInstInfo &dynInfo) {
     return false;
   }
 
-  ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
+  StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
   auto se = this->getStreamEngine();
   if (se->canDispatchStreamEnd(args)) {
     DYN_INST_DPRINTF("[CanDispatch] StreamEnd %llu, %s..\n", configIdx,
@@ -535,7 +531,7 @@ void ISAStreamEngine::dispatchStreamEnd(
 
   assert(this->canRemoveRegionStreamIds(info) &&
          "Cannot remove RegionStreamIds for StreamEnd.");
-  ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
+  StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
   auto se = this->getStreamEngine();
   assert(se->canDispatchStreamEnd(args) && "CanNot Dispatch StreamEnd.");
   /**
@@ -559,7 +555,7 @@ bool ISAStreamEngine::canExecuteStreamEnd(const GemForgeDynInstInfo &dynInfo) {
                    infoRelativePath);
 
   auto se = this->getStreamEngine();
-  ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
+  StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
   return se->canExecuteStreamEnd(args);
 }
 
@@ -579,7 +575,7 @@ bool ISAStreamEngine::canCommitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
   const auto &infoRelativePath = this->getRelativePath(configIdx);
 
   auto se = this->getStreamEngine();
-  ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
+  StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
   auto canCommit = se->canCommitStreamEnd(args);
   DYN_INST_DPRINTF("[canCommit] StreamEnd %llu, %s, CanCommit? %d.\n",
                    configIdx, infoRelativePath, canCommit);
@@ -601,7 +597,7 @@ void ISAStreamEngine::commitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
                    infoRelativePath);
 
   auto se = this->getStreamEngine();
-  ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
+  StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
   se->commitStreamEnd(args);
 
   // Release the info.
@@ -624,7 +620,7 @@ void ISAStreamEngine::rewindStreamEnd(const GemForgeDynInstInfo &dynInfo) {
     }
 
     auto se = this->getStreamEngine();
-    ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
+    StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
     se->rewindStreamEnd(args);
   }
 
@@ -802,7 +798,7 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
   };
   StreamEngine::StreamUserArgs::ValueVec values;
   values.reserve(usedStreamIds.size());
-  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.instAddr(),
                                     usedStreamIds, false, &values);
   auto se = this->getStreamEngine();
   se->executeStreamUser(args);
@@ -810,7 +806,7 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
                    userInfo.translatedUsedStreamIds.at(0),
                    dynInfo.staticInst->numDestRegs());
   if (dynInfo.staticInst->numDestRegs() == 0) {
-    panic("No DestRegs for StreamLoad at PC %#x.\n", dynInfo.pc.pc());
+    panic("No DestRegs for StreamLoad at PC %#x.\n", dynInfo.pc.instAddr());
   }
 
   /**
@@ -827,11 +823,7 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
     DYN_INST_DPRINTF("[%llu] Got value %llu, reg %d %s.\n",
                      userInfo.translatedUsedStreamIds.at(0), loadedValue,
                      destIdx, dynInfo.staticInst->destRegIdx(destIdx));
-    if (dynInfo.staticInst->isFloating()) {
-      xc.setFloatRegOperandBits(dynInfo.staticInst, destIdx, loadedValue);
-    } else {
-      xc.setIntRegOperand(dynInfo.staticInst, destIdx, loadedValue);
-    }
+    xc.setRegOperand(dynInfo.staticInst, destIdx, loadedValue);
   }
   instInfo.executed = true;
 }
@@ -924,7 +916,7 @@ bool ISAStreamEngine::canDispatchStreamUser(const GemForgeDynInstInfo &dynInfo,
     std::vector<uint64_t> usedStreamIds{
         usedStreamId,
     };
-    StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+    StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.instAddr(),
                                       usedStreamIds, isStore);
     auto se = this->getStreamEngine();
     // It's possible that we don't have element if we have reached the limit.
@@ -966,7 +958,7 @@ void ISAStreamEngine::dispatchStreamUser(
   std::vector<uint64_t> usedStreamIds{
       userInfo.translatedUsedStreamIds.at(0),
   };
-  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.instAddr(),
                                     usedStreamIds, isStore);
   auto se = this->getStreamEngine();
   // It's possible that this is misspeculated and we don't have element.
@@ -1002,7 +994,7 @@ bool ISAStreamEngine::canExecuteStreamUser(const GemForgeDynInstInfo &dynInfo,
   std::vector<uint64_t> usedStreamIds{
       userInfo.translatedUsedStreamIds.at(0),
   };
-  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.instAddr(),
                                     usedStreamIds, isStore);
   auto se = this->getStreamEngine();
   bool canExecute = se->areUsedStreamsReady(args);
@@ -1033,7 +1025,7 @@ void ISAStreamEngine::commitStreamUser(const GemForgeDynInstInfo &dynInfo,
   std::vector<uint64_t> usedStreamIds{
       userInfo.translatedUsedStreamIds.at(0),
   };
-  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.instAddr(),
                                     usedStreamIds, isStore);
   auto se = this->getStreamEngine();
   se->commitStreamUser(args);
@@ -1053,7 +1045,7 @@ void ISAStreamEngine::rewindStreamUser(const GemForgeDynInstInfo &dynInfo,
     std::vector<uint64_t> usedStreamIds{
         userInfo.translatedUsedStreamIds.at(0),
     };
-    StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+    StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.instAddr(),
                                       usedStreamIds, isStore);
     auto se = this->getStreamEngine();
     se->rewindStreamUser(args);
@@ -1076,7 +1068,7 @@ void ISAStreamEngine::storeTo(InstSeqNum seqNum, Addr vaddr, int size) {
  * StreamEngine Helpers.
  *******************************************************************************/
 
-::StreamEngine *ISAStreamEngine::getStreamEngine() {
+StreamEngine *ISAStreamEngine::getStreamEngine() {
   if (!this->SEMemorized) {
     this->SE =
         this->cpuDelegator->baseCPU->getAccelManager()->getStreamEngine();
@@ -1092,8 +1084,8 @@ T ISAStreamEngine::extractImm(const StaticInst *staticInst) const {
   assert(immOp && "Invalid ImmOp.");
   return immOp->getImm();
 #elif THE_ISA == X86_ISA
-  auto machineInst = staticInst->machInst;
-  return machineInst.immediate;
+  auto *xsi = static_cast<const X86ISA::X86StaticInst *>(staticInst);
+  return xsi->machInst.immediate;
 #else
   panic("ISA stream engine is not supported.");
 #endif
@@ -1331,9 +1323,9 @@ void ISAStreamEngine::increamentStreamRegionInfoNumExecutedInsts(
           dynStreamRegionInfo.numDispatchedInsts) {
     // We can notify the StreamEngine that StreamConfig can be executed,
     // including the InputMap.
-    ::StreamEngine::StreamConfigArgs args(dynStreamRegionInfo.streamReadySeqNum,
-                                          dynStreamRegionInfo.infoRelativePath,
-                                          &dynStreamRegionInfo.inputMap);
+    StreamEngine::StreamConfigArgs args(dynStreamRegionInfo.streamReadySeqNum,
+                                        dynStreamRegionInfo.infoRelativePath,
+                                        &dynStreamRegionInfo.inputMap);
     auto se = this->getStreamEngine();
     se->executeStreamConfig(args);
   }
@@ -1343,7 +1335,7 @@ const std::string &ISAStreamEngine::getRelativePath(int configIdx) const {
   if (!this->allStreamRegions) {
     auto path = cpuDelegator->getTraceExtraFolder() + "/all.stream.data";
     ProtoInputStream istream(path);
-    this->allStreamRegions = m5::make_unique<::LLVM::TDG::AllStreamRegions>();
+    this->allStreamRegions = std::make_unique<::LLVM::TDG::AllStreamRegions>();
     if (!istream.read(*this->allStreamRegions)) {
       panic("Failed to read in the AllStreamRegions from file %s.", path);
     }
@@ -1394,3 +1386,4 @@ void ISAStreamEngine::reset() {
   this->seqNumToDynInfoMap.clear();
   this->curStreamRegionInfo = nullptr;
 }
+} // namespace gem5

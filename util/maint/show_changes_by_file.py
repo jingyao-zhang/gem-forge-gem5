@@ -1,9 +1,7 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 #
 # Copyright (c) 2018 Advanced Micro Devices, Inc.
 # All rights reserved.
-#
-# For use for simulation and test purposes only
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -37,10 +35,12 @@
 import subprocess
 from collections import OrderedDict, defaultdict
 
+
 class OrderedDefaultDict(OrderedDict, defaultdict):
     def __init__(self, default_factory=None, *args, **kwargs):
         super(OrderedDefaultDict, self).__init__(*args, **kwargs)
         self.default_factory = default_factory
+
 
 def diff_files(upstream, feature, paths=[]):
     """Given two git branches and an optional parameter 'path', determine
@@ -50,12 +50,12 @@ def diff_files(upstream, feature, paths=[]):
     Returns: Dictionary of directories with their corresponding files
     """
 
-    raw =  subprocess.check_output(
-        [ "git", "diff", "--name-status", "%s..%s" % (upstream, feature),
-        "--" ] + paths
+    raw = subprocess.check_output(
+        ["git", "diff", "--name-status", "%s..%s" % (upstream, feature), "--"]
+        + paths
     )
 
-    path = [line.split('\t')[1] for line in raw.splitlines()]
+    path = [line.split("\t")[1] for line in raw.splitlines()]
 
     odd = OrderedDefaultDict(list)
     for p in path:
@@ -64,6 +64,7 @@ def diff_files(upstream, feature, paths=[]):
         odd[direc].append("%s" % filename)
 
     return odd
+
 
 def cl_hash(upstream, feature, path):
     """Given two git branches and full path, record the identifier hash
@@ -75,40 +76,56 @@ def cl_hash(upstream, feature, path):
     """
 
     raw = subprocess.check_output(
-        [ "git", "log", "--oneline", "%s..%s" % (upstream, feature),
-        "--", path ]
+        ["git", "log", "--oneline", "%s..%s" % (upstream, feature), "--", path]
     )
 
     return [l.split()[0] for l in raw.splitlines()]
 
+
 def _main():
     import argparse
-    parser = argparse.ArgumentParser(
-        description="List all changes between an upstream branch and a " \
-                    "feature branch by filename(s) and changeset hash(es).")
 
-    parser.add_argument("--upstream", "-u", type=str, default="origin/master",
-                        help="Upstream branch for comparison. " \
-                        "Default: %(default)s")
-    parser.add_argument("--feature", "-f", type=str, default="HEAD",
-                        help="Feature branch for comparison. " \
-                        "Default: %(default)s")
-    parser.add_argument("paths", metavar="PATH", type=str, nargs="*",
-                        help="Paths to list changes for")
+    parser = argparse.ArgumentParser(
+        description="List all changes between an upstream branch and a "
+        "feature branch by filename(s) and changeset hash(es)."
+    )
+
+    parser.add_argument(
+        "--upstream",
+        "-u",
+        type=str,
+        default="origin/master",
+        help="Upstream branch for comparison. " "Default: %(default)s",
+    )
+    parser.add_argument(
+        "--feature",
+        "-f",
+        type=str,
+        default="HEAD",
+        help="Feature branch for comparison. " "Default: %(default)s",
+    )
+    parser.add_argument(
+        "paths",
+        metavar="PATH",
+        type=str,
+        nargs="*",
+        help="Paths to list changes for",
+    )
 
     args = parser.parse_args()
 
     odd = diff_files(args.upstream, args.feature, paths=args.paths)
 
-    for key, value in odd.iteritems():
-        print key
+    for key, value in odd.items():
+        print(key)
         for entry in value:
-            print "    %s" % entry
+            print("    %s" % entry)
             path = key + entry
             sha = cl_hash(args.upstream, args.feature, path)
             for s in sha:
-                print "\t%s" % s
-        print
+                print("\t%s" % s)
+        print()
+
 
 if __name__ == "__main__":
     _main()

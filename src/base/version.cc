@@ -26,7 +26,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+namespace gem5
+{
+
 /**
  * @ingroup api_base_utils
  */
-const char *gem5Version = "20.1.0.2";
+const char *gem5Version = "22.1.0.0";
+
+} // namespace gem5

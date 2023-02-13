@@ -6,7 +6,8 @@
  * Implementation of the GemForgeDcachePort in the LSQ.
  ********************************************************************/
 
-namespace Minor {
+namespace gem5 {
+namespace minor {
 
 bool LSQ::GemForgeDcachePort::recvTimingResp(PacketPtr pkt) {
   // Intercept the GemForgePackets.
@@ -19,4 +20,5 @@ bool LSQ::GemForgeDcachePort::recvTimingResp(PacketPtr pkt) {
   return DcachePort::recvTimingResp(pkt);
 }
 
-} // namespace Minor
+} // namespace minor
+} // namespace gem5

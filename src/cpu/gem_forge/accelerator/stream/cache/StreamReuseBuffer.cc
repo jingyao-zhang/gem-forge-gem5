@@ -4,9 +4,11 @@
 #define DEBUG_TYPE RemoteStreamReuse
 #include "../stream_log.hh"
 
+namespace gem5 {
+
 ReuseBuffer::ReuseBuffer(int _maxNumLines) : maxNumLines(_maxNumLines) {}
 
-void ReuseBuffer::addLine(Addr paddrLine, const DataBlock &dataBlock) {
+void ReuseBuffer::addLine(Addr paddrLine, const ruby::DataBlock &dataBlock) {
   if (this->cachedLines.size() == this->maxNumLines) {
     const auto &oldestLine = this->cachedLines.front();
     this->paddrLineToCachedIterMap.erase(oldestLine.paddrLine);
@@ -21,7 +23,7 @@ bool ReuseBuffer::contains(Addr paddrLine) {
   return this->paddrLineToCachedIterMap.count(paddrLine);
 }
 
-const DataBlock &ReuseBuffer::reuse(Addr paddrLine) {
+const ruby::DataBlock &ReuseBuffer::reuse(Addr paddrLine) {
   assert(this->contains(paddrLine) && "Line is not cached for reuse.");
   auto cachedIter = this->paddrLineToCachedIterMap.at(paddrLine);
   // this->cachedLines.splice(this->cachedLines.end(), this->cachedLines,
@@ -29,16 +31,16 @@ const DataBlock &ReuseBuffer::reuse(Addr paddrLine) {
   return cachedIter->dataBlock;
 }
 
-StreamReuseBuffer::StreamReuseBuffer(MachineID _machineId, int _maxNumLines,
+StreamReuseBuffer::StreamReuseBuffer(ruby::MachineID _machineId, int _maxNumLines,
                                      bool _perCoreMode)
     : machineId(_machineId), maxNumLines(_maxNumLines),
       perCoreMode(_perCoreMode) {
   auto type = this->machineId.type;
   switch (type) {
-  case MachineType::MachineType_L2Cache:
+  case ruby::MachineType_L2Cache:
     this->machineTypeStr = "LLC_Reuse";
     break;
-  case MachineType::MachineType_Directory:
+  case ruby::MachineType_Directory:
     this->machineTypeStr = "MEM_Reuse";
     break;
   default:
@@ -49,7 +51,7 @@ StreamReuseBuffer::StreamReuseBuffer(MachineID _machineId, int _maxNumLines,
 
 int StreamReuseBuffer::curRemoteBank() const { return this->machineId.num; }
 
-MachineType StreamReuseBuffer::myMachineType() const {
+ruby::MachineType StreamReuseBuffer::myMachineType() const {
   return this->machineId.getType();
 }
 
@@ -58,7 +60,7 @@ const char *StreamReuseBuffer::curRemoteMachineType() const {
 }
 
 void StreamReuseBuffer::addLine(const DynStreamSliceId &sliceId,
-                                Addr paddrLine, const DataBlock &dataBlock) {
+                                Addr paddrLine, const ruby::DataBlock &dataBlock) {
   if (this->maxNumLines == 0) {
     return;
   }
@@ -78,7 +80,7 @@ bool StreamReuseBuffer::contains(const DynStreamSliceId &reuseSliceId,
   return containing;
 }
 
-const DataBlock &
+const ruby::DataBlock &
 StreamReuseBuffer::reuse(const DynStreamSliceId &reuseSliceId,
                          Addr paddrLine) {
   assert(this->maxNumLines > 0 && "StreamReuseBuffer is disabled.");
@@ -190,4 +192,5 @@ bool StreamReuseBuffer::shouldCheckReuse(Stream *S,
     return false;
   }
   return true;
-}
+}} // namespace gem5
+

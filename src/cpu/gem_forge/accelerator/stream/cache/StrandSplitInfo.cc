@@ -7,6 +7,8 @@
 
 #include <cassert>
 
+namespace gem5 {
+
 StrandSplitInfo::StrandSplitInfo(int64_t _innerTrip, int64_t _splitTrip,
                                  int64_t _splitTripPerStrand,
                                  int64_t _totalStrands)
@@ -351,4 +353,5 @@ std::vector<StrandElemSplitIdx> StrandSplitInfo::mapStreamToPrevStrandByElem(
   }
 
   return prevSplits;
-}
+}} // namespace gem5
+

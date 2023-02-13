@@ -13,6 +13,8 @@
 #include "lsq.hh"
 #include "params/LLVMTraceCPU.hh"
 
+namespace gem5 {
+
 class LLVMTraceCPU;
 
 class LLVMIEWStage {
@@ -20,7 +22,7 @@ public:
   using RenameStruct = LLVMRenameStage::RenameStruct;
   using IEWStruct = std::vector<LLVMDynamicInstId>;
 
-  LLVMIEWStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
+  LLVMIEWStage(const LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
   LLVMIEWStage(const LLVMDecodeStage &other) = delete;
   LLVMIEWStage(LLVMIEWStage &&other) = delete;
 
@@ -87,51 +89,51 @@ public:
   // Stat for total number issued for each instruction type.
   Stats::Vector2d statIssuedInstType;
 
-  Stats::Scalar blockedCycles;
-  Stats::Scalar robReads;
-  Stats::Scalar robWrites;
-  Stats::Scalar intInstQueueReads;
-  Stats::Scalar intInstQueueWrites;
-  Stats::Scalar intInstQueueWakeups;
-  Stats::Scalar fpInstQueueReads;
-  Stats::Scalar fpInstQueueWrites;
-  Stats::Scalar fpInstQueueWakeups;
-  Stats::Scalar loadQueueWrites;
-  Stats::Scalar storeQueueWrites;
+  statistics::Scalar blockedCycles;
+  statistics::Scalar robReads;
+  statistics::Scalar robWrites;
+  statistics::Scalar intInstQueueReads;
+  statistics::Scalar intInstQueueWrites;
+  statistics::Scalar intInstQueueWakeups;
+  statistics::Scalar fpInstQueueReads;
+  statistics::Scalar fpInstQueueWrites;
+  statistics::Scalar fpInstQueueWakeups;
+  statistics::Scalar loadQueueWrites;
+  statistics::Scalar storeQueueWrites;
 
-  Stats::Scalar RAWDependenceInLSQ;
-  Stats::Scalar WAWDependenceInLSQ;
-  Stats::Scalar WARDependenceInLSQ;
-  Stats::Scalar MisSpecRAWDependence;
+  statistics::Scalar RAWDependenceInLSQ;
+  statistics::Scalar WAWDependenceInLSQ;
+  statistics::Scalar WARDependenceInLSQ;
+  statistics::Scalar MisSpecRAWDependence;
 
-  Stats::Scalar intRegReads;
-  Stats::Scalar intRegWrites;
-  Stats::Scalar fpRegReads;
-  Stats::Scalar fpRegWrites;
+  statistics::Scalar intRegReads;
+  statistics::Scalar intRegWrites;
+  statistics::Scalar fpRegReads;
+  statistics::Scalar fpRegWrites;
 
   /**
    * ALU for integer +/-.
    * Mult for integer multiply and division.
    * FPU for all float operation.
    */
-  Stats::Scalar ALUAccesses;
-  Stats::Scalar MultAccesses;
-  Stats::Scalar FPUAccesses;
+  statistics::Scalar ALUAccesses;
+  statistics::Scalar MultAccesses;
+  statistics::Scalar FPUAccesses;
 
   /**
    * The difference between these stats and *Accesses is
    * that multi-cycle operation will be counted multiple times,
    * which is required by mcpat to compute the power.
    */
-  Stats::Scalar ALUAccessesCycles;
-  Stats::Scalar MultAccessesCycles;
-  Stats::Scalar FPUAccessesCycles;
+  statistics::Scalar ALUAccessesCycles;
+  statistics::Scalar MultAccessesCycles;
+  statistics::Scalar FPUAccessesCycles;
 
   /**
    * Load/Store statistics.
    */
-  Stats::Scalar execLoadInsts;
-  Stats::Scalar execStoreInsts;
+  statistics::Scalar execLoadInsts;
+  statistics::Scalar execStoreInsts;
 
   Stats::Distribution numIssuedDist;
 
@@ -219,5 +221,7 @@ private:
     void writebacked() override;
   };
 };
+
+} // namespace gem5
 
 #endif

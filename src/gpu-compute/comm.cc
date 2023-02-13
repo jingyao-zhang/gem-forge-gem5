@@ -2,8 +2,6 @@
  * Copyright (c) 2018 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
- * For use for simulation and test purposes only
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -29,8 +27,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Anthony Gutierrez
  */
 
 #include "gpu-compute/comm.hh"
@@ -40,19 +36,22 @@
 #include "gpu-compute/wavefront.hh"
 #include "params/ComputeUnit.hh"
 
+namespace gem5
+{
+
 /**
  * Scoreboard/Schedule stage interface.
  */
 ScoreboardCheckToSchedule::ScoreboardCheckToSchedule(const ComputeUnitParams
-                                                     *p)
+                                                     &p)
 {
-    int num_func_units = p->num_SIMDs + p->num_scalar_cores
-        + p->num_global_mem_pipes + p->num_shared_mem_pipes
-        + p->num_scalar_mem_pipes;
+    int num_func_units = p.num_SIMDs + p.num_scalar_cores
+        + p.num_global_mem_pipes + p.num_shared_mem_pipes
+        + p.num_scalar_mem_pipes;
     _readyWFs.resize(num_func_units);
 
     for (auto &func_unit_wf_list : _readyWFs) {
-        func_unit_wf_list.reserve(p->n_wf);
+        func_unit_wf_list.reserve(p.n_wf);
     }
 }
 
@@ -103,11 +102,11 @@ ScoreboardCheckToSchedule::updateReadyList(int func_unit_id)
 /**
  * Schedule/Execute stage interface.
  */
-ScheduleToExecute::ScheduleToExecute(const ComputeUnitParams *p)
+ScheduleToExecute::ScheduleToExecute(const ComputeUnitParams &p)
 {
-    int num_func_units = p->num_SIMDs + p->num_scalar_cores
-        + p->num_global_mem_pipes + p->num_shared_mem_pipes
-        + p->num_scalar_mem_pipes;
+    int num_func_units = p.num_SIMDs + p.num_scalar_cores
+        + p.num_global_mem_pipes + p.num_shared_mem_pipes
+        + p.num_scalar_mem_pipes;
     _readyInsts.resize(num_func_units, nullptr);
     _dispatchStatus.resize(num_func_units, EMPTY);
 }
@@ -152,3 +151,5 @@ ScheduleToExecute::dispatchStatus(int func_unit_id) const
 {
     return _dispatchStatus[func_unit_id];
 }
+
+} // namespace gem5

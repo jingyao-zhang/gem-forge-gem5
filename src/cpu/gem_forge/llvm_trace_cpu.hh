@@ -26,15 +26,18 @@
 #include "mem/page_table.hh"
 #include "params/LLVMTraceCPU.hh"
 
+namespace gem5 {
+
 class LLVMTraceCPUDelegator;
 
 class LLVMTraceCPU : public BaseCPU {
 public:
-  LLVMTraceCPU(LLVMTraceCPUParams *params);
+  PARAMS(LLVMTraceCPU)
+  LLVMTraceCPU(const Params &params);
   ~LLVMTraceCPU();
 
-  RequestPort&getDataPort() override { return this->dataPort; }
-  RequestPort&getInstPort() override { return this->instPort; }
+  RequestPort &getDataPort() override { return this->dataPort; }
+  RequestPort &getInstPort() override { return this->instPort; }
   Counter totalInsts() const override;
   Counter totalOps() const override;
   bool shouldCheckDeadlock() const override {
@@ -54,7 +57,7 @@ public:
                     std::vector<std::pair<std::string, Addr>> maps);
 
   const LLVMTraceCPUParams *getLLVMTraceCPUParams() const {
-    return dynamic_cast<const LLVMTraceCPUParams *>(this->params());
+    return &this->params();
   }
 
   enum InstStatus {
@@ -88,7 +91,7 @@ public:
 
 private:
   // This port will handle retry.
-  class CPUPort : public RequestPort{
+  class CPUPort : public RequestPort {
   public:
     CPUPort(const std::string &name, LLVMTraceCPU *_owner)
         : RequestPort(name, _owner), owner(_owner), inflyNumPackets(0),
@@ -167,7 +170,7 @@ private:
    */
   std::vector<LLVMTraceThreadContext *> activeThreads;
 
-  FUPool *fuPool;
+  o3::FUPool *fuPool;
 
   /**
    * Should be part of process instead.
@@ -341,5 +344,7 @@ public:
   /*******************************************************************/
   void regStats() override;
 };
+
+} // namespace gem5
 
 #endif

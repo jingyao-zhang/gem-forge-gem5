@@ -29,10 +29,12 @@ from m5.proxy import *
 from m5.objects.ReplacementPolicies import *
 from m5.SimObject import SimObject
 
+
 class RubyCache(SimObject):
-    type = 'RubyCache'
-    cxx_class = 'CacheMemory'
+    type = "RubyCache"
+    cxx_class = "gem5::ruby::CacheMemory"
     cxx_header = "mem/ruby/structures/CacheMemory.hh"
+
     size = Param.MemorySize("capacity in bytes")
     assoc = Param.Int("")
     replacement_policy = Param.BaseReplacementPolicy(TreePLRURP(), "")
@@ -44,7 +46,9 @@ class RubyCache(SimObject):
     skip_index_num_bits = Param.Int(0, "num index bit skipped.")
 
     is_icache = Param.Bool(False, "is instruction only cache")
-    block_size = Param.MemorySize("0B", "block size in bytes. 0 means default RubyBlockSize")
+    block_size = Param.MemorySize(
+        "0B", "block size in bytes. 0 means default RubyBlockSize"
+    )
 
     dataArrayBanks = Param.Int(1, "Number of banks for the data array")
     tagArrayBanks = Param.Int(1, "Number of banks for the tag array")

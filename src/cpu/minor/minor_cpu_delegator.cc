@@ -17,6 +17,8 @@
   impl->dumpInflyInsts();                                                      \
   panic("[%s]: " format, *(inst), ##args)
 
+namespace gem5 {
+
 class MinorCPUDelegator::Impl {
 public:
   Impl(MinorCPU *_cpu, MinorCPUDelegator *_cpuDelegator)
@@ -98,8 +100,8 @@ public:
       INST_PANIC(this, dynInstPtr, "Mismatched streamSeqNum %llu.\n",
                  this->currentStreamSeqNum);
     }
-    GemForgeDynInstInfo dynInfo(this->getInstSeqNum(dynInstPtr), dynInstPtr->pc,
-                                dynInstPtr->staticInst.get(),
+    GemForgeDynInstInfo dynInfo(this->getInstSeqNum(dynInstPtr),
+                                *dynInstPtr->pc, dynInstPtr->staticInst.get(),
                                 this->getThreadContext(dynInstPtr));
     return dynInfo;
   }
@@ -138,7 +140,7 @@ bool MinorCPUDelegator::shouldCountInPipeline(
   // Checking with the isaHandler.
   // At this stage, there is no valid sequence number, so we can't use
   // pimpl->createDynInfo().
-  GemForgeDynInstInfo dynInfo(0, dynInstPtr->pc, dynInstPtr->staticInst.get(),
+  GemForgeDynInstInfo dynInfo(0, *dynInstPtr->pc, dynInstPtr->staticInst.get(),
                               pimpl->getThreadContext(dynInstPtr));
   return isaHandler->shouldCountInPipeline(dynInfo);
 }
@@ -263,7 +265,7 @@ Fault MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
     request->request->setContext(cid);
     request->request->setVirt(vaddr, size, 0 /* flags */,
                               baseCPU->dataRequestorId(),
-                              dynInstPtr->pc.instAddr());
+                              dynInstPtr->pc->instAddr());
 
     /**
      * The StoreBuffer requires the physical address for store-to-load check.
@@ -640,7 +642,7 @@ namespace {
 class FakeLoadRequest : public Minor::LSQ::LSQRequest {
 protected:
   void finish(const Fault &fault, const RequestPtr &request, ThreadContext *tc,
-              BaseTLB::Mode mode) override {
+              BaseMMU::Mode mode) override {
     panic("%s not implemented.", __PRETTY_FUNCTION__);
   }
 
@@ -697,7 +699,8 @@ void MinorCPUDelegator::drainPendingPackets() {
      */
 
     // We have to use RefCountingPtr to avoid memory leak.
-    Minor::MinorDynInstPtr fakeDynInst(new Minor::MinorDynInst());
+    Minor::MinorDynInstPtr fakeDynInst(new Minor::MinorDynInst(
+        StaticInstPtr() /* static inst (not sure if this works) */));
     fakeDynInst->id.threadId = 0;
     FakeLoadRequest fakeLSQRequest(lsq, fakeDynInst, pkt->req);
 
@@ -765,3 +768,4 @@ void MinorCPUDelegator::recordStatsForFakeExecutedInst(
     pimpl->cpu->stats.numFpRegWrites += inst->numDestRegs();
   }
 }
+} // namespace gem5

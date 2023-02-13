@@ -51,23 +51,27 @@
 #include "debug/Drain.hh"
 #include "debug/XBar.hh"
 
-BaseXBar::BaseXBar(const BaseXBarParams *p)
-    : ClockedObject(p),
-      frontendLatency(p->frontend_latency),
-      forwardLatency(p->forward_latency),
-      responseLatency(p->response_latency),
-      headerLatency(p->header_latency),
-      width(p->width),
-      gotAddrRanges(p->port_default_connection_count +
-                          p->port_mem_side_ports_connection_count, false),
-      gotAllAddrRanges(false), defaultPortID(InvalidPortID),
-      useDefaultRange(p->use_default_range),
+namespace gem5
+{
 
-      transDist(this, "trans_dist", "Transaction distribution"),
-      pktCount(this, "pkt_count",
-              "Packet count per connected requestor and responder (bytes)"),
-      pktSize(this, "pkt_size", "Cumulative packet size per connected "
-             "requestor and responder (bytes)")
+BaseXBar::BaseXBar(const BaseXBarParams &p)
+    : ClockedObject(p),
+      frontendLatency(p.frontend_latency),
+      forwardLatency(p.forward_latency),
+      responseLatency(p.response_latency),
+      headerLatency(p.header_latency),
+      width(p.width),
+      gotAddrRanges(p.port_default_connection_count +
+                          p.port_mem_side_ports_connection_count, false),
+      gotAllAddrRanges(false), defaultPortID(InvalidPortID),
+      useDefaultRange(p.use_default_range),
+
+      ADD_STAT(transDist, statistics::units::Count::get(),
+               "Transaction distribution"),
+      ADD_STAT(pktCount, statistics::units::Count::get(),
+               "Packet count per connected requestor and responder"),
+      ADD_STAT(pktSize, statistics::units::Byte::get(),
+               "Cumulative packet size per connected requestor and responder")
 {
 }
 
@@ -116,7 +120,7 @@ BaseXBar::calcPacketTiming(PacketPtr pkt, Tick header_delay)
     // do a quick sanity check to ensure the timings are not being
     // ignored, note that this specific value may cause problems for
     // slower interconnects
-    panic_if(pkt->headerDelay > SimClock::Int::us,
+    panic_if(pkt->headerDelay > sim_clock::as_int::us,
              "Encountered header delay exceeding 1 us\n");
 
     if (pkt->hasData()) {
@@ -138,20 +142,20 @@ BaseXBar::calcPacketTiming(PacketPtr pkt, Tick header_delay)
 template <typename SrcType, typename DstType>
 BaseXBar::Layer<SrcType, DstType>::Layer(DstType& _port, BaseXBar& _xbar,
                                        const std::string& _name) :
-    Stats::Group(&_xbar, _name.c_str()),
+    statistics::Group(&_xbar, _name.c_str()),
     port(_port), xbar(_xbar), _name(xbar.name() + "." + _name), state(IDLE),
     waitingForPeer(NULL), releaseEvent([this]{ releaseLayer(); }, name()),
-    ADD_STAT(occupancy, "Layer occupancy (ticks)"),
-    ADD_STAT(utilization, "Layer utilization (%)")
+    ADD_STAT(occupancy, statistics::units::Tick::get(), "Layer occupancy (ticks)"),
+    ADD_STAT(utilization, statistics::units::Ratio::get(), "Layer utilization")
 {
     occupancy
-        .flags(Stats::nozero);
+        .flags(statistics::nozero);
 
     utilization
         .precision(1)
-        .flags(Stats::nozero);
+        .flags(statistics::nozero);
 
-    utilization = 100 * occupancy / simTicks;
+    utilization = occupancy / simTicks;
 }
 
 template <typename SrcType, typename DstType>
@@ -541,7 +545,7 @@ BaseXBar::regStats()
 {
     ClockedObject::regStats();
 
-    using namespace Stats;
+    using namespace statistics;
 
     transDist
         .init(MemCmd::NUM_MEM_CMDS)
@@ -601,3 +605,5 @@ BaseXBar::Layer<SrcType, DstType>::drain()
  */
 template class BaseXBar::Layer<ResponsePort, RequestPort>;
 template class BaseXBar::Layer<RequestPort, ResponsePort>;
+
+} // namespace gem5

@@ -34,6 +34,8 @@
 #include "base/logging.hh"
 #include "base/str.hh"
 
+namespace gem5 {
+
 using namespace std;
 
 MultiBitSelBloomFilter::MultiBitSelBloomFilter(string str)
@@ -197,3 +199,5 @@ MultiBitSelBloomFilter::hash_bitsel(uint64_t value, int index, int jump,
     }
     return result;
 }
+} // namespace gem5
+

@@ -47,6 +47,9 @@
 #include "mem/qport.hh"
 #include "sim/clocked_object.hh"
 
+namespace gem5
+{
+
 class BaseGen;
 class StreamGen;
 class System;
@@ -191,54 +194,55 @@ class BaseTrafficGen : public ClockedObject
     /** Reqs waiting for response **/
     std::unordered_map<RequestPtr,Tick> waitingResp;
 
-    struct StatGroup : public Stats::Group {
-        StatGroup(Stats::Group *parent);
+    struct StatGroup : public statistics::Group
+    {
+        StatGroup(statistics::Group *parent);
 
         /** Count the number of dropped requests. */
-        Stats::Scalar numSuppressed;
+        statistics::Scalar numSuppressed;
 
         /** Count the number of generated packets. */
-        Stats::Scalar numPackets;
+        statistics::Scalar numPackets;
 
         /** Count the number of retries. */
-        Stats::Scalar numRetries;
+        statistics::Scalar numRetries;
 
         /** Count the time incurred from back-pressure. */
-        Stats::Scalar retryTicks;
+        statistics::Scalar retryTicks;
 
         /** Count the number of bytes read. */
-        Stats::Scalar bytesRead;
+        statistics::Scalar bytesRead;
 
         /** Count the number of bytes written. */
-        Stats::Scalar bytesWritten;
+        statistics::Scalar bytesWritten;
 
         /** Total num of ticks read reqs took to complete  */
-        Stats::Scalar totalReadLatency;
+        statistics::Scalar totalReadLatency;
 
         /** Total num of ticks write reqs took to complete  */
-        Stats::Scalar totalWriteLatency;
+        statistics::Scalar totalWriteLatency;
 
         /** Count the number reads. */
-        Stats::Scalar totalReads;
+        statistics::Scalar totalReads;
 
         /** Count the number writes. */
-        Stats::Scalar totalWrites;
+        statistics::Scalar totalWrites;
 
         /** Avg num of ticks each read req took to complete  */
-        Stats::Formula avgReadLatency;
+        statistics::Formula avgReadLatency;
 
         /** Avg num of ticks each write reqs took to complete  */
-        Stats::Formula avgWriteLatency;
+        statistics::Formula avgWriteLatency;
 
         /** Read bandwidth in bytes/s  */
-        Stats::Formula readBW;
+        statistics::Formula readBW;
 
         /** Write bandwidth in bytes/s  */
-        Stats::Formula writeBW;
+        statistics::Formula writeBW;
     } stats;
 
   public:
-    BaseTrafficGen(const BaseTrafficGenParams* p);
+    BaseTrafficGen(const BaseTrafficGenParams &p);
 
     ~BaseTrafficGen();
 
@@ -275,7 +279,7 @@ class BaseTrafficGen : public ClockedObject
         uint8_t read_percent, Addr data_limit,
         unsigned int num_seq_pkts, unsigned int page_size,
         unsigned int nbr_of_banks, unsigned int nbr_of_banks_util,
-        Enums::AddrMap addr_mapping,
+        enums::AddrMap addr_mapping,
         unsigned int nbr_of_ranks);
 
     std::shared_ptr<BaseGen> createDramRot(
@@ -285,7 +289,7 @@ class BaseTrafficGen : public ClockedObject
         uint8_t read_percent, Addr data_limit,
         unsigned int num_seq_pkts, unsigned int page_size,
         unsigned int nbr_of_banks, unsigned int nbr_of_banks_util,
-        Enums::AddrMap addr_mapping,
+        enums::AddrMap addr_mapping,
         unsigned int nbr_of_ranks,
         unsigned int max_seq_count_per_rank);
 
@@ -299,7 +303,7 @@ class BaseTrafficGen : public ClockedObject
         unsigned int nbr_of_banks_dram, unsigned int nbr_of_banks_util_dram,
         unsigned int num_seq_pkts_nvm, unsigned int buffer_size_nvm,
         unsigned int nbr_of_banks_nvm, unsigned int nbr_of_banks_util_nvm,
-        Enums::AddrMap addr_mapping,
+        enums::AddrMap addr_mapping,
         unsigned int nbr_of_ranks_dram,
         unsigned int nbr_of_ranks_nvm,
         uint8_t nvm_percent);
@@ -311,8 +315,15 @@ class BaseTrafficGen : public ClockedObject
         uint8_t read_percent, Addr data_limit,
         unsigned int num_seq_pkts, unsigned int buffer_size,
         unsigned int nbr_of_banks, unsigned int nbr_of_banks_util,
-        Enums::AddrMap addr_mapping,
+        enums::AddrMap addr_mapping,
         unsigned int nbr_of_ranks);
+
+    std::shared_ptr<BaseGen> createStrided(
+        Tick duration,
+        Addr start_addr, Addr end_addr, Addr blocksize,
+        Addr stride_size, int gen_id,
+        Tick min_period, Tick max_period,
+        uint8_t read_percent, Addr data_limit);
 
     std::shared_ptr<BaseGen> createTrace(
         Tick duration,
@@ -331,8 +342,10 @@ class BaseTrafficGen : public ClockedObject
     /** Currently active generator */
     std::shared_ptr<BaseGen> activeGenerator;
 
-    /** Stream/SubStreamID Generator */
+    /** Stream/SubstreamID Generator */
     std::unique_ptr<StreamGen> streamGenerator;
 };
+
+} // namespace gem5
 
 #endif //__CPU_TRAFFIC_GEN_BASE_HH__

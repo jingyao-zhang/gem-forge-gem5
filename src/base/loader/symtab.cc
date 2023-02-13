@@ -30,18 +30,15 @@
 
 #include <fstream>
 #include <iostream>
-#include <string>
-#include <vector>
 
 #include "base/logging.hh"
 #include "base/str.hh"
-#include "base/trace.hh"
-#include "base/types.hh"
-#include "sim/serialize.hh"
 
-using namespace std;
+namespace gem5
+{
 
-namespace Loader
+GEM5_DEPRECATED_NAMESPACE(Loader, loader);
+namespace loader
 {
 
 SymbolTable debugSymbolTable;
@@ -92,48 +89,8 @@ SymbolTable::insert(const SymbolTable &other)
     return true;
 }
 
-bool
-SymbolTable::load(const string &filename)
-{
-    string buffer;
-    ifstream file(filename.c_str());
-
-    if (!file)
-        fatal("file error: Can't open symbol table file %s\n", filename);
-
-    while (!file.eof()) {
-        getline(file, buffer);
-        if (buffer.empty())
-            continue;
-
-        string::size_type idx = buffer.find(',');
-        if (idx == string::npos)
-            return false;
-
-        string address = buffer.substr(0, idx);
-        eat_white(address);
-        if (address.empty())
-            return false;
-
-        string name = buffer.substr(idx + 1);
-        eat_white(name);
-        if (name.empty())
-            return false;
-
-        Addr addr;
-        if (!to_number(address, addr))
-            return false;
-
-        if (!insert({ Symbol::Binding::Global, name, addr }))
-            return false;
-    }
-
-    file.close();
-    return true;
-}
-
 void
-SymbolTable::serialize(const string &base, CheckpointOut &cp) const
+SymbolTable::serialize(const std::string &base, CheckpointOut &cp) const
 {
     paramOut(cp, base + ".size", symbols.size());
 
@@ -147,7 +104,7 @@ SymbolTable::serialize(const string &base, CheckpointOut &cp) const
 }
 
 void
-SymbolTable::unserialize(const string &base, CheckpointIn &cp,
+SymbolTable::unserialize(const std::string &base, CheckpointIn &cp,
                          Symbol::Binding default_binding)
 {
     clear();
@@ -166,4 +123,5 @@ SymbolTable::unserialize(const string &base, CheckpointIn &cp,
     }
 }
 
-} // namespace Loader
+} // namespace loader
+} // namespace gem5

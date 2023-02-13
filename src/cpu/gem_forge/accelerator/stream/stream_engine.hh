@@ -18,6 +18,8 @@
 
 #include <unordered_map>
 
+namespace gem5 {
+
 class StreamThrottler;
 class StreamLQCallback;
 class StreamSQCallback;
@@ -31,8 +33,8 @@ class StreamDataTrafficAccumulator;
 
 class StreamEngine : public GemForgeAccelerator {
 public:
-  using Params = StreamEngineParams;
-  StreamEngine(Params *params);
+  PARAMS(StreamEngine);
+  StreamEngine(const Params &params);
   ~StreamEngine() override;
 
   void handshake(GemForgeCPUDelegator *_cpuDelegator,
@@ -48,7 +50,7 @@ public:
   void resetStats() override;
 
   // Override the name as we don't want the default long name().
-  const std::string name() const override { return ""; }
+  std::string name() const override { return ""; }
 
   /**
    * To prepare for execution-driven simulation,
@@ -226,30 +228,30 @@ public:
   /**
    * Stats
    */
-  mutable Stats::Scalar numConfigured;
-  mutable Stats::Scalar numStepped;
-  mutable Stats::Scalar numUnstepped;
-  mutable Stats::Scalar numElementsAllocated;
-  mutable Stats::Scalar numElementsUsed;
-  mutable Stats::Scalar numCommittedStreamUser;
-  mutable Stats::Scalar entryWaitCycles;
+  mutable statistics::Scalar numConfigured;
+  mutable statistics::Scalar numStepped;
+  mutable statistics::Scalar numUnstepped;
+  mutable statistics::Scalar numElementsAllocated;
+  mutable statistics::Scalar numElementsUsed;
+  mutable statistics::Scalar numCommittedStreamUser;
+  mutable statistics::Scalar entryWaitCycles;
 
-  mutable Stats::Scalar numStoreElementsAllocated;
-  mutable Stats::Scalar numStoreElementsStepped;
-  mutable Stats::Scalar numStoreElementsUsed;
+  mutable statistics::Scalar numStoreElementsAllocated;
+  mutable statistics::Scalar numStoreElementsStepped;
+  mutable statistics::Scalar numStoreElementsUsed;
 
-  mutable Stats::Scalar numLoadElementsAllocated;
-  mutable Stats::Scalar numLoadElementsFetched;
-  mutable Stats::Scalar numLoadElementsStepped;
-  mutable Stats::Scalar numLoadElementsUsed;
-  mutable Stats::Scalar numLoadElementWaitCycles;
-  mutable Stats::Scalar numLoadCacheLineFetched;
-  mutable Stats::Scalar numLoadCacheLineUsed;
+  mutable statistics::Scalar numLoadElementsAllocated;
+  mutable statistics::Scalar numLoadElementsFetched;
+  mutable statistics::Scalar numLoadElementsStepped;
+  mutable statistics::Scalar numLoadElementsUsed;
+  mutable statistics::Scalar numLoadElementWaitCycles;
+  mutable statistics::Scalar numLoadCacheLineFetched;
+  mutable statistics::Scalar numLoadCacheLineUsed;
   /**
    * * How many times a StreamUser/StreamStore not dispatched due to LSQ full.
    */
-  mutable Stats::Scalar streamUserNotDispatchedByLoadQueue;
-  mutable Stats::Scalar streamStoreNotDispatchedByStoreQueue;
+  mutable statistics::Scalar streamUserNotDispatchedByLoadQueue;
+  mutable statistics::Scalar streamStoreNotDispatchedByStoreQueue;
 
   Stats::Distribution numTotalAliveElements;
   Stats::Distribution numTotalAliveCacheBlocks;
@@ -260,9 +262,9 @@ public:
   /**
    * Statistics for stream placement manager.
    */
-  Stats::Vector numAccessPlacedInCacheLevel;
-  Stats::Vector numAccessHitHigherThanPlacedCacheLevel;
-  Stats::Vector numAccessHitLowerThanPlacedCacheLevel;
+  statistics::Vector numAccessPlacedInCacheLevel;
+  statistics::Vector numAccessHitHigherThanPlacedCacheLevel;
+  statistics::Vector numAccessHitLowerThanPlacedCacheLevel;
 
   Stats::Distribution numAccessFootprintL1;
   Stats::Distribution numAccessFootprintL2;
@@ -271,10 +273,10 @@ public:
   /**
    * Statistics for stream float.
    */
-  Stats::Scalar numFloated;
-  Stats::Scalar numLLCSentSlice;
-  Stats::Scalar numLLCMigrated;
-  Stats::Scalar numMLCResponse;
+  statistics::Scalar numFloated;
+  statistics::Scalar numLLCSentSlice;
+  statistics::Scalar numLLCMigrated;
+  statistics::Scalar numMLCResponse;
 
   /**
    * Statistics for stream computing.
@@ -282,29 +284,29 @@ public:
    *      Affine Indirect PointerChase Multi-Affine
    * x    Load   Store    Atomic       Update       Reduce
    */
-  Stats::Scalar numScheduledComputation;
-  Stats::Scalar numCompletedComputation;
-  Stats::Scalar numCompletedComputeMicroOps;
-  Stats::Scalar numCompletedAffineLoadComputeMicroOps;
-  Stats::Scalar numCompletedAffineReduceMicroOps;
-  Stats::Scalar numCompletedAffineUpdateMicroOps;
-  Stats::Scalar numCompletedAffineStoreComputeMicroOps;
-  Stats::Scalar numCompletedAffineAtomicComputeMicroOps;
-  Stats::Scalar numCompletedIndirectLoadComputeMicroOps;
-  Stats::Scalar numCompletedIndirectReduceMicroOps;
-  Stats::Scalar numCompletedIndirectUpdateMicroOps;
-  Stats::Scalar numCompletedIndirectStoreComputeMicroOps;
-  Stats::Scalar numCompletedIndirectAtomicComputeMicroOps;
-  Stats::Scalar numCompletedPointerChaseLoadComputeMicroOps;
-  Stats::Scalar numCompletedPointerChaseReduceMicroOps;
-  Stats::Scalar numCompletedPointerChaseUpdateMicroOps;
-  Stats::Scalar numCompletedPointerChaseStoreComputeMicroOps;
-  Stats::Scalar numCompletedPointerChaseAtomicComputeMicroOps;
-  Stats::Scalar numCompletedMultiAffineLoadComputeMicroOps;
-  Stats::Scalar numCompletedMultiAffineReduceMicroOps;
-  Stats::Scalar numCompletedMultiAffineUpdateMicroOps;
-  Stats::Scalar numCompletedMultiAffineStoreComputeMicroOps;
-  Stats::Scalar numCompletedMultiAffineAtomicComputeMicroOps;
+  statistics::Scalar numScheduledComputation;
+  statistics::Scalar numCompletedComputation;
+  statistics::Scalar numCompletedComputeMicroOps;
+  statistics::Scalar numCompletedAffineLoadComputeMicroOps;
+  statistics::Scalar numCompletedAffineReduceMicroOps;
+  statistics::Scalar numCompletedAffineUpdateMicroOps;
+  statistics::Scalar numCompletedAffineStoreComputeMicroOps;
+  statistics::Scalar numCompletedAffineAtomicComputeMicroOps;
+  statistics::Scalar numCompletedIndirectLoadComputeMicroOps;
+  statistics::Scalar numCompletedIndirectReduceMicroOps;
+  statistics::Scalar numCompletedIndirectUpdateMicroOps;
+  statistics::Scalar numCompletedIndirectStoreComputeMicroOps;
+  statistics::Scalar numCompletedIndirectAtomicComputeMicroOps;
+  statistics::Scalar numCompletedPointerChaseLoadComputeMicroOps;
+  statistics::Scalar numCompletedPointerChaseReduceMicroOps;
+  statistics::Scalar numCompletedPointerChaseUpdateMicroOps;
+  statistics::Scalar numCompletedPointerChaseStoreComputeMicroOps;
+  statistics::Scalar numCompletedPointerChaseAtomicComputeMicroOps;
+  statistics::Scalar numCompletedMultiAffineLoadComputeMicroOps;
+  statistics::Scalar numCompletedMultiAffineReduceMicroOps;
+  statistics::Scalar numCompletedMultiAffineUpdateMicroOps;
+  statistics::Scalar numCompletedMultiAffineStoreComputeMicroOps;
+  statistics::Scalar numCompletedMultiAffineAtomicComputeMicroOps;
 
   /**
    * Number of committed elements since last check,
@@ -382,7 +384,7 @@ private:
   /**
    * Flags.
    */
-  Params *myParams;
+  const Params *myParams;
   bool isOracle;
   unsigned defaultRunAheadLength;
   bool enableLSQ;
@@ -554,5 +556,7 @@ private:
   bool shouldCoalesceContinuousDirectMemStreamElement(StreamElement *elem);
   void coalesceContinuousDirectMemStreamElement(StreamElement *elem);
 };
+
+} // namespace gem5
 
 #endif

@@ -6,8 +6,10 @@
 #define DEBUG_TYPE StreamEngineBase
 #include "stream_log.hh"
 
+namespace gem5 {
+
 StreamComputeEngine::StreamComputeEngine(StreamEngine *_se,
-                                         StreamEngine::Params *_params)
+                                         const StreamEngine::Params *_params)
     : se(_se), computeWidth(_params->computeWidth),
       forceZeroLatency(_params->enableZeroComputeLatency) {}
 
@@ -18,7 +20,7 @@ void StreamComputeEngine::pushReadyComputation(StreamElement *element,
     latency = Cycles(0);
   }
   auto computation =
-      m5::make_unique<Computation>(element, std::move(result), latency);
+      std::make_unique<Computation>(element, std::move(result), latency);
   this->readyComputations.emplace_back(std::move(computation));
   element->scheduledComputation = true;
   this->se->numScheduledComputation++;
@@ -76,8 +78,8 @@ void StreamComputeEngine::recordCompletedStats(Stream *S) {
   auto category = S->getComputationCategory();
 
 #define record_micro_ops(Addr, Compute)                                        \
-  if (category.first == Stream::ComputationType::Compute &&                  \
-      category.second == Stream::ComputationAddressPattern::Addr) {          \
+  if (category.first == Stream::ComputationType::Compute &&                    \
+      category.second == Stream::ComputationAddressPattern::Addr) {            \
     this->se->numCompleted##Addr##Compute##MicroOps += microOps;               \
   }
   record_micro_ops(Affine, LoadCompute);
@@ -148,3 +150,4 @@ void StreamComputeEngine::discardComputation(StreamElement *element) {
   }
   S_ELEMENT_PANIC(element, "Failed to find the scheduled computation.");
 }
+} // namespace gem5

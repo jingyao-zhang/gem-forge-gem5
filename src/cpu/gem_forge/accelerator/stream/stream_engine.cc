@@ -17,16 +17,6 @@
 #include "debug/StreamEngineBase.hh"
 #include "debug/StreamThrottle.hh"
 
-namespace {
-static std::string DEBUG_STREAM_NAME =
-    "(particlefilter.c::415(.omp_outlined..2) 444 bb45 bb91::tmp96(load))";
-
-bool isDebugStream(Stream *S) {
-  return S->getStreamName() == DEBUG_STREAM_NAME;
-}
-
-} // namespace
-
 #define SE_WARN(format, args...)                                               \
   warn("[SE%d]: " format, this->cpuDelegator->cpuId(), ##args)
 #define SE_DPRINTF_(X, format, args...)                                        \
@@ -37,49 +27,60 @@ bool isDebugStream(Stream *S) {
 #define DEBUG_TYPE StreamEngineBase
 #include "stream_log.hh"
 
-StreamEngine::StreamEngine(Params *params)
+namespace gem5 {
+
+namespace {
+static std::string DEBUG_STREAM_NAME =
+    "(particlefilter.c::415(.omp_outlined..2) 444 bb45 bb91::tmp96(load))";
+
+bool isDebugStream(Stream *S) {
+  return S->getStreamName() == DEBUG_STREAM_NAME;
+}
+
+} // namespace
+
+StreamEngine::StreamEngine(const Params &params)
     : GemForgeAccelerator(params), streamPlacementManager(nullptr),
-      myParams(params), isOracle(false), writebackCacheLine(nullptr),
-      throttler(new StreamThrottler(params->throttling, this)) {
+      myParams(&params), isOracle(false), writebackCacheLine(nullptr),
+      throttler(new StreamThrottler(params.throttling, this)) {
 
-  this->isOracle = params->streamEngineIsOracle;
-  this->defaultRunAheadLength = params->defaultRunAheadLength;
+  this->isOracle = params.streamEngineIsOracle;
+  this->defaultRunAheadLength = params.defaultRunAheadLength;
   this->currentTotalRunAheadLength = 0;
-  this->totalRunAheadLength = params->totalRunAheadLength;
-  this->totalRunAheadBytes = params->totalRunAheadBytes;
-  this->enableLSQ = params->streamEngineEnableLSQ;
-  this->enableCoalesce = params->streamEngineEnableCoalesce;
-  this->enableMerge = params->streamEngineEnableMerge;
-  this->enableStreamPlacement = params->streamEngineEnablePlacement;
-  this->enableStreamPlacementOracle = params->streamEngineEnablePlacementOracle;
-  this->enableStreamPlacementBus = params->streamEngineEnablePlacementBus;
-  this->noBypassingStore = params->streamEngineNoBypassingStore;
-  this->continuousStore = params->streamEngineContinuousStore;
-  this->enablePlacementPeriodReset = params->streamEnginePeriodReset;
-  this->placementLat = params->streamEnginePlacementLat;
-  this->placement = params->streamEnginePlacement;
-  this->enableStreamFloat = params->streamEngineEnableFloat;
-  this->enableStreamFloatIndirect = params->streamEngineEnableFloatIndirect;
-  this->enableStreamFloatPseudo = params->streamEngineEnableFloatPseudo;
-  this->enableStreamFloatCancel = params->streamEngineEnableFloatCancel;
+  this->totalRunAheadLength = params.totalRunAheadLength;
+  this->totalRunAheadBytes = params.totalRunAheadBytes;
+  this->enableLSQ = params.streamEngineEnableLSQ;
+  this->enableCoalesce = params.streamEngineEnableCoalesce;
+  this->enableMerge = params.streamEngineEnableMerge;
+  this->enableStreamPlacement = params.streamEngineEnablePlacement;
+  this->enableStreamPlacementOracle = params.streamEngineEnablePlacementOracle;
+  this->enableStreamPlacementBus = params.streamEngineEnablePlacementBus;
+  this->noBypassingStore = params.streamEngineNoBypassingStore;
+  this->continuousStore = params.streamEngineContinuousStore;
+  this->enablePlacementPeriodReset = params.streamEnginePeriodReset;
+  this->placementLat = params.streamEnginePlacementLat;
+  this->placement = params.streamEnginePlacement;
+  this->enableStreamFloat = params.streamEngineEnableFloat;
+  this->enableStreamFloatIndirect = params.streamEngineEnableFloatIndirect;
+  this->enableStreamFloatPseudo = params.streamEngineEnableFloatPseudo;
+  this->enableStreamFloatCancel = params.streamEngineEnableFloatCancel;
 
-  auto streamFloatPolicy = m5::make_unique<StreamFloatPolicy>(
-      this->enableStreamFloat, params->enableFloatMem,
-      params->enableFloatHistory, params->streamEngineFloatPolicy,
-      params->floatLevelPolicy);
-  this->floatController = m5::make_unique<StreamFloatController>(
+  auto streamFloatPolicy = std::make_unique<StreamFloatPolicy>(
+      this->enableStreamFloat, params.enableFloatMem, params.enableFloatHistory,
+      params.streamEngineFloatPolicy, params.floatLevelPolicy);
+  this->floatController = std::make_unique<StreamFloatController>(
       this, std::move(streamFloatPolicy));
 
-  this->ndcController = m5::make_unique<StreamNDCController>(this);
-  this->computeEngine = m5::make_unique<StreamComputeEngine>(this, params);
-  this->regionController = m5::make_unique<StreamRegionController>(this);
-  this->rangeSyncController = m5::make_unique<StreamRangeSyncController>(this);
+  this->ndcController = std::make_unique<StreamNDCController>(this);
+  this->computeEngine = std::make_unique<StreamComputeEngine>(this, &params);
+  this->regionController = std::make_unique<StreamRegionController>(this);
+  this->rangeSyncController = std::make_unique<StreamRangeSyncController>(this);
 
   this->dataTrafficAccFix =
-      m5::make_unique<StreamDataTrafficAccumulator>(this, false /* floated */
+      std::make_unique<StreamDataTrafficAccumulator>(this, false /* floated */
       );
   this->dataTrafficAccFloat =
-      m5::make_unique<StreamDataTrafficAccumulator>(this, true /* floated */
+      std::make_unique<StreamDataTrafficAccumulator>(this, true /* floated */
       );
 
   this->initializeFIFO(this->totalRunAheadLength);
@@ -119,7 +120,7 @@ void StreamEngine::handshake(GemForgeCPUDelegator *_cpuDelegator,
   }
 
   // Set up the translation buffer.
-  this->translationBuffer = m5::make_unique<StreamTranslationBuffer<void *>>(
+  this->translationBuffer = std::make_unique<StreamTranslationBuffer<void *>>(
       cpuDelegator->getDataTLB(),
       [this](PacketPtr pkt, ThreadContext *tc, void *) -> void {
         this->cpuDelegator->sendRequest(pkt);
@@ -803,13 +804,13 @@ int StreamEngine::createStreamUserLSQCallbacks(
     if (this->enableLSQ) {
       if (pushToLQ) {
         assert(numCallbacks < callbacks.size() && "LQCallback overflows.");
-        callbacks.at(numCallbacks) = m5::make_unique<StreamLQCallback>(
+        callbacks.at(numCallbacks) = std::make_unique<StreamLQCallback>(
             element, seqNum, args.pc, args.usedStreamIds);
         numCallbacks++;
       }
       if (pushToSQ) {
         assert(numCallbacks < callbacks.size() && "SQCallback overflows.");
-        callbacks.at(numCallbacks) = m5 ::make_unique<StreamSQCallback>(
+        callbacks.at(numCallbacks) = std::make_unique<StreamSQCallback>(
             element, seqNum, args.pc, args.usedStreamIds);
         numCallbacks++;
       }
@@ -2981,8 +2982,8 @@ void StreamEngine::sendStreamFloatEndPacket(
   // engine).
   Addr initPAddr = 0;
   auto pkt = GemForgePacketHandler::createStreamControlPacket(
-      initPAddr, cpuDelegator->dataRequestorId(), 0, MemCmd::Command::StreamEndReq,
-      reinterpret_cast<uint64_t>(endedIdsCopy));
+      initPAddr, cpuDelegator->dataRequestorId(), 0,
+      MemCmd::Command::StreamEndReq, reinterpret_cast<uint64_t>(endedIdsCopy));
   if (Debug::CoreRubyStreamLife) {
     std::stringstream ss;
     for (const auto &id : endedIds) {
@@ -3011,8 +3012,9 @@ void StreamEngine::sendAtomicPacket(StreamElement *element,
     S_ELEMENT_PANIC(element, "Fault on AtomicOp vaddr %#x.", vaddr);
   }
   auto pkt = GemForgePacketHandler::createGemForgeAMOPacket(
-      vaddr, paddr, size, nullptr /* Handler */, cpuDelegator->dataRequestorId(),
-      0 /* ContextId */, 0 /* PC */, std::move(atomicOp));
+      vaddr, paddr, size, nullptr /* Handler */,
+      cpuDelegator->dataRequestorId(), 0 /* ContextId */, 0 /* PC */,
+      std::move(atomicOp));
   auto S = element->stream;
   S->statistic.numIssuedRequest++;
   // Send the packet to translation.
@@ -3103,4 +3105,4 @@ void StreamEngine::resetStats() {
   }
 }
 
-StreamEngine *StreamEngineParams::create() { return new StreamEngine(this); }
+} // namespace gem5

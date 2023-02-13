@@ -12,6 +12,8 @@
 #define DEBUG_TYPE StreamFloatController
 #include "stream_log.hh"
 
+namespace gem5 {
+
 StreamFloatController::StreamFloatController(
     StreamEngine *_se, std::unique_ptr<StreamFloatPolicy> _policy)
     : se(_se), policy(std::move(_policy)) {}
@@ -1580,4 +1582,5 @@ void StreamFloatController::allocateAddUsedAffineIV(
   DYN_S_DPRINTF(dynS->dynStreamId, "Add AffineIV %s R/S %d/%d.\n",
                 affineIVS->streamName, reuse, skip);
   config->addBaseAffineIV(affineIVConfig, reuse, skip);
-}
+}} // namespace gem5
+

@@ -3,6 +3,8 @@
 
 #include "stream_engine.hh"
 
+namespace gem5 {
+
 /**
  * Callback structures for LSQ.
  * TODO: It seems these two classes can be merged into one.
@@ -75,5 +77,7 @@ public:
   bool isWritebacked() override;
   void writebacked() override;
 };
+
+} // namespace gem5
 
 #endif

@@ -32,49 +32,32 @@
 
 #include "arch/generic/decode_cache.hh"
 #include "arch/generic/decoder.hh"
-#include "arch/riscv/isa_traits.hh"
 #include "arch/riscv/types.hh"
 #include "base/logging.hh"
 #include "base/types.hh"
 #include "cpu/static_inst.hh"
 #include "debug/Decode.hh"
+#include "params/RiscvDecoder.hh"
+
+namespace gem5
+{
+
+class BaseISA;
 
 namespace RiscvISA
 {
 
-class ISA;
 class Decoder : public InstDecoder
 {
   private:
-    // For DPRINTF.
-    const std::string _name;
-    const std::string &name() const { return _name; }
-    DecodeCache::InstMap<ExtMachInst> instMap;
+    decode_cache::InstMap<ExtMachInst> instMap;
     bool aligned;
     bool mid;
-    bool more;
 
   protected:
     //The extended machine instruction being generated
     ExtMachInst emi;
-    bool instDone;
-
-  public:
-    Decoder(ISA* isa = nullptr, int thread_id = 0)
-        : _name(std::string("decoder") + std::to_string(thread_id)) { reset(); }
-
-    void process() {}
-    void reset();
-
-    inline bool compressed(ExtMachInst inst) { return (inst & 0x3) < 0x3; }
-
-    //Use this to give data to the decoder. This should be used
-    //when there is control flow.
-    void moreBytes(const PCState &pc, Addr fetchPC, MachInst inst);
-
-    bool needMoreBytes() { return more; }
-    bool instReady() { return instDone; }
-    void takeOverFrom(Decoder *old) {}
+    uint32_t machInst;
 
     StaticInstPtr decodeInst(ExtMachInst mach_inst);
 
@@ -83,9 +66,24 @@ class Decoder : public InstDecoder
     /// @retval A pointer to the corresponding StaticInst object.
     StaticInstPtr decode(ExtMachInst mach_inst, Addr addr);
 
-    StaticInstPtr decode(RiscvISA::PCState &nextPC);
+  public:
+    Decoder(const RiscvDecoderParams &p) : InstDecoder(p, &machInst)
+    {
+        reset();
+    }
+
+    void reset() override;
+
+    inline bool compressed(ExtMachInst inst) { return (inst & 0x3) < 0x3; }
+
+    //Use this to give data to the decoder. This should be used
+    //when there is control flow.
+    void moreBytes(const PCStateBase &pc, Addr fetchPC) override;
+
+    StaticInstPtr decode(PCStateBase &nextPC) override;
 };
 
 } // namespace RiscvISA
+} // namespace gem5
 
 #endif // __ARCH_RISCV_DECODER_HH__

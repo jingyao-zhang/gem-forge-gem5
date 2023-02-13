@@ -21,10 +21,13 @@
 #define DEBUG_TYPE MLCRubyStreamBase
 #include "../stream_log.hh"
 
+namespace gem5 {
+
 MLCDynDirectStream::MLCDynDirectStream(
     CacheStreamConfigureDataPtr _configData,
-    AbstractStreamAwareController *_controller,
-    MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
+    ruby::AbstractStreamAwareController *_controller,
+    ruby::MessageBuffer *_responseMsgBuffer,
+    ruby::MessageBuffer *_requestToLLCMsgBuffer,
     const std::vector<MLCDynIndirectStream *> &_indirectStreams)
     : MLCDynStream(_configData, _controller, _responseMsgBuffer,
                    _requestToLLCMsgBuffer, true /* isMLCDirect */),
@@ -328,7 +331,7 @@ void MLCDynDirectStream::allocateSlice() {
      * ! We cheat here to notify the indirect stream immediately,
      * ! to avoid some complicate problem of managing streams.
      */
-    assert(this->controller->params()->ruby_system->getAccessBackingStore() &&
+    assert(this->controller->params().ruby_system->getAccessBackingStore() &&
            "This only works with backing store.");
     this->notifyIndStreams(this->slices.back());
 
@@ -657,7 +660,7 @@ void MLCDynDirectStream::sendCreditToLLC(const LLCSegmentPosition &segment) {
   auto remotePAddr = segment.startPAddr;
 
   if (this->config->disableMigration) {
-    if (startElemMachineType != MachineType_L2Cache) {
+    if (startElemMachineType != ruby::MachineType_L2Cache) {
       MLC_S_PANIC(this->strandId,
                   "Cannot disable migration for non-LLC stream.");
     }
@@ -671,12 +674,12 @@ void MLCDynDirectStream::sendCreditToLLC(const LLCSegmentPosition &segment) {
                 "Extended %lu (Elem %lu) -> %lu at %s (DisableMigration %d).\n",
                 segment.startSliceIdx, startElemIdx, segment.endSliceIdx,
                 remoteBank, this->config->disableMigration);
-  auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
-  msg->m_addr = makeLineAddress(remotePAddr);
-  msg->m_Type = CoherenceRequestType_STREAM_FLOW;
+  auto msg = std::make_shared<ruby::RequestMsg>(this->controller->clockEdge());
+  msg->m_addr = ruby::makeLineAddress(remotePAddr);
+  msg->m_Type = ruby::CoherenceRequestType_STREAM_FLOW;
   msg->m_Requestors.add(this->controller->getMachineID());
   msg->m_Destination.add(remoteBank);
-  msg->m_MessageSize = MessageSizeType_Control;
+  msg->m_MessageSize = ruby::MessageSizeType_Control;
   DynStreamSliceId sliceId;
   sliceId.getDynStrandId() = this->strandId;
   sliceId.getStartIdx() = segment.startSliceIdx;
@@ -707,7 +710,7 @@ void MLCDynDirectStream::sendCreditToLLC(const LLCSegmentPosition &segment) {
 }
 
 void MLCDynDirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
-                                           const DataBlock &dataBlock,
+                                           const ruby::DataBlock &dataBlock,
                                            Addr paddrLine) {
   assert(sliceId.isValid() && "Invalid stream slice id for stream data.");
 
@@ -827,19 +830,21 @@ void MLCDynDirectStream::notifyIndStreams(const MLCStreamSlice &slice) {
     // Try to extract the stream data.
     auto elementVAddr = this->slicedStream.getElementVAddr(elemIdx);
     auto elementSize = this->slicedStream.getMemElementSize();
-    auto elementLineOffset = elementVAddr % RubySystem::getBlockSizeBytes();
+    auto elementLineOffset =
+        elementVAddr % ruby::RubySystem::getBlockSizeBytes();
 
     /**
      * For multi-line base element, we make sure that we only notify the
      * indirect stream once.
      * TODO: Really handle this case.
      */
-    if (makeLineAddress(elementVAddr) != makeLineAddress(sliceId.vaddr)) {
+    if (ruby::makeLineAddress(elementVAddr) !=
+        ruby::makeLineAddress(sliceId.vaddr)) {
       continue;
     }
 
     std::vector<uint8_t> elementData(elementSize, 0);
-    auto rubySystem = this->controller->params()->ruby_system;
+    auto rubySystem = this->controller->params().ruby_system;
     if (rubySystem->getAccessBackingStore()) {
       // Get the data from backing store.
       // Using this API to handle page crossing.
@@ -855,7 +860,7 @@ void MLCDynDirectStream::notifyIndStreams(const MLCStreamSlice &slice) {
     } else {
       // Get the data from the cache line.
       assert(elementLineOffset + elementSize <=
-                 RubySystem::getBlockSizeBytes() &&
+                 ruby::RubySystem::getBlockSizeBytes() &&
              "Cannot support multi-line element with indirect streams without "
              "backing store.");
       for (auto byteOffset = 0; byteOffset < elementSize; ++byteOffset) {
@@ -947,8 +952,8 @@ MLCDynDirectStream::findSliceForCoreRequest(const DynStreamSliceId &sliceId) {
   MLC_S_PANIC(this->strandId, "Failed to find slice for core %s.\n", sliceId);
 }
 
-void MLCDynDirectStream::receiveReuseStreamData(Addr vaddr,
-                                                const DataBlock &dataBlock) {
+void MLCDynDirectStream::receiveReuseStreamData(
+    Addr vaddr, const ruby::DataBlock &dataBlock) {
   MLC_S_DPRINTF(this->strandId, "Received reuse block %#x.\n", vaddr);
   /**
    * Somehow it's possible that the slice is already allocated.
@@ -1183,19 +1188,19 @@ void MLCDynDirectStream::sendCommitToLLC(const LLCSegmentPosition &segment) {
 
   auto startElementMachineType =
       this->config->floatPlan.getMachineTypeAtElem(startElementIdx);
-  auto startPAddrLine = makeLineAddress(segment.startPAddr);
+  auto startPAddrLine = ruby::makeLineAddress(segment.startPAddr);
   auto remoteBank = this->controller->mapAddressToLLCOrMem(
       startPAddrLine, startElementMachineType);
 
   MLC_S_DPRINTF_(StreamRangeSync, this->strandId,
                  "[Range] Commit [%llu, %lu), to %s.\n", startElementIdx,
                  endElementIdx, remoteBank);
-  auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
+  auto msg = std::make_shared<ruby::RequestMsg>(this->controller->clockEdge());
   msg->m_addr = startPAddrLine;
-  msg->m_Type = CoherenceRequestType_STREAM_COMMIT;
+  msg->m_Type = ruby::CoherenceRequestType_STREAM_COMMIT;
   msg->m_Requestors.add(this->controller->getMachineID());
   msg->m_Destination.add(remoteBank);
-  msg->m_MessageSize = MessageSizeType_Control;
+  msg->m_MessageSize = ruby::MessageSizeType_Control;
   DynStreamSliceId sliceId;
   sliceId.getDynStrandId() = this->strandId;
   sliceId.getStartIdx() = startElementIdx;
@@ -1265,9 +1270,9 @@ void MLCDynDirectStream::receiveStreamDone(const DynStreamSliceId &sliceId) {
   }
 }
 
-void MLCDynDirectStream::setTotalTripCount(int64_t totalTripCount,
-                                           Addr brokenPAddr,
-                                           MachineType brokenMachineType) {
+void MLCDynDirectStream::setTotalTripCount(
+    int64_t totalTripCount, Addr brokenPAddr,
+    ruby::MachineType brokenMachineType) {
   /**
    * If broken out by LoopBound, it will not migrate to the next place, so we
    * remember the broken machine type.
@@ -1282,7 +1287,7 @@ void MLCDynDirectStream::setTotalTripCount(int64_t totalTripCount,
   this->llcStreamLoopBoundBrokenMachineType = brokenMachineType;
 }
 
-std::pair<Addr, MachineType>
+std::pair<Addr, ruby::MachineType>
 MLCDynDirectStream::getRemoteTailPAddrAndMachineType() const {
   /**
    * Normally we just get LastLLCSegment.endPAddr, however things get
@@ -1294,7 +1299,7 @@ MLCDynDirectStream::getRemoteTailPAddrAndMachineType() const {
   if (this->config->disableMigration) {
     // Stays at the req. bank.
     auto endPAddr = this->lastCreditPAddr;
-    auto endMachineType = MachineType_L2Cache;
+    auto endMachineType = ruby::MachineType_L2Cache;
     return std::make_pair(endPAddr, endMachineType);
   }
   if (this->llcStreamLoopBoundCutted) {
@@ -1303,7 +1308,7 @@ MLCDynDirectStream::getRemoteTailPAddrAndMachineType() const {
   } else {
 
     auto endPAddr = config->initPAddr;
-    auto endMachineType = MachineType_L2Cache;
+    auto endMachineType = ruby::MachineType_L2Cache;
 
     if (this->getTailSliceIdx() > 0) {
       const auto &lastSegment = this->getLastLLCSegment();
@@ -1334,3 +1339,4 @@ MLCDynDirectStream::getRemoteTailPAddrAndMachineType() const {
     return std::make_pair(endPAddr, endMachineType);
   }
 }
+} // namespace gem5

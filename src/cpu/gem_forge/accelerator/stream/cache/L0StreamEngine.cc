@@ -24,7 +24,9 @@
   DPRINTF(L0RubyStreamBase, "[L0_SE%d]%s: " format,                            \
           this->controller->getMachineID().num, (sliceId), ##args)
 
-L0StreamEngine::L0StreamEngine(AbstractStreamAwareController *_controller)
+namespace gem5 {
+
+L0StreamEngine::L0StreamEngine(ruby::AbstractStreamAwareController *_controller)
     : controller(_controller) {}
 
 L0StreamEngine::~L0StreamEngine() {}
@@ -178,3 +180,5 @@ L0StreamEngine::getStreamMemAccessFromPacket(PacketPtr pkt) const {
   }
   return pkt->findNextSenderState<StreamMemAccess>();
 }
+} // namespace gem5
+

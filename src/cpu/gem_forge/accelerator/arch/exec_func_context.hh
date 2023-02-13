@@ -2,11 +2,14 @@
 #define __GEM_FORGE_EXEC_FUNC_CONTEXT_HH__
 
 #include "cpu/exec_context.hh"
+#include "cpu/regfile.hh"
 
 #if THE_ISA == X86_ISA
 // ! Jesus I break the isolation.
 #include "arch/x86/regs/misc.hh"
 #endif
+
+namespace gem5 {
 
 /**
  * A taylored ExecContext that only provides integer register file,
@@ -14,187 +17,53 @@
  */
 class ExecFuncContext : public ExecContext {
 public:
-  /** Reads an integer register. */
-  RegVal readIntRegOperand(const StaticInst *si, int idx) override {
-    return this->readIntRegOperand(si->srcRegIdx(idx));
+  RegVal getRegOperand(const StaticInst *si, int idx) {
+    RegVal val = 0;
+    this->getRegOperand(si, idx, &val);
+    return val;
   }
 
-  /** Sets an integer register to a value. */
-  void setIntRegOperand(const StaticInst *si, int idx, RegVal val) override {
-    this->setIntRegOperand(si->destRegIdx(idx), val);
+  void getRegOperand(const StaticInst *si, int idx, void *val) {
+    const auto &regId = si->srcRegIdx(idx);
+    if (regId.is(InvalidRegClass)) {
+      return;
+    }
+    const RegId reg = regId.flatten(*isa);
+
+    const auto &regFile = regFiles[reg.classValue()];
+
+    regFile->get(reg.index(), val);
   }
 
-  /** Directly read/set the integer register, used to pass in arguments. **/
-  RegVal readIntRegOperand(const RegId &reg) {
-    assert(reg.isIntReg());
-    // For RISCV, this is directly flattened.
-    return this->intRegs[reg.index()];
-  }
-  void setIntRegOperand(const RegId &reg, RegVal val) {
-    assert(reg.isIntReg());
-    this->intRegs[reg.index()] = val;
+  void *getWritableRegOperand(const StaticInst *si, int idx) {
+
+    const RegId &regId = si->destRegIdx(idx);
+    const RegId reg = regId.flatten(*isa);
+    auto &reg_file = regFiles[reg.classValue()];
+
+    return reg_file->ptr(reg.index());
   }
 
-  /** @} */
-
-  /**
-   * @{
-   * @name Floating Point Register Interfaces
-   */
-
-  /** Reads a floating point register in its binary format, instead
-   * of by value. */
-  RegVal readFloatRegOperandBits(const StaticInst *si, int idx) override {
-    const RegId &reg = si->srcRegIdx(idx);
-    assert(reg.isFloatReg());
-    assert(reg.index() < TheISA::NumFloatRegs);
-    return this->floatRegs[reg.index()];
+  void setRegOperand(const StaticInst *si, int idx, RegVal val) {
+    this->setRegOperand(si, idx, &val);
   }
 
-  /** Sets the bits of a floating point register of single width
-   * to a binary value. */
-  void setFloatRegOperandBits(const StaticInst *si, int idx,
-                              RegVal val) override {
-    const RegId &reg = si->destRegIdx(idx);
-    assert(reg.isFloatReg());
-    assert(reg.index() < TheISA::NumFloatRegs);
-    this->floatRegs[reg.index()] = val;
-  }
+  void setRegOperand(const StaticInst *si, int idx, const void *val);
 
   /** Directly read/set the integer register, used to pass in arguments. **/
-  RegVal readFloatRegOperand(const RegId &reg) {
-    assert(reg.isFloatReg());
-    assert(reg.index() < TheISA::NumFloatRegs);
-    return this->floatRegs[reg.index()];
-  }
-  void setFloatRegOperand(const RegId &reg, RegVal val) {
-    assert(reg.isFloatReg());
-    assert(reg.index() < TheISA::NumFloatRegs);
-    this->floatRegs[reg.index()] = val;
+  RegVal getRegOperand(const RegId &regId) {
+    assert(!regId.is(InvalidRegClass));
+    const RegId reg = regId.flatten(*isa);
+    const RegIndex idx = reg.index();
+    const auto &regFile = regFiles[reg.classValue()];
+    return regFile->reg(idx);
   }
 
-  /** @} */
-
-  /** Vector Register Interfaces. */
-  /** @{ */
-  /** Reads source vector register operand. */
-  const VecRegContainer &readVecRegOperand(const StaticInst *si,
-                                           int idx) const override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-
-  /** Gets destination vector register operand for modification. */
-  VecRegContainer &getWritableVecRegOperand(const StaticInst *si,
-                                            int idx) override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-
-  /** Sets a destination vector register operand to a value. */
-  void setVecRegOperand(const StaticInst *si, int idx,
-                        const VecRegContainer &val) override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-  /** @} */
-
-  /** Vector Register Lane Interfaces. */
-  /** @{ */
-  /** Reads source vector 8bit operand. */
-  ConstVecLane8 readVec8BitLaneOperand(const StaticInst *si,
-                                       int idx) const override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-
-  /** Reads source vector 16bit operand. */
-  ConstVecLane16 readVec16BitLaneOperand(const StaticInst *si,
-                                         int idx) const override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-
-  /** Reads source vector 32bit operand. */
-  ConstVecLane32 readVec32BitLaneOperand(const StaticInst *si,
-                                         int idx) const override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-
-  /** Reads source vector 64bit operand. */
-  ConstVecLane64 readVec64BitLaneOperand(const StaticInst *si,
-                                         int idx) const override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-
-  /** Write a lane of the destination vector operand. */
-  /** @{ */
-  void setVecLaneOperand(const StaticInst *si, int idx,
-                         const LaneData<LaneSize::Byte> &val) override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-  void setVecLaneOperand(const StaticInst *si, int idx,
-                         const LaneData<LaneSize::TwoByte> &val) override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-  void setVecLaneOperand(const StaticInst *si, int idx,
-                         const LaneData<LaneSize::FourByte> &val) override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-  void setVecLaneOperand(const StaticInst *si, int idx,
-                         const LaneData<LaneSize::EightByte> &val) override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-  /** @} */
-
-  /** Vector Elem Interfaces. */
-  /** @{ */
-  /** Reads an element of a vector register. */
-  VecElem readVecElemOperand(const StaticInst *si, int idx) const override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-
-  /** Sets a vector register to a value. */
-  void setVecElemOperand(const StaticInst *si, int idx,
-                         const VecElem val) override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-  /** @} */
-
-  /** Predicate registers interface. */
-  /** @{ */
-  /** Reads source predicate register operand. */
-  const VecPredRegContainer &readVecPredRegOperand(const StaticInst *si,
-                                                   int idx) const override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-
-  /** Gets destination predicate register operand for modification. */
-  VecPredRegContainer &getWritableVecPredRegOperand(const StaticInst *si,
-                                                    int idx) override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-
-  /** Sets a destination predicate register operand to a value. */
-  void setVecPredRegOperand(const StaticInst *si, int idx,
-                            const VecPredRegContainer &val) override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-  /** @} */
-
-  /**
-   * Condition Code Registers
-   */
-  RegVal readCCRegOperand(const StaticInst *si, int idx) override {
-    const RegId &reg = si->srcRegIdx(idx);
-    assert(reg.isCCReg());
-    return this->ccRegs[this->flattenCCRegIdx(reg.index())];
-  }
-
-  RegVal readCCRegOperand(const RegId &reg) {
-    assert(reg.isCCReg());
-    return this->ccRegs[this->flattenCCRegIdx(reg.index())];
-  }
-
-  void setCCRegOperand(const StaticInst *si, int idx, RegVal val) override {
-    const RegId &reg = si->destRegIdx(idx);
-    assert(reg.isCCReg());
-    this->ccRegs[this->flattenCCRegIdx(reg.index())] = val;
+  void setRegOperand(const RegId &regId, RegVal val) {
+    const RegId reg = regId.flatten(*isa);
+    const RegIndex idx = reg.index();
+    const auto &regFile = regFiles[reg.classValue()];
+    regFile->set(idx, &val);
   }
 
   /**
@@ -207,11 +76,11 @@ public:
  */
 #if THE_ISA == X86_ISA
     const auto &reg = si->srcRegIdx(idx);
-    assert(reg.isMiscReg());
+    assert(reg.classValue() == RegClassType::MiscRegClass);
     switch (reg.index()) {
-    case X86ISA::MiscRegIndex::MISCREG_SS_EFF_BASE:
-    case X86ISA::MiscRegIndex::MISCREG_DS_EFF_BASE:
-    case X86ISA::MiscRegIndex::MISCREG_CS_EFF_BASE: {
+    case X86ISA::misc_reg::SsEffBase:
+    case X86ISA::misc_reg::DsEffBase:
+    case X86ISA::misc_reg::CsEffBase: {
       return 0;
     }
     default: {
@@ -247,8 +116,8 @@ public:
    * @{
    * @name PC Control
    */
-  PCState pcState() const override { return this->pc; }
-  void pcState(const PCState &val) override { this->pc = val; }
+  const PCStateBase &pcState() const override { return *this->_pcState; }
+  void pcState(const PCStateBase &val) override { set(this->_pcState, val); }
   /** @} */
 
   /**
@@ -301,9 +170,9 @@ public:
    * mode need not override (though in that case this function
    * should never be called).
    */
-  Fault readMem(Addr addr, uint8_t *data, unsigned int size,
-                Request::Flags flags,
-                const std::vector<bool> &byteEnable = std::vector<bool>()) {
+  Fault
+  readMem(Addr addr, uint8_t *data, unsigned int size, Request::Flags flags,
+          const std::vector<bool> &byteEnable = std::vector<bool>()) override {
     assert(this->virtProxy && "No virt port proxy.");
     if (this->isFakeStackVAddr(addr)) {
       this->readFakeStack(addr, data, size);
@@ -322,10 +191,20 @@ public:
    * mode need not override (though in that case this function
    * should never be called).
    */
-  Fault
-  initiateMemRead(Addr addr, unsigned int size, Request::Flags flags,
-                  const std::vector<bool> &byteEnable = std::vector<bool>()) {
+  Fault initiateMemRead(Addr addr, unsigned int size, Request::Flags flags,
+                        const std::vector<bool> &byteEnable) override {
     panic("ExecContext::initiateMemRead() should be overridden\n");
+  }
+
+  /**
+   * Initiate a memory management command with no valid address.
+   * Currently, these instructions need to bypass squashing in the O3 model
+   * Examples include HTM commands and TLBI commands.
+   * e.g. tell Ruby we're starting/stopping a HTM transaction,
+   *      or tell Ruby to issue a TLBI operation
+   */
+  Fault initiateMemMgmtCmd(Request::Flags flags) override {
+    panic("FuncAddrExecContext does not implement this %s.", __func__);
   }
 
   /**
@@ -376,28 +255,6 @@ public:
    * Returns the number of consecutive store conditional failures.
    */
   unsigned int readStCondFailures() const override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-
-  /** @} */
-
-  /**
-   * @{
-   * @name SysCall Emulation Interfaces
-   */
-
-  /**
-   * Executes a syscall specified by the callnum.
-   */
-  void syscall() override {
-    panic("FuncAddrExecContext does not implement this %s.", __func__);
-  }
-
-  /**
-   * Initiate an HTM command,
-   * e.g. tell Ruby we're starting/stopping a transaction
-   */
-  Fault initiateHtmCmd(Request::Flags flags) override {
     panic("FuncAddrExecContext does not implement this %s.", __func__);
   }
 
@@ -467,16 +324,21 @@ public:
   }
 
   void clear() {
-    for (auto &reg : this->intRegs) {
-      reg = 0;
-    }
-    for (auto &reg : this->floatRegs) {
-      reg = 0;
-    }
-    for (auto &reg : this->ccRegs) {
-      reg = 0;
+    for (auto &regFile : this->regFiles) {
+      regFile->clear();
     }
     this->virtProxy = nullptr;
+  }
+
+  void init(BaseISA *const _isa) {
+    if (this->isa) {
+      // Already initialized.
+      return;
+    }
+    this->isa = _isa;
+    for (const auto &regClass : this->isa->regClasses()) {
+      this->regFiles.push_back(std::make_unique<RegFile>(*regClass));
+    }
   }
 
   void setVirtProxy(PortProxy *virtProxy) {
@@ -485,22 +347,12 @@ public:
   }
 
 protected:
-  RegVal intRegs[TheISA::NumIntRegs];
-  RegVal floatRegs[TheISA::NumFloatRegs];
-  RegVal ccRegs[TheISA::NumCCRegs];
-  int flattenCCRegIdx(int regIdx) const {
-#if THE_ISA == X86_ISA
-    int flatIndex = regIdx;
-#elif THE_ISA == RISCV_ISA
-    int flatIndex = regIdx;
-#else
-    panic("ExecFuncContext does not support this ISA.");
-#endif
-    assert(flatIndex < TheISA::NumCCRegs);
-    return flatIndex;
-  }
-  TheISA::PCState pc;
+  BaseISA *isa = nullptr;
+  std::vector<std::unique_ptr<RegFile>> regFiles;
+  std::unique_ptr<PCStateBase> _pcState;
   PortProxy *virtProxy = nullptr;
 };
+
+} // namespace gem5
 
 #endif

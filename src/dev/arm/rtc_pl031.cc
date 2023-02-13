@@ -46,12 +46,17 @@
 #include "mem/packet.hh"
 #include "mem/packet_access.hh"
 
-PL031::PL031(Params *p)
-    : AmbaIntDevice(p, 0x1000), timeVal(mkutctime(&p->time)),
-      lastWrittenTick(0), loadVal(0), matchVal(0),
+namespace gem5
+{
+
+PL031::PL031(const Params &p)
+    : AmbaIntDevice(p, 0x1000), lastWrittenTick(0), loadVal(0), matchVal(0),
       rawInt(false), maskInt(false), pendingInt(false),
       matchEvent([this]{ counterMatch(); }, name())
 {
+    // Make a temporary copy so mkutctime can modify it.
+    struct tm local_time = p.time;
+    timeVal = mkutctime(&local_time);
 }
 
 
@@ -59,7 +64,7 @@ Tick
 PL031::read(PacketPtr pkt)
 {
     assert(pkt->getAddr() >= pioAddr && pkt->getAddr() < pioAddr + pioSize);
-    assert(pkt->getSize() == 4);
+    assert(pkt->getSize() <= 4);
     Addr daddr = pkt->getAddr() - pioAddr;
     uint32_t data;
 
@@ -67,7 +72,8 @@ PL031::read(PacketPtr pkt)
 
     switch (daddr) {
       case DataReg:
-        data = timeVal + ((curTick() - lastWrittenTick) / SimClock::Int::s);
+        data = timeVal +
+            ((curTick() - lastWrittenTick) / sim_clock::as_int::s);
         break;
       case MatchReg:
         data = matchVal;
@@ -97,22 +103,7 @@ PL031::read(PacketPtr pkt)
         break;
     }
 
-    switch(pkt->getSize()) {
-      case 1:
-        pkt->setLE<uint8_t>(data);
-        break;
-      case 2:
-        pkt->setLE<uint16_t>(data);
-        break;
-      case 4:
-        pkt->setLE<uint32_t>(data);
-        break;
-      default:
-        panic("Uart read size too big?\n");
-        break;
-    }
-
-
+    pkt->setUintX(data, ByteOrder::little);
     pkt->makeAtomicResponse();
     return pioDelay;
 }
@@ -121,7 +112,7 @@ Tick
 PL031::write(PacketPtr pkt)
 {
     assert(pkt->getAddr() >= pioAddr && pkt->getAddr() < pioAddr + pioSize);
-    assert(pkt->getSize() == 4);
+    assert(pkt->getSize() <= 4);
     Addr daddr = pkt->getAddr() - pioAddr;
     DPRINTF(Timer, "Writing to RTC at offset: %#x\n", daddr);
 
@@ -167,7 +158,7 @@ PL031::resyncMatch()
             timeVal);
 
     uint32_t seconds_until = matchVal - timeVal;
-    Tick ticks_until = SimClock::Int::s * seconds_until;
+    Tick ticks_until = sim_clock::as_int::s * seconds_until;
 
     if (matchEvent.scheduled()) {
         DPRINTF(Timer, "-- Event was already schedule, de-scheduling\n");
@@ -236,10 +227,4 @@ PL031::unserialize(CheckpointIn &cp)
     }
 }
 
-
-
-PL031 *
-PL031Params::create()
-{
-    return new PL031(this);
-}
+} // namespace gem5

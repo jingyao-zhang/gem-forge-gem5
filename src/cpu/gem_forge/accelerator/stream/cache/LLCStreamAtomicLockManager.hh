@@ -6,6 +6,8 @@
 
 #include <list>
 
+namespace gem5 {
+
 class LLCStreamAtomicLockManager {
 public:
   LLCStreamAtomicLockManager(LLCStreamEngine *_se);
@@ -109,7 +111,7 @@ private:
     /**
      * So far we build the lock queue at line granularity.
      */
-    return makeLineAddress(paddr);
+    return ruby::makeLineAddress(paddr);
   }
 
   /**
@@ -131,5 +133,7 @@ private:
    */
   void checkDeadlock(LLCStreamElementPtr newElement) const;
 };
+
+} // namespace gem5
 
 #endif
