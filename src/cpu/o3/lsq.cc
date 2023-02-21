@@ -843,6 +843,9 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
             }
         }
         assert(request);
+        if (byte_enable.size() == 0 && request->_size != 0) {
+            panic("Missing byte_enable for %s.", *inst);
+        }
         request->_byteEnable = byte_enable;
         inst->setRequest();
         request->taskId(cpu->taskId());

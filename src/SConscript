@@ -786,9 +786,6 @@ Gem5('gem5', with_any_tags('gem5 lib', 'main'))
 # Function to create a new build environment as clone of current
 # environment 'env' with modified object suffix and optional stripped
 # binary.
-print(needed_envs)
 for env in (envs[e] for e in needed_envs):
-    for x in env['CPPPATH']:
-        print(x.__str__())
     for cls in TopLevelMeta.all:
         cls.declare_all(env)

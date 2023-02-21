@@ -276,10 +276,12 @@ class DistStor
         {
             fatal_if(bucket_size <= 0,
                 "Bucket size (%f) must be greater than zero", bucket_size);
+            /*
             warn_if(std::floor((max - min + 1.0) / bucket_size) !=
                 std::ceil((max - min + 1.0) / bucket_size),
                 "Bucket size (%f) does not divide range [%f:%f] into equal-" \
                 "sized buckets. Rounding up.", bucket_size, min + 1.0, max);
+            */
 
             buckets = std::ceil((max - min + 1.0) / bucket_size);
         }

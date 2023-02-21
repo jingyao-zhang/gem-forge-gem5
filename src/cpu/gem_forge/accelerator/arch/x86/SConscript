@@ -1,5 +1,4 @@
 Import('*')
 
-print(env['CONF'])
 if env['CONF']['USE_X86_ISA']:
     Source('x86_exec_func.cc')

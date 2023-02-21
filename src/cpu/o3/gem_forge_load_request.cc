@@ -57,7 +57,14 @@ void GemForgeLoadRequest::release(Flag reason) {
 void GemForgeLoadRequest::initiateTranslation() {
   assert(this->_reqs.size() == 0);
   this->addReq(this->_addr, this->_size, this->_byteEnable);
-  assert(this->_reqs.size() == 1 && "Should have request.");
+  if (this->_reqs.size() != 1) {
+    std::stringstream ss;
+    for (int i = 0; i < this->_byteEnable.size(); ++i) {
+      ss << this->_byteEnable[i];
+    }
+    panic("Not single request %d addr %#x size %d byteEnable %s.\n",
+          this->_reqs.size(), this->_addr, this->_size, ss.str());
+  }
 
   this->_reqs.back()->setReqInstSeqNum(this->_inst->seqNum);
   this->_reqs.back()->taskId(this->_taskId);

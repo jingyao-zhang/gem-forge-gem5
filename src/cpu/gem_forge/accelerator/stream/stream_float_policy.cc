@@ -20,8 +20,6 @@ std::vector<uint64_t> getCacheCapacity(StreamEngine *se) {
   uint64_t l2Size = 0;
   uint64_t l3Size = 0;
   for (auto so : se->getSimObjectList()) {
-    hack("Checking so %x.\n", so);
-    hack("Checking so %x %s.\n", so, so->name());
     auto cacheMemory = dynamic_cast<ruby::CacheMemory *>(so);
     if (!cacheMemory) {
       continue;

@@ -593,7 +593,7 @@ Fault O3CPUDelegator::initiateGemForgeLoadOrAtomic(
   uint32_t size;
   assert(callbacks.front()->getAddrSize(vaddr, size) &&
          "GemForgeLQCallback should be addr/size ready.");
-  std::vector<bool> byteEnable;
+  std::vector<bool> byteEnable(size, true);
 
   return pimpl->cpu->pushRequest(dynInstPtr, dynInstPtr->isLoad() /* isLoad */,
                                  nullptr /* data */, size, vaddr, 0 /* flags */,
