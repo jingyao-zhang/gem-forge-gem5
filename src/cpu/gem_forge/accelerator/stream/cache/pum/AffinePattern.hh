@@ -10,7 +10,7 @@
 #include <tuple>
 #include <vector>
 
-#include "TDFG.pb.h"
+#include "cpu/gem_forge/accelerator/stream/cache/pum/TDFG.pb.h"
 #include "config/have_protobuf.hh"
 #ifndef HAVE_PROTOBUF
 #error "Require protobuf to parse tensor dataflow graph."

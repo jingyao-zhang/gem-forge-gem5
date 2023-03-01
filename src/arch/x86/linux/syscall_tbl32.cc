@@ -164,7 +164,7 @@ SyscallDescTable<EmuLinux::SyscallABI32> EmuLinux::syscallDescs32 = {
     { 122, "uname", unameFunc },
     { 123, "modify_ldt" },
     { 124, "adjtimex" },
-    { 125, "mprotect", ignoreFunc },
+    { 125, "mprotect", ignoreWarnOnceFunc },
     { 126, "sigprocmask" },
     { 127, "create_module" },
     { 128, "init_module" },

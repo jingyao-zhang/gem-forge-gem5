@@ -168,13 +168,17 @@ void StreamNUCAManager::defineAlign(Addr A, Addr B, int64_t elemOffset) {
   regionA.aligns.emplace_back(A, B, elemOffset);
   if (elemOffset < 0) {
     regionA.isIrregular = true;
-    IrregularAlignField indField = decodeIrregularAlign(elemOffset);
-    if (indField.type == IrregularAlignField::TypeE::PtrChase) {
+    IrregularAlignField fields = decodeIrregularAlign(elemOffset);
+    if (fields.type == IrregularAlignField::TypeE::PtrChase) {
       regionA.isPtrChase = true;
     }
     DPRINTF(StreamNUCAManager,
-            "[StreamNUCA]     IrregularAlign Type %d Offset %d Size %d.\n",
-            indField.type, indField.offset, indField.size);
+            "[StreamNUCA] IrregAlign Type %d Ind %d+%d %d+%d/%d Ptr %d+%d "
+            "%d+%d/%d.\n",
+            fields.type, fields.indCountOffset, fields.indCountSize,
+            fields.indOffset, fields.indSize, fields.indStride,
+            fields.ptrCountOffset, fields.ptrCountSize, fields.ptrOffset,
+            fields.ptrSize, fields.ptrStride);
   }
 }
 
@@ -361,7 +365,12 @@ void StreamNUCAManager::remapRegions(ThreadContext *tc,
 
   /**
    * For now we enforce the same virtual bitlines for all PUM region.
+   *
+   * Also: Indirect remap is done at region group level.
    */
+  std::unordered_map<std::string, IndirectRegionHops> regionHopMap;
+  std::vector<StreamRegion *> indirectRegions;
+
   int64_t vBitlines = this->getVirtualBitlinesForPUM(remapPUMRegionVAddrs);
   for (int i = 0; i < regionVAddrs.size(); ++i) {
     auto decision = remapDecisions.at(i);
@@ -370,7 +379,17 @@ void StreamNUCAManager::remapRegions(ThreadContext *tc,
     default:
       panic("Invalid Remap Decision %d.", decision);
     case REMAP_INDIRECT: {
-      this->remapIndirectRegion(tc, region);
+
+      auto regionGroup = region.getRegionGroup();
+      auto &regionHops =
+          regionHopMap
+              .emplace(std::piecewise_construct,
+                       std::forward_as_tuple(regionGroup),
+                       std::forward_as_tuple(StreamNUCAMap::getNumCols() *
+                                             StreamNUCAMap::getNumRows()))
+              .first->second;
+      indirectRegions.push_back(&region);
+      this->remapIndirectRegion(tc, region, regionHops);
       break;
     }
     case REMAP_PTR_CHASE: {
@@ -386,6 +405,29 @@ void StreamNUCAManager::remapRegions(ThreadContext *tc,
       break;
     }
     }
+  }
+
+  /**
+   * For each indirect region group, do remap.
+   * For each indirect region, do CSR reorder.
+   */
+  for (auto &entry : regionHopMap) {
+    const auto &regionGroup = entry.first;
+    auto &regionHops = entry.second;
+    DPRINTF(StreamNUCAManager, "[StreamNUCA] Remap IndRegionGroup %s.\n",
+            regionGroup);
+    this->greedyAssignIndirectBoxes(regionHops);
+    if (this->indirectRebalanceThreshold > 0.0f) {
+      this->rebalanceIndirectBoxes(regionHops);
+    }
+
+    // Finally relocate boxes.
+    this->relocateIndirectBoxes(tc, regionHops);
+  }
+
+  // Try to estimate CSR edge list migration.
+  for (auto &region : indirectRegions) {
+    this->estimateCSRMigration(tc, *region);
   }
 }
 
@@ -427,7 +469,7 @@ void StreamNUCAManager::remapPtrChaseRegion(ThreadContext *tc,
   DPRINTF(
       StreamNUCAManager,
       "[StreamNUCA] Remap PtrCahse %s Head %s Offset %d Size %d ElemSize %d.\n",
-      region.name, alignToRegion.name, alignInfo.offset, alignInfo.size,
+      region.name, alignToRegion.name, alignInfo.ptrOffset, alignInfo.ptrSize,
       region.elementSize);
 
   const auto llcBlockSize = StreamNUCAMap::getCacheBlockSize();
@@ -462,9 +504,9 @@ void StreamNUCAManager::remapPtrChaseRegion(ThreadContext *tc,
         paddrLineToBankMap.emplace(paddr, currentBank);
       }
 
-      Addr nextPtr = headVAddr + alignInfo.offset;
+      Addr nextPtr = headVAddr + alignInfo.ptrOffset;
       Addr nextVAddr;
-      virtProxy.readBlob(nextPtr, &nextVAddr, alignInfo.size);
+      virtProxy.readBlob(nextPtr, &nextVAddr, alignInfo.ptrSize);
 
       headVAddr = nextVAddr;
 
@@ -490,14 +532,15 @@ void StreamNUCAManager::remapPtrChaseRegion(ThreadContext *tc,
 }
 
 void StreamNUCAManager::remapIndirectRegion(ThreadContext *tc,
-                                            StreamRegion &region) {
+                                            StreamRegion &region,
+                                            IndirectRegionHops &regionHops) {
 
   /**
    * We divide this into multiple phases:
    * 1. Collect hops stats.
-   * 2. Greedily allocate pages to the NUMA Nodes with minimal traffic.
+   * 2. Greedily allocate boxes to the NUMA Nodes with minimal traffic.
    * 3. If imbalanced, we try to remap.
-   * 4. Relocate pages if necessary.
+   * 4. Relocate boxes if necessary.
    *
    * NOTE: This does not work with PUM.
    * NOTE: For now remapped indirect region is not cached.
@@ -518,23 +561,12 @@ void StreamNUCAManager::remapIndirectRegion(ThreadContext *tc,
     return;
   }
 
-  auto regionHops = this->computeIndirectRegionHops(tc, region);
-
-  this->greedyAssignIndirectBoxes(regionHops);
-  if (this->indirectRebalanceThreshold > 0.0f) {
-    this->rebalanceIndirectBoxes(regionHops);
-  }
-
-  // Register a fake region.
-  this->relocateIndirectBoxes(tc, regionHops);
-
-  // Try to estimate CSR edge list migration.
-  this->estimateCSRMigration(tc, region);
+  this->computeIndirectRegionHops(tc, region, regionHops);
 }
 
-StreamNUCAManager::IndirectRegionHops
-StreamNUCAManager::computeIndirectRegionHops(ThreadContext *tc,
-                                             const StreamRegion &region) {
+void StreamNUCAManager::computeIndirectRegionHops(
+    ThreadContext *tc, const StreamRegion &region,
+    IndirectRegionHops &regionHops) {
   auto indAlignIdx = -1;
   for (int i = 0; i < region.aligns.size(); ++i) {
     IrregularAlignField indField =
@@ -560,19 +592,23 @@ StreamNUCAManager::computeIndirectRegionHops(ThreadContext *tc,
           region.name, region.vaddr);
   }
 
-  IndirectRegionHops regionHops(region, StreamNUCAMap::getNumCols() *
-                                            StreamNUCAMap::getNumRows());
-
   IrregularAlignField indField = decodeIrregularAlign(align.elemOffset);
 
   const auto &alignToRegion = this->getRegionFromStartVAddr(align.vaddrB);
   for (Addr vaddr = region.vaddr; vaddr < endVAddr; vaddr += boxSize) {
     auto boxHops = this->computeIndirectBoxHops(tc, region, alignToRegion,
                                                 indField, vaddr);
-    regionHops.boxHops.emplace_back(std::move(boxHops));
-  }
 
-  return regionHops;
+    /**
+     * If there is no bank hops, we ignore the box as it's unused.
+     */
+    for (auto bank : boxHops.bankFreq) {
+      if (bank > 0) {
+        regionHops.boxHops.emplace_back(std::move(boxHops));
+        break;
+      }
+    }
+  }
 }
 
 StreamNUCAManager::IndirectBoxHops StreamNUCAManager::computeIndirectBoxHops(
@@ -601,43 +637,10 @@ StreamNUCAManager::IndirectBoxHops StreamNUCAManager::computeIndirectBoxHops(
   IndirectBoxHops boxHops(boxVAddr, boxPAddr, defaultNodeId, numBanks);
 
   for (int i = 0; i < numBytes; i += region.elementSize) {
-    int64_t index = 0;
-    if (indField.size == 4) {
-      index = *reinterpret_cast<int32_t *>(boxData + i + indField.offset);
-    } else if (indField.size == 8) {
-      index = *reinterpret_cast<int64_t *>(boxData + i + indField.offset);
-    } else {
-      panic("[StreamNUCA] Invalid IndAlign %s ElementSize %d Field Offset %d "
-            "Size %d.",
-            region.name, region.elementSize, indField.offset, indField.size);
-    }
-    if (index < 0 || index >= alignToRegion.numElement) {
-      panic("[StreamNUCA] %s InvalidIndex Box %d-%d Addr %#x/%#x %d not in %s "
-            "NumElement %d.",
-            region.name, boxIdx, i, boxVAddr, boxPAddr, index,
-            alignToRegion.name, alignToRegion.numElement);
-    }
-    auto alignToVAddr = alignToRegion.vaddr + index * alignToRegion.elementSize;
-    auto alignToPAddr = this->translate(alignToVAddr);
-    auto alignToBank = StreamNUCAMap::getBank(alignToPAddr);
-
-    // DPRINTF(StreamNUCAManager,
-    //         "  Index %ld AlignToVAddr %#x AlignToPAddr %#x AlignToBank
-    //         %d.\n", index, alignToVAddr, alignToPAddr, alignToBank);
-
-    if (alignToBank < 0 || alignToBank >= boxHops.bankFreq.size()) {
-      panic("[StreamNUCA] IndirectAlign %s -> %s Box %lu Index %ld Invalid "
-            "AlignToBank %d.",
-            region.name, alignToRegion.name, boxIdx, index, alignToBank);
-    }
-    boxHops.bankFreq.at(alignToBank)++;
-    boxHops.totalElements++;
-
-    // Accumulate the traffic hops for all NUMA nodes.
-    for (int bankIdx = 0; bankIdx < numBanks; ++bankIdx) {
-      auto hops = StreamNUCAMap::computeHops(alignToBank, bankIdx);
-      boxHops.hops.at(bankIdx) += hops;
-    }
+    auto elemIdx = i / region.elementSize;
+    this->computeIndirectHopsForOneElement(tc, region, alignToRegion, indField,
+                                           boxIdx, boxVAddr, boxPAddr, elemIdx,
+                                           boxData + i, boxHops);
   }
 
   boxHops.maxHops = boxHops.hops.front();
@@ -657,6 +660,65 @@ StreamNUCAManager::IndirectBoxHops StreamNUCAManager::computeIndirectBoxHops(
   }
 
   return boxHops;
+}
+
+void StreamNUCAManager::computeIndirectHopsForOneElement(
+    ThreadContext *tc, const StreamRegion &region,
+    const StreamRegion &alignToRegion, const IrregularAlignField &indField,
+    uint64_t boxIdx, Addr boxVAddr, Addr boxPAddr, int elemIdx,
+    const char *elemData, IndirectBoxHops &boxHops) {
+
+  auto readField = [elemData, &region](int offset, int size) -> int64_t {
+    if (size == 4) {
+      return *reinterpret_cast<const int32_t *>(elemData + offset);
+    } else if (size == 8) {
+      return *reinterpret_cast<const int64_t *>(elemData + offset);
+    } else {
+      panic("[StreamNUCA] InvalidField Offset %d Size %d.", region.name, offset,
+            size);
+    }
+  };
+
+  int count = 1;
+  if (indField.indCountSize != 0) {
+    count = readField(indField.indCountOffset, indField.indCountSize);
+    // So far we just allow 16 indirect edges per element.
+    assert(count >= 0 && count <= 16);
+  }
+
+  for (int i = 0; i < count; ++i) {
+
+    int64_t index = readField(indField.indOffset + i * indField.indStride,
+                              indField.indSize);
+    if (index < 0 || index >= alignToRegion.numElement) {
+      panic(
+          "[StreamNUCA] %s InvalidIndex Box %d-%d-%d Addr %#x/%#x %d not in %s "
+          "NumElement %d.",
+          region.name, boxIdx, elemIdx, i, boxVAddr, boxPAddr, index,
+          alignToRegion.name, alignToRegion.numElement);
+    }
+    auto alignToVAddr = alignToRegion.vaddr + index * alignToRegion.elementSize;
+    auto alignToPAddr = this->translate(alignToVAddr);
+    auto alignToBank = StreamNUCAMap::getBank(alignToPAddr);
+
+    // DPRINTF(StreamNUCAManager,
+    //         "  Index %ld AlignToVAddr %#x AlignToPAddr %#x AlignToBank
+    //         %d.\n", index, alignToVAddr, alignToPAddr, alignToBank);
+
+    if (alignToBank < 0 || alignToBank >= boxHops.bankFreq.size()) {
+      panic("[StreamNUCA] IndirectAlign %s -> %s Box %lu Index %ld Invalid "
+            "AlignToBank %d.",
+            region.name, alignToRegion.name, boxIdx, index, alignToBank);
+    }
+    boxHops.bankFreq.at(alignToBank)++;
+    boxHops.totalElements++;
+
+    // Accumulate the traffic hops for all NUMA nodes.
+    for (int bankIdx = 0; bankIdx < boxHops.hops.size(); ++bankIdx) {
+      auto hops = StreamNUCAMap::computeHops(alignToBank, bankIdx);
+      boxHops.hops.at(bankIdx) += hops;
+    }
+  }
 }
 
 void StreamNUCAManager::greedyAssignIndirectBoxes(
@@ -691,16 +753,13 @@ void StreamNUCAManager::greedyAssignIndirectBoxes(
         freqMatrixStr << '\n';
       }
       DPRINTF(StreamNUCAManager,
-              "[StreamNUCA] IndRegion %s BoxIdx %lu AvgBankFreq %d Diff:\n%s.",
-              regionHops.region.name, boxIdx, avgBankFreq, freqMatrixStr.str());
+              "[StreamNUCA]   BoxIdx %lu AvgBankFreq %d Diff:\n%s", boxIdx,
+              avgBankFreq, freqMatrixStr.str());
     }
   }
 
   if (Debug::StreamNUCAManager) {
-    const auto &region = regionHops.region;
-    DPRINTF(StreamNUCAManager,
-            "[StreamNUCA] IndirectRegion %s Finish Greedy Assign:\n",
-            region.name);
+    DPRINTF(StreamNUCAManager, "[StreamNUCA]   Finish Greedy Assign:\n");
     for (int i = 0; i < regionHops.numBanks; ++i) {
       auto pages = regionHops.remapBoxIds.at(i).size();
       auto totalBoxes = regionHops.boxHops.size();
@@ -793,9 +852,7 @@ void StreamNUCAManager::rebalanceIndirectBoxes(IndirectRegionHops &regionHops) {
   }
 
   {
-    const auto &region = regionHops.region;
-    DPRINTF(StreamNUCAManager,
-            "[StreamNUCA] IndirectRegion %s Finish Rebalance:\n", region.name);
+    DPRINTF(StreamNUCAManager, "[StreamNUCA]   Finish Rebalance:\n");
     for (int i = 0; i < regionHops.numBanks; ++i) {
       auto boxes = regionHops.remapBoxIds.at(i).size();
       auto totalBoxes = regionHops.boxHops.size();
@@ -839,15 +896,8 @@ void StreamNUCAManager::relocateIndirectBoxes(
       freq[i] += boxHops.bankFreq[i];
     }
 
-    // if (remapBankIdx == defaultBankIdx) {
-    //   continue;
-    // }
-
     this->relocateCacheLines(tc, boxHops.vaddr, boxHops.paddr,
                              this->indirectRemapBoxBytes, remapBankIdx);
-
-    // this->reallocatePageAt(tc, boxHops.vaddr, boxHops.paddr,
-    // remapNUMANodeId);
   }
 
   for (const auto &bankFreq : forwardFreq) {
@@ -925,7 +975,9 @@ void StreamNUCAManager::estimateCSRMigration(ThreadContext *tc,
   }
 
   if (csrIndexAlignIdx == -1) {
-    panic("Missing CSR Index Align for region %s.\n", region.name);
+    DPRINTF(StreamNUCAManager, "Missing CSR Index Align for region %s.\n",
+            region.name);
+    return;
   }
 
   const auto &csrIndexAlign = region.aligns.at(csrIndexAlignIdx);
@@ -1604,18 +1656,37 @@ void StreamNUCAManager::markRegionCached(Addr regionVAddr) {
           region.name);
 }
 
+enum StreamNUCAAffinityField {
+  STREAM_NUCA_AFFINITY_IND_COUNT_OFFSET = 0,
+  STREAM_NUCA_AFFINITY_IND_COUNT_SIZE,
+  STREAM_NUCA_AFFINITY_IND_OFFSET,
+  STREAM_NUCA_AFFINITY_IND_SIZE,
+  STREAM_NUCA_AFFINITY_IND_STRIDE,
+  STREAM_NUCA_AFFINITY_PTR_COUNT_OFFSET,
+  STREAM_NUCA_AFFINITY_PTR_COUNT_SIZE,
+  STREAM_NUCA_AFFINITY_PTR_OFFSET,
+  STREAM_NUCA_AFFINITY_PTR_SIZE,
+  STREAM_NUCA_AFFINITY_PTR_STRIDE,
+  STREAM_NUCA_AFFINITY_NUM_FIELDS
+};
+
+#define STREAM_NUCA_AFFINITY_FIELD_BITS 6
+inline int64_t stream_nuca_affinity_encode(int64_t field, int64_t value) {
+  assert(value < (1 << STREAM_NUCA_AFFINITY_FIELD_BITS));
+  return value << (field * STREAM_NUCA_AFFINITY_FIELD_BITS);
+}
+inline int64_t stream_nuca_affinity_decode(int64_t field, int64_t value) {
+  return (value >> (field * STREAM_NUCA_AFFINITY_FIELD_BITS)) & 0xFF;
+}
+
 StreamNUCAManager::IrregularAlignField
 StreamNUCAManager::decodeIrregularAlign(int64_t irregularAlign) {
   assert(irregularAlign < 0 && "This is not IrregularAlign.");
 
-  const int SIZE_BITWIDTH = 8;
-  const int SIZE_MASK = (1 << SIZE_BITWIDTH) - 1;
-  const int OFFSET_BITWIDTH = 8;
-  const int OFFSET_MASK = (1 << OFFSET_BITWIDTH) - 1;
-
   int64_t raw = -irregularAlign;
 
-  int typeRaw = raw >> 16;
+  auto typeRaw =
+      stream_nuca_affinity_decode(STREAM_NUCA_AFFINITY_NUM_FIELDS, raw);
   IrregularAlignField::TypeE type =
       static_cast<IrregularAlignField::TypeE>(typeRaw);
   switch (type) {
@@ -1626,9 +1697,30 @@ StreamNUCAManager::decodeIrregularAlign(int64_t irregularAlign) {
   default:
     panic("[StreamNUCA] Invalid IrregularAlighType %d.", typeRaw);
   }
-  int32_t offset = (raw >> SIZE_BITWIDTH) & OFFSET_MASK;
-  int32_t size = raw & SIZE_MASK;
-  return IrregularAlignField(type, offset, size);
+
+  int32_t indCountOffset =
+      stream_nuca_affinity_decode(STREAM_NUCA_AFFINITY_IND_COUNT_OFFSET, raw);
+  int32_t indCountSize =
+      stream_nuca_affinity_decode(STREAM_NUCA_AFFINITY_IND_COUNT_SIZE, raw);
+  int32_t indOffset =
+      stream_nuca_affinity_decode(STREAM_NUCA_AFFINITY_IND_OFFSET, raw);
+  int32_t indSize =
+      stream_nuca_affinity_decode(STREAM_NUCA_AFFINITY_IND_SIZE, raw);
+  int32_t indStride =
+      stream_nuca_affinity_decode(STREAM_NUCA_AFFINITY_IND_STRIDE, raw);
+  int32_t ptrCountOffset =
+      stream_nuca_affinity_decode(STREAM_NUCA_AFFINITY_PTR_COUNT_OFFSET, raw);
+  int32_t ptrCountSize =
+      stream_nuca_affinity_decode(STREAM_NUCA_AFFINITY_PTR_COUNT_SIZE, raw);
+  int32_t ptrOffset =
+      stream_nuca_affinity_decode(STREAM_NUCA_AFFINITY_PTR_OFFSET, raw);
+  int32_t ptrSize =
+      stream_nuca_affinity_decode(STREAM_NUCA_AFFINITY_PTR_SIZE, raw);
+  int32_t ptrStride =
+      stream_nuca_affinity_decode(STREAM_NUCA_AFFINITY_PTR_STRIDE, raw);
+  return IrregularAlignField(type, indCountOffset, indCountSize, indOffset,
+                             indSize, indStride, ptrCountOffset, ptrCountSize,
+                             ptrOffset, ptrSize, ptrStride);
 }
 
 bool StreamNUCAManager::canRemapDirectRegionPUM(const StreamRegion &region) {

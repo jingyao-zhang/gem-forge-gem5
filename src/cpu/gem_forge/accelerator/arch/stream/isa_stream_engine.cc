@@ -1124,20 +1124,27 @@ ISAStreamEngine::getStreamRegion(uint64_t configIdx) const {
 std::vector<const ::LLVM::TDG::StreamInfo *>
 ISAStreamEngine::collectStreamInfoInRegion(
     const ::LLVM::TDG::StreamRegion &region) const {
+
   std::vector<const ::LLVM::TDG::StreamInfo *> streams;
-  for (const auto &streamInfo : region.streams()) {
-    streams.push_back(&streamInfo);
-  }
-  // Check nest streams.
-  assert(region.nest_region_relative_paths_size() <= 1 &&
-         "Multiple nest regions is not supported.");
-  for (const auto &nestConfigRelativePath :
-       region.nest_region_relative_paths()) {
-    const auto &nestRegion = this->getStreamRegion(nestConfigRelativePath);
-    assert(nestRegion.nest_region_relative_paths_size() == 0 &&
-           "Recursive nest is not supported.");
-    for (const auto &streamInfo : nestRegion.streams()) {
+
+  // Check this region and all nest regions.
+  std::queue<const ::LLVM::TDG::StreamRegion *> regions;
+  regions.push(&region);
+  while (!regions.empty()) {
+    const auto &curRegion = *regions.front();
+    regions.pop();
+
+    for (const auto &streamInfo : curRegion.streams()) {
       streams.push_back(&streamInfo);
+    }
+
+    assert(curRegion.nest_region_relative_paths_size() <= 1 &&
+           "Multiple nest regions is not supported.");
+
+    for (const auto &nestConfigRelativePath :
+         curRegion.nest_region_relative_paths()) {
+      const auto &nestRegion = this->getStreamRegion(nestConfigRelativePath);
+      regions.push(&nestRegion);
     }
   }
   return streams;

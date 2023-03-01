@@ -254,17 +254,17 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
     // We don't have StreamLoopBound.
     if (dynGroup.nextElemIdx >= dynGroup.totalTripCount) {
       DYN_S_DPRINTF(stepRootDynS.dynStreamId,
-                    "[Stepper] Wait For TotalTripCount: %llu >= %llu.\n",
+                    "[Stepper] Wait For TripCount: %llu >= %llu.\n",
                     dynGroup.nextElemIdx, dynGroup.totalTripCount);
       return;
     }
   }
 
   for (const auto &dynNestConfig : dynRegion.nestConfigs) {
-    if (dynGroup.nextElemIdx >= dynNestConfig.nextElemIdx) {
+    if (dynGroup.nextElemIdx >= dynNestConfig.nextConfigIdx) {
       DYN_S_DPRINTF(stepRootDynS.dynStreamId,
                     "[Stepper] Wait for NestRegion: %llu >= %llu Region %s.\n",
-                    dynGroup.nextElemIdx, dynNestConfig.nextElemIdx,
+                    dynGroup.nextElemIdx, dynNestConfig.nextConfigIdx,
                     dynNestConfig.staticRegion->region.region());
       return;
     }
@@ -275,7 +275,7 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
    */
   if (dynGroup.nextElemIdx >= stepRootDynS.getTotalTripCount()) {
     DYN_S_PANIC(stepRootDynS.dynStreamId,
-                "[Stepper] Step Beyond TotalTripCount %lld >= %lld.",
+                "[Stepper] Step Beyond TripCount %lld >= %lld.",
                 dynGroup.nextElemIdx, stepRootDynS.getTotalTripCount());
   }
 
@@ -402,11 +402,71 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
   }
 }
 
+bool StreamRegionController::endStream(DynRegion &dynRegion) {
+
+  auto &staticRegion = *dynRegion.staticRegion;
+
+  assert(staticRegion.shouldEndStream());
+
+  if (dynRegion.endDispatched) {
+    // We already ended this region.
+    SE_PANIC("[Stepper] SE Ended Region %s.", staticRegion.region.region());
+  }
+
+  /**
+   * Can we directly try to dispatch/execute/commit StreamEnd here?
+   */
+  auto configSeqNum = dynRegion.seqNum;
+  auto endSeqNum = configSeqNum + 1;
+
+  StreamEngine::StreamEndArgs args(endSeqNum,
+                                   staticRegion.region.relative_path());
+
+  SE_DPRINTF("[Stepper] Try End %s.\n", staticRegion.region.region());
+  bool canDispatch = this->canDispatchStreamEndImpl(staticRegion, dynRegion);
+  if (!canDispatch) {
+    SE_DPRINTF("[Stepper] NoDispatchEnd.\n");
+    return false;
+  }
+
+  bool canExecute = this->canExecuteStreamEndImpl(staticRegion, dynRegion);
+  if (!canExecute) {
+    SE_DPRINTF("[Stepper] NoExecuteEnd.\n");
+    return false;
+  }
+
+  bool canCommit = this->canCommitStreamEndImpl(staticRegion, dynRegion);
+  if (!canCommit) {
+    SE_DPRINTF("[Stepper] NoCommitEnd.\n");
+    return false;
+  }
+
+  /**
+   * The above check assumes the StreamEnd is from the core. We need some
+   * additional check for SE ended region:
+   * 1. If has loop bound, it is evaluated.
+   */
+  if (staticRegion.region.is_loop_bound()) {
+    if (!dynRegion.loopBound.brokenOut) {
+      SE_DPRINTF("[Stepper] NoEnd as LoopBound not BrokenOut.\n");
+      return false;
+    }
+  }
+
+  SE_DPRINTF("[Stepper] End %s ConfigSeqNum %lu.\n",
+             staticRegion.region.region(), configSeqNum);
+
+  this->dispatchStreamEndImpl(args, staticRegion, dynRegion);
+  this->commitStreamEnd(args);
+
+  return true;
+}
+
 void StreamRegionController::determineStepElemCount(const ConfigArgs &args) {
 
   /**
-   * By default we step the element one by one. But this may change when we want
-   * to optimize for:
+   * By default we step the element one by one. But this may change when
+   * we want to optimize for:
    * 1. InnerReduction stream with LoopEliminated, and
    * 2. The computation is offloaded.
    */
@@ -424,6 +484,10 @@ void StreamRegionController::determineStepElemCount(const ConfigArgs &args) {
     return;
   }
   if (staticRegion.region.is_loop_bound()) {
+    return;
+  }
+  // Can not skip if we have nest streams.
+  if (!dynRegion.nestConfigs.empty()) {
     return;
   }
 
@@ -473,5 +537,5 @@ void StreamRegionController::determineStepElemCount(const ConfigArgs &args) {
       stepDynS.stepElemCount = stepDynS.getInnerTripCount();
     }
   }
-}} // namespace gem5
-
+}
+} // namespace gem5

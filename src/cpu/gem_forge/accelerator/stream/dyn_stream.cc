@@ -847,6 +847,8 @@ bool DynStream::shouldCoreSEIssue() const {
      * If we have some dependent nest stream region, we also have to issue.
      */
     if (S->hasDepNestRegion()) {
+      DYN_S_DPRINTF(this->dynStreamId,
+                    "Should CoreSe Issue Due to DepNestRegion.\n");
       return true;
     }
     return false;
@@ -1494,5 +1496,5 @@ std::string DynStream::dumpString() const {
   return ss.str();
 }
 
-void DynStream::dump() const { inform("%s\n", this->dumpString()); }} // namespace gem5
-
+void DynStream::dump() const { inform("%s\n", this->dumpString()); }
+} // namespace gem5

@@ -654,8 +654,8 @@ RubyPort::MemResponsePort::hitCallback(PacketPtr pkt, bool noTimingResponse)
         needsResponse = true;
     }
 
-    DPRINTF(RubyPort, "Hit callback needs response %d %d\n",
-        needsResponse, pkt->needsResponse());
+    DPRINTF(RubyPort, "Hit callback needs response %d access phys mem %d\n",
+        needsResponse, accessPhysMem);
 
     RubyPort *ruby_port = static_cast<RubyPort *>(&owner);
     RubySystem *rs = ruby_port->m_ruby_system;
@@ -670,6 +670,8 @@ RubyPort::MemResponsePort::hitCallback(PacketPtr pkt, bool noTimingResponse)
             if (!pkt->req->noRubyBackingStore()) {
                 // Sometimes we don't want to access backing store.
                 rs->getPhysMem()->access(pkt);
+            } else if (needsResponse) {
+                pkt->makeResponse();
             }
         } else {
             panic("Packet is in neither device nor system memory!");
@@ -680,7 +682,6 @@ RubyPort::MemResponsePort::hitCallback(PacketPtr pkt, bool noTimingResponse)
 
     // turn packet around to go back to request port if response expected
     if (needsResponse || pkt->isResponse()) {
-        DPRINTF(RubyPort, "Sending packet back over port\n");
         // Just invoke the callback.
         ruby_port->justBeforeResponseCallback(pkt);
         // Send a response in the same cycle. There is no need to delay the

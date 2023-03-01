@@ -126,7 +126,7 @@ void StreamRegionController::executeStreamConfigForNestStreams(
              dynRegion.staticRegion->region.region());
 }
 
-bool StreamRegionController::checkRemainingNestRegions(
+bool StreamRegionController::hasRemainingNestRegions(
     const DynRegion &dynRegion) {
 
   if (dynRegion.nestConfigs.empty()) {
@@ -134,20 +134,21 @@ bool StreamRegionController::checkRemainingNestRegions(
   }
 
   for (const auto &dynNestConfig : dynRegion.nestConfigs) {
-    if (dynNestConfig.configSeqNums.empty()) {
+    if (dynNestConfig.lastConfigSeqNum ==
+        DynRegion::DynNestConfig::InvalidConfigSeqNum) {
       continue;
     }
     auto &staticNestRegion = *(dynNestConfig.staticRegion);
     if (staticNestRegion.dynRegions.empty()) {
       continue;
     }
-    auto lastNestConfigSeqNum = dynNestConfig.configSeqNums.back();
+    auto lastNestConfigSeqNum = dynNestConfig.lastConfigSeqNum;
     const auto &firstNestDynRegion = staticNestRegion.dynRegions.front();
     if (firstNestDynRegion.seqNum <= lastNestConfigSeqNum) {
-      SE_PANIC("[Nest] Ended/Rewinded outer %s. Nested %s ConfigSeqNum %lu "
-               "still exists.",
-               dynRegion.staticRegion->region.region(),
-               staticNestRegion.region.region(), firstNestDynRegion.seqNum);
+      SE_DPRINTF("[Nest] Outer %s. Nested %s ConfigSeqNum %lu remains.\n",
+                 dynRegion.staticRegion->region.region(),
+                 staticNestRegion.region.region(), firstNestDynRegion.seqNum);
+      return true;
     }
   }
   return false;
@@ -225,7 +226,7 @@ void StreamRegionController::configureNestStream(
     }
   }
 
-  auto nextElementIdx = dynNestConfig.nextElemIdx;
+  auto nextElementIdx = dynNestConfig.nextConfigIdx;
   std::unordered_set<StreamElement *> baseElems;
   for (auto baseS : staticNestConfig.baseStreams) {
     auto &baseDynS = baseS->getDynStream(dynRegion.seqNum);
@@ -235,8 +236,8 @@ void StreamRegionController::configureNestStream(
         DYN_S_DPRINTF(baseDynS.dynStreamId,
                       "Failed to get elem %llu for NestConfig. The "
                       "TotalTripCount must be 0. Skip.\n",
-                      dynNestConfig.nextElemIdx);
-        dynNestConfig.nextElemIdx++;
+                      dynNestConfig.nextConfigIdx);
+        dynNestConfig.nextConfigIdx++;
         return;
       } else {
         // The base element is not allocated yet.
@@ -248,9 +249,7 @@ void StreamRegionController::configureNestStream(
       }
     }
     if (!baseE->isValueReady) {
-      // S_ELEMENT_DPRINTF(baseElement,
-      //                   "[Nest] Value not ready for
-      //                   NestConfig.\n");
+      S_ELEMENT_DPRINTF(baseE, "[Nest] Value not ready for NestConfig.\n");
       return;
     }
     baseElems.insert(baseE);
@@ -275,7 +274,7 @@ void StreamRegionController::configureNestStream(
     if (predRet != staticNestConfig.predRet) {
       SE_DPRINTF("[Nest] Predicated Skip (%d != %d) NestRegion %s.\n", predRet,
                  staticNestConfig.predRet, staticNestRegion.region.region());
-      dynNestConfig.nextElemIdx++;
+      dynNestConfig.nextConfigIdx++;
       return;
     }
   }
@@ -287,7 +286,7 @@ void StreamRegionController::configureNestStream(
     SE_DPRINTF("[Nest] Value ready. Configure NestRegion %s, "
                "OuterElementIdx "
                "%lu, ActualParams:\n",
-               staticNestRegion.region.region(), dynNestConfig.nextElemIdx);
+               staticNestRegion.region.region(), dynNestConfig.nextConfigIdx);
     for (const auto &actualParam : actualParams) {
       SE_DPRINTF("[Nest]   Param %s.\n", actualParam.print());
     }
@@ -295,7 +294,7 @@ void StreamRegionController::configureNestStream(
 
   this->isaHandler.resetISAStreamEngine();
   auto configFuncStartSeqNum = dynNestConfig.getConfigSeqNum(
-      this->se, dynNestConfig.nextElemIdx, dynRegion.seqNum);
+      this->se, dynNestConfig.nextConfigIdx, dynRegion.seqNum);
   dynNestConfig.configFunc->invoke(actualParams, &this->isaHandler,
                                    configFuncStartSeqNum);
 
@@ -311,13 +310,14 @@ void StreamRegionController::configureNestStream(
     }
     nestConfigSeqNum = dynS.configSeqNum;
   }
+  dynNestConfig.lastConfigSeqNum = nestConfigSeqNum;
   dynNestConfig.configSeqNums.push_back(nestConfigSeqNum);
 
   SE_DPRINTF("[Nest] Value ready. Config NestRegion %s OuterConfigSeqNum %lu "
              "OuterElemIdx %lu ConfigFuncStartSeqNum %lu ConfigSeqNum %lu "
              "Configured:\n",
              staticNestRegion.region.region(), dynRegion.seqNum,
-             dynNestConfig.nextElemIdx, configFuncStartSeqNum,
+             dynNestConfig.nextConfigIdx, configFuncStartSeqNum,
              nestConfigSeqNum);
   if (Debug::StreamNest) {
     for (auto S : staticNestRegion.streams) {
@@ -327,12 +327,31 @@ void StreamRegionController::configureNestStream(
     }
   }
 
-  dynNestConfig.nextElemIdx++;
+  dynNestConfig.nextConfigIdx++;
 }
 
+InstSeqNum
+    StreamRegionController::DynRegion::DynNestConfig::GlobalNestConfigSeqNum =
+        StreamRegionController::DynRegion::DynNestConfig::
+            GlobalNestConfigSeqNumStart;
+
 InstSeqNum StreamRegionController::DynRegion::DynNestConfig::getConfigSeqNum(
-    StreamEngine *se, uint64_t elementIdx, uint64_t outSeqNum) const {
+    StreamEngine *se, uint64_t elemIdx, uint64_t outSeqNum) const {
   /**
+   * New GlobalNestConfigSeqNum implementation.
+   * To support recursive nesting, the original implementation that takes
+   * an offset from the outer region's ConfigSeqNum can not guarantee that
+   * every DynRegion has a unique ConfigSeqNum.
+   *
+   * To fix this, I break the order between core configured regions and
+   * se configured regions (i.e. nest regions), and maintain a global
+   * monotonically increasing ConfigSeqNum for all nest regions.
+   * 
+   * This global SeqNum starts from a large number and hopefully that avoids
+   * collision with core configured regions.
+   * 
+   * TODO: Perhaps I should rename it to something other than SeqNum.
+   *
    * This needs to be smaller than the StreamEnd SeqNum from core.
    * We use outSeqNum + 1 + elementIdx * (instOffset + 1).
    * Notice that we will subtract the Configuration function instructions
@@ -340,16 +359,18 @@ InstSeqNum StreamRegionController::DynRegion::DynNestConfig::getConfigSeqNum(
    */
   const int numConfigInsts = this->configFunc->getNumInstsBeforeStreamConfig();
   const int instOffset = 1;
-  InstSeqNum ret = outSeqNum + 1 + elementIdx * (instOffset + 1);
+  // InstSeqNum ret = outSeqNum + 1 + elemIdx * (instOffset + 1);
+  InstSeqNum ret = GlobalNestConfigSeqNum + 1;
+
+  GlobalNestConfigSeqNum += instOffset + 1;
 
   assert(ret > numConfigInsts && "Cann't subtract NumConfigInsts.");
   ret -= (numConfigInsts);
 
   WITH_SE_DPRINTF(se,
                   "[Nest] ConfigSeqNum OutSN %lu NumInst %lu ElemIdx %lu.\n",
-                  outSeqNum, numConfigInsts, elementIdx);
-
+                  outSeqNum, numConfigInsts, elemIdx);
+  assert(ret != InvalidConfigSeqNum && "Generated InvalidConfigSeqNum.");
   return ret;
 }
 } // namespace gem5
-

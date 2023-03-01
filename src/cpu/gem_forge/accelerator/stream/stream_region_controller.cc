@@ -131,7 +131,10 @@ void StreamRegionController::rewindStreamConfig(const ConfigArgs &args) {
 
   SE_DPRINTF("[Region] Rewind DynRegion for region %s.\n",
              streamRegion.region());
-  this->checkRemainingNestRegions(dynRegion);
+  if (this->hasRemainingNestRegions(dynRegion)) {
+    SE_PANIC("[Region] %s Rewind with Remaining NestRegions.",
+             streamRegion.region());
+  }
 
   this->activeDynRegionMap.erase(args.seqNum);
   staticRegion.dynRegions.pop_back();
@@ -161,6 +164,27 @@ void StreamRegionController::tick() {
       }
     }
   }
+  /**
+   * Try to end SE managed regions.
+   * NOTE: This can not be done in the above loop as it releases the region.
+   */
+  for (auto &entry : this->staticRegionMap) {
+    auto &staticRegion = entry.second;
+    if (!staticRegion.shouldEndStream() || staticRegion.dynRegions.empty()) {
+      continue;
+    }
+    if (this->se->myParams->enableO3ElimStreamEnd) {
+      for (auto &dynRegion : staticRegion.dynRegions) {
+        if (this->endStream(dynRegion)) {
+          // Only allow one region to end as it changes the dynRegions list.
+          break;
+        }
+      }
+    } else {
+      auto &dynRegion = staticRegion.dynRegions.front();
+      this->endStream(dynRegion);
+    }
+  }
 }
 
 void StreamRegionController::takeOverBy(GemForgeCPUDelegator *newCPUDelegator) {
@@ -170,6 +194,13 @@ void StreamRegionController::takeOverBy(GemForgeCPUDelegator *newCPUDelegator) {
 StreamRegionController::DynRegion &
 StreamRegionController::pushDynRegion(StaticRegion &staticRegion,
                                       uint64_t seqNum) {
+
+  SE_DPRINTF("[Region] Initialized DynRegion SeqNum %llu for region %s. "
+             "Current %d Total %d.\n",
+             seqNum, staticRegion.region.region(),
+             staticRegion.dynRegions.size(),
+             this->activeDynRegionMap.size());
+
   staticRegion.dynRegions.emplace_back(&staticRegion, seqNum);
   auto &dynRegion = staticRegion.dynRegions.back();
   assert(this->activeDynRegionMap
@@ -177,11 +208,6 @@ StreamRegionController::pushDynRegion(StaticRegion &staticRegion,
                       std::forward_as_tuple(&dynRegion))
              .second &&
          "Multiple nesting is not supported.");
-
-  SE_DPRINTF("[Region] Initialized DynRegion SeqNum %llu for region %s. "
-             "Current %d.\n",
-             seqNum, staticRegion.region.region(),
-             staticRegion.dynRegions.size());
   return dynRegion;
 }
 
@@ -320,5 +346,5 @@ void StreamRegionController::trySkipToStreamEnd(DynRegion &dynRegion) {
     SE_DPRINTF("[Region] Skip Group to End %llu.\n", group.totalTripCount);
     group.nextElemIdx = group.totalTripCount;
   }
-}} // namespace gem5
-
+}
+} // namespace gem5

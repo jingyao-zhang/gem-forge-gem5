@@ -472,7 +472,8 @@ bool StreamElement::checkAddrBaseElementsReady(bool checkByCore) {
                         baseE->FIFOIdx);
       }
     }
-    S_ELEMENT_DPRINTF(baseE, "BaseElement Ready %d.\n", baseE->isValueReady);
+    S_ELEMENT_DPRINTF(this, "BaseE Ready %d %s.\n", baseE->isValueReady,
+                      baseE->FIFOIdx);
     if (!baseE->checkValueReady(checkByCore)) {
       ready = false;
       break;
@@ -587,8 +588,8 @@ void StreamElement::computeValue() {
     assert(!this->isElemFloatedToCache() &&
            "Should not compute for floating stream.");
     // Check for value base element.
-    if (!this->checkValueBaseElementsValueReady()) {
-      S_ELEMENT_PANIC(this, "StoreFunc with ValueBaseElement not value ready.");
+    if (!this->checkValueBaseElemsValueReady()) {
+      S_ELEMENT_PANIC(this, "StoreFunc with ValueBaseE not value ready.");
     }
     auto params =
         convertFormalParamToParam(dynS->storeFormalParams, getBaseValue);
@@ -601,8 +602,8 @@ void StreamElement::computeValue() {
 
     assert(!this->isElemFloatedToCache() &&
            "Should not compute for floating LoadComputeStream.");
-    if (!this->checkValueBaseElementsValueReady()) {
-      S_ELEMENT_PANIC(this, "LoadFunc with ValueBaseElement not value ready.");
+    if (!this->checkValueBaseElemsValueReady()) {
+      S_ELEMENT_PANIC(this, "LoadFunc with ValueBaseE not value ready.");
     }
     auto params =
         convertFormalParamToParam(dynS->loadFormalParams, getBaseValue);
@@ -944,7 +945,7 @@ StreamValue StreamElement::getValueBaseByStreamId(StaticId id) {
       return elementValue;
     }
   }
-  S_ELEMENT_PANIC(this, "Failed to find ValueBaseElement for %s.",
+  S_ELEMENT_PANIC(this, "Failed to find ValueBaseE for %s.",
                   baseS->getStreamName());
 }
 
@@ -1042,13 +1043,18 @@ void StreamElement::getLoadComputeValue(uint8_t *val, int valLen) const {
   }
 }
 
-bool StreamElement::checkValueBaseElementsValueReady() const {
+bool StreamElement::checkValueBaseElemsValueReady() const {
   /**
-   * Special case for LastElement of offloaded ReductionStream with no core
-   * user, which is marked ready by checking the DynStream.
+   * Special case for LastElement of:
+   * 1. ReduceS or PtrChaseIndVarS.
+   * 2. No core user.
+   * 3. No DepNestRegion.
+   * 4. Floated.
+   * Which is marked ready by checking the DynStream.
    */
   if ((this->stream->isReduction() || this->stream->isPointerChaseIndVar()) &&
-      !this->stream->hasCoreUser() && this->isElemFloatedToCache()) {
+      !this->stream->hasCoreUser() && !this->stream->hasDepNestRegion() &&
+      this->isElemFloatedToCache()) {
     if (this->isInnerLastElem()) {
       return this->dynS->isInnerFinalValueReady(this->FIFOIdx.entryIdx);
     } else {
@@ -1063,12 +1069,12 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
   if (this->dynS->hasZeroTripCount() && this->isLastElement()) {
     return false;
   }
-  for (const auto &baseElement : this->valueBaseElements) {
-    if (!baseElement.isValid()) {
-      S_ELEMENT_PANIC(this, "ValueBaseElement released early: %s.",
-                      baseElement.getIdx());
+  for (const auto &baseElem : this->valueBaseElements) {
+    if (!baseElem.isValid()) {
+      S_ELEMENT_PANIC(this, "ValueBaseE released early: %s.",
+                      baseElem.getIdx());
     }
-    auto baseE = baseElement.getElement();
+    auto baseE = baseElem.getElement();
     if (baseE == this) {
       /**
        * Some ComputeStream require myself as the ValueBase. We don't call
@@ -1090,7 +1096,7 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
         }
       } else {
         if (!baseE->checkValueReady(false /* CheckedByCore */)) {
-          S_ELEMENT_DPRINTF(this, "ValueBaseElem not ValueReady: %s.\n",
+          S_ELEMENT_DPRINTF(this, "ValueBaseE not ValueReady: %s.\n",
                             baseE->FIFOIdx);
           return false;
         }
@@ -1139,5 +1145,5 @@ void StreamElement::dump() const {
          this->FIFOIdx.streamId.streamInstance, this->FIFOIdx.entryIdx,
          static_cast<int>(this->isAddrReady()),
          static_cast<int>(this->isValueReady));
-}} // namespace gem5
-
+}
+} // namespace gem5

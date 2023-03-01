@@ -616,18 +616,30 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
         }
       }
     }
-    if (S->isLoadStream() && !stepElem->isElemFloatedToCache() &&
-        !S->hasCoreUser() && S->hasBackDepReductionStream) {
+    if (S->isLoadStream() && stepElem->shouldIssue() && !S->hasCoreUser() &&
+        !S->backDepStreams.empty()) {
       /**
-       * S is a load stream that is not offloaded, with no core user and
-       * reduction stream. We have to make sure the element is value ready so
-       * that the reduction is correctly performed.
+       * S is a issuing load stream without no core user, but has backDepS.
+       * We have to make sure the element is value ready so
+       * that the backDepS is correctly performed.
        */
-      if (!stepElem->isValueReady) {
-        S_ELEMENT_DPRINTF(
-            stepElem,
-            "[CanNotCommitStep] Value not Ready for BackDepReductionStream.\n");
-        return false;
+      for (const auto &backDepEdge : dynS->backDepEdges) {
+        auto backDepS = this->getStream(backDepEdge.depStaticId);
+        const auto &backDepDynS = backDepS->getDynStream(dynS->configSeqNum);
+        auto backDepElem =
+            backDepDynS.getElemByIdx(stepElem->FIFOIdx.entryIdx + 1);
+        if (!backDepElem) {
+          S_ELEMENT_DPRINTF(
+              stepElem, "[CanNotCommitStep] No BackDepElem %s Elem %ld.\n",
+              backDepDynS.dynStreamId, stepElem->FIFOIdx.entryIdx + 1);
+          return false;
+        }
+        if (!backDepElem->isValueReady) {
+          S_ELEMENT_DPRINTF(stepElem,
+                            "[CanNotCommitStep] Unready BackDepElem %s.\n",
+                            backDepElem->FIFOIdx);
+          return false;
+        }
       }
     }
     /**
@@ -1242,11 +1254,6 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
 }
 
 void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
-
-  this->numInflyStreamConfigurations--;
-  assert(this->numInflyStreamConfigurations >= 0 &&
-         "Negative infly StreamConfigurations.");
-
   this->regionController->commitStreamEnd(args);
 }
 
@@ -2041,7 +2048,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         if (elem->shouldComputeValue() && !elem->scheduledComputation &&
             !elem->isComputeValueReady()) {
           hasUnissuedElem = true;
-          if (elem->checkValueBaseElementsValueReady()) {
+          if (elem->checkValueBaseElemsValueReady()) {
             S_ELEMENT_DPRINTF(elem, "Found Ready for Compute.\n");
             readyElems.emplace_back(elem);
           }

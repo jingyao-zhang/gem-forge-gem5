@@ -33,7 +33,7 @@ void LLCStreamSlice::responded(const ruby::DataBlock &loadBlock,
    * So far this only works for DirectStream.
    * ReqLatency for IndirectStream is recorded in LLCStreamEngine.
    */
-  if (S->isDirectMemStream()) {
+  if (this->S->isDirectMemStream() || this->S->isPointerChaseLoadStream()) {
     auto &statistic = this->S->statistic;
     if (this->llcSE->myMachineType() == ruby::MachineType_Directory) {
       statistic.memReqLat.sample(this->respondedCycle - this->issuedCycle);
@@ -82,5 +82,5 @@ const char *LLCStreamSlice::stateToString(State state) {
   default:
     assert(false && "Invalid LLCStreamSlice::State.");
   }
-}} // namespace gem5
-
+}
+} // namespace gem5

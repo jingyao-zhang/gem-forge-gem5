@@ -70,17 +70,24 @@ public:
       ExecFuncPtr predFunc = nullptr;
       DynStreamFormalParamV formalParams;
       DynStreamFormalParamV predFormalParams;
-      uint64_t nextElemIdx = 0;
+      uint64_t nextConfigIdx = 0;
+      uint64_t nextEndIdx = 0;
 
       /**
        * ConfigSeqNum of configured NestRegion.
+       * So far this is only used to end eliminated nest stream.
        */
-      std::vector<InstSeqNum> configSeqNums;
+      constexpr static InstSeqNum InvalidConfigSeqNum = 0;
+      InstSeqNum lastConfigSeqNum = InvalidConfigSeqNum;
+
+      std::deque<InstSeqNum> configSeqNums;
 
       DynNestConfig(const StaticRegion *_staticRegion)
           : staticRegion(_staticRegion) {}
 
-      InstSeqNum getConfigSeqNum(StreamEngine *se, uint64_t elementIdx,
+      constexpr static InstSeqNum GlobalNestConfigSeqNumStart = 10000000000;
+      static InstSeqNum GlobalNestConfigSeqNum;
+      InstSeqNum getConfigSeqNum(StreamEngine *se, uint64_t elemIdx,
                                  uint64_t outSeqNum) const;
     };
     std::vector<DynNestConfig> nestConfigs;
@@ -183,6 +190,11 @@ public:
       std::set<Stream *> skipStepSecondLastElemStreams;
     };
     StaticStep step;
+
+    bool shouldEndStream() const {
+      // So far we only need to end eliminated nest region.
+      return this->region.is_nest() && this->region.loop_eliminated();
+    }
   };
 
   /******************************************************************
@@ -215,7 +227,7 @@ private:
                                           DynRegion &dynRegion);
   void executeStreamConfigForNestStreams(const ConfigArgs &args,
                                          DynRegion &dynRegion);
-  bool checkRemainingNestRegions(const DynRegion &dynRegion);
+  bool hasRemainingNestRegions(const DynRegion &dynRegion);
   void configureNestStream(DynRegion &dynRegion,
                            DynRegion::DynNestConfig &dynNestConfig);
 
@@ -239,6 +251,7 @@ private:
                                    DynRegion &dynRegion);
   void executeStreamConfigForStep(const ConfigArgs &args, DynRegion &dynRegion);
   void stepStream(DynRegion &dynRegion);
+  bool endStream(DynRegion &dynRegion);
 
   /**
    * Allocate stream elements.
@@ -296,6 +309,8 @@ private:
 
   bool canDispatchStreamEndImpl(StaticRegion &staticRegion,
                                 DynRegion &dynRegion);
+  void dispatchStreamEndImpl(const EndArgs &args, StaticRegion &staticRegion,
+                             DynRegion &dynRegion);
   bool canExecuteStreamEndImpl(StaticRegion &staticRegion,
                                DynRegion &dynRegion);
   bool canCommitStreamEndImpl(StaticRegion &staticRegion, DynRegion &dynRegion);

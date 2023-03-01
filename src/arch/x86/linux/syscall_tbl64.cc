@@ -49,7 +49,7 @@ SyscallDescTable<EmuLinux::SyscallABI64> EmuLinux::syscallDescs64 = {
     {   7, "poll", pollFunc<X86Linux64> },
     {   8, "lseek", lseekFunc },
     {   9, "mmap", mmapFunc<X86Linux64> },
-    {  10, "mprotect", ignoreFunc },
+    {  10, "mprotect", ignoreWarnOnceFunc },
     {  11, "munmap", munmapFunc<X86Linux64> },
     {  12, "brk", brkFunc },
     {  13, "rt_sigaction", ignoreWarnOnceFunc },

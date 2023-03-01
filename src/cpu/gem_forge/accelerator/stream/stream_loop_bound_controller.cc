@@ -175,10 +175,10 @@ void StreamRegionController::receiveOffloadedLoopBoundRet(
   auto &dynBound = dynRegion.loopBound;
   auto &staticRegion = *dynRegion.staticRegion;
 
-  SE_DPRINTF("[LoopBound] Received TripCount %llu BrokenOut %d Region %s.\n",
-             tripCount, brokenOut, staticRegion.region.region());
+  SE_DPRINTF("[LoopBound] Recv TripCount %llu BrokenOut %d S %s.\n", tripCount,
+             brokenOut, dynStreamId);
   if (tripCount != dynBound.nextElemIdx + 1) {
-    SE_PANIC("[LoopBound] Received TripCount %llu != NextElement %llu + 1, "
+    SE_PANIC("[LoopBound] Received TripCount %llu != NextElem %llu + 1, "
              "BrokenOut %d Region %s.\n",
              tripCount, dynBound.nextElemIdx + 1, brokenOut,
              staticRegion.region.region());
@@ -192,5 +192,5 @@ void StreamRegionController::receiveOffloadedLoopBoundRet(
       dynS.setTotalAndInnerTripCount(tripCount);
     }
   }
-}} // namespace gem5
-
+}
+} // namespace gem5

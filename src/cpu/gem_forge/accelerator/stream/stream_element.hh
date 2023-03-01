@@ -269,7 +269,7 @@ struct StreamElement {
    * Check if value is ready, will set FirstCheckCycle.
    */
   bool checkValueReady(bool checkedByCore) const;
-  bool checkValueBaseElementsValueReady() const;
+  bool checkValueBaseElemsValueReady() const;
   bool scheduledComputation = false;
 
   // Store the infly writeback memory accesses.

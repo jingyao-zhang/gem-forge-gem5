@@ -48,8 +48,8 @@ void m5_wake_cpu(uint64_t cpuid);
 void m5_exit(uint64_t ns_delay);
 void m5_fail(uint64_t ns_delay, uint64_t code);
 // m5_sum is for sanity checking the gem5 op interface.
-unsigned m5_sum(unsigned a, unsigned b, unsigned c,
-                unsigned d, unsigned e, unsigned f);
+unsigned m5_sum(unsigned a, unsigned b, unsigned c, unsigned d, unsigned e,
+                unsigned f);
 uint64_t m5_init_param(uint64_t key_str1, uint64_t key_str2);
 void m5_checkpoint(uint64_t ns_delay, uint64_t ns_period);
 void m5_reset_stats(uint64_t ns_delay, uint64_t ns_period);
@@ -79,35 +79,102 @@ void m5_stream_nuca_region(const char *regionName, void *buffer,
  *
  * Negative element offset will specify some indirect alignment.
  *
- * To support arbitrary indirect field alignment, e.g. in weighted graph
- * edge.v is used for indirect access while edge.w is only for compute.
- * Suppose the indirect region has this data structure:
+ * This is the general data structure we try to specify. It handles
+ * both indirect element and pointers.
+ *
+ * Node;
  * IndElement {
  *   int32_t out_v;
- *   int32_t weight;
+ *   ... // Other metadata.
+ * };
+ * PtrElement {
+ *   Node *ptr;
+ *   ...// Other metadata.
+ * };
+ *
+ * Node {
+ *   int32_t indCount;
+ *   IndElement inds[indCount];
+ *   int32_t ptrCount;
+ *   PtrElement ptrs[ptrCount];
  *   ...
  * };
  *
- * Then the indirect field offset is 0, with size 4.
- * We use eight bits for each, and the final alignment is:
- * - ((offset << 8) | size).
+ * Then it defines the following fields (size = 0 means no this field).
+ *  indCountOffset, indCountSize
+ *  indOffset, indSize, indStride
+ *  ptrCountOffset, ptrCountSize
+ *  ptrOffset, ptrSize, ptrStride
  *
- * Similar for pointer chase. It specifies how to find the next node.
- * PtrChaseNode {
- *   PtrChaseNode *next;
- *   ...
- * };
  * -((1 << 16) | (offset << 8) | size).
+ *
  *
  * We also add information about the CSR index array.
  * For now this is used to inform the hardware about the CSR data structure.
  */
-#define m5_stream_nuca_encode_ind_align(offset, size)                          \
-  (-(int64_t)((0 << 16) | ((offset) << 8) | (size)))
-#define m5_stream_nuca_encode_ptr_align(offset, size)                          \
-  (-(int64_t)((1 << 16) | ((offset) << 8) | (size)))
-#define m5_stream_nuca_encode_csr_index()                                      \
-  (-(int64_t)((2 << 16) | ((0) << 8) | (0)))
+enum StreamNUCAAffinityField {
+  STREAM_NUCA_AFFINITY_IND_COUNT_OFFSET = 0,
+  STREAM_NUCA_AFFINITY_IND_COUNT_SIZE,
+  STREAM_NUCA_AFFINITY_IND_OFFSET,
+  STREAM_NUCA_AFFINITY_IND_SIZE,
+  STREAM_NUCA_AFFINITY_IND_STRIDE,
+  STREAM_NUCA_AFFINITY_PTR_COUNT_OFFSET,
+  STREAM_NUCA_AFFINITY_PTR_COUNT_SIZE,
+  STREAM_NUCA_AFFINITY_PTR_OFFSET,
+  STREAM_NUCA_AFFINITY_PTR_SIZE,
+  STREAM_NUCA_AFFINITY_PTR_STRIDE,
+  STREAM_NUCA_AFFINITY_NUM_FIELDS
+};
+#define STREAM_NUCA_AFFINITY_FIELD_BITS 6
+inline int64_t stream_nuca_affinity_encode(int64_t field, int64_t value) {
+  assert(value < (1 << STREAM_NUCA_AFFINITY_FIELD_BITS));
+  return value << (field * STREAM_NUCA_AFFINITY_FIELD_BITS);
+}
+inline int64_t stream_nuca_affinity_decode(int64_t field, int64_t value) {
+  return (value >> (field * STREAM_NUCA_AFFINITY_FIELD_BITS)) & 0xFF;
+}
+
+// Some simple cases.
+inline int64_t m5_stream_nuca_encode_ind_align(int64_t offset, int64_t size) {
+  return -(
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_NUM_FIELDS, 0) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_IND_COUNT_OFFSET, 0) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_IND_COUNT_SIZE, 0) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_IND_OFFSET, offset) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_IND_SIZE, size) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_IND_STRIDE, 0) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_PTR_COUNT_OFFSET, 0) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_PTR_COUNT_SIZE, 0) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_PTR_OFFSET, 0) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_PTR_SIZE, 0) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_PTR_STRIDE, 0));
+}
+
+inline int64_t m5_stream_nuca_encode_multi_ind(int64_t cntOffset,
+                                               int64_t cntSize, int64_t offset,
+                                               int64_t size, int64_t stride) {
+  return -(
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_NUM_FIELDS, 0) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_IND_COUNT_OFFSET,
+                                  cntOffset) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_IND_COUNT_SIZE,
+                                  cntSize) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_IND_OFFSET, offset) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_IND_SIZE, size) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_IND_STRIDE, stride));
+}
+
+inline int64_t m5_stream_nuca_encode_ptr_align(int64_t offset, int64_t size) {
+  return -(
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_NUM_FIELDS, 1) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_PTR_OFFSET, offset) |
+      stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_PTR_SIZE, size));
+}
+
+inline int64_t m5_stream_nuca_encode_csr_index() {
+  return -(stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_NUM_FIELDS, 2));
+}
+
 void m5_stream_nuca_align(void *A, void *B, int64_t elementOffset);
 
 /**
@@ -152,8 +219,9 @@ void m5_workload();
  * does not have _semi, but we felt that ifdefing them out could cause more
  * trouble tham leaving them in.
  */
-#define M5OP(name, func) __typeof__(name) M5OP_MERGE_TOKENS(name, _addr); \
-                         __typeof__(name) M5OP_MERGE_TOKENS(name, _semi);
+#define M5OP(name, func)                                                       \
+  __typeof__(name) M5OP_MERGE_TOKENS(name, _addr);                             \
+  __typeof__(name) M5OP_MERGE_TOKENS(name, _semi);
 M5OP_FOREACH
 #undef M5OP
 

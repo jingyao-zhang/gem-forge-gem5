@@ -60,14 +60,18 @@ bool StreamRegionController::canDispatchStreamEndImpl(
       auto elem = dynS.getFirstUnsteppedElem();
       if (staticRegion.step.skipStepSecondLastElemStreams.count(S)) {
         if (!elem->isInnerSecondLastElem()) {
-          S_ELEMENT_DPRINTF(elem, "[NotDispatchStreamEnd] Not LoopEliminated "
-                                  "InnerSecondLastElem.\n");
+          S_ELEMENT_DPRINTF(elem,
+                            "[NotDispatchStreamEnd] Not LoopEliminated "
+                            "InnerSecondLastElem TripCount %ld.\n",
+                            dynS.getTotalTripCount());
           return false;
         }
       } else {
         if (!elem->isLastElement()) {
-          S_ELEMENT_DPRINTF(
-              elem, "[NotDispatchStreamEnd] Not LoopEliminated LastElem.\n");
+          S_ELEMENT_DPRINTF(elem,
+                            "[NotDispatchStreamEnd] Not LoopEliminated "
+                            "LastElem TripCount %ld.\n",
+                            dynS.getTotalTripCount());
           return false;
         }
       }
@@ -87,6 +91,13 @@ void StreamRegionController::dispatchStreamEnd(const EndArgs &args) {
 
   auto &staticRegion = this->getStaticRegion(streamRegion.region());
   auto &dynRegion = this->getNextEndDynRegion(staticRegion);
+
+  this->dispatchStreamEndImpl(args, staticRegion, dynRegion);
+}
+
+void StreamRegionController::dispatchStreamEndImpl(const EndArgs &args,
+                                                   StaticRegion &staticRegion,
+                                                   DynRegion &dynRegion) {
 
   auto regionEndSeqNum = args.seqNum;
   if (this->se->myParams->enableO3ElimStreamEnd) {
@@ -190,6 +201,12 @@ bool StreamRegionController::canCommitStreamEnd(const EndArgs &args) {
 
 bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
                                                     DynRegion &dynRegion) {
+
+  // Can not release region if we have nest regions.
+  if (this->hasRemainingNestRegions(dynRegion)) {
+    SE_DPRINTF("[StreamEnd] NoCommit as RemainNestRegions.\n");
+    return false;
+  }
   for (auto S : staticRegion.streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
 
@@ -197,8 +214,8 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
       // Some streams do not have last element.
       continue;
     }
-    auto endElement = dynS.tail->next;
-    auto endElementIdx = endElement->FIFOIdx.entryIdx;
+    auto endElem = dynS.tail->next;
+    auto endElemIdx = endElem->FIFOIdx.entryIdx;
 
     /**
      * For eliminated loop, check for TotalTripCount.
@@ -206,11 +223,11 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
     if (S->isLoopEliminated() && dynS.hasTotalTripCount()) {
       uint64_t endElemOffset =
           staticRegion.step.skipStepSecondLastElemStreams.count(S) ? 1 : 0;
-      if (endElementIdx + endElemOffset < dynS.getTotalTripCount()) {
+      if (endElemIdx + endElemOffset < dynS.getTotalTripCount()) {
         S_ELEMENT_DPRINTF(
-            endElement,
-            "[StreamEnd] Cannot commit as less TripCount %llu + %llu < %llu.\n",
-            endElementIdx, endElemOffset, dynS.getTotalTripCount());
+            endElem,
+            "[StreamEnd] NoCommit as less TripCount %llu + %llu < %llu.\n",
+            endElemIdx, endElemOffset, dynS.getTotalTripCount());
         return false;
       }
     }
@@ -226,7 +243,7 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
        */
       bool shouldCheckAck = false;
       if (dynS.isFloatedToCache() && !dynS.shouldCoreSEIssue() &&
-          dynS.shouldRangeSync() && endElementIdx > 0) {
+          dynS.shouldRangeSync() && endElemIdx > 0) {
         shouldCheckAck = true;
       }
       /**
@@ -236,7 +253,7 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
        * CoreNotIssue       Check              Check
        */
       if ((S->isAtomicComputeStream() || S->isUpdateStream()) &&
-          dynS.isFloatedToCache() && endElementIdx > 0) {
+          dynS.isFloatedToCache() && endElemIdx > 0) {
         if (dynS.shouldRangeSync()) {
           shouldCheckAck = true;
         } else if (!dynS.shouldCoreSEIssue()) {
@@ -244,12 +261,12 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
         }
       }
       if (shouldCheckAck && dynS.cacheAckedElements.size() <
-                                dynS.getNumFloatedElemUntil(endElementIdx)) {
+                                dynS.getNumFloatedElemUntil(endElemIdx)) {
         S_ELEMENT_DPRINTF(
-            endElement,
+            endElem,
             "[StreamEnd] Cannot commit as not enough Ack %llu < %llu.\n",
             dynS.cacheAckedElements.size(),
-            dynS.getNumFloatedElemUntil(endElementIdx));
+            dynS.getNumFloatedElemUntil(endElemIdx));
         return false;
       }
     }
@@ -259,16 +276,16 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
      * TODO: These two cases should really be merged in the future.
      */
     if (dynS.isFloatedToCacheAsRoot() && dynS.shouldRangeSync()) {
-      if (dynS.getNextCacheDoneElemIdx() < endElementIdx) {
-        S_ELEMENT_DPRINTF(endElement,
-                          "[StreamEnd] Cannot commit as no Done for %llu, "
+      if (dynS.getNextCacheDoneElemIdx() < endElemIdx) {
+        S_ELEMENT_DPRINTF(endElem,
+                          "[StreamEnd] NoCommit as no Done for %llu, "
                           "NextCacheDone %llu.\n",
-                          endElementIdx, dynS.getNextCacheDoneElemIdx());
+                          endElemIdx, dynS.getNextCacheDoneElemIdx());
         return false;
       }
     }
-    S_ELEMENT_DPRINTF(endElement,
-                      "[StreamEnd] Can commit end element. FloatedToCache %d. "
+    S_ELEMENT_DPRINTF(endElem,
+                      "[StreamEnd] Can commit end elem. FloatedToCache %d. "
                       "ShouldCoreSEIssue %d. Acked %d.\n",
                       dynS.isFloatedToCache(), dynS.shouldCoreSEIssue(),
                       dynS.cacheAckedElements.size());
@@ -283,6 +300,10 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
 
   SE_DPRINTF("Commit StreamEnd for %s.\n", streamRegion.region());
 
+  this->se->numInflyStreamConfigurations--;
+  assert(this->se->numInflyStreamConfigurations >= 0 &&
+         "Negative infly StreamConfigurations.");
+
   auto &dynRegion = this->getDynRegionByEndSeqNum(staticRegion, args.seqNum);
   if (dynRegion.seqNum > dynRegion.endSeqNum) {
     /**
@@ -295,10 +316,13 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
   }
 
   SE_DPRINTF(
-      "[Region] Release DynRegion SeqNum %llu for region %s, remaining %llu.\n",
+      "[Region] Release DynRegion SeqNum %llu %s Remaining %llu Total %llu.\n",
       dynRegion.seqNum, streamRegion.region(),
-      staticRegion.dynRegions.size() - 1);
-  this->checkRemainingNestRegions(dynRegion);
+      staticRegion.dynRegions.size() - 1, this->activeDynRegionMap.size() - 1);
+  if (this->hasRemainingNestRegions(dynRegion)) {
+    SE_PANIC("[Region] %s End with Remaining NestRegions.",
+             streamRegion.region());
+  }
 
   /**
    * Deduplicate the streams due to coalescing.
@@ -456,5 +480,5 @@ StreamRegionController::getDynRegionByEndSeqNum(StaticRegion &staticRegion,
     }
   }
   SE_PANIC("No Ended DynRegion.");
-}} // namespace gem5
-
+}
+} // namespace gem5

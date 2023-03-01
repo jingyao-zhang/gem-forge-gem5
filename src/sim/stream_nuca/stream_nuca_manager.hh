@@ -64,10 +64,27 @@ public:
       CSRIndex,
     };
     const TypeE type;
-    const int32_t offset;
-    const int32_t size;
-    IrregularAlignField(TypeE _type, int32_t _offset, int32_t _size)
-        : type(_type), offset(_offset), size(_size) {}
+    const int32_t indCountOffset = 0;
+    const int32_t indCountSize = 0;
+    const int32_t indOffset = 0;
+    const int32_t indSize = 0;
+    const int32_t indStride = 0;
+    const int32_t ptrCountOffset = 0;
+    const int32_t ptrCountSize = 0;
+    const int32_t ptrOffset = 0;
+    const int32_t ptrSize = 0;
+    const int32_t ptrStride = 0;
+    IrregularAlignField(TypeE _type, int32_t _indCountOffset,
+                        int32_t _indCountSize, int32_t _indOffset,
+                        int32_t _indSize, int32_t _indStride,
+                        int32_t _ptrCountOffset, int32_t _ptrCountSize,
+                        int32_t _ptrOffset, int32_t _ptrSize,
+                        int32_t _ptrStride)
+        : type(_type), indCountOffset(_indCountOffset),
+          indCountSize(_indCountSize), indOffset(_indOffset), indSize(_indSize),
+          indStride(_indStride), ptrCountOffset(_ptrCountOffset),
+          ptrCountSize(_ptrCountSize), ptrOffset(_ptrOffset), ptrSize(_ptrSize),
+          ptrStride(_ptrStride) {}
   };
   static IrregularAlignField decodeIrregularAlign(int64_t irregularAlign);
   void defineAlign(Addr A, Addr B, int64_t elementOffset);
@@ -101,6 +118,15 @@ public:
         : name(_name), vaddr(_vaddr), elementSize(_elementSize),
           numElement(_numElement), arraySizes(_arraySizes),
           cachedElements(_numElement) {}
+
+    std::string getRegionGroup() const {
+      auto idx = this->name.find('/');
+      if (idx != std::string::npos) {
+        return this->name.substr(0, idx);
+      } else {
+        return this->name;
+      }
+    }
 
     std::vector<StreamAlign> aligns;
     /**
@@ -160,9 +186,6 @@ private:
   uint64_t determineInterleave(const StreamRegion &region);
   int determineStartBank(const StreamRegion &region, uint64_t interleave);
 
-  void remapPtrChaseRegion(ThreadContext *tc, StreamRegion &region);
-  void remapIndirectRegion(ThreadContext *tc, StreamRegion &region);
-
   void computeCachedElements();
   void computeCacheSet();
   void computeCacheSetNUCA();
@@ -191,8 +214,12 @@ private:
     }
   };
 
+  const std::string &
+  getRegionNameForIndirectBox(const IndirectBoxHops &box) const {
+    return this->getContainingStreamRegion(box.vaddr).name;
+  }
+
   struct IndirectRegionHops {
-    const StreamRegion &region;
     const int numBanks;
     std::vector<IndirectBoxHops> boxHops;
     /**
@@ -202,23 +229,31 @@ private:
     using RemapBoxIdsPerBankT = std::vector<uint64_t>;
     using RemapBoxIdsT = std::vector<RemapBoxIdsPerBankT>;
     RemapBoxIdsT remapBoxIds;
-    IndirectRegionHops(const StreamRegion &_region, int _numBanks)
-        : region(_region), numBanks(_numBanks) {
+    IndirectRegionHops(int _numBanks) : numBanks(_numBanks) {
       this->remapBoxIds.resize(this->numBanks);
     }
     void addRemapBoxId(uint64_t boxIdx, int bankIdx);
   };
 
+  void remapPtrChaseRegion(ThreadContext *tc, StreamRegion &region);
+  void remapIndirectRegion(ThreadContext *tc, StreamRegion &region,
+                           IndirectRegionHops &regionHops);
+
   /**
    * Collect the hops and frequency stats for indirect regions.
    */
-  IndirectRegionHops computeIndirectRegionHops(ThreadContext *tc,
-                                               const StreamRegion &region);
+  void computeIndirectRegionHops(ThreadContext *tc, const StreamRegion &region,
+                                 IndirectRegionHops &regionHops);
   IndirectBoxHops computeIndirectBoxHops(ThreadContext *tc,
                                          const StreamRegion &region,
                                          const StreamRegion &alignToRegion,
                                          const IrregularAlignField &indField,
-                                         Addr pageVAddr);
+                                         Addr boxVAddr);
+  void computeIndirectHopsForOneElement(
+      ThreadContext *tc, const StreamRegion &region,
+      const StreamRegion &alignToRegion, const IrregularAlignField &indField,
+      uint64_t boxIdx, Addr boxVAddr, Addr boxPAddr, int elemIdx,
+      const char *elemData, IndirectBoxHops &boxHops);
 
   /**
    * Just greedily assign pages to the NUMA node Id with the lowest traffic.
@@ -283,23 +318,19 @@ public:
 
 private:
   bool statsRegisterd = false;
-  Stats::ScalarNoReset indRegionBoxes;
-  Stats::ScalarNoReset indRegionElements;
-  Stats::ScalarNoReset indRegionAllocPages;
-  Stats::ScalarNoReset indRegionRemapPages;
-
-  Stats::ScalarNoReset indRegionMemToLLCDefaultHops;
-
-  Stats::ScalarNoReset indRegionMemToLLCMinHops;
-  Stats::DistributionNoReset indRegionMemMinBanks;
-
-  Stats::ScalarNoReset indRegionMemToLLCRemappedHops;
-  Stats::DistributionNoReset indRegionMemRemappedBanks;
-
-  Stats::ScalarNoReset csrEdgeMigrations;
-  Stats::ScalarNoReset csrEdgeMigrationHops;
-  Stats::ScalarNoReset csrReorderEdgeMigrations;
-  Stats::ScalarNoReset csrReorderEdgeMigrationHops;
+  statistics::ScalarNoReset indRegionBoxes;
+  statistics::ScalarNoReset indRegionElements;
+  statistics::ScalarNoReset indRegionAllocPages;
+  statistics::ScalarNoReset indRegionRemapPages;
+  statistics::ScalarNoReset indRegionMemToLLCDefaultHops;
+  statistics::ScalarNoReset indRegionMemToLLCMinHops;
+  statistics::DistributionNoReset indRegionMemMinBanks;
+  statistics::ScalarNoReset indRegionMemToLLCRemappedHops;
+  statistics::DistributionNoReset indRegionMemRemappedBanks;
+  statistics::ScalarNoReset csrEdgeMigrations;
+  statistics::ScalarNoReset csrEdgeMigrationHops;
+  statistics::ScalarNoReset csrReorderEdgeMigrations;
+  statistics::ScalarNoReset csrReorderEdgeMigrationHops;
 };
 
 } // namespace gem5

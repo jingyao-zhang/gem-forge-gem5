@@ -79,6 +79,9 @@ TimingRequestProtocol::sendRetryResp(TimingResponseProtocol *peer)
 bool
 TimingResponseProtocol::sendResp(TimingRequestProtocol *peer, PacketPtr pkt)
 {
+    if (!pkt->isResponse()) {
+        panic("Not resp for %s.", pkt->cmdString());
+    }
     assert(pkt->isResponse());
     return peer->recvTimingResp(pkt);
 }
