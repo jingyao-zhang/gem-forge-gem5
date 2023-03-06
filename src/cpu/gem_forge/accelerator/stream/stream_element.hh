@@ -380,9 +380,9 @@ struct StreamElement {
   void getLoadComputeValue(uint8_t *val, int valLen) const;
   void receiveComputeResult(const StreamValue &result);
 
-  /**
-   * Check if we can withdraw this element.
-   */
+  bool hasRemoteBank() const { return this->remoteBank != InvalidRemoteBank; }
+  int getRemoteBank() const { return this->remoteBank; }
+  void setRemoteBank(int remoteBank) { this->remoteBank = remoteBank; }
 
 private:
   bool addrReady = false;
@@ -417,6 +417,13 @@ private:
    * Helper func to udpate our stats about when first check on value happened.
    */
   void updateFirstValueCheckCycle(bool checkedByCore) const;
+
+  /**
+   * Remember the cache remote bank.
+   * Used to implement RemoteNestConfig.
+   */
+  constexpr static int InvalidRemoteBank = -1;
+  int remoteBank = InvalidRemoteBank;
 };
 
 } // namespace gem5

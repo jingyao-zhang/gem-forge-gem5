@@ -331,6 +331,11 @@ private:
   friend class StreamRangeSyncController;
   friend class StreamDataTrafficAccumulator;
 
+  // A global array of all SEs. Used to implement RemoteConfig.
+  static std::vector<StreamEngine *> GlobalStreamEngines;
+  static StreamEngine *
+  getStreamEngineAtCPU(GemForgeCPUDelegator::CPUTypeE cpuType, int cpuId);
+
   LLVMTraceCPU *cpu;
 
   std::unique_ptr<StreamTranslationBuffer<void *>> translationBuffer;

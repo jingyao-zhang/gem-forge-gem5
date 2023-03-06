@@ -18,6 +18,17 @@
 
 namespace gem5 {
 
+bool StreamRegionController::shouldRemoteConfigureNestRegion(
+    StaticRegion &staticNestRegion) {
+  if (!this->se->myParams->enableRemoteElimNestStreamConfig) {
+    return false;
+  }
+  if (!staticNestRegion.allStreamsLoopEliminated) {
+    return false;
+  }
+  return true;
+}
+
 void StreamRegionController::initializeNestStreams(
     const ::LLVM::TDG::StreamRegion &region, StaticRegion &staticRegion) {
 
@@ -46,25 +57,28 @@ void StreamRegionController::initializeNestStreams(
   for (const auto &arg : region.nest_config_func().args()) {
     if (arg.is_stream()) {
       // This is a stream input. Remember this in the base stream.
-      auto S = this->se->getStream(arg.stream_id());
-      staticNestConfig.baseStreams.insert(S);
-      S->setDepNestRegion();
-    }
-  }
-
-  if (nestPredFunc) {
-    for (const auto &arg : region.nest_pred_func().args()) {
-      if (arg.is_stream()) {
-        // This is a stream input. Remember this in the base stream.
-        auto S = this->se->getStream(arg.stream_id());
-        staticNestConfig.baseStreams.insert(S);
+      staticNestConfig.baseStreamIds.insert(arg.stream_id());
+      if (auto S = this->se->tryGetStream(arg.stream_id())) {
+        // It's possible that we don't have the outer S due to RemoteConfig.
         S->setDepNestRegion();
       }
     }
   }
 
-  SE_DPRINTF("[Nest] Initialized StaticNestConfig for region %s.\n",
-             region.region());
+  if (staticNestConfig.predFunc) {
+    for (const auto &arg : region.nest_pred_func().args()) {
+      if (arg.is_stream()) {
+        // This is a stream input. Remember this in the base stream.
+        staticNestConfig.baseStreamIds.insert(arg.stream_id());
+        if (auto S = this->se->tryGetStream(arg.stream_id())) {
+          // It's possible that we don't have the outer S due to RemoteConfig.
+          S->setDepNestRegion();
+        }
+      }
+    }
+  }
+
+  SE_DPRINTF("[Nest] Init StaticNestConfig for region %s.\n", region.region());
 }
 
 void StreamRegionController::dispatchStreamConfigForNestStreams(
@@ -84,6 +98,21 @@ void StreamRegionController::dispatchStreamConfigForNestStreams(
     auto &dynNestConfig = dynRegion.nestConfigs.back();
     dynNestConfig.configFunc = staticNestConfig.configFunc;
     dynNestConfig.predFunc = staticNestConfig.predFunc;
+
+    dynNestConfig.isRemoteConfig =
+        this->shouldRemoteConfigureNestRegion(staticNestRegion);
+    if (dynNestConfig.isRemoteConfig) {
+      SE_DPRINTF("[Nest] Remote NestConfig for region %s.\n",
+                 staticNestRegion.region.region());
+    }
+
+    for (auto baseStreamId : staticNestConfig.baseStreamIds) {
+      auto S = this->se->getStream(baseStreamId);
+      dynNestConfig.baseStreams.insert(S);
+      S->setDepNestRegion();
+      auto &dynS = S->getDynStream(args.seqNum);
+      dynS.setDepRemoteNestRegion(dynNestConfig.isRemoteConfig);
+    }
   }
 }
 
@@ -138,18 +167,15 @@ bool StreamRegionController::hasRemainingNestRegions(
         DynRegion::DynNestConfig::InvalidConfigSeqNum) {
       continue;
     }
-    auto &staticNestRegion = *(dynNestConfig.staticRegion);
-    if (staticNestRegion.dynRegions.empty()) {
+    if (dynNestConfig.nestDynRegions.empty()) {
       continue;
     }
-    auto lastNestConfigSeqNum = dynNestConfig.lastConfigSeqNum;
-    const auto &firstNestDynRegion = staticNestRegion.dynRegions.front();
-    if (firstNestDynRegion.seqNum <= lastNestConfigSeqNum) {
-      SE_DPRINTF("[Nest] Outer %s. Nested %s ConfigSeqNum %lu remains.\n",
-                 dynRegion.staticRegion->region.region(),
-                 staticNestRegion.region.region(), firstNestDynRegion.seqNum);
-      return true;
-    }
+    auto &staticNestRegion = *(dynNestConfig.staticRegion);
+    SE_DPRINTF("[Nest] Outer %s. Nested %s ConfigSN %llu remains.\n",
+               dynRegion.staticRegion->region.region(),
+               staticNestRegion.region.region(),
+               dynNestConfig.nestDynRegions.front().configSeqNum);
+    return true;
   }
   return false;
 }
@@ -189,62 +215,26 @@ void StreamRegionController::configureNestStream(
     }
   }
 
-  /**
-   * We also limit the number of dynamic nest regions at the same time.
-   * Previously this is controlled by limit the number of elements allocated for
-   * outer loop streams, however, that limits our prefetch benefits (see
-   * StreamThrottler). Hence now we isolate these two parameters.
-   */
-  if (staticNestRegion.region.loop_eliminated() &&
-      staticNestRegion.dynRegions.size() >=
-          this->se->myParams->elimNestStreamInstances) {
-    SE_DPRINTF("[Nest] Reach MaxNestRegions %d > %d.\n",
-               staticNestRegion.dynRegions.size(),
-               this->se->myParams->elimNestStreamInstances);
-    return;
-  }
-
-  /**
-   * Since allocating a new stream will take one element, we check that
-   * there are available free elements.
-   */
-  if (this->se->numFreeFIFOEntries < staticNestRegion.streams.size()) {
-    SE_DPRINTF("[Nest] No Total Free Element to allocate "
-               "NestConfig, Has %d, "
-               "Required %d.\n",
-               this->se->numFreeFIFOEntries, staticNestRegion.streams.size());
-    return;
-  }
-  for (auto S : staticNestRegion.streams) {
-    if (S->getAllocSize() + 1 >= S->maxSize) {
-      S_DPRINTF(S,
-                "[Nest] No Free Elem to allocate NestConfig, "
-                "AllocSize %d, "
-                "MaxSize %d.\n",
-                S->getAllocSize(), S->maxSize);
-      return;
-    }
-  }
-
-  auto nextElementIdx = dynNestConfig.nextConfigIdx;
+  // Check the base elements are value ready.
+  auto nextElemIdx = dynNestConfig.nextConfigElemIdx;
   std::unordered_set<StreamElement *> baseElems;
-  for (auto baseS : staticNestConfig.baseStreams) {
+  for (auto baseS : dynNestConfig.baseStreams) {
     auto &baseDynS = baseS->getDynStream(dynRegion.seqNum);
-    auto baseE = baseDynS.getElemByIdx(nextElementIdx);
+    auto baseE = baseDynS.getElemByIdx(nextElemIdx);
     if (!baseE) {
-      if (baseDynS.FIFOIdx.entryIdx > nextElementIdx) {
+      if (baseDynS.FIFOIdx.entryIdx > nextElemIdx) {
         DYN_S_DPRINTF(baseDynS.dynStreamId,
                       "Failed to get elem %llu for NestConfig. The "
                       "TotalTripCount must be 0. Skip.\n",
-                      dynNestConfig.nextConfigIdx);
-        dynNestConfig.nextConfigIdx++;
+                      dynNestConfig.nextConfigElemIdx);
+        dynNestConfig.nextConfigElemIdx++;
         return;
       } else {
         // The base element is not allocated yet.
         S_DPRINTF(baseS,
                   "[Nest] BaseElem %llu not allocated yet for NestConfig. "
                   "Current NestRegions %d.\n",
-                  nextElementIdx, staticNestRegion.dynRegions.size());
+                  nextElemIdx, staticNestRegion.dynRegions.size());
         return;
       }
     }
@@ -257,6 +247,85 @@ void StreamRegionController::configureNestStream(
   for (auto baseE : baseElems) {
     if (baseE->isLastElement()) {
       S_ELEMENT_DPRINTF(baseE, "[Nest] Reached TripCount.\n");
+      return;
+    }
+  }
+
+  /**
+   * If this is RemoteConfig, try to configure at the specified SE.
+   */
+  auto nestSE = this->se;
+  if (dynNestConfig.isRemoteConfig) {
+    int remoteBank = -1;
+    for (auto baseE : baseElems) {
+      if (baseE->isFloatElem() && baseE->stream->isLoadStream()) {
+        if (baseE->hasRemoteBank()) {
+          auto elemRemoteBank = baseE->getRemoteBank();
+          S_ELEMENT_DPRINTF(baseE, "[Nest] RemoteBank %d.\n", elemRemoteBank);
+          if (remoteBank == -1) {
+            remoteBank = elemRemoteBank;
+          } else if (remoteBank != elemRemoteBank) {
+            S_ELEMENT_PANIC(baseE, "[Nest] Mismatch in RemoteBank.");
+          }
+        } else {
+          S_ELEMENT_DPRINTF(baseE, "[Nest] Miss RemoteBank.");
+          return;
+        }
+      }
+    }
+    assert(remoteBank != -1);
+    auto numSEs = StreamEngine::GlobalStreamEngines.size();
+    assert(numSEs > 0);
+    assert(remoteBank < numSEs && "[Nest] Overflow RemoteBank.");
+    // auto selected = rand() % numSEs;
+    // auto selected = 1;
+    auto selected = remoteBank;
+    nestSE = StreamEngine::GlobalStreamEngines.at(selected);
+    SE_DPRINTF("[Nest] RemoteConfig at CPU %d.\n",
+               nestSE->cpuDelegator->cpuId());
+  }
+
+  /**
+   * We also limit the number of dynamic nest regions at the same time.
+   * Previously this is controlled by limit the number of elements allocated for
+   * outer loop streams, however, that limits our prefetch benefits (see
+   * StreamThrottler). Hence now we isolate these two parameters.
+   */
+  if (staticNestRegion.region.loop_eliminated() &&
+      staticNestRegion.dynRegions.size() >=
+          this->se->myParams->elimNestStreamInstances) {
+    SE_DPRINTF("[Nest] Reach MaxNestRegions %d > %d.\n",
+               staticNestRegion.dynRegions.size(),
+               this->se->myParams->elimNestStreamInstances);
+    for (auto nestS : staticNestRegion.streams) {
+      nestS->statistic.remoteNestConfigMaxRegions++;
+    }
+    return;
+  }
+
+  /**
+   * Since allocating a new stream will take one element, we check that
+   * there are available free elements.
+   */
+  if (nestSE->numFreeFIFOEntries < staticNestRegion.streams.size()) {
+    SE_DPRINTF("[Nest] No Total Free Elem to allocate NestConfig, Has %d, "
+               "Required %d.\n",
+               nestSE->numFreeFIFOEntries, staticNestRegion.streams.size());
+    return;
+  }
+  auto numDynNestRegions = nestSE->regionController->getNumDynRegion(
+      staticNestRegion.region.region());
+  if (numDynNestRegions > this->se->myParams->elimNestStreamInstances) {
+    SE_DPRINTF("[Nest] Too Many Infly RemoteNestConfig %d.\n",
+               numDynNestRegions);
+    return;
+  }
+  for (auto S : staticNestRegion.streams) {
+    if (S->getAllocSize() + 1 >= S->maxSize) {
+      S_DPRINTF(S,
+                "[Nest] No Free Elem to allocate NestConfig, "
+                "AllocSize %d, MaxSize %d.\n",
+                S->getAllocSize(), S->maxSize);
       return;
     }
   }
@@ -274,7 +343,7 @@ void StreamRegionController::configureNestStream(
     if (predRet != staticNestConfig.predRet) {
       SE_DPRINTF("[Nest] Predicated Skip (%d != %d) NestRegion %s.\n", predRet,
                  staticNestConfig.predRet, staticNestRegion.region.region());
-      dynNestConfig.nextConfigIdx++;
+      dynNestConfig.nextConfigElemIdx++;
       return;
     }
   }
@@ -286,23 +355,26 @@ void StreamRegionController::configureNestStream(
     SE_DPRINTF("[Nest] Value ready. Configure NestRegion %s, "
                "OuterElementIdx "
                "%lu, ActualParams:\n",
-               staticNestRegion.region.region(), dynNestConfig.nextConfigIdx);
+               staticNestRegion.region.region(),
+               dynNestConfig.nextConfigElemIdx);
     for (const auto &actualParam : actualParams) {
       SE_DPRINTF("[Nest]   Param %s.\n", actualParam.print());
     }
   }
 
-  this->isaHandler.resetISAStreamEngine();
+  auto &configIsaHandler = nestSE->regionController->isaHandler;
+  configIsaHandler.resetISAStreamEngine();
   auto configFuncStartSeqNum = dynNestConfig.getConfigSeqNum(
-      this->se, dynNestConfig.nextConfigIdx, dynRegion.seqNum);
-  dynNestConfig.configFunc->invoke(actualParams, &this->isaHandler,
+      nestSE, dynNestConfig.nextConfigElemIdx, dynRegion.seqNum);
+  dynNestConfig.configFunc->invoke(actualParams, &configIsaHandler,
                                    configFuncStartSeqNum);
 
-  // Remember the NestConfigSeqNum.
+  // Remember the NestConfigSeqNum and parent/child relationship.
   InstSeqNum nestConfigSeqNum = configFuncStartSeqNum;
   {
     auto S = staticNestRegion.streams.front();
-    auto &dynS = S->getLastDynStream();
+    auto &dynS = nestSE->getStream(S->staticId)->getLastDynStream();
+    // auto &dynS = S->getLastDynStream();
     auto dynSTripCount = dynS.getTotalTripCount();
     if (dynSTripCount == 0) {
       DYN_S_PANIC(dynS.dynStreamId, "NestStream has TripCount %d.",
@@ -311,23 +383,36 @@ void StreamRegionController::configureNestStream(
     nestConfigSeqNum = dynS.configSeqNum;
   }
   dynNestConfig.lastConfigSeqNum = nestConfigSeqNum;
-  dynNestConfig.configSeqNums.push_back(nestConfigSeqNum);
+  dynNestConfig.nestDynRegions.emplace_back(nestConfigSeqNum, nestSE);
+  auto &dynNestRegion =
+      nestSE->regionController->getDynRegion("NestConfig", nestConfigSeqNum);
+  dynNestRegion.nestParentSE = this->se;
+  dynNestRegion.nestParentDynConfig = &dynNestConfig;
 
   SE_DPRINTF("[Nest] Value ready. Config NestRegion %s OuterConfigSeqNum %lu "
              "OuterElemIdx %lu ConfigFuncStartSeqNum %lu ConfigSeqNum %lu "
              "Configured:\n",
              staticNestRegion.region.region(), dynRegion.seqNum,
-             dynNestConfig.nextConfigIdx, configFuncStartSeqNum,
+             dynNestConfig.nextConfigElemIdx, configFuncStartSeqNum,
              nestConfigSeqNum);
   if (Debug::StreamNest) {
     for (auto S : staticNestRegion.streams) {
-      auto &dynS = S->getLastDynStream();
+      auto &dynS = nestSE->getStream(S->staticId)->getLastDynStream();
       SE_DPRINTF("[Nest] TripCount %8lld  %s.\n", dynS.getTotalTripCount(),
                  dynS.dynStreamId);
     }
   }
 
-  dynNestConfig.nextConfigIdx++;
+  if (nestSE != this->se) {
+    // This is a RemoteNestConfigure.
+    for (auto S : staticNestRegion.streams) {
+      nestSE->getStream(S->staticId)
+          ->statistic.sampleRemoteNestConfig(this->se->cpuDelegator->cpuId(),
+                                             nestSE->cpuDelegator->cpuId());
+    }
+  }
+
+  dynNestConfig.nextConfigElemIdx++;
 }
 
 InstSeqNum
@@ -346,10 +431,10 @@ InstSeqNum StreamRegionController::DynRegion::DynNestConfig::getConfigSeqNum(
    * To fix this, I break the order between core configured regions and
    * se configured regions (i.e. nest regions), and maintain a global
    * monotonically increasing ConfigSeqNum for all nest regions.
-   * 
+   *
    * This global SeqNum starts from a large number and hopefully that avoids
    * collision with core configured regions.
-   * 
+   *
    * TODO: Perhaps I should rename it to something other than SeqNum.
    *
    * This needs to be smaller than the StreamEnd SeqNum from core.

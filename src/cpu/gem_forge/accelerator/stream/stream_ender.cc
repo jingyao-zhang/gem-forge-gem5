@@ -398,6 +398,24 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
        iter != staticRegion.dynRegions.end(); ++iter) {
     if (iter->seqNum == dynRegion.seqNum) {
       erasedDynRegion = true;
+
+      // Notify the NestParentSE about the release.
+      if (dynRegion.nestParentSE) {
+        auto nestParentDynConfig = dynRegion.nestParentDynConfig;
+        auto erasedFromNestParent = false;
+        for (auto iter = nestParentDynConfig->nestDynRegions.begin(),
+                  end = nestParentDynConfig->nestDynRegions.end();
+             iter != end; ++iter) {
+          if (iter->configSeqNum == dynRegion.seqNum) {
+            assert(iter->configSE == this->se);
+            erasedFromNestParent = true;
+            nestParentDynConfig->nestDynRegions.erase(iter);
+            break;
+          }
+        }
+        assert(erasedFromNestParent);
+      }
+
       staticRegion.dynRegions.erase(iter);
       break;
     }

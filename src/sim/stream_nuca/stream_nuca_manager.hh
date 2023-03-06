@@ -1,6 +1,7 @@
 #ifndef __GEM_FORGE_STREAM_NUCA_MANAGER_HH__
 #define __GEM_FORGE_STREAM_NUCA_MANAGER_HH__
 
+#include "base/output.hh"
 #include "sim/process.hh"
 
 #include <map>
@@ -331,6 +332,8 @@ private:
   statistics::ScalarNoReset csrEdgeMigrationHops;
   statistics::ScalarNoReset csrReorderEdgeMigrations;
   statistics::ScalarNoReset csrReorderEdgeMigrationHops;
+
+  static OutputStream *log;
 };
 
 } // namespace gem5

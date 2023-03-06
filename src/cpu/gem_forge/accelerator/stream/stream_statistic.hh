@@ -67,8 +67,9 @@ public:
   // Float statistics in Mem.
   size_t numMemIssueSlice = 0;
   size_t numRemoteReuseSlice = 0;
-  size_t numRemoteConfigure = 0;
-  size_t numRemoteConfigureCycle = 0;
+  size_t numRemoteConfig = 0;
+  size_t numRemoteConfigNoCCycle = 0;
+  size_t numRemoteConfigCycle = 0;
   size_t numRemoteMigrate = 0;
   size_t numRemoteMigrateCycle = 0;
   size_t numRemoteMigrateDelayCycle = 0;
@@ -112,6 +113,9 @@ public:
   size_t numMissL1 = 0;
   size_t numMissL2 = 0;
 
+  // RemoteNestConfigStats
+  size_t remoteNestConfigMaxRegions = 0;
+
   // Compute statistics.
   size_t numLLCComputation = 0;
   size_t numLLCComputationComputeLatency = 0;
@@ -121,12 +125,21 @@ public:
   size_t numFloatAtomicWaitForCommitCycle = 0;
   size_t numFloatAtomicWaitForLockCycle = 0;
   size_t numFloatAtomicWaitForUnlockCycle = 0;
-  std::map<std::pair<int, int>, size_t> numLLCSendTo;
-  void sampleLLCSendTo(int from, int to) {
-    this->numLLCSendTo
-        .emplace(std::piecewise_construct, std::forward_as_tuple(from, to),
+  using SrcDestStatsT = std::map<std::pair<int, int>, size_t>;
+  static void sampleSrcDest(SrcDestStatsT &stats, int src, int dest) {
+    stats
+        .emplace(std::piecewise_construct, std::forward_as_tuple(src, dest),
                  std::forward_as_tuple(0))
         .first->second++;
+  }
+  static void dumpSrcDest(const SrcDestStatsT &stats, std::ostream &os);
+  SrcDestStatsT numLLCSendTo;
+  SrcDestStatsT numRemoteNestConfig;
+  void sampleLLCSendTo(int from, int to) {
+    sampleSrcDest(this->numLLCSendTo, from, to);
+  }
+  void sampleRemoteNestConfig(int from, int to) {
+    sampleSrcDest(this->numRemoteNestConfig, from, to);
   }
 
   size_t numLLCInflyComputationSample = 0;

@@ -32,7 +32,7 @@ void StreamRegionController::initializeRegion(
   /**
    * Collect streams within this region.
    */
-  StaticRegion::StreamSet streams;
+  StreamSet streams;
   staticRegion.allStreamsLoopEliminated = true;
   staticRegion.someStreamsLoopEliminated = false;
   for (const auto &streamInfo : region.streams()) {
@@ -101,10 +101,14 @@ void StreamRegionController::executeStreamConfig(const ConfigArgs &args) {
   if (staticRegion.region.loop_eliminated() &&
       staticRegion.streams.front()->getIsInnerMostLoop()) {
     se->throttler->boostStreams(staticRegion.step.stepRootStreams);
-    if (!staticRegion.nestConfig.baseStreams.empty()) {
-      auto &outerStaticRegion =
-          this->getStaticRegion(*staticRegion.nestConfig.baseStreams.begin());
-      se->throttler->boostStreams(outerStaticRegion.step.stepRootStreams);
+    if (!staticRegion.nestConfig.baseStreamIds.empty()) {
+      auto firstNestParentStreamId =
+          *staticRegion.nestConfig.baseStreamIds.begin();
+      if (auto nestParentS = this->se->tryGetStream(firstNestParentStreamId)) {
+        // Due to RemoteConfig, we may not have NestParentS.
+        auto &outerStaticRegion = this->getStaticRegion(nestParentS);
+        se->throttler->boostStreams(outerStaticRegion.step.stepRootStreams);
+      }
     }
   }
 }
@@ -198,8 +202,7 @@ StreamRegionController::pushDynRegion(StaticRegion &staticRegion,
   SE_DPRINTF("[Region] Initialized DynRegion SeqNum %llu for region %s. "
              "Current %d Total %d.\n",
              seqNum, staticRegion.region.region(),
-             staticRegion.dynRegions.size(),
-             this->activeDynRegionMap.size());
+             staticRegion.dynRegions.size(), this->activeDynRegionMap.size());
 
   staticRegion.dynRegions.emplace_back(&staticRegion, seqNum);
   auto &dynRegion = staticRegion.dynRegions.back();
@@ -240,6 +243,15 @@ StreamRegionController::getDynRegion(const std::string &msg,
     SE_PANIC("Failed to find DynRegion SeqNum %llu: %s.\n", seqNum, msg);
   }
   return *iter->second;
+}
+
+int StreamRegionController::getNumDynRegion(const std::string &regionName) {
+  auto iter = this->staticRegionMap.find(regionName);
+  if (iter == this->staticRegionMap.end()) {
+    // Not initialized yet.
+    return 0;
+  }
+  return iter->second.dynRegions.size();
 }
 
 void StreamRegionController::buildFormalParams(

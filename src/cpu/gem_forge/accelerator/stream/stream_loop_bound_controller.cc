@@ -25,9 +25,8 @@ void StreamRegionController::initializeStreamLoopBound(
       se->getCPUDelegator()->getSingleThreadContext(), boundFuncInfo);
   const bool boundRet = region.loop_bound_ret();
 
-  SE_DPRINTF(
-      "[LoopBound] Initialized StaticLoopBound for region %s. BoundRet %d.\n",
-      region.region(), boundRet);
+  SE_DPRINTF("[LoopBound] Init StaticLoopBound for region %s. BoundRet %d.\n",
+             region.region(), boundRet);
   auto &staticBound = staticRegion.loopBound;
   staticBound.boundFunc = boundFunc;
   staticBound.boundRet = boundRet;
@@ -39,9 +38,6 @@ void StreamRegionController::initializeStreamLoopBound(
       staticBound.baseStreams.insert(S);
     }
   }
-
-  SE_DPRINTF("[LoopBound] Initialized StaticLoopBound for region %s.\n",
-             region.region());
 }
 
 void StreamRegionController::dispatchStreamConfigForLoopBound(

@@ -279,7 +279,7 @@ private:
   /**
    * Get the request type for this stream.
    */
-  ruby::CoherenceRequestType getDirectStreamReqType(LLCDynStream *stream) const;
+  ruby::CoherenceRequestType getStreamReqType(LLCDynStream *stream) const;
 
   /**
    * Generate indirect stream request.

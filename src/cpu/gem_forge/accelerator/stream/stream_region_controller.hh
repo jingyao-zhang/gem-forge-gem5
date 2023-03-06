@@ -37,6 +37,9 @@ public:
 
   void takeOverBy(GemForgeCPUDelegator *newCPUDelegator);
 
+  using StreamIdSet = std::set<Stream::StaticId>;
+  using StreamSet = std::set<Stream *>;
+  using StreamVec = std::vector<Stream *>;
   struct StaticRegion;
   struct DynRegion {
     StaticRegion *staticRegion;
@@ -68,10 +71,13 @@ public:
       const StaticRegion *staticRegion;
       ExecFuncPtr configFunc = nullptr;
       ExecFuncPtr predFunc = nullptr;
+      StreamSet baseStreams;
       DynStreamFormalParamV formalParams;
       DynStreamFormalParamV predFormalParams;
-      uint64_t nextConfigIdx = 0;
-      uint64_t nextEndIdx = 0;
+      uint64_t nextConfigElemIdx = 0;
+
+      // Whether this nest config is handled remotely.
+      bool isRemoteConfig = false;
 
       /**
        * ConfigSeqNum of configured NestRegion.
@@ -80,7 +86,14 @@ public:
       constexpr static InstSeqNum InvalidConfigSeqNum = 0;
       InstSeqNum lastConfigSeqNum = InvalidConfigSeqNum;
 
-      std::deque<InstSeqNum> configSeqNums;
+      struct NestDynRegion {
+        InstSeqNum configSeqNum = InvalidConfigSeqNum;
+        StreamEngine *configSE = nullptr;
+        NestDynRegion(InstSeqNum _configSeqNum, StreamEngine *_configSE)
+            : configSeqNum(_configSeqNum), configSE(_configSE) {}
+      };
+
+      std::list<NestDynRegion> nestDynRegions;
 
       DynNestConfig(const StaticRegion *_staticRegion)
           : staticRegion(_staticRegion) {}
@@ -90,6 +103,8 @@ public:
       InstSeqNum getConfigSeqNum(StreamEngine *se, uint64_t elemIdx,
                                  uint64_t outSeqNum) const;
     };
+    StreamEngine *nestParentSE = nullptr;
+    DynNestConfig *nestParentDynConfig = nullptr;
     std::vector<DynNestConfig> nestConfigs;
 
     /**
@@ -140,8 +155,6 @@ public:
   };
 
   struct StaticRegion {
-    using StreamSet = std::unordered_set<Stream *>;
-    using StreamVec = std::vector<Stream *>;
     const ::LLVM::TDG::StreamRegion &region;
     StreamVec streams;
     std::list<DynRegion> dynRegions;
@@ -157,7 +170,7 @@ public:
       ExecFuncPtr configFunc = nullptr;
       ExecFuncPtr predFunc = nullptr;
       bool predRet;
-      StreamSet baseStreams;
+      StreamIdSet baseStreamIds;
     };
     StaticNestConfig nestConfig;
 
@@ -203,6 +216,7 @@ public:
   StaticRegion &getStaticRegion(const std::string &regionName);
   StaticRegion &getStaticRegion(Stream *S);
   DynRegion &getDynRegion(const std::string &msg, InstSeqNum seqNum);
+  int getNumDynRegion(const std::string &regionName);
 
   void receiveOffloadedLoopBoundRet(const DynStreamId &dynStreamId,
                                     int64_t tripCount, bool brokenOut);
@@ -221,6 +235,7 @@ private:
   /**
    * For NestStream.
    */
+  bool shouldRemoteConfigureNestRegion(StaticRegion &staticNestRegion);
   void initializeNestStreams(const ::LLVM::TDG::StreamRegion &region,
                              StaticRegion &staticRegion);
   void dispatchStreamConfigForNestStreams(const ConfigArgs &args,

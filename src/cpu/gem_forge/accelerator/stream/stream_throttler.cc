@@ -148,6 +148,10 @@ void StreamThrottler::throttleStream(StreamElement *element) {
  ********************************************************************/
 
 bool StreamThrottler::tryGlobalThrottle(Stream *S) {
+  if (!S->hasDynStream()) {
+    // Sometimes due to RemoteConfig, we have no DynStream.
+    return false;
+  }
   auto stepRootStream = S->stepRootStream;
   assert(stepRootStream != nullptr &&
          "Do not make sense to throttle for a constant stream.");
@@ -230,13 +234,18 @@ bool StreamThrottler::tryGlobalThrottle(Stream *S) {
                   S->maxSize, this->se->myParams->elimNestStreamInstances);
         return false;
       }
-      for (auto nestBaseS : staticRegion.nestConfig.baseStreams) {
-        if (S->maxSize >= nestBaseS->maxSize) {
-          S_DPRINTF(S,
-                    "[Not Throttle] InnerS MyMaxSize %d >= %d "
-                    "NestBaseS %s.\n",
-                    S->maxSize, nestBaseS->maxSize, nestBaseS->getStreamName());
-          return false;
+      for (auto nestBaseStreamId : staticRegion.nestConfig.baseStreamIds) {
+        if (auto nestBaseS = this->se->tryGetStream(nestBaseStreamId)) {
+          if (S->maxSize >= nestBaseS->maxSize) {
+            S_DPRINTF(S,
+                      "[Not Throttle] InnerS MyMaxSize %d >= %d "
+                      "NestBaseS %s.\n",
+                      S->maxSize, nestBaseS->maxSize,
+                      nestBaseS->getStreamName());
+            return false;
+          }
+        } else {
+          // Should we throttle here?
         }
       }
     }
@@ -347,5 +356,5 @@ void StreamThrottler::boostStreams(const Stream::StreamVec &stepRootStreams) {
       break;
     }
   }
-}} // namespace gem5
-
+}
+} // namespace gem5

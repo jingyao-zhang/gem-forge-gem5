@@ -38,9 +38,12 @@ def initializeStreamEngine(args):
     se.streamEngineEnableLSQ = args.gem_forge_stream_engine_enable_lsq
     se.enableO3ElimStreamEnd = \
         args.gem_forge_stream_engine_enable_o3_elim_stream_end
-    se.streamEngineForceNoFlushPEB = args.gem_forge_stream_engine_force_no_flush_peb
-    se.streamEngineEnableCoalesce = args.gem_forge_stream_engine_enable_coalesce
-    se.streamEngineEnableMerge = args.gem_forge_stream_engine_enable_merge
+    se.streamEngineForceNoFlushPEB = \
+        args.gem_forge_stream_engine_force_no_flush_peb
+    se.streamEngineEnableCoalesce = \
+        args.gem_forge_stream_engine_enable_coalesce
+    se.streamEngineEnableMerge = \
+        args.gem_forge_stream_engine_enable_merge
     se.elimNestStreamInstances = \
         args.gem_forge_stream_engine_elim_nest_stream_instances
     se.elimNestOuterStreamElems = \
@@ -48,7 +51,10 @@ def initializeStreamEngine(args):
 
     se.streamEngineEnableFloat = args.gem_forge_stream_engine_enable_float
     se.streamEngineFloatPolicy = args.gem_forge_stream_engine_float_policy
-    se.enableFloatHistory = args.gem_forge_stream_engine_enable_float_history
+    se.enableFloatHistory = \
+        args.gem_forge_stream_engine_enable_float_history
+    se.enableRemoteElimNestStreamConfig = \
+        args.gem_forge_stream_engine_enable_remote_elim_nest_stream_config
     se.streamEngineEnableFloatIndirect = \
         args.gem_forge_stream_engine_enable_float_indirect
     se.streamEngineEnableFloatPseudo = \

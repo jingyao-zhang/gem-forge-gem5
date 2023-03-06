@@ -838,6 +838,10 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
     }
   }
 
+  if (dynStream.hasDepRemoteNestRegion()) {
+    configData->hasDepRemoteNestRegion = true;
+  }
+
   return configData;
 }
 
@@ -1168,7 +1172,7 @@ Stream::setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
   params.emplace_back();
   auto atomicOp =
       std::make_unique<StreamAtomicOp>(this, idx, memElementsize, params,
-                                      this->storeCallback, this->loadCallback);
+                                       this->storeCallback, this->loadCallback);
   return atomicOp;
 }
 
@@ -1258,5 +1262,5 @@ void Stream::dump() const {
   for (const auto &dynS : this->dynamicStreams) {
     dynS.dump();
   }
-}} // namespace gem5
-
+}
+} // namespace gem5

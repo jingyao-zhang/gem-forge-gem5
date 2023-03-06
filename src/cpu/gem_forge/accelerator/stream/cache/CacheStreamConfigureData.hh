@@ -166,6 +166,13 @@ public:
   bool isOneIterationBehind;
 
   /**
+   * Whether this DynS is enabled RemoteNestConfig. So far:
+   * 1. RemoteSE sends back the value as an IdeaMessage.
+   * 2. RemoteSE notifies the location of the remote bank.
+   */
+  bool hasDepRemoteNestRegion = false;
+
+  /**
    * This represents a distributed StreamDepGraph.
    * NOTE: Keep the graph acyclic to avoid circular dependence for shared_ptr.
    */

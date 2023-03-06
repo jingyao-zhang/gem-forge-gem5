@@ -18,6 +18,8 @@ namespace gem5 {
 
 std::shared_ptr<StreamNUCAManager> StreamNUCAManager::singleton = nullptr;
 
+OutputStream *StreamNUCAManager::log = nullptr;
+
 // There is only one StreamNUCAManager.
 std::shared_ptr<StreamNUCAManager>
 StreamNUCAManager::initialize(Process *_process, const ProcessParams *_params) {
@@ -45,6 +47,11 @@ StreamNUCAManager::StreamNUCAManager(Process *_process,
     this->directRegionFitPolicy = DirectRegionFitPolicy::DROP;
   } else {
     panic("Unknown DirectRegionFitPolicy %s.", directRegionFitPolicy);
+  }
+
+  if (log == nullptr) {
+    auto directory = simout.findOrCreateSubdirectory("stream_nuca");
+    log = directory->create("log.log");
   }
 }
 
@@ -380,6 +387,11 @@ void StreamNUCAManager::remapRegions(ThreadContext *tc,
       panic("Invalid Remap Decision %d.", decision);
     case REMAP_INDIRECT: {
 
+      if (this->indirectRemapBoxBytes == 0) {
+        // Indirect remap is disabled.
+        break;
+      }
+
       auto regionGroup = region.getRegionGroup();
       auto &regionHops =
           regionHopMap
@@ -450,6 +462,9 @@ void StreamNUCAManager::remapDirectRegionNUCA(const StreamRegion &region) {
   DPRINTF(StreamNUCAManager,
           "[StreamNUCA] Map Region %s %#x PAddr %#x Interleave %lu Bank %d.\n",
           region.name, startVAddr, startPAddr, interleave, startBank);
+  ccprintf(*log->stream(),
+           "[StreamNUCA] Map Region %s %#x PAddr %#x Interleave %lu Bank %d.\n",
+           region.name, startVAddr, startPAddr, interleave, startBank);
 }
 
 void StreamNUCAManager::remapPtrChaseRegion(ThreadContext *tc,
@@ -556,11 +571,6 @@ void StreamNUCAManager::remapIndirectRegion(ThreadContext *tc,
                                                           region.elementSize);
 
   region.cachedElements = region.numElement;
-  if (this->indirectRemapBoxBytes == 0) {
-    // Indirect remap is disabled.
-    return;
-  }
-
   this->computeIndirectRegionHops(tc, region, regionHops);
 }
 
@@ -604,6 +614,8 @@ void StreamNUCAManager::computeIndirectRegionHops(
      */
     for (auto bank : boxHops.bankFreq) {
       if (bank > 0) {
+        DPRINTF(StreamNUCAManager, "[StreamNUCA]    Added IndBox Elems %d.\n",
+                boxHops.totalElements);
         regionHops.boxHops.emplace_back(std::move(boxHops));
         break;
       }
@@ -682,6 +694,11 @@ void StreamNUCAManager::computeIndirectHopsForOneElement(
   int count = 1;
   if (indField.indCountSize != 0) {
     count = readField(indField.indCountOffset, indField.indCountSize);
+    if (count > 0) {
+      DPRINTF(StreamNUCAManager,
+              "[StreamNUCA]   IndCnt Offset %d Size %d Val %d:\n",
+              indField.indCountOffset, indField.indCountSize, count);
+    }
     // So far we just allow 16 indirect edges per element.
     assert(count >= 0 && count <= 16);
   }

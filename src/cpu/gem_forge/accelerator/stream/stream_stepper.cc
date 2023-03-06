@@ -261,10 +261,10 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
   }
 
   for (const auto &dynNestConfig : dynRegion.nestConfigs) {
-    if (dynGroup.nextElemIdx >= dynNestConfig.nextConfigIdx) {
+    if (dynGroup.nextElemIdx >= dynNestConfig.nextConfigElemIdx) {
       DYN_S_DPRINTF(stepRootDynS.dynStreamId,
                     "[Stepper] Wait for NestRegion: %llu >= %llu Region %s.\n",
-                    dynGroup.nextElemIdx, dynNestConfig.nextConfigIdx,
+                    dynGroup.nextElemIdx, dynNestConfig.nextConfigElemIdx,
                     dynNestConfig.staticRegion->region.region());
       return;
     }

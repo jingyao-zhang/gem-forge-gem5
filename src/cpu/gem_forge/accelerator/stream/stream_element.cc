@@ -315,6 +315,7 @@ void StreamElement::clear() {
   this->clearScheduledComputation();
 
   this->floatedToCache = false;
+  this->remoteBank = InvalidRemoteBank;
 }
 
 void StreamElement::flush(bool aliased) {

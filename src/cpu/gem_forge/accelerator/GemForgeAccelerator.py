@@ -109,6 +109,8 @@ class StreamEngine(GemForgeAccelerator):
         -1, "Whether to force midway float at this element.")
     enableFloatHistory = Param.Bool(
         True, "Whether consider stream history for floating decision.")
+    enableRemoteElimNestStreamConfig = Param.Bool(
+        False, "Directly config eliminated nest streams at remote bank.")
 
     # parameters for stream computing.
     enableZeroComputeLatency = Param.Bool(

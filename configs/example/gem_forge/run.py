@@ -145,6 +145,9 @@ parser.add_argument("--gem-forge-stream-engine-float-policy", type=str, default=
                   help="Policy to choose floating stream in LLC.")
 parser.add_argument("--gem-forge-stream-engine-enable-float-history", action="store", type=int,
                   default=0, help="Enable stream float history when making float decision.")
+parser.add_argument("--gem-forge-stream-engine-enable-remote-elim-nest-stream-config",
+                  action="store_true", default=False,
+                  help="Enable eliminated nest stream directly be configured at remote bank.")
 parser.add_argument("--gem-forge-stream-engine-enable-float-indirect", action="store_true",
                   default=False,
                   help="Enable indirect stream float in LLC.")

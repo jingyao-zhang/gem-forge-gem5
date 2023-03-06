@@ -39,6 +39,20 @@ bool isDebugStream(Stream *S) {
 
 } // namespace
 
+std::vector<StreamEngine *> StreamEngine::GlobalStreamEngines;
+
+StreamEngine *
+StreamEngine::getStreamEngineAtCPU(GemForgeCPUDelegator::CPUTypeE cpuType,
+                                   int cpuId) {
+  for (auto se : GlobalStreamEngines) {
+    if (se->cpuDelegator->cpuType == cpuType &&
+        se->cpuDelegator->cpuId() == cpuId) {
+      return se;
+    }
+  }
+  return nullptr;
+}
+
 StreamEngine::StreamEngine(const Params &params)
     : GemForgeAccelerator(params), streamPlacementManager(nullptr),
       myParams(&params), isOracle(false), writebackCacheLine(nullptr),
@@ -100,11 +114,21 @@ StreamEngine::~StreamEngine() {
   this->streamMap.clear();
   delete[] this->writebackCacheLine;
   this->writebackCacheLine = nullptr;
+
+  for (auto iter = GlobalStreamEngines.begin();
+       iter != GlobalStreamEngines.end(); ++iter) {
+    if (*iter == this) {
+      GlobalStreamEngines.erase(iter);
+      break;
+    }
+  }
 }
 
 void StreamEngine::handshake(GemForgeCPUDelegator *_cpuDelegator,
                              GemForgeAcceleratorManager *_manager) {
   GemForgeAccelerator::handshake(_cpuDelegator, _manager);
+
+  GlobalStreamEngines.push_back(this);
 
   LLVMTraceCPU *_cpu = nullptr;
   if (auto llvmTraceCPUDelegator =
@@ -287,38 +311,41 @@ bool StreamEngine::canStreamConfig(const StreamConfigArgs &args) const {
     }
   }
 
-  if (this->numFreeFIFOEntries < configuredStreams) {
-    // Not enough free entries for each stream.
-    return false;
-  }
+  // if (this->numFreeFIFOEntries < configuredStreams) {
+  //   // Not enough free entries for each stream.
+  //   SE_DPRINTF("[CanNotDispatch] NoFreeFIFO %s.\n", streamRegion.region());
+  //   return false;
+  // }
 
-  // Check that allocSize < maxSize.
-  if (this->enableCoalesce) {
-    for (const auto &streamId : streamRegion.coalesced_stream_ids()) {
-      auto iter = this->streamMap.find(streamId);
-      if (iter != this->streamMap.end()) {
-        // Check if we have quota for this stream.
-        auto S = iter->second;
-        if (S->getAllocSize() == S->maxSize) {
-          // No more quota.
-          return false;
-        }
-      }
-    }
-  } else {
-    for (const auto &streamInfo : streamRegion.streams()) {
-      auto streamId = streamInfo.id();
-      auto iter = this->streamMap.find(streamId);
-      if (iter != this->streamMap.end()) {
-        // Check if we have quota for this stream.
-        auto S = iter->second;
-        if (S->getAllocSize() == S->maxSize) {
-          // No more quota.
-          return false;
-        }
-      }
-    }
-  }
+  // // Check that allocSize < maxSize.
+  // if (this->enableCoalesce) {
+  //   for (const auto &streamId : streamRegion.coalesced_stream_ids()) {
+  //     auto iter = this->streamMap.find(streamId);
+  //     if (iter != this->streamMap.end()) {
+  //       // Check if we have quota for this stream.
+  //       auto S = iter->second;
+  //       if (S->getAllocSize() == S->maxSize) {
+  //         // No more quota.
+  //         SE_DPRINTF("[CanNotDispatch] AllocSize = MaxSize %d %s.\n",
+  //                    S->getAllocSize(), streamRegion.region());
+  //         return false;
+  //       }
+  //     }
+  //   }
+  // } else {
+  //   for (const auto &streamInfo : streamRegion.streams()) {
+  //     auto streamId = streamInfo.id();
+  //     auto iter = this->streamMap.find(streamId);
+  //     if (iter != this->streamMap.end()) {
+  //       // Check if we have quota for this stream.
+  //       auto S = iter->second;
+  //       if (S->getAllocSize() == S->maxSize) {
+  //         // No more quota.
+  //         return false;
+  //       }
+  //     }
+  //   }
+  // }
   return true;
 }
 
@@ -1518,7 +1545,15 @@ void StreamEngine::initializeStreams(
        streamRegion.nest_region_relative_paths()) {
     const auto &nestStreamRegion =
         this->getStreamRegion(nestRegionRelativePath);
-    this->initializeStreams(nestStreamRegion);
+
+    for (const auto &streamInfo : nestStreamRegion.streams()) {
+      const auto &streamId = streamInfo.id();
+      if (this->streamMap.count(streamId) == 0 &&
+          this->coalescedStreamIdMap.count(streamId) == 0) {
+        this->initializeStreams(nestStreamRegion);
+        break;
+      }
+    }
   }
 
   /**

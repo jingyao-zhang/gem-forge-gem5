@@ -434,6 +434,38 @@ void LLCStreamEngine::receiveStreamData(
   }
 
   /**
+   * So far we send back the data for RemoteNestConfig in ideal packet.
+   * LoadComputeStream is sent after value is computed.
+   */
+  if (dynS->configData->hasDepRemoteNestRegion) {
+
+    // Set the elem bank.
+    auto coreDynS = S->getDynStream(sliceId.getDynStreamId());
+    if (coreDynS) {
+      LLC_SLICE_DPRINTF(sliceId, "[Nest] RemoteNestRegion Bank %d.\n",
+                        this->curRemoteBank());
+      for (auto elemIdx = sliceId.getStartIdx(),
+                elemEndIdx = sliceId.getEndIdx();
+           elemIdx < elemEndIdx; ++elemIdx) {
+        coreDynS->setElementRemoteBank(elemIdx, this->curRemoteBank());
+      }
+    }
+
+    if (!S->isLoadComputeStream()) {
+      LLC_SLICE_DPRINTF(
+          sliceId,
+          "[Nest] Send back idea RemoteNestRegion VAddr %#x Size %d.\n",
+          sliceId.vaddr, sliceId.size);
+      auto lineOffset = sliceId.vaddr % ruby::RubySystem::getBlockSizeBytes();
+      auto size = sliceId.size;
+      this->issueStreamDataToMLC(sliceId, paddrLine,
+                                 dataBlock.getData(lineOffset, size), size,
+                                 size, lineOffset, true /* forceIdea */
+      );
+    }
+  }
+
+  /**
    * Construct the ElementValue except for Store/AtomicComputeS.
    * AtomicComputeS's value will be set in triggerAtomic.
    */
@@ -932,8 +964,7 @@ bool LLCStreamEngine::canMergeAsMulticast(LLCDynStreamPtr dynSA,
       return false;
     }
   }
-  if (this->getDirectStreamReqType(dynSA) !=
-      this->getDirectStreamReqType(dynSB)) {
+  if (this->getStreamReqType(dynSA) != this->getStreamReqType(dynSB)) {
     return false;
   }
   return true;
@@ -1165,7 +1196,7 @@ void LLCStreamEngine::generateMulticastRequest(RequestQueueIter reqIter,
     this->incrementIssueSlice(SS->statistic);
 
     // Add this to the request.
-    auto reqType = this->getDirectStreamReqType(dynS);
+    auto reqType = this->getStreamReqType(dynS);
     if (reqType != reqIter->requestType) {
       LLC_SLICE_PANIC(sliceId, "Multicast ReqType Mismatch Target %s, Ours %s.",
                       reqIter->requestType, reqType);
@@ -1749,7 +1780,7 @@ void LLCStreamEngine::issueStreamDirect(LLCDynStream *dynS) {
     this->incrementIssueSlice(statistic);
 
     // Push to the request queue.
-    auto reqType = this->getDirectStreamReqType(dynS);
+    auto reqType = this->getStreamReqType(dynS);
     if (reqType == ruby::CoherenceRequestType_GETU) {
       statistic.numLLCSentSlice++;
       S->se->numLLCSentSlice++;
@@ -1845,7 +1876,7 @@ void LLCStreamEngine::issueStreamDirect(LLCDynStream *dynS) {
 }
 
 ruby::CoherenceRequestType
-LLCStreamEngine::getDirectStreamReqType(LLCDynStream *stream) const {
+LLCStreamEngine::getStreamReqType(LLCDynStream *stream) const {
   auto reqType = ruby::CoherenceRequestType_GETH;
   auto SS = stream->getStaticS();
   switch (SS->getStreamType()) {
@@ -1858,6 +1889,9 @@ LLCStreamEngine::getDirectStreamReqType(LLCDynStream *stream) const {
       reqType = ruby::CoherenceRequestType_STREAM_STORE;
     } else if (SS->isLoadComputeStream()) {
       // LoadComputeStream sends back the computed value.
+      reqType = ruby::CoherenceRequestType_GETH;
+    } else if (stream->configData->hasDepRemoteNestRegion) {
+      // Always get here then send back in idea message.
       reqType = ruby::CoherenceRequestType_GETH;
     } else {
       if (auto dynS = stream->getCoreDynS()) {
@@ -1934,40 +1968,30 @@ void LLCStreamEngine::generateIndirectStreamRequest(
 }
 
 void LLCStreamEngine::issueIndirectLoadRequest(LLCDynStream *dynIS,
-                                               LLCStreamElementPtr element) {
+                                               LLCStreamElementPtr elem) {
   /**
    * This function handles the most basic case: IndirectLoadStream.
    */
-  auto elementIdx = element->idx;
+  auto elemIdx = elem->idx;
   DynStreamSliceId sliceId;
   sliceId.getDynStrandId() = dynIS->getDynStrandId();
-  sliceId.getStartIdx() = elementIdx;
-  sliceId.getEndIdx() = elementIdx + 1;
-  auto elementSize = dynIS->getMemElementSize();
-  Addr elementVAddr = element->vaddr;
-  auto elementMachineType = dynIS->getFloatMachineTypeAtElem(elementIdx);
+  sliceId.getStartIdx() = elemIdx;
+  sliceId.getEndIdx() = elemIdx + 1;
+  auto elemSize = dynIS->getMemElementSize();
+  Addr elemVAddr = elem->vaddr;
+  auto elemMachineType = dynIS->getFloatMachineTypeAtElem(elemIdx);
 
   const auto blockBytes = ruby::RubySystem::getBlockSizeBytes();
 
   auto IS = dynIS->getStaticS();
   auto dynCoreIS = dynIS->getCoreDynS();
 
-  auto reqType = ruby::CoherenceRequestType_GETH;
-  if (dynCoreIS && dynCoreIS->shouldCoreSEIssue()) {
-    /**
-     * For LoadComputeStream, we issue GETH and send back the compute
-     * result. For UpdateStream, we issue GETH and send back the old
-     * value.
-     */
-    if (!IS->isLoadComputeStream() && !IS->isUpdateStream()) {
-      reqType = ruby::CoherenceRequestType_GETU;
-    }
-  }
+  auto reqType = this->getStreamReqType(dynIS);
   LLC_SLICE_DPRINTF(sliceId,
                     "Issue IndirectLoad InflyReq %d %s VAddr %#x CoreDynS %d "
                     "ShouldCoreSEIssue %d IsLoadCompute %d.\n",
                     dynIS->inflyRequests,
-                    ruby::CoherenceRequestType_to_string(reqType), elementVAddr,
+                    ruby::CoherenceRequestType_to_string(reqType), elemVAddr,
                     dynCoreIS != nullptr,
                     dynCoreIS ? dynCoreIS->shouldCoreSEIssue() : -1,
                     IS->isLoadComputeStream());
@@ -1976,11 +2000,11 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynStream *dynIS,
          "Indirect stream should never be PseudoOffload.");
   auto totalSliceSize = 0;
   auto totalSlices = 0;
-  while (totalSliceSize < elementSize) {
-    Addr curSliceVAddr = elementVAddr + totalSliceSize;
+  while (totalSliceSize < elemSize) {
+    Addr curSliceVAddr = elemVAddr + totalSliceSize;
     // Make sure the slice is contained within one line.
     int lineOffset = curSliceVAddr % blockBytes;
-    auto curSliceSize = std::min(elementSize - totalSliceSize,
+    auto curSliceSize = std::min(elemSize - totalSliceSize,
                                  static_cast<int>(blockBytes) - lineOffset);
     // Here we set the slice vaddr and size.
     sliceId.vaddr = curSliceVAddr;
@@ -1997,7 +2021,7 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynStream *dynIS,
 
       // Push to the request queue.
       this->enqueueRequest(IS, sliceId, curSliceVAddrLine, curSlicePAddrLine,
-                           elementMachineType, reqType);
+                           elemMachineType, reqType);
       dynIS->inflyRequests++;
     } else {
       // For faulted slices, we simply ignore it.
@@ -2120,9 +2144,9 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
         this->scheduleEvent(Cycles(1));
       }
     } else {
-      auto reqIter = this->enqueueRequest(
-          IS, sliceId, vaddrLine, paddrLine, elemMachineType,
-          ruby::CoherenceRequestType_STREAM_STORE);
+      auto reqType = this->getStreamReqType(dynIS);
+      auto reqIter = this->enqueueRequest(IS, sliceId, vaddrLine, paddrLine,
+                                          elemMachineType, reqType);
       dynIS->inflyRequests++;
       auto lineOffset = sliceId.vaddr % ruby::RubySystem::getBlockSizeBytes();
       reqIter->dataBlock.setData(reinterpret_cast<uint8_t *>(&storeValue),
@@ -3976,11 +4000,20 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
   }
 
   if (coreNeedValue) {
+
+    /**
+     * For RemoteNestConfig we send back the data in idea message.
+     */
+    bool forceIdea = false;
+    if (dynS->configData->hasDepRemoteNestRegion) {
+      forceIdea = true;
+    }
+
     this->issueStreamDataToMLC(
         sliceId, paddrLine,
         loadValueBlock.getData(0, ruby::RubySystem::getBlockSizeBytes()),
         ruby::RubySystem::getBlockSizeBytes(), payloadSize /* payloadSize */,
-        0 /* Line offset */);
+        0 /* Line offset */, forceIdea);
     S->statistic.numLLCSentSlice++;
     S->se->numLLCSentSlice++;
     LLC_SLICE_DPRINTF(sliceId,

@@ -820,7 +820,7 @@ bool DynStream::shouldCoreSEIssue() const {
       // address.
       if (depDynS.shouldCoreSEIssue()) {
         DYN_S_DPRINTF(this->dynStreamId,
-                      "Should CoreSe Issue Due to AddrDepS %s.\n",
+                      "Should CoreSE Issue Due to AddrDepS %s.\n",
                       depDynS.dynStreamId);
         return true;
       }
@@ -829,7 +829,7 @@ bool DynStream::shouldCoreSEIssue() const {
       const auto &backDepDynS = backDepS->getDynStream(this->configSeqNum);
       if (!backDepDynS.isFloatedToCache()) {
         DYN_S_DPRINTF(this->dynStreamId,
-                      "Should CoreSe Issue Due to BackDepS %s.\n",
+                      "Should CoreSE Issue Due to BackDepS %s.\n",
                       backDepDynS.dynStreamId);
         return true;
       }
@@ -838,7 +838,7 @@ bool DynStream::shouldCoreSEIssue() const {
       const auto &valDepDynS = valDepS->getDynStream(this->configSeqNum);
       if (valDepDynS.shouldCoreSEIssue()) {
         DYN_S_DPRINTF(this->dynStreamId,
-                      "Should CoreSe Issue Due to ValDepS %s.\n",
+                      "Should CoreSE Issue Due to ValDepS %s.\n",
                       valDepDynS.dynStreamId);
         return true;
       }
@@ -848,7 +848,7 @@ bool DynStream::shouldCoreSEIssue() const {
      */
     if (S->hasDepNestRegion()) {
       DYN_S_DPRINTF(this->dynStreamId,
-                    "Should CoreSe Issue Due to DepNestRegion.\n");
+                    "Should CoreSE Issue Due to DepNestRegion.\n");
       return true;
     }
     return false;
@@ -1031,6 +1031,15 @@ void DynStream::allocateElement(StreamElement *newElem) {
                 "entryIdx %lu.\n",
                 this->getTotalTripCount(), this->stepElemCount,
                 S->getAllocSize(), newElem->FIFOIdx.entryIdx);
+  }
+
+  // Set remote bank if we have.
+  {
+    auto iter = this->futureElemBanks.find(newElem->FIFOIdx.entryIdx);
+    if (iter != this->futureElemBanks.end()) {
+      newElem->setRemoteBank(iter->second);
+      this->futureElemBanks.erase(iter);
+    }
   }
 
   // Add base elements
@@ -1476,6 +1485,19 @@ void DynStream::popReceivedRange() {
 bool DynStream::isLoopElimInCoreStoreCmpS() const {
   return this->stream->isStoreComputeStream() &&
          this->stream->isLoopEliminated() && !this->isFloatedToCache();
+}
+
+void DynStream::setElementRemoteBank(uint64_t elemIdx, int remoteBank) {
+  if (elemIdx >= this->FIFOIdx.entryIdx) {
+    // This is a future element bank.
+    this->futureElemBanks.emplace(elemIdx, remoteBank);
+    return;
+  }
+  if (auto elem = this->getElemByIdx(elemIdx)) {
+    elem->setRemoteBank(remoteBank);
+    return;
+  }
+  DYN_S_PANIC(this->dynStreamId, "No Elem %lu to set RemoteBank.", elemIdx);
 }
 
 std::string DynStream::dumpString() const {

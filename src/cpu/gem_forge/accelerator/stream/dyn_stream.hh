@@ -190,6 +190,15 @@ public:
   bool isInnerFinalValueReady(uint64_t elemIdx) const;
   const StreamValue &getInnerFinalValue(uint64_t elemIdx) const;
 
+  /**
+   * Whether this DynS is used for nest RemoteConfig.
+   */
+  bool depRemoteNestRegion = false;
+  bool hasDepRemoteNestRegion() const { return this->depRemoteNestRegion; }
+  void setDepRemoteNestRegion(bool depRemoteNestRegion) {
+    this->depRemoteNestRegion = depRemoteNestRegion;
+  }
+
   // Optional total length of this dynamic stream. -1 as indefinite.
   static constexpr int64_t InvalidTripCount = -1;
   bool hasTotalTripCount() const {
@@ -448,6 +457,8 @@ public:
     this->currentWorkingRange = ptr;
   }
 
+  void setElementRemoteBank(uint64_t elemIdx, int remoteBank);
+
   void dump() const;
   std::string dumpString() const;
 
@@ -498,6 +509,8 @@ private:
    */
   std::list<DynStreamAddressRangePtr> receivedRanges;
   DynStreamAddressRangePtr currentWorkingRange = nullptr;
+
+  std::unordered_map<uint64_t, int> futureElemBanks;
 
   void tryCancelFloat();
   void cancelFloat();

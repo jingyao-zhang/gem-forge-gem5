@@ -68,7 +68,7 @@ void StreamStatistic::dump(std::ostream &os) const {
 
   dumpScalar(numMLCAllocatedSlice);
 
-  if (numRemoteConfigure > 0) {
+  if (numRemoteConfig > 0) {
     dumpScalar(numLLCIssueSlice);
     dumpScalar(numLLCSentSlice);
     dumpScalar(numLLCMulticastSlice);
@@ -86,9 +86,9 @@ void StreamStatistic::dump(std::ostream &os) const {
     dumpScalarIfNonZero(numStrands);
     dumpScalarIfNonZero(numPrefetchStrands);
 
-    dumpScalar(numRemoteConfigure);
-    dumpScalar(numRemoteConfigureCycle);
-    dumpAvg(avgConfigureCycle, numRemoteConfigureCycle, numRemoteConfigure);
+    dumpScalar(numRemoteConfig);
+    dumpAvg(avgRemoteConfigNoCCycle, numRemoteConfigNoCCycle, numRemoteConfig);
+    dumpAvg(avgRemoteConfigCycle, numRemoteConfigCycle, numRemoteConfig);
     dumpScalar(numRemoteMigrate);
     dumpScalar(numRemoteMigrateCycle);
     dumpScalar(numRemoteMigrateDelayCycle);
@@ -168,23 +168,17 @@ void StreamStatistic::dump(std::ostream &os) const {
             numLLCInflyComputationSample);
   }
 
-  if (!this->numLLCSendTo.empty()) {
-    size_t total = 0;
-    for (const auto &entry : this->numLLCSendTo) {
-      total += entry.second;
-    }
-    for (const auto &entry : this->numLLCSendTo) {
-      auto from = entry.first.first;
-      auto to = entry.first.second;
-      auto ratio = static_cast<float>(entry.second) / static_cast<float>(total);
-      os << std::setw(5) << from << " -> " << std::setw(5) << to << " "
-         << std::setw(10) << entry.second << " " << ratio << "\n";
-    }
-  }
+  os << std::setw(40) << "LLCSendTo\n";
+  dumpSrcDest(this->numLLCSendTo, os);
+
+  os << std::setw(40) << "RemoteNestConfig\n";
+  dumpSrcDest(this->numRemoteNestConfig, os);
 
   dumpScalar(numMissL0);
   dumpScalar(numMissL1);
   dumpScalar(numMissL2);
+
+  dumpScalarIfNonZero(remoteNestConfigMaxRegions);
 
   for (auto idx = 0; idx < this->llcIssueReasons.size(); ++idx) {
     if (this->llcIssueReasons.at(idx) > 0) {
@@ -202,6 +196,24 @@ void StreamStatistic::dump(std::ostream &os) const {
 
 #undef dumpScalar
 #undef dumpAvg
+}
+
+void StreamStatistic::dumpSrcDest(const SrcDestStatsT &stats,
+                                  std::ostream &os) {
+  if (!stats.empty()) {
+    size_t total = 0;
+    for (const auto &entry : stats) {
+      total += entry.second;
+    }
+    os << std::setw(40) << " Total" << ' ' << total << '\n';
+    for (const auto &entry : stats) {
+      auto from = entry.first.first;
+      auto to = entry.first.second;
+      auto ratio = static_cast<float>(entry.second) / static_cast<float>(total);
+      os << std::setw(5) << from << " -> " << std::setw(5) << to << " "
+         << std::setw(10) << entry.second << " " << ratio << "\n";
+    }
+  }
 }
 
 const char *
@@ -267,8 +279,9 @@ void StreamStatistic::clear() {
   this->numLLCPredNSlice = 0;
   this->numMemIssueSlice = 0;
   this->numRemoteReuseSlice = 0;
-  this->numRemoteConfigure = 0;
-  this->numRemoteConfigureCycle = 0;
+  this->numRemoteConfig = 0;
+  this->numRemoteConfigNoCCycle = 0;
+  this->numRemoteConfigCycle = 0;
   this->numRemoteMigrate = 0;
   this->numRemoteMigrateCycle = 0;
   this->numRemoteMigrateDelayCycle = 0;
@@ -293,6 +306,8 @@ void StreamStatistic::clear() {
   this->numMissL1 = 0;
   this->numMissL2 = 0;
 
+  this->remoteNestConfigMaxRegions = 0;
+
   this->numLLCComputation = 0;
   this->numLLCComputationComputeLatency = 0;
   this->numLLCComputationWaitLatency = 0;
@@ -302,6 +317,7 @@ void StreamStatistic::clear() {
   this->numFloatAtomicWaitForLockCycle = 0;
   this->numFloatAtomicWaitForUnlockCycle = 0;
   this->numLLCSendTo.clear();
+  this->numRemoteNestConfig.clear();
 
   this->numRemoteMulticastSlice = 0;
 
@@ -327,5 +343,5 @@ void StreamStatistic::clear() {
   for (auto &pumCycles : this->pumCyclesBetweenSync) {
     pumCycles.clear();
   }
-}} // namespace gem5
-
+}
+} // namespace gem5
