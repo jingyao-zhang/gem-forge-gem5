@@ -95,6 +95,7 @@ void StreamFloatController::floatStreams(
   bool hasOffloadStoreFunc = false;
   bool hasOffloadPointerChase = false;
   bool enableFloatMem = this->se->myParams->enableFloatMem;
+  bool hasDepNestRegion = false;
   for (auto &dynS : dynStreams) {
     auto S = dynS->stream;
     if (dynS->isFloatedToCache()) {
@@ -111,6 +112,11 @@ void StreamFloatController::floatStreams(
       if (S->isMergedPredicated()) {
         S_PANIC(S, "MergedStream not offloaded.");
       }
+    }
+    if (!this->se->regionController
+             ->getDynRegion("FloatStream", dynS->configSeqNum)
+             .nestConfigs.empty()) {
+      hasDepNestRegion = true;
     }
   }
 
@@ -129,7 +135,7 @@ void StreamFloatController::floatStreams(
       MemCmd::Command::StreamConfigReq,
       reinterpret_cast<uint64_t>(cacheStreamConfigVec));
   if (hasOffloadStoreFunc || hasOffloadPointerChase ||
-      hasOffloadFaultedInitPAddr || enableFloatMem) {
+      hasOffloadFaultedInitPAddr || enableFloatMem || hasDepNestRegion) {
     /**
      * There are some scenarios we want to delay offloading until StreamConfig
      * is committed.
@@ -139,6 +145,7 @@ void StreamFloatController::floatStreams(
      * expensive and very likely causes faults if misspeculated.
      * 3. Some stream has the initial address faulted, which is very likely
      * caused by misspeculated StreamConfig.
+     * 4. We have dependent NestRegion.
      *
      * We also delay if we have support to float to memory, as now we only
      * have partial support to handle concurrent streams in memory controller.
@@ -1582,5 +1589,5 @@ void StreamFloatController::allocateAddUsedAffineIV(
   DYN_S_DPRINTF(dynS->dynStreamId, "Add AffineIV %s R/S %d/%d.\n",
                 affineIVS->streamName, reuse, skip);
   config->addBaseAffineIV(affineIVConfig, reuse, skip);
-}} // namespace gem5
-
+}
+} // namespace gem5

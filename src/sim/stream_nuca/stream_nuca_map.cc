@@ -132,6 +132,15 @@ void StreamNUCAMap::addRangeMap(Addr startPAddr, Addr endPAddr,
                                           vBitlines));
 }
 
+StreamNUCAMap::RangeMap *
+StreamNUCAMap::tryGetRangeMapByStartPAddr(Addr startPAddr) {
+  auto iter = rangeMaps.find(startPAddr);
+  if (iter == rangeMaps.end()) {
+    return nullptr;
+  }
+  return &iter->second;
+}
+
 StreamNUCAMap::RangeMap &
 StreamNUCAMap::getRangeMapByStartPAddr(Addr startPAddr) {
   auto iter = rangeMaps.find(startPAddr);

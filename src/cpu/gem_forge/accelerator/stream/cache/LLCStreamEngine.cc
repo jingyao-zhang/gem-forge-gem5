@@ -27,8 +27,10 @@
 #include "debug/LLCRubyStreamNotIssue.hh"
 #include "debug/LLCRubyStreamReduce.hh"
 #include "debug/LLCRubyStreamStore.hh"
+#include "debug/LLCStreamEngineWake.hh"
 #include "debug/LLCStreamPUM.hh"
 #include "debug/LLCStreamPredicate.hh"
+#include "debug/LLCStreamSample.hh"
 #include "debug/StreamRangeSync.hh"
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
@@ -60,7 +62,7 @@ LLCStreamEngine::LLCStreamEngine(
   this->indReqBuffer = std::make_unique<StreamRequestBuffer>(
       this->controller, this->streamIndirectIssueMsgBuffer, Cycles(1),
       false /* For now disable indirect multicast */,
-      4 /* Max Inqueue Requests Per Stream */,
+      this->controller->myParams->ind_stream_max_inqueue_req, /* per stream. */
       this->controller->myParams->ind_stream_req_max_per_multicast_msg,
       this->controller->myParams->ind_stream_req_multicast_group_size);
   this->migrateController = std::make_unique<LLCStreamMigrationController>(
@@ -145,17 +147,11 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   }
 
   // Check if we have indirect streams.
-  for (const auto &edge : streamConfigureData->depEdges) {
-    if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
-      auto &ISConfig = edge.data;
-      // Let's create an indirect stream.
-      auto IS = LLCDynStream::getLLCStreamPanic(DynStrandId(
-          ISConfig->dynamicId, ISConfig->strandIdx, ISConfig->totalStrands));
-      LLC_S_DPRINTF_(LLCRubyStreamLife, IS->getDynStrandId(),
-                     "Config IndS MemElemSize %d TotalTripCount %lld.\n",
-                     IS->getMemElementSize(), IS->getTotalTripCount());
-      IS->remoteConfigured(this->controller);
-    }
+  for (const auto IS : S->getAllIndStreams()) {
+    LLC_S_DPRINTF_(LLCRubyStreamLife, IS->getDynStrandId(),
+                   "Config IndS MemElemSize %d TotalTripCount %lld.\n",
+                   IS->getMemElementSize(), IS->getTotalTripCount());
+    IS->remoteConfigured(this->controller);
   }
 
   // Release memory.
@@ -318,6 +314,8 @@ void LLCStreamEngine::receiveStreamDataVec(
   for (const auto &sliceId : sliceIds.sliceIds) {
     this->enqueueIncomingStreamDataMsg(readyCycle, paddrLine, sliceId,
                                        loadValueBlock, storeValueBlock);
+    LLC_SLICE_DPRINTF(sliceId, "Recv StreamData vaddr %#x %s.\n", sliceId.vaddr,
+                      loadValueBlock);
   }
   this->scheduleEvent(Cycles(delayCycle));
 }
@@ -447,7 +445,17 @@ void LLCStreamEngine::receiveStreamData(
       for (auto elemIdx = sliceId.getStartIdx(),
                 elemEndIdx = sliceId.getEndIdx();
            elemIdx < elemEndIdx; ++elemIdx) {
-        coreDynS->setElementRemoteBank(elemIdx, this->curRemoteBank());
+
+        auto elem = dynS->getElemPanic(elemIdx, "setElementRemoteBank");
+        int sliceOffset;
+        int elemOffset;
+        int overlapSize = elem->computeOverlap(sliceId.vaddr, sliceId.getSize(),
+                                               sliceOffset, elemOffset);
+        assert(overlapSize > 0);
+        if (elemOffset == 0) {
+          // Avoid setting the RemoteBank for the element twice?
+          coreDynS->setElementRemoteBank(elemIdx, this->curRemoteBank());
+        }
       }
     }
 
@@ -466,10 +474,12 @@ void LLCStreamEngine::receiveStreamData(
   }
 
   /**
-   * Construct the ElementValue except for Store/AtomicComputeS.
+   * Construct the ElementValue except for AtomicComputeS.
    * AtomicComputeS's value will be set in triggerAtomic.
+   * StoreComputeS's value will not be used, but we extract the value here to
+   * mark the elem valueReady so that we can track the latency.
    */
-  if (!S->isStoreComputeStream() && !S->isAtomicComputeStream()) {
+  if (!S->isAtomicComputeStream()) {
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
       auto elem = dynS->getElemPanic(idx, "RecvElementData");
       if (elem->isReady()) {
@@ -672,13 +682,13 @@ void LLCStreamEngine::receiveStoreStreamData(
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     assert(dynS->idxToElementMap.count(idx) &&
            "Missing element for StoreStream.");
-    auto element = dynS->getElemPanic(idx, "ReceiveStoreStreamData");
+    auto elem = dynS->getElemPanic(idx, "ReceiveStoreStreamData");
 
     // Compute the overlap and set the data.
-    int elementOffset;
+    int elemOffset;
     int sliceOffset;
-    int overlapSize = element->computeOverlap(sliceLineVAddr, blockSize,
-                                              sliceOffset, elementOffset);
+    int overlapSize = elem->computeOverlap(sliceLineVAddr, blockSize,
+                                           sliceOffset, elemOffset);
     auto storeValue = storeValueBlock.getData(sliceOffset, overlapSize);
     LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
                        "StreamStore done with Elem %llu, Slice vaddr %#x paddr "
@@ -691,9 +701,8 @@ void LLCStreamEngine::receiveStoreStreamData(
     LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
                        "StreamStore send back StreamAck.\n");
     if (dynS->isIndirect()) {
-      auto element =
-          dynS->getElemPanic(sliceId.getStartIdx(), "AckIndirectStore");
-      element->setIndirectStoreAcked();
+      auto elem = dynS->getElemPanic(sliceId.getStartIdx(), "AckIndirectStore");
+      elem->setIndirectStoreAcked();
     }
     /**
      * Normally without RangeSync, we would send out one Ack per
@@ -893,6 +902,25 @@ void LLCStreamEngine::wakeup() {
       !this->allocatedSlices.empty() || !this->readyComputations.empty() ||
       !this->inflyComputations.empty() ||
       this->commitController->hasStreamToCommit()) {
+    if (Debug::LLCStreamEngineWake) {
+      std::stringstream ss;
+      ss << "[Wake] Streams " << this->streams.size() << " IssuingIndS "
+         << this->issuingIndStreamList.size() << " MigratingS "
+         << this->migratingStreams.size() << " ReqQueue "
+         << this->requestQueue.size() << " IncomeDataQueue "
+         << this->incomingStreamDataQueue.size() << " Slices "
+         << this->allocatedSlices.size() << " ReadyCmp "
+         << this->readyComputations.size() << " InflyCmp "
+         << this->inflyComputations.size() << " CommitCtrl "
+         << this->commitController->hasStreamToCommit();
+      if (!this->streams.empty()) {
+        ss << "\n Streams:";
+        for (auto S : this->streams) {
+          ss << "\n  " << S->getDynStrandId();
+        }
+      }
+      LLC_SE_DPRINTF_(LLCStreamEngineWake, "%s\n", ss.str());
+    }
     this->scheduleEvent(Cycles(1));
   }
 }
@@ -1632,75 +1660,6 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
   return dynS;
 }
 
-LLCDynStreamPtr
-LLCStreamEngine::findIndirectStreamReadyToIssue(LLCDynStreamPtr dynS) {
-
-  if (!dynS->hasIndirectElemReadyToIssue()) {
-    return nullptr;
-  }
-
-  // Find the indirect stream with lowest element index.
-  LLCDynStreamPtr readyS = nullptr;
-  uint64_t readyElementIdx = 0;
-  for (auto dynIS : dynS->getAllIndStreams()) {
-    auto IS = dynIS->getStaticS();
-    // Enforce the per stream maxInflyRequests constraint.
-    if (dynIS->inflyRequests == dynIS->getMaxInflyRequests()) {
-      LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynIS->getDynStrandId(),
-                     "[NotIssue] MaxInflyReqs %d.\n",
-                     dynIS->getMaxInflyRequests());
-      IS->statistic.sampleLLCStreamEngineIssueReason(
-          StreamStatistic::LLCStreamEngineIssueReason::MaxInflyRequest);
-      continue;
-    }
-
-    if (auto elem = dynIS->getFirstReadyToIssueElem()) {
-      auto elemIdx = elem->idx;
-
-      /**
-       * Hack: We enforce ordering of alised IndirectUpdateStream
-       * here.
-       * TODO: Really implement the ordering scheme by piggyback the
-       * previous element going to that bank and let the indrect LLC
-       * SE handles ordering. However, delay issuing here actually
-       * pays more overhead, so we should be okay as we are not
-       * cheating for performance.
-       */
-      if (IS->isUpdateStream()) {
-        bool hasAliasedWithPreviousElement = false;
-        for (const auto &idxElement : dynIS->idxToElementMap) {
-          if (idxElement.first >= elemIdx) {
-            break;
-          }
-          const auto &prevElement = idxElement.second;
-          if (prevElement->vaddr == elem->vaddr &&
-              !prevElement->isComputedValueReady()) {
-            LLC_ELEMENT_DPRINTF(elem,
-                                "[NotIssue] Aliased Indirect "
-                                "UpdateElement %llu %#x.\n",
-                                prevElement->idx, prevElement->vaddr);
-            IS->statistic.sampleLLCStreamEngineIssueReason(
-                StreamStatistic::LLCStreamEngineIssueReason::
-                    AliasedIndirectUpdate);
-            hasAliasedWithPreviousElement = true;
-            break;
-          }
-        }
-        if (hasAliasedWithPreviousElement) {
-          continue;
-        }
-      }
-
-      if (!readyS || readyElementIdx > elemIdx) {
-        readyS = dynIS;
-        readyElementIdx = elemIdx;
-      }
-    }
-  }
-
-  return readyS;
-}
-
 void LLCStreamEngine::addIssuingDirDynS(LLCDynStreamPtr dynS) {
   this->issuingDirStreamList.push_back(dynS->getDynStrandId());
 }
@@ -1957,13 +1916,10 @@ void LLCStreamEngine::generateIndirectStreamRequest(
 
   if (IS->isStoreComputeStream() || IS->isAtomicComputeStream()) {
     this->issueIndirectStoreOrAtomicRequest(dynIS, element);
-    return;
+  } else {
+    // Finally normal indirect load stream.
+    this->issueIndirectLoadRequest(dynIS, element);
   }
-
-  /**
-   * Finally normal indirect load stream.
-   */
-  this->issueIndirectLoadRequest(dynIS, element);
   return;
 }
 
@@ -2221,7 +2177,8 @@ void LLCStreamEngine::issueIndirectAtomicUnlockRequest(
 LLCStreamEngine::RequestQueueIter LLCStreamEngine::enqueueRequest(
     Stream *S, const DynStreamSliceId &sliceId, Addr vaddrLine, Addr paddrLine,
     ruby::MachineType destMachineType, ruby::CoherenceRequestType type) {
-  this->requestQueue.emplace_back(S, sliceId, paddrLine, destMachineType, type);
+  this->requestQueue.emplace_back(S, sliceId, paddrLine, destMachineType, type,
+                                  this->controller->curCycle());
   auto requestQueueIter = std::prev(this->requestQueue.end());
   // To match with TLB interface, we first create a fake packet.
   auto cpuDelegator = S->getCPUDelegator();
@@ -2326,6 +2283,12 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
   msg->m_Destination.add(destMachineId);
   msg->m_MessageSize = ruby::MessageSizeType_Control;
   msg->m_sliceIds.add(sliceId);
+
+  // Sample the delay from issurance to generating the request.
+  auto reqGenLatency = this->controller->curCycle() - req.issueCycle;
+  req.S->statistic.remoteIssueToReqGenDelay.sample(reqGenLatency);
+  req.S->statistic.getStaticStat().remoteIssueToReqGenDelay.sample(
+      reqGenLatency);
 
   // We need to set hold the store value.
   if (req.requestType == ruby::CoherenceRequestType_STREAM_STORE) {
@@ -3137,6 +3100,7 @@ void LLCStreamEngine::receiveStreamIndirectRequestImpl(
   if (auto dynS = LLCDynStream::getLLCStream(sliceId.getDynStrandId())) {
     auto &statistic = dynS->getStaticS()->statistic;
     statistic.remoteIndReqNoCDelay.sample(networkLatency);
+    statistic.getStaticStat().remoteIndReqNoCDelay.sample(networkLatency);
   }
 
   auto msg = std::make_shared<ruby::RequestMsg>(req);
@@ -3422,9 +3386,20 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
 
   auto &indElem = IS->idxToElementMap.at(indElemIdx);
 
+  // Not predicated, add to readyElements.
+  bool areBaseElemsReady = indElem->areBaseElemsReady();
+  LLC_ELEMENT_DPRINTF(indElem, "Check if BaseElemReady %d.\n",
+                      areBaseElemsReady);
+  if (!areBaseElemsReady) {
+    for (const auto &baseE : indElem->baseElements) {
+      LLC_ELEMENT_DPRINTF(indElem, "BaseElems Ready %d %s%llu.\n",
+                          baseE->isReady(), baseE->strandId, baseE->idx);
+    }
+    return;
+  }
+
   /**
    * Check if the stream has predication.
-   * TODO: For now we always assume predicated on.
    */
   if (IS->isPredicated()) {
     // The PredBaseElem should be in our base elem.
@@ -3434,7 +3409,8 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
         continue;
       }
       if (!baseElem->isPredValueReady()) {
-        LLC_ELEMENT_PANIC(indElem, "[LLCPred] PredValue not ready.");
+        LLC_ELEMENT_PANIC(indElem, "[LLCPred] PredValue not ready: %s%lu.",
+                          baseElem->strandId, baseElem->idx);
       }
       LLC_ELEMENT_DPRINTF_(LLCStreamPredicate, indElem,
                            "[LLCPred] Got %d Expected %d.\n",
@@ -3448,29 +3424,20 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
     }
   }
 
-  // Not predicated, add to readyElements.
-  LLC_ELEMENT_DPRINTF(indElem, "Check if BaseElemReady %d.\n",
-                      indElem->areBaseElemsReady());
-  if (indElem->areBaseElemsReady()) {
-    if (IS->getStaticS()->isReduction() ||
-        IS->getStaticS()->isPointerChaseIndVar()) {
-      if (indElem->isComputationScheduled() || indElem->isComputationDone()) {
-      } else {
-        // Reduction now is handled as computation.
-        this->pushReadyComputation(indElem);
-      }
+  // BaseElems ready and not predicated off.
+  if (IS->getStaticS()->isReduction() ||
+      IS->getStaticS()->isPointerChaseIndVar()) {
+    if (indElem->isComputationScheduled() || indElem->isComputationDone()) {
     } else {
-      IS->markElemReadyToIssue(indElemIdx);
-      LLC_S_DPRINTF(IS->getDynStrandId(),
-                    "[IndS] Add to Issue List Elem %lu.\n", indElemIdx);
-      this->addIssuingIndDynS(IS);
-      indElem->setLLCSE(this);
+      // Reduction now is handled as computation.
+      this->pushReadyComputation(indElem);
     }
   } else {
-    for (const auto &baseE : indElem->baseElements) {
-      LLC_ELEMENT_DPRINTF(indElem, "BaseElems Ready %d %s%llu.\n",
-                          baseE->isReady(), baseE->strandId, baseE->idx);
-    }
+    IS->markElemReadyToIssue(indElemIdx);
+    LLC_S_DPRINTF(IS->getDynStrandId(), "[IndS] Add to Issue List Elem %lu.\n",
+                  indElemIdx);
+    this->addIssuingIndDynS(IS);
+    indElem->setLLCSE(this);
   }
 }
 
@@ -4805,6 +4772,7 @@ void LLCStreamEngine::incrementIssueSlice(StreamStatistic &statistic) {
 }
 
 Cycles LLCStreamEngine::lastSampleCycle = Cycles(0);
+int LLCStreamEngine::totalSamples = 0;
 
 void LLCStreamEngine::sampleLLCStream(LLCDynStreamPtr dynS) {
 
@@ -4834,12 +4802,16 @@ void LLCStreamEngine::sampleLLCStream(LLCDynStreamPtr dynS) {
 
 void LLCStreamEngine::sampleLLCStreams() {
   const Cycles sampleInterval = Cycles(100);
-  if (curCycle() < this->lastSampleCycle + sampleInterval) {
+  if (curCycle() < LLCStreamEngine::lastSampleCycle + sampleInterval) {
     return;
   }
   for (const auto &e : LLCDynStream::getGlobalLLCDynStreamMap()) {
     this->sampleLLCStream(e.second);
   }
-  this->lastSampleCycle = curCycle();
+  LLCStreamEngine::totalSamples++;
+  LLCStreamEngine::lastSampleCycle = curCycle();
+  LLC_SE_DPRINTF_(LLCStreamSample, "[Sample] %d at Cycle %lu.\n",
+                  LLCStreamEngine::totalSamples,
+                  LLCStreamEngine::lastSampleCycle);
 }
 } // namespace gem5

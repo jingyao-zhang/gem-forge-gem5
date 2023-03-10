@@ -26,12 +26,14 @@ DebugFlag('LLCRubyStreamNotIssue')
 DebugFlag('LLCStreamMigrationController')
 DebugFlag('LLCStreamLoopBound')
 DebugFlag('LLCStreamPredicate')
+DebugFlag('LLCStreamSample')
 DebugFlag('RemoteStreamReuse')
+DebugFlag('LLCStreamEngineWake')
 CompoundFlag('LLCRubyStream', [
     'LLCRubyStreamBase', 'LLCRubyStreamLife', 'LLCRubyStreamReduce',
     'LLCRubyStreamMulticast', 'LLCRubyStreamStore', 'LLCStreamLoopBound',
     'StreamRangeSync',  'LLCStreamMigrationController',
-    'RemoteStreamReuse', 'LLCStreamPredicate',
+    'RemoteStreamReuse', 'LLCStreamPredicate', 
 ])
 CompoundFlag('RubyStreamLife',
              ['CoreRubyStreamLife', 'L0RubyStreamLife', 'MLCRubyStreamLife', 'LLCRubyStreamLife'])

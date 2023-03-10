@@ -380,6 +380,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_llc_multicast_group_size,
                 stream_multicast_issue_policy=\
                     options.gem_forge_stream_engine_llc_multicast_issue_policy,
+                ind_stream_max_inqueue_req=\
+                    options.gem_forge_stream_engine_llc_max_ind_req_inqueue_per_stream,
                 ind_stream_req_max_per_multicast_msg=\
                     options.gem_forge_stream_engine_llc_multicast_max_ind_req_per_message,
                 ind_stream_req_multicast_group_size=\
@@ -532,6 +534,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.neighbor_migration_valve_type = options.gem_forge_stream_engine_mc_neighbor_migration_valve_type
         dir_cntrl.enable_stream_float_mem = options.gem_forge_stream_engine_enable_float_mem
         dir_cntrl.reuse_buffer_lines_per_core = options.gem_forge_stream_engine_mc_reuse_buffer_lines_per_core
+        dir_cntrl.ind_stream_max_inqueue_req = options.gem_forge_stream_engine_llc_max_ind_req_inqueue_per_stream
         dir_cntrl.ind_stream_req_max_per_multicast_msg = options.gem_forge_stream_engine_llc_multicast_max_ind_req_per_message
         dir_cntrl.ind_stream_req_multicast_group_size = options.gem_forge_stream_engine_llc_multicast_ind_req_bank_group_size
 

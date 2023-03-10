@@ -158,7 +158,8 @@ void MLCDynStream::recvCoreReq(const DynStreamSliceId &sliceId) {
   if (slice->dataReady) {
     // Sanity check the address.
     // ! Core is line address.
-    if (slice->coreSliceId.vaddr != ruby::makeLineAddress(slice->sliceId.vaddr)) {
+    if (slice->coreSliceId.vaddr !=
+        ruby::makeLineAddress(slice->sliceId.vaddr)) {
       MLC_SLICE_PANIC(sliceId, "Mismatch between Core %#x and LLC %#x.\n",
                       slice->coreSliceId.vaddr, slice->sliceId.vaddr);
     }
@@ -388,9 +389,11 @@ void MLCDynStream::makeResponse(MLCStreamSlice &slice) {
   auto paddrLine = ruby::makeLineAddress(paddr);
 
   auto selfMachineId = this->controller->getMachineID();
-  auto upperMachineId = ruby::MachineID(
-      static_cast<ruby::MachineType>(selfMachineId.type - 1), selfMachineId.num);
-  auto msg = std::make_shared<ruby::CoherenceMsg>(this->controller->clockEdge());
+  auto upperMachineId =
+      ruby::MachineID(static_cast<ruby::MachineType>(selfMachineId.type - 1),
+                      selfMachineId.num);
+  auto msg =
+      std::make_shared<ruby::CoherenceMsg>(this->controller->clockEdge());
   msg->m_addr = paddrLine;
   msg->m_Class = ruby::CoherenceClass_DATA_EXCLUSIVE;
   msg->m_Sender = selfMachineId;
@@ -399,19 +402,20 @@ void MLCDynStream::makeResponse(MLCStreamSlice &slice) {
   msg->m_DataBlk = slice.dataBlock;
 
   /**
-   * Floating AtomicComputeStream and LoadComputeStream must use
-   * STREAM_FROM_MLC type as they bypass private cache and must be served by MLC
-   * SE.
+   * Floating AtomicComputeStream and LoadComputeStream and UpdateStream must
+   * use STREAM_FROM_MLC type as they bypass private cache and must be served by
+   * MLC SE.
    */
   if (this->stream->isAtomicComputeStream() ||
-      this->stream->isLoadComputeStream()) {
+      this->stream->isLoadComputeStream() || this->stream->isUpdateStream()) {
     msg->m_Class = ruby::CoherenceClass_STREAM_FROM_MLC;
   }
 
   // Show the data.
   if (Debug::DEBUG_TYPE) {
     std::stringstream ss;
-    auto lineOffset = slice.sliceId.vaddr % ruby::RubySystem::getBlockSizeBytes();
+    auto lineOffset =
+        slice.sliceId.vaddr % ruby::RubySystem::getBlockSizeBytes();
     auto dataStr = GemForgeUtils::dataToString(
         slice.dataBlock.getData(lineOffset, slice.sliceId.getSize()),
         slice.sliceId.getSize());
@@ -602,4 +606,3 @@ void MLCDynStream::panicDump() const {
   }
 }
 } // namespace gem5
-

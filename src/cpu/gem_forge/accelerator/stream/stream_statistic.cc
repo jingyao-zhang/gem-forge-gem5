@@ -9,9 +9,30 @@ std::map<uint64_t, StreamStatistic> StreamStatistic::staticStats;
 
 StreamStatistic &StreamStatistic::getStaticStat(uint64_t staticStreamId) {
   if (!staticStats.count(staticStreamId)) {
-    staticStats.emplace(staticStreamId, StreamStatistic());
+    staticStats.emplace(staticStreamId, staticStreamId);
   }
   return staticStats.at(staticStreamId);
+}
+
+void StreamStatistic::sampleLLCElement(const LLCElementSample &s) {
+  if (s.firstCheckCycle != 0 && s.valueReadyCycle != 0) {
+    if (s.firstCheckCycle > s.valueReadyCycle) {
+      numLLCEarlyCycle += s.firstCheckCycle - s.valueReadyCycle;
+      numLLCEarlyElement++;
+    } else {
+      numLLCLateCycle += s.valueReadyCycle - s.firstCheckCycle;
+      numLLCLateElement++;
+    }
+  }
+  if (s.valueReadyCycle != 0 && s.reqIssueCycle != 0) {
+    if (s.reqIssueCycle <= s.valueReadyCycle) {
+      auto issueToValueReadyCycle = s.valueReadyCycle - s.reqIssueCycle;
+      remoteIssueToValueReadyCycle.sample(issueToValueReadyCycle);
+
+      auto &staticStats = StreamStatistic::getStaticStat(this->staticStreamId);
+      staticStats.remoteIssueToValueReadyCycle.sample(issueToValueReadyCycle);
+    }
+  }
 }
 
 void StreamStatistic::dump(std::ostream &os) const {
@@ -97,7 +118,6 @@ void StreamStatistic::dump(std::ostream &os) const {
     dumpAvg(avgRunCyclePerBank, numRemoteRunCycle, (numRemoteMigrate + 1));
 
     dumpSingleAvgSample(remoteForwardNoCDelay);
-    dumpSingleAvgSample(remoteIndReqNoCDelay);
   }
 
   if (numLLCAliveElementSamples > 0) {
@@ -106,6 +126,13 @@ void StreamStatistic::dump(std::ostream &os) const {
             numLLCAliveElementSamples);
   }
   dumpSingleAvgSample(remoteInflyReq);
+
+  dumpSingleAvgSample(remoteIssueToValueReadyCycle);
+  dumpSingleAvgSample(remoteIssueToReqGenDelay);
+  dumpSingleAvgSample(remoteIndReqNoCDelay);
+  dumpSingleAvgSample(remoteIndReqStreamBufInjectDelay);
+  dumpSingleAvgSample(remoteIndReqMsgBufInjectDelay);
+  dumpSingleAvgSample(remoteIndReqNoCInjectDelay);
 
   dumpAvg(avgLength, numStepped, numConfigured);
   dumpAvg(avgUsed, numUsed, numConfigured);
@@ -168,10 +195,12 @@ void StreamStatistic::dump(std::ostream &os) const {
             numLLCInflyComputationSample);
   }
 
-  os << std::setw(40) << "LLCSendTo\n";
+  os << std::setw(40) << "LLCSendTo"
+     << "\n";
   dumpSrcDest(this->numLLCSendTo, os);
 
-  os << std::setw(40) << "RemoteNestConfig\n";
+  os << std::setw(40) << "RemoteNestConfig"
+     << "\n";
   dumpSrcDest(this->numRemoteNestConfig, os);
 
   dumpScalar(numMissL0);
@@ -331,7 +360,12 @@ void StreamStatistic::clear() {
   this->idealDataTrafficFloat = 0;
 
   this->remoteForwardNoCDelay.clear();
+  this->remoteIssueToValueReadyCycle.clear();
+  this->remoteIssueToReqGenDelay.clear();
   this->remoteIndReqNoCDelay.clear();
+  this->remoteIndReqStreamBufInjectDelay.clear();
+  this->remoteIndReqMsgBufInjectDelay.clear();
+  this->remoteIndReqNoCInjectDelay.clear();
   this->llcReqLat.clear();
   this->memReqLat.clear();
   this->remoteInflyReq.clear();

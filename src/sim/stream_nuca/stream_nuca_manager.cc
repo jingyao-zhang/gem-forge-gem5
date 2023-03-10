@@ -694,13 +694,16 @@ void StreamNUCAManager::computeIndirectHopsForOneElement(
   int count = 1;
   if (indField.indCountSize != 0) {
     count = readField(indField.indCountOffset, indField.indCountSize);
+    if (!(count >= 0 && count <= 16)) {
+      panic("[StreamNUCA]   Invalid IndCnt Offset %d Size %d Val %d:\n",
+            indField.indCountOffset, indField.indCountSize, count);
+    }
     if (count > 0) {
       DPRINTF(StreamNUCAManager,
               "[StreamNUCA]   IndCnt Offset %d Size %d Val %d:\n",
               indField.indCountOffset, indField.indCountSize, count);
     }
     // So far we just allow 16 indirect edges per element.
-    assert(count >= 0 && count <= 16);
   }
 
   for (int i = 0; i < count; ++i) {
@@ -1667,10 +1670,16 @@ void StreamNUCAManager::markRegionCached(Addr regionVAddr) {
   if (!this->process->pTable->translate(regionVAddr, regionPAddr)) {
     panic("Failed to translate RegionVAddr %#x.\n", regionVAddr);
   }
-  auto &nucaMapEntry = StreamNUCAMap::getRangeMapByStartPAddr(regionPAddr);
-  nucaMapEntry.isCached = true;
-  DPRINTF(StreamNUCAManager, "[StreamNUCA] Region %s Marked Cached.\n",
-          region.name);
+  if (auto nucaMapEntry =
+          StreamNUCAMap::tryGetRangeMapByStartPAddr(regionPAddr)) {
+    nucaMapEntry->isCached = true;
+    DPRINTF(StreamNUCAManager, "[StreamNUCA] Region %s Marked Cached.\n",
+            region.name);
+  } else {
+    DPRINTF(StreamNUCAManager,
+            "[StreamNUCA] Region %s Missing in NUCAMap, not Marked Cached.\n",
+            region.name);
+  }
 }
 
 enum StreamNUCAAffinityField {

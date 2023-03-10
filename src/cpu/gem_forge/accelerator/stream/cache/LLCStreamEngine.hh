@@ -249,11 +249,10 @@ private:
   void issueStreams();
 
   /**
-   * Find a stream within this S and its indirect streams ready to issue.
+   * Find a stream ready to issue.
    * @return nullptr if not found.
    */
   LLCDynStreamPtr findStreamReadyToIssue(LLCDynStreamPtr dynS);
-  LLCDynStreamPtr findIndirectStreamReadyToIssue(LLCDynStreamPtr dynS);
 
   /**
    * Helper function to manage the issuing streams.
@@ -584,6 +583,7 @@ private:
   void sampleLLCStreams();
   void sampleLLCStream(LLCDynStreamPtr dynS);
   static Cycles lastSampleCycle;
+  static int totalSamples;
 };
 
 } // namespace gem5

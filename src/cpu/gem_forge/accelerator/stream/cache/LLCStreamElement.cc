@@ -5,6 +5,7 @@
 #include "LLCDynStream.hh"
 
 #include "debug/LLCRubyStreamBase.hh"
+#include "debug/LLCStreamSample.hh"
 #include "debug/StreamRangeSync.hh"
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
@@ -35,8 +36,18 @@ LLCStreamElement::LLCStreamElement(
 }
 
 LLCStreamElement::~LLCStreamElement() {
-  this->S->statistic.sampleLLCElement(this->firstCheckCycle,
-                                      this->valueReadyCycle);
+
+  StreamStatistic::LLCElementSample s = {
+      this->firstCheckCycle, this->valueReadyCycle, this->reqIssueCycle};
+
+  if (this->valueReadyCycle > this->reqIssueCycle &&
+      this->valueReadyCycle != 0) {
+    LLC_ELEMENT_DPRINTF_(LLCStreamSample, this,
+                         "[Sample] LLC Elem ReqIssue -> ValueReady %lu.\n",
+                         this->valueReadyCycle - this->reqIssueCycle);
+  }
+
+  this->S->statistic.sampleLLCElement(s);
   LLCStreamElement::aliveElems--;
   if (this->prevReduceElem) {
     deferredReleaseElems.emplace_back(std::move(this->prevReduceElem));
@@ -192,7 +203,8 @@ int LLCStreamElement::computeOverlapImpl(int elemSize, Addr rangeVAddr,
     rangeOffset = rangeSize;
     return 0;
   }
-  assert(ruby::makeLineAddress(overlapLHS) == ruby::makeLineAddress(overlapRHS - 1) &&
+  assert(ruby::makeLineAddress(overlapLHS) ==
+             ruby::makeLineAddress(overlapRHS - 1) &&
          "Illegal overlap.");
   auto overlapSize = overlapRHS - overlapLHS;
   rangeOffset = overlapLHS - rangeVAddr;
@@ -228,14 +240,21 @@ void LLCStreamElement::extractElementDataFromSlice(
   Addr overlapLHS = this->vaddr + elemOffset;
 
   LLC_SLICE_DPRINTF(sliceId,
-                    "Received elem %lu size %d [%lu, %lu) slice [%lu, %lu).\n",
+                    "Recv elem %lu size %d [%lu, %lu) slice [%lu, %lu).\n",
                     elemIdx, elemSize, elemOffset, elemOffset + overlapSize,
                     sliceOffset, sliceOffset + overlapSize);
 
   // Get the data from the cache line.
-  auto data = dataBlock.getData(overlapLHS % ruby::RubySystem::getBlockSizeBytes(),
-                                overlapSize);
+  auto data = dataBlock.getData(
+      overlapLHS % ruby::RubySystem::getBlockSizeBytes(), overlapSize);
   memcpy(this->getUInt8Ptr(elemOffset), data, overlapSize);
+  if (Debug::LLCRubyStreamBase) {
+    std::stringstream ss;
+    for (int i = 0; i < overlapSize; ++i) {
+      ss << std::hex << static_cast<int>(data[i]) << ' ';
+    }
+    LLC_SLICE_DPRINTF(sliceId, "Extract elem data %s.\n", ss.str());
+  }
 
   // Mark these bytes ready.
   this->readyBytes += overlapSize;
@@ -248,6 +267,8 @@ void LLCStreamElement::extractElementDataFromSlice(
   }
   if (this->isReady()) {
     this->valueReadyCycle = this->mlcController->curCycle();
+    LLC_ELEMENT_DPRINTF(this, "Elem Value Ready Cycle: Issue %lu Ready %lu.\n",
+                        this->reqIssueCycle, this->valueReadyCycle);
   }
 }
 
@@ -258,5 +279,5 @@ void LLCStreamElement::addSlice(LLCStreamSlicePtr &slice) {
   LLC_ELEMENT_DPRINTF(this, "Register slice %s.\n", slice->getSliceId());
   this->slices[this->numSlices] = slice;
   this->numSlices++;
-}} // namespace gem5
-
+}
+} // namespace gem5

@@ -255,6 +255,7 @@ public:
   StaticId staticId;
   std::string streamName;
   InstanceId dynInstance;
+  StreamStatistic statistic;
   // Used to remember first core user pc.
   Addr firstCoreUserPC = 0;
   bool hasFirstCoreUserPC() const { return this->firstCoreUserPC != 0; }
@@ -352,7 +353,6 @@ public:
   /**
    * Per stream statistics.
    */
-  StreamStatistic statistic;
   StreamFloatTracer floatTracer;
   void dumpStreamStats(std::ostream &os) const;
 

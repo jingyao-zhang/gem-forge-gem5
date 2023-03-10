@@ -8,9 +8,10 @@
 namespace gem5 {
 
 StreamRequestBuffer::StreamRequestBuffer(
-    ruby::AbstractStreamAwareController *_controller, ruby::MessageBuffer *_outBuffer,
-    Cycles _latency, bool _enableIndMulticast, int _maxInqueueRequestsPerStream,
-    int _maxMulticastReqPerMsg, int _multicastBankGroupSize)
+    ruby::AbstractStreamAwareController *_controller,
+    ruby::MessageBuffer *_outBuffer, Cycles _latency, bool _enableIndMulticast,
+    int _maxInqueueRequestsPerStream, int _maxMulticastReqPerMsg,
+    int _multicastBankGroupSize)
     : controller(_controller), outBuffer(_outBuffer), latency(_latency),
       enableIndMulticast(_enableIndMulticast),
       maxInqueueRequestsPerStream(_maxInqueueRequestsPerStream),
@@ -25,6 +26,7 @@ void StreamRequestBuffer::pushRequest(RequestPtr req) {
    * See if we should and can multicast this request.
    * If not, we try to add to multicast group.
    */
+
   if (this->shouldTryMulticast(req)) {
     if (this->tryMulticast(req)) {
       return;
@@ -34,6 +36,17 @@ void StreamRequestBuffer::pushRequest(RequestPtr req) {
     groupIter->second.insert(req);
   }
   const auto &sliceId = req->m_sliceIds.singleSliceId();
+
+  // Record the delay to StreamRequstBuffer injection.
+  if (auto dynS = LLCDynStream::getLLCStream(sliceId.getDynStrandId())) {
+    auto S = dynS->getStaticS();
+    auto injectLatency = this->controller->curCycle() -
+                         this->controller->ticksToCycles(req->getTime());
+    S->statistic.remoteIndReqStreamBufInjectDelay.sample(injectLatency);
+    S->statistic.getStaticStat().remoteIndReqStreamBufInjectDelay.sample(
+        injectLatency);
+  }
+
   auto inqueueIter = this->getOrInitInqueueState(req);
   auto &inqueueState = inqueueIter->second;
   if (inqueueState.inqueueRequests == this->maxInqueueRequestsPerStream) {
@@ -82,6 +95,16 @@ void StreamRequestBuffer::dequeue(ruby::MsgPtr msg) {
   inqueueState.inqueueRequests--;
   LLC_SLICE_DPRINTF(sliceId, "[ReqBuffer] Dequeued. Inqueue %d Buffered %lu.\n",
                     inqueueState.inqueueRequests, inqueueState.buffered.size());
+
+  // Record the delay to NoC injection.
+  if (auto dynS = LLCDynStream::getLLCStream(sliceId.getDynStrandId())) {
+    auto S = dynS->getStaticS();
+    auto injectLatency = this->controller->curCycle() -
+                         this->controller->ticksToCycles(msg->getTime());
+    S->statistic.remoteIndReqNoCInjectDelay.sample(injectLatency);
+    S->statistic.getStaticStat().remoteIndReqNoCInjectDelay.sample(injectLatency);
+  }
+
   if (!inqueueState.buffered.empty()) {
     // We can enqueue more.
     const auto &newRequest = inqueueState.buffered.front();
@@ -112,6 +135,17 @@ StreamRequestBuffer::getOrInitInqueueState(const RequestPtr &request) {
 
 void StreamRequestBuffer::enqueue(const RequestPtr &req, int &inqueueRequests) {
   const auto &sliceId = req->m_sliceIds.singleSliceId();
+
+  // Record the delay to MsgBuffer injection.
+  if (auto dynS = LLCDynStream::getLLCStream(sliceId.getDynStrandId())) {
+    auto S = dynS->getStaticS();
+    auto injectLatency = this->controller->curCycle() -
+                         this->controller->ticksToCycles(req->getTime());
+    S->statistic.remoteIndReqMsgBufInjectDelay.sample(injectLatency);
+    S->statistic.getStaticStat().remoteIndReqMsgBufInjectDelay.sample(
+        injectLatency);
+  }
+
   this->outBuffer->enqueue(req, this->controller->clockEdge(),
                            this->controller->cyclesToTicks(this->latency));
   inqueueRequests++;
@@ -294,5 +328,5 @@ bool StreamRequestBuffer::tryMulticast(const RequestPtr &req) {
   }
 
   return true;
-}} // namespace gem5
-
+}
+} // namespace gem5

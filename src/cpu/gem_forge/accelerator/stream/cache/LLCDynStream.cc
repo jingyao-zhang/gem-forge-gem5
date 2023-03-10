@@ -338,7 +338,7 @@ void LLCDynStream::traceEvent(
   auto machineId = this->llcController->getMachineID();
   floatTracer.traceEvent(curCycle, machineId, type);
   // Do this for all indirect streams.
-  for (auto IS : this->getIndStreams()) {
+  for (auto IS : this->getAllIndStreams()) {
     IS->traceEvent(type);
   }
 }
@@ -1089,6 +1089,10 @@ void LLCDynStream::remoteConfigured(
 
 void LLCDynStream::migratingStart() {
   this->setState(State::MIGRATING);
+  // Recursively set for all IndS.
+  for (auto IS : this->getAllIndStreams()) {
+    IS->setState(State::MIGRATING);
+  }
   this->prevMigratedCycle = this->curCycle();
   this->traceEvent(::LLVM::TDG::StreamFloatEvent::MIGRATE_OUT);
   this->getStaticS()->se->numLLCMigrated++;
@@ -1120,6 +1124,9 @@ void LLCDynStream::migratingDone(
 
   this->setLLCController(llcController);
   this->setState(State::RUNNING);
+  for (auto IS : this->getAllIndStreams()) {
+    IS->setState(State::RUNNING);
+  }
   this->prevConfiguredCycle = this->curCycle();
 
   auto &stats = this->getStaticS()->statistic;
@@ -1132,6 +1139,9 @@ void LLCDynStream::migratingDone(
 void LLCDynStream::terminate() {
   LLC_S_DPRINTF_(LLCRubyStreamLife, this->getDynStrandId(), "Ended.\n");
   this->setState(State::TERMINATED);
+  for (auto IS : this->getAllIndStreams()) {
+    IS->setState(State::TERMINATED);
+  }
   this->traceEvent(::LLVM::TDG::StreamFloatEvent::END);
   if (this->commitController) {
     // Don't forget to deregister myself from commit controller.
@@ -1460,7 +1470,7 @@ StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &element) {
     auto storeValue = config->storeCallback->invoke(params);
 
     LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, element,
-                         "[Latency %llu] Compute LoadComputeValue %s.\n",
+                         "[Latency %llu] Compute StoreComputeValue %s.\n",
                          latency, storeValue);
     return storeValue;
 
@@ -1834,7 +1844,7 @@ void LLCDynStream::markElemIssued(uint64_t elemIdx) {
                                           elem->size);
     elem->setRangeBuilt();
   }
-  elem->setState(LLCStreamElement::State::ISSUED);
+  elem->setStateToIssued(this->mlcController->curCycle());
   assert(this->numElemsReadyToIssue > 0 &&
          "Underflow NumElementsReadyToIssue.");
   this->numElemsReadyToIssue--;

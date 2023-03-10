@@ -516,6 +516,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
       enqueue(optionalQueue_out, RubyRequest, 1) {
           out_msg.LineAddress := address;
           out_msg.Type := type;
+          out_msg.Prefetch := PrefetchBit:Yes;
           out_msg.AccessMode := RubyAccessMode:Supervisor;
       }
   }

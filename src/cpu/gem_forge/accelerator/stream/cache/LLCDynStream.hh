@@ -32,14 +32,19 @@ using LLCDynStreamPtr = LLCDynStream *;
 struct LLCStreamRequest {
   LLCStreamRequest(Stream *_S, const DynStreamSliceId &_sliceId,
                    Addr _paddrLine, ruby::MachineType _destMachineType,
-                   ruby::CoherenceRequestType _type)
+                   ruby::CoherenceRequestType _type, Cycles _issueCycle)
       : S(_S), sliceId(_sliceId), paddrLine(_paddrLine),
-        destMachineType(_destMachineType), requestType(_type) {}
+        destMachineType(_destMachineType), requestType(_type),
+        issueCycle(_issueCycle) {}
   Stream *S;
   DynStreamSliceId sliceId;
   Addr paddrLine;
   ruby::MachineType destMachineType;
   ruby::CoherenceRequestType requestType;
+
+  // Remember the created cycle for statistic.
+  Cycles issueCycle = Cycles(0);
+
   bool translationDone = false;
 
   // Optional fields.

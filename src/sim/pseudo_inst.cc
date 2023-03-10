@@ -327,6 +327,7 @@ void
 dumpstats(ThreadContext *tc, Tick delay, Tick period)
 {
     DPRINTF(PseudoInst, "pseudo_inst::dumpstats(%i, %i)\n", delay, period);
+    inform("%d - PseudoInst::dumpstats(%i, %i)\n", curTick(), delay, period);
     if (!tc->getCpuPtr()->params().do_statistics_insts)
         return;
 

@@ -619,6 +619,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     enqueue(prefetchQueue_out, RubyRequest, 1) {
       out_msg.LineAddress := address;
       out_msg.Type := type;
+      out_msg.Prefetch := PrefetchBit:Yes;
       out_msg.AccessMode := RubyAccessMode:Supervisor;
     }
   }

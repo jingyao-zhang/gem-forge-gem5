@@ -220,6 +220,9 @@ parser.add_argument("--gem-forge-stream-engine-enable-midway-float", action="sto
 parser.add_argument("--gem-forge-stream-engine-midway-float-element-idx", action="store",
                   type=int, default="-1",
                   help="Force midway stream float from this element.")
+parser.add_argument("--gem-forge-stream-engine-llc-max-ind-req-inqueue-per-stream", action="store",
+                  type=int, default="4",
+                  help="Max indirect stream request inqueue per stream.")
 parser.add_argument("--gem-forge-stream-engine-llc-multicast-max-ind-req-per-message", action="store",
                   type=int, default="0",
                   help="Max indirect stream request per multicast message, 0 to disable.")

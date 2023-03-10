@@ -45,8 +45,8 @@ StreamValue GetCoalescedStreamValue::operator()(uint64_t streamId) const {
 
 Stream::Stream(const StreamArguments &args)
     : staticId(args.staticId), streamName(args.name),
-      dynInstance(DynStreamId::InvalidInstanceId), floatTracer(this),
-      cpu(args.cpu), se(args.se) {
+      dynInstance(DynStreamId::InvalidInstanceId), statistic(args.staticId),
+      floatTracer(this), cpu(args.cpu), se(args.se) {
 
   this->allocSize = 0;
   this->stepSize = 0;

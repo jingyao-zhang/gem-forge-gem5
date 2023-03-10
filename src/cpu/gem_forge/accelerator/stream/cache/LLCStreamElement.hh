@@ -173,6 +173,10 @@ public:
 
   State getState() const { return this->state; }
   void setState(State state) { this->state = state; }
+  void setStateToIssued(Cycles issueCycle) {
+    this->state = State::ISSUED;
+    this->reqIssueCycle = issueCycle;
+  }
   void setLLCSE(LLCStreamEngine *llcSE) { this->llcSE = llcSE; }
   LLCStreamEngine *getLLCSE() const { return this->llcSE; }
 
@@ -227,6 +231,7 @@ private:
 
   mutable Cycles firstCheckCycle = Cycles(0);
   mutable Cycles valueReadyCycle = Cycles(0);
+  mutable Cycles reqIssueCycle = Cycles(0);
 
   static constexpr int MAX_SLICES_PER_ELEMENT = 3;
   std::array<LLCStreamSlicePtr, MAX_SLICES_PER_ELEMENT> slices;

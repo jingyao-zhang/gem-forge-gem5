@@ -14,6 +14,47 @@ namespace gem5 {
 
 struct StreamStatistic {
 public:
+  const uint64_t staticStreamId;
+
+  /**
+   * A static map from StaticStreamId to Statistics.
+   * Used to aggregate stats of same static stream across the system.
+   */
+  static std::map<uint64_t, StreamStatistic> staticStats;
+  static StreamStatistic &getStaticStat(uint64_t staticStreamId);
+  StreamStatistic &getStaticStat() {
+    return StreamStatistic::getStaticStat(this->staticStreamId);
+  }
+
+  StreamStatistic(uint64_t _staticStreamId) : staticStreamId(_staticStreamId) {}
+
+  /**
+   * Record the current cycle for aggregate stats across static streams.
+   */
+  uint64_t curCycle = 0;
+
+  struct SingleAvgSampler {
+    size_t samples = 0;
+    size_t value = 0;
+    size_t curCycle = 0;
+    void sample(size_t v) {
+      this->samples++;
+      this->value += v;
+    }
+    void sample(size_t curCycle, size_t v) {
+      this->value += v;
+      if (curCycle != this->curCycle) {
+        this->samples++;
+        this->curCycle = curCycle;
+      }
+    }
+    void clear() {
+      this->samples = 0;
+      this->value = 0;
+      this->curCycle = 0;
+    }
+  };
+
   /**
    * Per stream statistics.
    *
@@ -92,18 +133,13 @@ public:
   size_t numLLCEarlyCycle = 0;
   size_t numLLCLateElement = 0;
   size_t numLLCLateCycle = 0;
-  void sampleLLCElement(size_t firstCheckCycle, size_t valueReadyCycle) {
-    if (firstCheckCycle == 0 || valueReadyCycle == 0) {
-      return;
-    }
-    if (firstCheckCycle > valueReadyCycle) {
-      numLLCEarlyCycle += firstCheckCycle - valueReadyCycle;
-      numLLCEarlyElement++;
-    } else {
-      numLLCLateCycle += valueReadyCycle - firstCheckCycle;
-      numLLCLateElement++;
-    }
-  }
+  SingleAvgSampler remoteIssueToValueReadyCycle;
+  struct LLCElementSample {
+    size_t firstCheckCycle = 0;
+    size_t valueReadyCycle = 0;
+    size_t reqIssueCycle = 0;
+  };
+  void sampleLLCElement(const LLCElementSample &s);
 
   size_t numIssuedRequest = 0;
   size_t numIssuedReadExRequest = 0;
@@ -137,9 +173,12 @@ public:
   SrcDestStatsT numRemoteNestConfig;
   void sampleLLCSendTo(int from, int to) {
     sampleSrcDest(this->numLLCSendTo, from, to);
+    sampleSrcDest(getStaticStat(this->staticStreamId).numLLCSendTo, from, to);
   }
   void sampleRemoteNestConfig(int from, int to) {
     sampleSrcDest(this->numRemoteNestConfig, from, to);
+    sampleSrcDest(getStaticStat(this->staticStreamId).numRemoteNestConfig, from,
+                  to);
   }
 
   size_t numLLCInflyComputationSample = 0;
@@ -199,33 +238,20 @@ public:
     }
   }
 
-  StreamStatistic() = default;
   void dump(std::ostream &os) const;
   void clear();
 
-  struct SingleAvgSampler {
-    size_t samples = 0;
-    size_t value = 0;
-    size_t curCycle = 0;
-    void sample(size_t v) {
-      this->samples++;
-      this->value += v;
-    }
-    void sample(size_t curCycle, size_t v) {
-      this->value += v;
-      if (curCycle != this->curCycle) {
-        this->samples++;
-        this->curCycle = curCycle;
-      }
-    }
-    void clear() {
-      this->samples = 0;
-      this->value = 0;
-      this->curCycle = 0;
-    }
-  };
   SingleAvgSampler remoteForwardNoCDelay;
+  // Delay from issuing element to message creation.
+  SingleAvgSampler remoteIssueToReqGenDelay;
+  // Delay from message creation to arriving at indirect bank.
   SingleAvgSampler remoteIndReqNoCDelay;
+  // Delay from message creation to StreamReqBuffer injection.
+  SingleAvgSampler remoteIndReqStreamBufInjectDelay;
+  // Delay from message creation to MessageBuffer injection.
+  SingleAvgSampler remoteIndReqMsgBufInjectDelay;
+  // Delay from message creation to NoC injection.
+  SingleAvgSampler remoteIndReqNoCInjectDelay;
   SingleAvgSampler llcReqLat;
   SingleAvgSampler memReqLat;
   SingleAvgSampler remoteInflyReq;
@@ -240,17 +266,6 @@ public:
     assert(syncIdx < MAX_SYNCS);
     this->pumCyclesBetweenSync.at(syncIdx).sample(cycles);
   }
-
-  /**
-   * A static map from StaticStreamId to Statistics.
-   * Used to aggregate stats of same static stream across the system.
-   */
-  static std::map<uint64_t, StreamStatistic> staticStats;
-  static StreamStatistic &getStaticStat(uint64_t staticStreamId);
-  /**
-   * Record the current cycle for aggregate stats across static streams.
-   */
-  uint64_t curCycle = 0;
 };
 
 } // namespace gem5

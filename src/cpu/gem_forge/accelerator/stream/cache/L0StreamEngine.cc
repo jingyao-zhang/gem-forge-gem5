@@ -42,8 +42,7 @@ void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
            "Only indirect stream can be one iteration behind.");
     this->offloadedStreams.emplace(
         streamConfigureData->dynamicId,
-        new L0DynStream(streamConfigureData->dynamicId,
-                            streamConfigureData));
+        new L0DynStream(streamConfigureData->dynamicId, streamConfigureData));
     for (const auto &edge : streamConfigureData->depEdges) {
       if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
         const auto &indirectStreamConfig = edge.data;
@@ -166,8 +165,10 @@ bool L0StreamEngine::shouldForward(PacketPtr pkt) {
 bool L0StreamEngine::mustServedByMLCSE(PacketPtr pkt) {
   auto memAccess = this->getStreamMemAccessFromPacket(pkt);
   auto S = memAccess->getStream();
-  // Only AtomicComputeStream and LoadComputeStream must be served by MLC_SE.
-  if (S->isAtomicComputeStream() || S->isLoadComputeStream()) {
+  // Three streams must be served by MLC_SE
+  // AtomicCompute/LoadCompute/UpdateStream
+  if (S->isAtomicComputeStream() || S->isLoadComputeStream() ||
+      S->isUpdateStream()) {
     return true;
   }
   return false;
@@ -181,4 +182,3 @@ L0StreamEngine::getStreamMemAccessFromPacket(PacketPtr pkt) const {
   return pkt->findNextSenderState<StreamMemAccess>();
 }
 } // namespace gem5
-

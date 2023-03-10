@@ -159,6 +159,7 @@ public:
                           const AffinePattern &pumTile, int elementBits,
                           int startWordline, int vBitlines);
 
+  static RangeMap *tryGetRangeMapByStartPAddr(Addr startPAddr);
   static RangeMap &getRangeMapByStartPAddr(Addr startPAddr);
   static RangeMap *getRangeMapContaining(Addr paddr);
 

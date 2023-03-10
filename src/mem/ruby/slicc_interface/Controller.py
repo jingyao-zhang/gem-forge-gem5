@@ -123,6 +123,8 @@ class RubyStreamAwareController(RubyController):
     stream_multicast_group_size = Param.UInt32(0, "MulticastGroup is Size x Size, 0 means all.")
     stream_multicast_issue_policy = \
         Param.String("any", "Multicast issue policy, default is the relaxed.")
+    ind_stream_max_inqueue_req = \
+        Param.UInt32(4, "Max ind req in msg buffer per stream.")
     ind_stream_req_max_per_multicast_msg = \
         Param.UInt32(0, "Max ind req per multicast msg, >= 2 to enable.")
     ind_stream_req_multicast_group_size = \
