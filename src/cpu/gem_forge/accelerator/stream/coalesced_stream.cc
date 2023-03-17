@@ -187,45 +187,73 @@ void Stream::selectPrimeLogicalStream() {
 }
 
 void Stream::fixInnerLoopBaseStreams() {
+
+  auto isBaseEdgeAdded = [](const StreamEdges &baseEdges,
+                            const ::LLVM::TDG::StreamId &baseStreamId,
+                            StreamDepEdge::TypeE type) -> bool {
+    for (const auto &baseEdge : baseEdges) {
+      if (baseEdge.type != type) {
+        continue;
+      }
+      if (baseEdge.toStaticId == baseStreamId.id()) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  auto addInnerLoopBaseStream =
+      [this, &isBaseEdgeAdded](const ::LLVM::TDG::StreamInfo &info,
+                               const ::LLVM::TDG::StreamId &baseStreamId,
+                               StreamDepEdge::TypeE type) -> void {
+    auto baseS = this->se->tryGetStream(baseStreamId.id());
+    if (!baseS) {
+      S_PANIC(this, "Failed to find BaseS %s.", baseStreamId.name());
+    }
+    auto isInnerLoopBaseS =
+        baseS->getLoopLevel() == this->getLoopLevel() + 1 &&
+        baseS->getConfigLoopLevel() == this->getConfigLoopLevel() + 1;
+
+    if (isInnerLoopBaseS) {
+      /**
+       * As a sanity check: the BaseS should be a nested inner-loop stream.
+       */
+      if (!baseS->isNestStream()) {
+        S_PANIC(this, "InnerLoopBaseS should be nested %s.",
+                baseS->getStreamName());
+      }
+      if (isBaseEdgeAdded(this->innerLoopBaseEdges, baseStreamId, type)) {
+        // Already added.
+        return;
+      }
+      // Add the base stream
+      assert(baseS != this && "Should never have circular dependency.");
+      this->addBaseStream(type, true /* isInnerLoop */, baseStreamId.id(),
+                          info.id(), baseS);
+    } else {
+      // Sanity check that this should never be added as normal base stream.
+      if (!isBaseEdgeAdded(this->baseEdges, baseStreamId, type)) {
+        S_PANIC(this, "Missing NormalBaseS %s.", baseS->getStreamName());
+      }
+    }
+  };
+
   for (auto LS : this->logicals) {
     const auto &info = LS->info;
     // Update the address dependence information.
     for (const auto &baseStreamId : info.chosen_base_streams()) {
+      addInnerLoopBaseStream(info, baseStreamId, StreamDepEdge::TypeE::Addr);
+    }
 
-      bool alreadyAdded = false;
-      for (const auto &baseEdge : this->baseEdges) {
-        if (baseEdge.type != StreamDepEdge::TypeE::Addr) {
-          continue;
-        }
-        if (baseEdge.toStaticId == baseStreamId.id()) {
-          alreadyAdded = true;
-          break;
-        }
-      }
-      if (alreadyAdded) {
-        continue;
-      }
+    // Update the value base dependence information.
+    for (const auto &baseStreamId :
+         info.static_info().compute_info().value_base_streams()) {
+      addInnerLoopBaseStream(info, baseStreamId, StreamDepEdge::TypeE::Value);
+    }
 
-      auto baseS = this->se->tryGetStream(baseStreamId.id());
-      if (!baseS) {
-        S_PANIC(this, "Failed to find BaseStream %s.", baseStreamId.name());
-      }
-      /**
-       * As a sanity check: the BaseS should be a nested inner-loop stream.
-       */
-      if (baseS->getLoopLevel() != this->getLoopLevel() + 1 ||
-          baseS->getConfigLoopLevel() != this->getConfigLoopLevel() + 1) {
-        S_PANIC(this, "This is not InnerLoopBaseStream %s.",
-                baseS->getStreamName());
-      }
-      if (!baseS->isNestStream()) {
-        S_PANIC(this, "InnerLoopBaseStream should be nested %s.",
-                baseS->getStreamName());
-      }
-
-      assert(baseS != this && "Should never have circular address dependency.");
-      this->addBaseStream(StreamDepEdge::TypeE::Addr, true /* isInnerLoop */,
-                          baseStreamId.id(), info.id(), baseS);
+    // Update the back base dependence information.
+    for (const auto &baseStreamId : info.chosen_back_base_streams()) {
+      addInnerLoopBaseStream(info, baseStreamId, StreamDepEdge::TypeE::Back);
     }
   }
 }
@@ -239,7 +267,10 @@ void Stream::initializeBaseStreams() {
       if (auto baseS = this->se->tryGetStream(baseId.id())) {
         assert(baseS != this &&
                "Should never have circular address dependency.");
-        this->addBaseStream(StreamDepEdge::TypeE::Addr, false /* isInnerLoop */,
+        // BaseS may not select PrimeLogicalStream yet.
+        auto isInnerLoop =
+            baseS->logicals.front()->getConfigLoopLevel() > loopLevel;
+        this->addBaseStream(StreamDepEdge::TypeE::Addr, isInnerLoop,
                             baseId.id(), info.id(), baseS);
       }
     }
@@ -247,16 +278,20 @@ void Stream::initializeBaseStreams() {
     // Update the value dependence information.
     for (const auto &baseId :
          info.static_info().compute_info().value_base_streams()) {
-      auto baseS = this->se->getStream(baseId.id());
-      if (baseS == this) {
-        if (!this->getEnabledLoadFunc()) {
-          // LoadCompute may depend on other LogicalStreams.
-          S_PANIC(this, "Circular value dependence found.");
+      if (auto baseS = this->se->tryGetStream(baseId.id())) {
+        // It may be an inner loop stream that is not configured yet.
+        if (baseS == this) {
+          if (!this->getEnabledLoadFunc()) {
+            // LoadCompute may depend on other LogicalStreams.
+            S_PANIC(this, "Circular value dependence found.");
+          }
+        } else {
+          // BaseS may not select PrimeLogicalStream yet.
+          auto isInnerLoop =
+              baseS->logicals.front()->getConfigLoopLevel() > loopLevel;
+          this->addBaseStream(StreamDepEdge::TypeE::Value, isInnerLoop,
+                              baseId.id(), info.id(), baseS);
         }
-      } else {
-        this->addBaseStream(StreamDepEdge::TypeE::Value,
-                            false /* isInnerLoop */, baseId.id(), info.id(),
-                            baseS);
       }
     }
 
@@ -268,9 +303,17 @@ void Stream::initializeBaseStreams() {
         S_PANIC(this,
                 "More than one logical stream has back edge dependence.\n");
       }
-      auto baseS = this->se->getStream(baseId.id());
-      this->addBaseStream(StreamDepEdge::TypeE::Back, false /* isInnerLoop */,
-                          baseId.id(), info.id(), baseS);
+      if (auto baseS = this->se->tryGetStream(baseId.id())) {
+        // It may be an inner loop stream that is not configured yet.
+        assert(baseS != this &&
+               "Should never have circular address dependency.");
+
+        // BaseS may not select PrimeLogicalStream yet.
+        auto isInnerLoop =
+            baseS->logicals.front()->getConfigLoopLevel() > loopLevel;
+        this->addBaseStream(StreamDepEdge::TypeE::Back, isInnerLoop,
+                            baseId.id(), info.id(), baseS);
+      }
     }
 
     // Update the predicate information.
@@ -478,4 +521,3 @@ bool Stream::tryGetCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
   return false;
 }
 } // namespace gem5
-

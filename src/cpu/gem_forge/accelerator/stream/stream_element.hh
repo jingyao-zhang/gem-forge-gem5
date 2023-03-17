@@ -26,7 +26,7 @@ struct CacheBlockBreakdownAccess {
   // Which cache block this access belongs to.
   uint64_t cacheBlockVAddr = 0;
   // The actual virtual address.
-  uint64_t virtualAddr = 0;
+  uint64_t vaddr = 0;
   // The actual size.
   uint8_t size = 0;
   // The StreamMemAccess that's inorder to bring the data.
@@ -48,7 +48,7 @@ struct CacheBlockBreakdownAccess {
   void clear() {
     this->state = CacheBlockBreakdownAccess::StateE::None;
     this->cacheBlockVAddr = 0;
-    this->virtualAddr = 0;
+    this->vaddr = 0;
     this->size = 0;
     this->memAccess = nullptr;
   }
@@ -151,9 +151,9 @@ public:
 
 struct StreamElement {
   using StaticId = DynStreamId::StaticId;
-  struct BaseElement {
+  struct ElementEdge {
     /**
-     * A BaseElement can start with Uninitialized state,
+     * An ElementEdge can start with Uninitialized state,
      * which means the element == nullptr. This is used to implement
      * InnerLoop dependence.
      * After initialized, we can check if the BaseElement is still valid,
@@ -165,7 +165,7 @@ struct StreamElement {
     bool initialized() const { return this->element != nullptr; }
 
   public:
-    BaseElement(StreamElement *_element)
+    ElementEdge(StreamElement *_element)
         : element(_element), idx(_element->FIFOIdx) {
       assert(this->element->stream && "This is element has not allocated.");
     }
@@ -181,9 +181,11 @@ struct StreamElement {
       return this->idx;
     }
   };
-  std::vector<BaseElement> addrBaseElements;
-  std::vector<BaseElement> valueBaseElements;
-  bool hasUnInitInnerLoopAddrBaseElements = false;
+  std::vector<ElementEdge> addrBaseElements;
+  std::vector<ElementEdge> valueBaseElements;
+  std::vector<ElementEdge> innerLoopDepElements;
+  bool hasUnInitInnerLoopAddrBaseElem = false;
+  bool hasUnInitInnerLoopValueBaseElem = false;
 
   bool checkAddrBaseElementsReady(bool checkByCore);
 
@@ -247,6 +249,7 @@ struct StreamElement {
   void setValue(StreamElement *prevElement);
   void setValue(Addr vaddr, int size, const uint8_t *val);
   void getValue(Addr vaddr, int size, uint8_t *val) const;
+  const uint8_t *getValuePtr(Addr vaddr, int size) const;
   void getValueByStreamId(StaticId streamId, uint8_t *val, int valLen) const;
   const uint8_t *getValuePtrByStreamId(StaticId streamId) const;
   uint64_t mapVAddrToValueOffset(Addr vaddr, int size) const;
@@ -269,7 +272,7 @@ struct StreamElement {
    * Check if value is ready, will set FirstCheckCycle.
    */
   bool checkValueReady(bool checkedByCore) const;
-  bool checkValueBaseElemsValueReady() const;
+  bool checkValueBaseElemsValueReady();
   bool scheduledComputation = false;
 
   // Store the infly writeback memory accesses.

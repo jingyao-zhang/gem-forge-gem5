@@ -149,6 +149,7 @@ public:
   }
   int64_t getInnerTripCount() const { return this->innerTripCount; }
   bool isInnerLastElem(uint64_t elemIdx) const;
+  bool isLastElem(uint64_t elemIdx) const;
   void setTotalTripCount(int64_t totalTripCount);
 
 private:
@@ -282,7 +283,7 @@ public:
                            const StreamValue &value);
   void tryComputeNextDirectReduceElem(LLCStreamEngine *se,
                                       const LLCStreamElementPtr &elem);
-  void completeFinalReduction(LLCStreamEngine *se);
+  void completeFinalReduce(LLCStreamEngine *se);
 
   int getMaxInflyRequests() const { return this->maxInflyRequests; }
 
@@ -343,7 +344,7 @@ private:
 
   // This is really just used for memorizing in IndirectStream.
   uint64_t numElemsReadyToIssue = 0;
-  uint64_t numIndirectElementsReadyToIssue = 0;
+  uint64_t numDepIndElemsReadyToIssue = 0;
   uint64_t nextAllocElemIdx = 0;
   uint64_t nextIssueElemIdx = 0;
 
@@ -364,7 +365,7 @@ public:
   // Remember the last reduction element, avoid auto releasing.
   LLCStreamElementPtr lastReductionElement = nullptr;
   // Remember the last really computed indirect reduction element.
-  uint64_t lastComputedReductionElemIdx = 0;
+  uint64_t lastComputedReduceElemIdx = 0;
 
   std::vector<CacheStreamConfigureData::DepEdge> sendToEdges;
   std::vector<CacheStreamConfigureData::DepEdge> sendToPUMEdges;
@@ -482,7 +483,7 @@ public:
   bool isElemReleased(uint64_t elementIdx) const;
   void registerElemPostReleaseCallback(uint64_t elementIdx,
                                        ElementCallback callback);
-  uint64_t getNextUnreleasedElementIdx() const;
+  uint64_t getNextUnreleasedElemIdx() const;
   LLCStreamElementPtr getElem(uint64_t elementIdx) const;
   LLCStreamElementPtr getElemPanic(uint64_t elementIdx,
                                    const char *errMsg = nullptr) const;
@@ -563,11 +564,11 @@ public:
   void markElemIssued(uint64_t elemIdx);
   bool hasElemReadyToIssue() const { return this->numElemsReadyToIssue > 0; }
   size_t getNumElemReadyToIssue() const { return this->numElemsReadyToIssue; }
-  bool hasIndirectElemReadyToIssue() const {
-    return this->numIndirectElementsReadyToIssue > 0;
+  bool hasDepIndElemReadyToIssue() const {
+    return this->numDepIndElemsReadyToIssue > 0;
   }
-  size_t getNumIndirectElemReadyToIssue() const {
-    return this->numIndirectElementsReadyToIssue;
+  size_t getNumDepIndElemReadyToIssue() const {
+    return this->numDepIndElemsReadyToIssue;
   }
 
   /**
@@ -613,6 +614,8 @@ public:
    */
   bool isLoadBalanceValve() const { return this->loadBalanceValve; }
   void setLoadBalanceValve() { this->loadBalanceValve = true; }
+
+  void sample();
 
 private:
   bool loadBalanceValve = false;

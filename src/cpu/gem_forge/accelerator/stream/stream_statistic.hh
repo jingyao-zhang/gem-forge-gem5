@@ -28,11 +28,6 @@ public:
 
   StreamStatistic(uint64_t _staticStreamId) : staticStreamId(_staticStreamId) {}
 
-  /**
-   * Record the current cycle for aggregate stats across static streams.
-   */
-  uint64_t curCycle = 0;
-
   struct SingleAvgSampler {
     size_t samples = 0;
     size_t value = 0;
@@ -97,8 +92,6 @@ public:
   size_t numLLCFaultSlice = 0;
   size_t numLLCPredYSlice = 0;
   size_t numLLCPredNSlice = 0;
-  size_t numLLCAliveElements = 0;
-  size_t numLLCAliveElementSamples = 0;
   size_t numRemoteMulticastSlice = 0;
 
   // Strand statistics.
@@ -136,8 +129,9 @@ public:
   SingleAvgSampler remoteIssueToValueReadyCycle;
   struct LLCElementSample {
     size_t firstCheckCycle = 0;
+    size_t readyToIssueCycle = 0;
+    size_t issueCycle = 0;
     size_t valueReadyCycle = 0;
-    size_t reqIssueCycle = 0;
   };
   void sampleLLCElement(const LLCElementSample &s);
 
@@ -170,6 +164,9 @@ public:
   }
   static void dumpSrcDest(const SrcDestStatsT &stats, std::ostream &os);
   SrcDestStatsT numLLCSendTo;
+  // Traffic pair from Remote to Local
+  SrcDestStatsT remoteToLocalMsg;
+
   SrcDestStatsT numRemoteNestConfig;
   void sampleLLCSendTo(int from, int to) {
     sampleSrcDest(this->numLLCSendTo, from, to);
@@ -179,13 +176,6 @@ public:
     sampleSrcDest(this->numRemoteNestConfig, from, to);
     sampleSrcDest(getStaticStat(this->staticStreamId).numRemoteNestConfig, from,
                   to);
-  }
-
-  size_t numLLCInflyComputationSample = 0;
-  size_t numLLCInflyComputation = 0;
-  void sampleLLCInflyComputation(int inflyComputation) {
-    this->numLLCInflyComputationSample++;
-    this->numLLCInflyComputation += inflyComputation;
   }
 
   // Ideal stream data traffic.
@@ -220,28 +210,12 @@ public:
     this->llcIssueReasons.at(reason)++;
   }
 
-  void sampleLLCAliveElements(size_t numAliveElems) {
-    this->numLLCAliveElements += numAliveElems;
-    this->numLLCAliveElementSamples++;
-  }
-
-  static void sampleStaticLLCAliveElements(uint64_t curCycle,
-                                           uint64_t staticStreamId,
-                                           size_t numAliveElems) {
-
-    auto &staticStats = getStaticStat(staticStreamId);
-    assert(staticStats.curCycle <= curCycle);
-    staticStats.numLLCAliveElements += numAliveElems;
-    if (staticStats.curCycle != curCycle) {
-      staticStats.curCycle = curCycle;
-      staticStats.numLLCAliveElementSamples++;
-    }
-  }
-
   void dump(std::ostream &os) const;
   void clear();
 
   SingleAvgSampler remoteForwardNoCDelay;
+  // Delay from ready to issue.
+  SingleAvgSampler remoteReadyToIssueDelay;
   // Delay from issuing element to message creation.
   SingleAvgSampler remoteIssueToReqGenDelay;
   // Delay from message creation to arriving at indirect bank.
@@ -252,9 +226,32 @@ public:
   SingleAvgSampler remoteIndReqMsgBufInjectDelay;
   // Delay from message creation to NoC injection.
   SingleAvgSampler remoteIndReqNoCInjectDelay;
+  // Delay from message creation to received at MLC for StreamAck.
+  SingleAvgSampler remoteToLocalAckNoCDelay;
   SingleAvgSampler llcReqLat;
   SingleAvgSampler memReqLat;
+  // Sample local allocated slices.
+  SingleAvgSampler localAliveSlice;
+  // Sample local alive slice but credit not sent yet.
+  SingleAvgSampler localCreditNotSentSlice;
+  // Sample local alive slice and credit sent
+  SingleAvgSampler localCreditSentSlice;
+  // Sample local alive slice in different core status.
+  SingleAvgSampler localWaitAckSlice;
+  SingleAvgSampler localWaitDataSlice;
+  SingleAvgSampler localAckReadySlice;
+  SingleAvgSampler localDoneSlice;
+  // Sample remote alive elem.
+  SingleAvgSampler remoteAliveElem;
+  // Sample remote element in different state.
+  SingleAvgSampler remoteInitializedElem;
+  SingleAvgSampler remoteReadyToIssueElem;
+  SingleAvgSampler remoteIssuedElem;
+  SingleAvgSampler remotePredicatedOffElem;
+  // Sampled remote infly request.
   SingleAvgSampler remoteInflyReq;
+  // Sampled remote infly computation.
+  SingleAvgSampler remoteInflyCmp;
 
   /**
    * Collect the cycles between PUM sync.

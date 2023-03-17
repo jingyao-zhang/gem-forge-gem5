@@ -199,6 +199,9 @@ parser.add_argument("--gem-forge-stream-engine-llc-multicast-issue-policy", type
 parser.add_argument("--gem-forge-stream-engine-mlc-stream-buffer-init-num-entries", action="store",
                   type=int, default="32",
                   help="# MLC slices allocated per stream.")
+parser.add_argument("--gem-forge-stream-engine-mlc-ind-stream-buffer-init-num-entries", action="store",
+                  type=int, default="1",
+                  help="# MLC slices allocated for streams with indirect stream.")
 parser.add_argument("--gem-forge-stream-engine-mlc-stream-runahead-slice-inverse-ratio",
                   action="store", type=int, default="1",
                   help="Ratio of MLC runahead slices per stream (slices / ratio).")

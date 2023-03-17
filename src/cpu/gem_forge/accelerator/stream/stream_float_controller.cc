@@ -75,6 +75,8 @@ void StreamFloatController::floatStreams(
   this->floatIndirectReductionStreams(floatArgs);
   SE_DPRINTF(">>> Consider Float MultiLevelIndirectStoreComputeStreams.\n");
   this->floatMultiLevelIndirectStoreComputeStreams(floatArgs);
+  SE_DPRINTF(">>> Decide MLCBufferNumSlices.\n");
+  this->decideMLCBufferNumSlices(floatArgs);
 
   if (cacheStreamConfigVec->empty()) {
     delete cacheStreamConfigVec;
@@ -84,7 +86,7 @@ void StreamFloatController::floatStreams(
   this->policy->setFloatPlans(floatArgs.dynStreams, floatArgs.floatedMap,
                               floatArgs.rootConfigVec);
 
-  this->setLoopBoundFirstOffloadedElementIdx(floatArgs);
+  this->setLoopBoundFirstOffloadedElemIdx(floatArgs);
   this->propagateFloatPlan(floatArgs);
 
   /**
@@ -504,6 +506,18 @@ int StreamFloatController::getFloatChainDepth(
     }
   }
   return 0;
+}
+
+int StreamFloatController::getFloatChainChildrenSize(
+    const CacheStreamConfigureData &config) const {
+
+  auto numChildren = 0;
+  for (const auto &depEdge : config.depEdges) {
+    if (depEdge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
+      numChildren += this->getFloatChainChildrenSize(*depEdge.data) + 1;
+    }
+  }
+  return numChildren;
 }
 
 CacheStreamConfigureDataPtr StreamFloatController::getFloatRootConfig(
@@ -1415,7 +1429,37 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
   SE_DPRINTF("[LoopBound] Offloaded LoopBound for %s.\n", args.region.region());
 }
 
-void StreamFloatController::setLoopBoundFirstOffloadedElementIdx(
+void StreamFloatController::decideMLCBufferNumSlices(const Args &args) {
+  for (auto &config : args.rootConfigVec) {
+    auto S = config->stream;
+    auto dynS = S->getDynStream(config->dynamicId);
+
+    config->mlcBufferNumSlices =
+        this->se->myParams->mlc_stream_buffer_init_num_entries;
+    if (this->se->myParams->mlc_stream_buffer_init_num_entries == 0) {
+      config->mlcBufferNumSlices = std::min(S->maxSize, 32ul);
+    }
+
+    /**
+     * We observe that allowing too many credits for streams with indirect
+     * streams is bad for performance. Here we limit that if it contains
+     * more than 2 indirect streams.
+     */
+    auto numChildren = this->getFloatChainChildrenSize(*config);
+    if (numChildren > 2) {
+      config->mlcBufferNumSlices =
+          this->se->myParams->mlc_ind_stream_buffer_init_num_entries;
+    }
+
+    StreamFloatPolicy::logS(*dynS) << "[MLCBuffer] MLCBufferNumSlices "
+                                   << config->mlcBufferNumSlices << ".\n"
+                                   << std::flush;
+    DYN_S_DPRINTF(dynS->dynStreamId, "[MLCBuffer] MLCBufferNumSlices %llu.\n",
+                  config->mlcBufferNumSlices);
+  }
+}
+
+void StreamFloatController::setLoopBoundFirstOffloadedElemIdx(
     const Args &args) {
   /**
    * Just take FirstFloatElemIdx from the FloatPlan of stream.

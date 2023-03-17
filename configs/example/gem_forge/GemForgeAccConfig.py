@@ -67,6 +67,8 @@ def initializeStreamEngine(args):
         assert(args.gem_forge_stream_engine_enable_float_indirect)
     se.mlc_stream_buffer_init_num_entries = \
         args.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries
+    se.mlc_ind_stream_buffer_init_num_entries = \
+        args.gem_forge_stream_engine_mlc_ind_stream_buffer_init_num_entries
 
     se.streamEngineEnableMidwayFloat = \
         args.gem_forge_stream_engine_enable_midway_float

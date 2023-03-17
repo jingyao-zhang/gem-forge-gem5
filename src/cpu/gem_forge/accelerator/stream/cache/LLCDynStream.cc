@@ -171,6 +171,13 @@ bool LLCDynStream::isInnerLastElem(uint64_t elemIdx) const {
   return (elemIdx % this->getInnerTripCount()) == 0;
 }
 
+bool LLCDynStream::isLastElem(uint64_t elemIdx) const {
+  if (!this->hasTotalTripCount()) {
+    return false;
+  }
+  return elemIdx == this->getTotalTripCount();
+}
+
 bool LLCDynStream::shouldSendValueToCore() const {
   auto dynCoreS = this->getCoreDynS();
   return dynCoreS && dynCoreS->shouldCoreSEIssue();
@@ -737,7 +744,7 @@ void LLCDynStream::initNextElem(Addr vaddr) {
           firstStreamElemIdx, 0, size, false /* isNDCElement */);
       this->lastReductionElement->setValue(
           this->configData->reductionInitValue);
-      this->lastComputedReductionElemIdx = firstStreamElemIdx;
+      this->lastComputedReduceElemIdx = firstStreamElemIdx;
 
       // Also add the first element to the map.
       this->idxToElementMap.emplace(firstStreamElemIdx,
@@ -863,7 +870,7 @@ bool LLCDynStream::isElemReleased(uint64_t elementIdx) const {
   return this->idxToElementMap.begin()->first > elementIdx;
 }
 
-uint64_t LLCDynStream::getNextUnreleasedElementIdx() const {
+uint64_t LLCDynStream::getNextUnreleasedElemIdx() const {
   return this->idxToElementMap.empty() ? this->getNextInitElementIdx()
                                        : this->idxToElementMap.begin()->first;
 }
@@ -1570,43 +1577,43 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
       LLC_S_DPRINTF_(LLCRubyStreamReduce, this->getDynStrandId(),
                      "[IndirectReduce] Start real computation from "
                      "LastComputedElem %llu.\n",
-                     this->lastComputedReductionElemIdx);
-      while (this->lastComputedReductionElemIdx < this->getTotalTripCount()) {
-        auto nextComputingElementIdx = this->lastComputedReductionElemIdx + 1;
-        auto nextComputingElement = this->getElem(nextComputingElementIdx);
-        if (!nextComputingElement) {
+                     this->lastComputedReduceElemIdx);
+      while (this->lastComputedReduceElemIdx < this->getTotalTripCount()) {
+        auto nextComputingElemIdx = this->lastComputedReduceElemIdx + 1;
+        auto nextComputingElem = this->getElem(nextComputingElemIdx);
+        if (!nextComputingElem) {
           LLC_S_DPRINTF_(
               LLCRubyStreamReduce, this->getDynStrandId(),
               "[IndirectReduce] Missing NextComputingElem %llu. Break.\n",
-              nextComputingElementIdx);
+              nextComputingElemIdx);
           break;
         }
-        if (!nextComputingElement->isComputationDone()) {
+        if (!nextComputingElem->isComputationDone()) {
           LLC_S_DPRINTF_(
               LLCRubyStreamReduce, this->getDynStrandId(),
               "[IndirectReduce] NextComputingElem %llu not done. Break.\n",
-              nextComputingElementIdx);
+              nextComputingElemIdx);
           break;
         }
         // Really do the computation.
         LLC_S_DPRINTF_(
             LLCRubyStreamReduce, this->getDynStrandId(),
             "[IndirectReduce] Really computed NextComputingElem %llu.\n",
-            nextComputingElementIdx);
-        auto result = this->computeElemValue(nextComputingElement);
-        nextComputingElement->setValue(result);
-        this->lastComputedReductionElemIdx++;
+            nextComputingElemIdx);
+        auto result = this->computeElemValue(nextComputingElem);
+        nextComputingElem->setValue(result);
+        this->lastComputedReduceElemIdx++;
       }
     } else {
       /**
        * If this is DirectReductionStream, check and schedule the next
        * element.
        */
-      if (this->lastComputedReductionElemIdx + 1 != elem->idx) {
+      if (this->lastComputedReduceElemIdx + 1 != elem->idx) {
         LLC_S_PANIC(this->getDynStrandId(),
                     "[DirectReduce] Reduction not in order.\n");
       }
-      this->lastComputedReductionElemIdx++;
+      this->lastComputedReduceElemIdx++;
 
       // Trigger indirect elements.
       se->triggerIndElems(this, elem);
@@ -1616,8 +1623,9 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
     /**
      * If the last reduction element is ready, we send this back to the core.
      */
-    if (this->isInnerLastElem(this->lastComputedReductionElemIdx)) {
-      this->completeFinalReduction(se);
+    if (this->isInnerLastElem(this->lastComputedReduceElemIdx) ||
+        this->isLastElem(this->lastComputedReduceElemIdx)) {
+      this->completeFinalReduce(se);
     }
 
     /**
@@ -1688,19 +1696,19 @@ void LLCDynStream::tryComputeNextDirectReduceElem(
   }
 }
 
-void LLCDynStream::completeFinalReduction(LLCStreamEngine *se) {
+void LLCDynStream::completeFinalReduce(LLCStreamEngine *se) {
 
   // This is the last reduction of one inner loop.
   auto S = this->getStaticS();
-  auto finalReductionElem = this->getElemPanic(
-      this->lastComputedReductionElemIdx, "Return FinalReductionValue.");
+  auto finalReductionElem = this->getElemPanic(this->lastComputedReduceElemIdx,
+                                               "Return FinalReductionValue.");
 
   DynStreamSliceId sliceId;
   sliceId.vaddr = 0;
   sliceId.size = finalReductionElem->size;
   sliceId.getDynStrandId() = this->getDynStrandId();
-  sliceId.getStartIdx() = this->lastComputedReductionElemIdx;
-  sliceId.getEndIdx() = this->lastComputedReductionElemIdx + 1;
+  sliceId.getStartIdx() = this->lastComputedReduceElemIdx;
+  sliceId.getEndIdx() = this->lastComputedReduceElemIdx + 1;
   auto finalReductionValue =
       finalReductionElem->getValueByStreamId(S->staticId);
 
@@ -1813,12 +1821,12 @@ void LLCDynStream::markElemReadyToIssue(uint64_t elemIdx) {
   LLC_ELEMENT_DPRINTF(elem, "Generate indirect vaddr %#x, size %d.\n",
                       elemVAddr, this->getMemElementSize());
   elem->vaddr = elemVAddr;
-  elem->setState(LLCStreamElement::State::READY_TO_ISSUE);
+  elem->setStateToReadyToIssue(this->mlcController->curCycle());
 
   this->numElemsReadyToIssue++;
   // Increment the counter in the root stream.
   if (this->rootStream) {
-    this->rootStream->numIndirectElementsReadyToIssue++;
+    this->rootStream->numDepIndElemsReadyToIssue++;
   }
 }
 
@@ -1854,9 +1862,9 @@ void LLCDynStream::markElemIssued(uint64_t elemIdx) {
    */
   this->skipIssuingPredOffElems();
   if (this->rootStream) {
-    assert(this->rootStream->numIndirectElementsReadyToIssue > 0 &&
+    assert(this->rootStream->numDepIndElemsReadyToIssue > 0 &&
            "Underflow NumIndirectElementsReadyToIssue.");
-    this->rootStream->numIndirectElementsReadyToIssue--;
+    this->rootStream->numDepIndElemsReadyToIssue--;
   }
 }
 
@@ -2114,4 +2122,54 @@ LLCStreamElementPtr LLCDynStream::getElemPanic(uint64_t elemIdx,
   }
   return elem;
 }
+
+void LLCDynStream::sample() {
+
+  if (this->isTerminated() || !this->isRemoteConfigured()) {
+    // The dynS is not configured yet or already terminated.
+    return;
+  }
+
+  auto mlcSE = this->mlcController->getMLCStreamEngine();
+  assert(mlcSE);
+  if (auto mlcDynS = mlcSE->getStreamFromStrandId(this->getDynStrandId())) {
+    mlcDynS->sample();
+  }
+
+  auto S = this->getStaticS();
+  auto &statistic = S->statistic;
+  auto &staticStats = statistic.getStaticStat();
+
+  auto aliveElem = this->idxToElementMap.size();
+  std::array<int, LLCStreamElement::State::NUM_STATE> elemState = {0};
+
+  for (const auto &entry : this->idxToElementMap) {
+    elemState[entry.second->getState()]++;
+  }
+
+  // LLC alive elements.
+#define sample(sampler, v)                                                     \
+  statistic.sampler.sample(v);                                                 \
+  staticStats.sampler.sample(this->curCycle(), v);
+
+  sample(remoteAliveElem, aliveElem);
+  sample(remoteInitializedElem,
+         elemState[LLCStreamElement::State::INITIALIZED]);
+  sample(remoteReadyToIssueElem,
+         elemState[LLCStreamElement::State::READY_TO_ISSUE]);
+  sample(remoteIssuedElem, elemState[LLCStreamElement::State::ISSUED]);
+  sample(remotePredicatedOffElem,
+         elemState[LLCStreamElement::State::PREDICATED_OFF]);
+
+  sample(remoteInflyCmp, this->incompleteComputations);
+  sample(remoteInflyReq, this->inflyRequests);
+
+#undef sample
+
+  // Remote infly requests.
+  for (auto indS : this->getIndStreams()) {
+    indS->sample();
+  }
+}
+
 } // namespace gem5

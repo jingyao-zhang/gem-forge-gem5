@@ -25,7 +25,8 @@ public:
    * remote LLCDynStream sending here, we do not remember LLCDynStream
    * in the element, but just the DynStreamId and the StaticStream.
    */
-  LLCStreamElement(Stream *_S, ruby::AbstractStreamAwareController *_mlcController,
+  LLCStreamElement(Stream *_S,
+                   ruby::AbstractStreamAwareController *_mlcController,
                    const DynStrandId &_strandId, uint64_t _idx, Addr _vaddr,
                    int _size, bool _isNDCElement);
 
@@ -57,6 +58,9 @@ public:
       if (!baseElement->checkIsValueReady()) {
         allReady = false;
       }
+    }
+    if (allReady && this->firstBaseElemsReadyCycle == 0) {
+      this->firstBaseElemsReadyCycle = this->mlcController->curCycle();
     }
     return allReady;
   }
@@ -165,17 +169,26 @@ public:
    * IndirectStream.
    */
   enum State {
-    INITIALIZED,
+    INITIALIZED = 0,
     READY_TO_ISSUE,
     ISSUED,
     PREDICATED_OFF,
+    NUM_STATE
   };
 
   State getState() const { return this->state; }
   void setState(State state) { this->state = state; }
+  void setStateToReadyToIssue(Cycles readyToIssueCycle) {
+    this->state = State::READY_TO_ISSUE;
+    this->readyToIssueCycle = readyToIssueCycle;
+  }
   void setStateToIssued(Cycles issueCycle) {
     this->state = State::ISSUED;
-    this->reqIssueCycle = issueCycle;
+    this->issueCycle = issueCycle;
+  }
+  void setStateToPredicatedOff() {
+    this->state = State::PREDICATED_OFF;
+    this->predicatedCycle = this->mlcController->curCycle();
   }
   void setLLCSE(LLCStreamEngine *llcSE) { this->llcSE = llcSE; }
   LLCStreamEngine *getLLCSE() const { return this->llcSE; }
@@ -230,8 +243,11 @@ private:
   std::array<uint64_t, MAX_SIZE> value;
 
   mutable Cycles firstCheckCycle = Cycles(0);
+  mutable Cycles firstBaseElemsReadyCycle = Cycles(0);
   mutable Cycles valueReadyCycle = Cycles(0);
-  mutable Cycles reqIssueCycle = Cycles(0);
+  mutable Cycles readyToIssueCycle = Cycles(0);
+  mutable Cycles issueCycle = Cycles(0);
+  mutable Cycles predicatedCycle = Cycles(0);
 
   static constexpr int MAX_SLICES_PER_ELEMENT = 3;
   std::array<LLCStreamSlicePtr, MAX_SLICES_PER_ELEMENT> slices;

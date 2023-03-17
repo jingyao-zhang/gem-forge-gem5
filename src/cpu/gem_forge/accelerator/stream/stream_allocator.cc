@@ -185,6 +185,11 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
           // ! So far ignore this dependence.
           continue;
         }
+        if (backBaseS->getConfigLoopLevel() !=
+            stepRootStream->getConfigLoopLevel()) {
+          // This is actually a InnerLoopBaseS.
+          continue;
+        }
         if (backBaseS->getAllocSize() < maxAllocSize) {
           // The back base stream is lagging behind.
           // Reduce the maxAllocSize.
@@ -197,9 +202,13 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
      * Limit the maxAllocSize with totalTripCount to avoid allocation beyond
      * StreamEnd. Condition: maxAllocSize > allocSize: originally we are trying
      * to allocate more.
-     * ! We allow (TripCount + 1) elements as StreamEnd would consume one
-     * ! element. The only exception is when TripCount is 0 -- In such case
-     * ! we won't allocate any element and SteamEnd would consume no one.
+     *
+     * We allow (TripCount + 1) elements as StreamEnd would consume one
+     * element, with exception:
+     * 1. TripCount is 0.
+     *
+     * In such case we won't allocate last element and SteamEnd would consume
+     * no one.
      */
     {
       auto allocSize = allocatingStepRootDynS->allocSize;
@@ -218,6 +227,11 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
             if (backBaseS->stepRootStream == nullptr) {
               // ! THis is actually a constant load.
               // ! So far ignore this dependence.
+              continue;
+            }
+            if (backBaseS->getConfigLoopLevel() !=
+                stepRootStream->getConfigLoopLevel()) {
+              // This is actually a InnerLoopBaseS.
               continue;
             }
             const auto &backBaseDynS =
@@ -329,4 +343,3 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
   }
 }
 } // namespace gem5
-

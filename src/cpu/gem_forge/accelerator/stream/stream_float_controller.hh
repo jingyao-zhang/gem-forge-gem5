@@ -79,6 +79,11 @@ private:
   int getFloatChainDepth(const CacheStreamConfigureData &config) const;
 
   /**
+   * Calculate the float chain size from this config.
+   */
+  int getFloatChainChildrenSize(const CacheStreamConfigureData &config) const;
+
+  /**
    * Get the FloatChainRoot stream (with depth 0).
    */
   CacheStreamConfigureDataPtr
@@ -100,6 +105,11 @@ private:
    * configuration.
    */
   void floatEliminatedLoop(const Args &args);
+
+  /**
+   * Set the number of slices allocated at the MLC stream engine.
+   */
+  void decideMLCBufferNumSlices(const Args &args);
 
   /**
    * For now we can rewind a floated stream that write to memory (Store/Atomic
@@ -126,7 +136,7 @@ private:
   /**
    * Determine the FirstOffloadedElementIdx for LoopBound.
    */
-  void setLoopBoundFirstOffloadedElementIdx(const Args &args);
+  void setLoopBoundFirstOffloadedElemIdx(const Args &args);
 
   /**
    * Propagate FloatPlan to ConfigureData.

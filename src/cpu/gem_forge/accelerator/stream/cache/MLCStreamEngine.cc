@@ -29,9 +29,10 @@
 
 namespace gem5 {
 
-MLCStreamEngine::MLCStreamEngine(ruby::AbstractStreamAwareController *_controller,
-                                 ruby::MessageBuffer *_responseToUpperMsgBuffer,
-                                 ruby::MessageBuffer *_requestToLLCMsgBuffer)
+MLCStreamEngine::MLCStreamEngine(
+    ruby::AbstractStreamAwareController *_controller,
+    ruby::MessageBuffer *_responseToUpperMsgBuffer,
+    ruby::MessageBuffer *_requestToLLCMsgBuffer)
     : ruby::Consumer(_controller), controller(_controller),
       responseToUpperMsgBuffer(_responseToUpperMsgBuffer),
       requestToLLCMsgBuffer(_requestToLLCMsgBuffer) {
@@ -74,9 +75,42 @@ void MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   delete endIds;
 }
 
+void MLCStreamEngine::recordStreamRespDelay(const ruby::ResponseMsg &msg) {
+  for (const auto &sliceId : msg.m_sliceIds.sliceIds) {
+    /**
+     * Due to multicast, it's possible we received sliceIds that
+     * do not belong to this core. We simply ignore those.
+     */
+    auto sliceCoreId = sliceId.getDynStreamId().coreId;
+    auto myCoreId = this->controller->getMachineID().getNum();
+    if (sliceCoreId != myCoreId) {
+      continue;
+    }
+    auto stream = this->getStreamFromStrandId(sliceId.getDynStrandId());
+    if (!stream) {
+      return;
+    }
+    auto &statistic = stream->getStaticStream()->statistic;
+    auto &staticStat = statistic.getStaticStat();
+
+    auto nocDelay = this->controller->curCycle() -
+                    this->controller->ticksToCycles(msg.getTime());
+
+    if (msg.m_isPUM) {
+
+    } else {
+      if (msg.m_Type == ruby::CoherenceResponseType_STREAM_ACK) {
+        statistic.remoteToLocalAckNoCDelay.sample(nocDelay);
+        staticStat.remoteToLocalAckNoCDelay.sample(nocDelay);
+      }
+    }
+  }
+}
+
 void MLCStreamEngine::receiveStreamData(const ruby::ResponseMsg &msg) {
 
   this->recordStreamCycle();
+  this->recordStreamRespDelay(msg);
 
   if (msg.m_Type == ruby::CoherenceResponseType_STREAM_NDC) {
     this->receiveStreamNDCResponse(msg);
@@ -429,11 +463,12 @@ void MLCStreamEngine::issueStreamDataToLLC(
     auto dstMachineId = this->controller->mapAddressToLLCOrMem(
         recvElemPAddrLine, recvElemMachineType);
 
-    auto msg = std::make_shared<ruby::RequestMsg>(this->controller->clockEdge());
+    auto msg =
+        std::make_shared<ruby::RequestMsg>(this->controller->clockEdge());
     msg->m_addr = recvElemPAddrLine;
     msg->m_Type = ruby::CoherenceRequestType_STREAM_FORWARD;
     msg->m_Requestors.add(ruby::MachineID(ruby::MachineType_L1Cache,
-                                    sliceId.getDynStreamId().coreId));
+                                          sliceId.getDynStreamId().coreId));
     msg->m_Destination.add(dstMachineId);
     msg->m_MessageSize = this->controller->getMessageSizeType(payloadSize);
     msg->m_sliceIds.add(sliceId);
@@ -454,4 +489,3 @@ void MLCStreamEngine::issueStreamDataToLLC(
 
 void MLCStreamEngine::print(std::ostream &out) const {}
 } // namespace gem5
-

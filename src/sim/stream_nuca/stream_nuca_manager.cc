@@ -405,6 +405,10 @@ void StreamNUCAManager::remapRegions(ThreadContext *tc,
       break;
     }
     case REMAP_PTR_CHASE: {
+      if (this->indirectRemapBoxBytes == 0) {
+        // Indirect remap is disabled.
+        break;
+      }
       this->remapPtrChaseRegion(tc, region);
       break;
     }
@@ -711,11 +715,10 @@ void StreamNUCAManager::computeIndirectHopsForOneElement(
     int64_t index = readField(indField.indOffset + i * indField.indStride,
                               indField.indSize);
     if (index < 0 || index >= alignToRegion.numElement) {
-      panic(
-          "[StreamNUCA] %s InvalidIndex Box %d-%d-%d Addr %#x/%#x %d not in %s "
-          "NumElement %d.",
-          region.name, boxIdx, elemIdx, i, boxVAddr, boxPAddr, index,
-          alignToRegion.name, alignToRegion.numElement);
+      panic("[StreamNUCA] %s InvalidIndex Box %d-%d-%d Addr %#x/%#x %d %dB not "
+            "in %s NumElem %d.",
+            region.name, boxIdx, elemIdx, i, boxVAddr, boxPAddr, index,
+            indField.indSize, alignToRegion.name, alignToRegion.numElement);
     }
     auto alignToVAddr = alignToRegion.vaddr + index * alignToRegion.elementSize;
     auto alignToPAddr = this->translate(alignToVAddr);

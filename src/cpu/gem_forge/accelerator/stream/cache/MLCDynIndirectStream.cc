@@ -14,7 +14,8 @@ namespace gem5 {
 MLCDynIndirectStream::MLCDynIndirectStream(
     CacheStreamConfigureDataPtr _configData,
     ruby::AbstractStreamAwareController *_controller,
-    ruby::MessageBuffer *_responseMsgBuffer, ruby::MessageBuffer *_requestToLLCMsgBuffer,
+    ruby::MessageBuffer *_responseMsgBuffer,
+    ruby::MessageBuffer *_requestToLLCMsgBuffer,
     const DynStreamId &_rootStreamId)
     : MLCDynStream(_configData, _controller, _responseMsgBuffer,
                    _requestToLLCMsgBuffer, false /* isMLCDirect */),
@@ -399,9 +400,9 @@ bool MLCDynIndirectStream::hasOverflowed() const {
          this->tailElementIdx > this->getTotalTripCount();
 }
 
-void MLCDynIndirectStream::setTotalTripCount(int64_t totalTripCount,
-                                             Addr brokenPAddr,
-                                             ruby::MachineType brokenMachineType) {
+void MLCDynIndirectStream::setTotalTripCount(
+    int64_t totalTripCount, Addr brokenPAddr,
+    ruby::MachineType brokenMachineType) {
   MLC_S_PANIC(this->getDynStrandId(), "Set TotalTripCount for IndirectS.");
 }
 
@@ -562,5 +563,8 @@ bool MLCDynIndirectStream::receiveFinalReductionValue(
                      "Notify final reduction elem %llu.\n", finalElemIdx);
 
   return true;
-}} // namespace gem5
+}
 
+void MLCDynIndirectStream::sample() const { MLCDynStream::sample(); }
+
+} // namespace gem5

@@ -280,7 +280,9 @@ void StreamElement::clear() {
 
   this->addrBaseElements.clear();
   this->valueBaseElements.clear();
-  this->hasUnInitInnerLoopAddrBaseElements = false;
+  this->innerLoopDepElements.clear();
+  this->hasUnInitInnerLoopAddrBaseElem = false;
+  this->hasUnInitInnerLoopValueBaseElem = false;
   this->next = nullptr;
   this->stream = nullptr;
   this->dynS = nullptr;
@@ -388,7 +390,7 @@ StreamMemAccess *StreamElement::allocateStreamMemAccess(
 
   auto memAccess = new StreamMemAccess(
       this->getStream(), this, cacheBlockBreakdown.cacheBlockVAddr,
-      cacheBlockBreakdown.virtualAddr, cacheBlockBreakdown.size);
+      cacheBlockBreakdown.vaddr, cacheBlockBreakdown.size);
 
   return memAccess;
 }
@@ -442,11 +444,11 @@ bool StreamElement::isFirstStoreDispatched() const {
 }
 
 bool StreamElement::checkAddrBaseElementsReady(bool checkByCore) {
-  if (this->hasUnInitInnerLoopAddrBaseElements) {
+  if (this->hasUnInitInnerLoopAddrBaseElem) {
     this->dynS->tryAddInnerLoopBaseElements(this);
   }
   S_ELEMENT_DPRINTF(this, "[AddrBaseReady] Check.\n");
-  if (this->hasUnInitInnerLoopAddrBaseElements) {
+  if (this->hasUnInitInnerLoopAddrBaseElem) {
     S_ELEMENT_DPRINTF(this, "[AddrBaseReady][InnerLoopDep] NotReady: "
                             "HasUnInitInnerLoopBaseElem.\n");
     return false;
@@ -758,7 +760,7 @@ void StreamElement::splitIntoCacheBlocks() {
     auto &newCacheBlockBreakdown =
         this->cacheBlockBreakdownAccesses[this->cacheBlocks];
     newCacheBlockBreakdown.cacheBlockVAddr = cacheBlockAddr;
-    newCacheBlockBreakdown.virtualAddr = currentAddr;
+    newCacheBlockBreakdown.vaddr = currentAddr;
     newCacheBlockBreakdown.size = currentSize;
     newCacheBlockBreakdown.state =
         CacheBlockBreakdownAccess::StateE::Initialized;
@@ -850,14 +852,20 @@ void StreamElement::setValue(Addr vaddr, int size, const uint8_t *val) {
 
 void StreamElement::getValue(Addr vaddr, int size, uint8_t *val) const {
   // Copy the data.
+  auto ptr = this->getValuePtr(vaddr, size);
+  for (int i = 0; i < size; ++i) {
+    val[i] = ptr[i];
+  }
+}
+
+const uint8_t *StreamElement::getValuePtr(Addr vaddr, int size) const {
+  // Copy the data.
   auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
   S_ELEMENT_DPRINTF(
       this, "GetValue [%#x, +%d), initOffset %d, data %s.\n", vaddr, size,
       initOffset,
       GemForgeUtils::dataToString(&this->value.at(initOffset), size));
-  for (int i = 0; i < size; ++i) {
-    val[i] = this->value.at(i + initOffset);
-  }
+  return this->value.data() + initOffset;
 }
 
 void StreamElement::getValueByStreamId(StaticId streamId, uint8_t *val,
@@ -1044,7 +1052,14 @@ void StreamElement::getLoadComputeValue(uint8_t *val, int valLen) const {
   }
 }
 
-bool StreamElement::checkValueBaseElemsValueReady() const {
+bool StreamElement::checkValueBaseElemsValueReady() {
+  if (this->hasUnInitInnerLoopValueBaseElem) {
+    this->dynS->tryAddInnerLoopBaseElements(this);
+  }
+  S_ELEMENT_DPRINTF(this, "[AddrBaseReady] Check.\n");
+  if (this->hasUnInitInnerLoopValueBaseElem) {
+    return false;
+  }
   /**
    * Special case for LastElement of:
    * 1. ReduceS or PtrChaseIndVarS.

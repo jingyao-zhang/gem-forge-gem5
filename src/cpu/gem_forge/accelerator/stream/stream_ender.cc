@@ -117,7 +117,7 @@ void StreamRegionController::dispatchStreamEndImpl(const EndArgs &args,
      * a. Stream with zero trip count.
      * b. LoopElimInCoreStoreCmpS.
      */
-    if (dynS.hasZeroTripCount() || dynS.isLoopElimInCoreStoreCmpS()) {
+    if (dynS.hasZeroTripCount()) {
       if (dynS.hasUnsteppedElem()) {
         S_ELEMENT_PANIC(dynS.getFirstUnsteppedElem(),
                         "Should not allocate last elem.");
@@ -210,7 +210,7 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
   for (auto S : staticRegion.streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
 
-    if (dynS.hasZeroTripCount() || dynS.isLoopElimInCoreStoreCmpS()) {
+    if (dynS.hasZeroTripCount()) {
       // Some streams do not have last element.
       continue;
     }
@@ -229,6 +229,42 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
             "[StreamEnd] NoCommit as less TripCount %llu + %llu < %llu.\n",
             endElemIdx, endElemOffset, dynS.getTotalTripCount());
         return false;
+      }
+    }
+
+    /**
+     * If we are InnerLoopBaseS, we need to ensure OuterLoopDepElem already
+     * got the value.
+     */
+    if (dynS.getNumInnerLoopDepS()) {
+      // We should not release.
+      S_ELEMENT_DPRINTF(endElem,
+                        "[StreamEnd] NoCommit as Unseen InnerDepElem %d.\n",
+                        dynS.getNumInnerLoopDepS());
+      return false;
+    }
+    for (const auto &innerLoopDepElem : endElem->innerLoopDepElements) {
+      if (innerLoopDepElem.isValid()) {
+        auto depElem = innerLoopDepElem.getElement();
+        if (depElem->stream->isMemStream()) {
+          if (depElem->shouldIssue() && !depElem->isReqIssued()) {
+            // We should not release.
+            S_ELEMENT_DPRINTF(
+                endElem,
+                "[StreamEnd] NoCommit as InnerDepElem not issued %s.\n",
+                depElem->FIFOIdx);
+            return false;
+          }
+        } else {
+          if (depElem->shouldComputeValue() &&
+              !depElem->isComputeValueReady()) {
+            S_ELEMENT_DPRINTF(
+                endElem,
+                "[StreamEnd] NoCommit as InnerDepElem not value ready %s.\n",
+                depElem->FIFOIdx);
+            return false;
+          }
+        }
       }
     }
 
@@ -338,7 +374,7 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
     this->se->removeIssuingDynS(&dynS);
 
     // Release in reverse order.
-    if (dynS.hasZeroTripCount() || dynS.isLoopElimInCoreStoreCmpS()) {
+    if (dynS.hasZeroTripCount()) {
       // Some streams do not have last element.
       continue;
     }
@@ -365,7 +401,7 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
     if (dynS.hasTotalTripCount()) {
       uint64_t endElemOffset =
           staticRegion.step.skipStepSecondLastElemStreams.count(S) ? 1 : 0;
-      if (dynS.hasZeroTripCount() || dynS.isLoopElimInCoreStoreCmpS()) {
+      if (dynS.hasZeroTripCount()) {
         if (dynS.FIFOIdx.entryIdx + endElemOffset != dynS.getTotalTripCount()) {
           DYN_S_PANIC(
               dynS.dynStreamId,

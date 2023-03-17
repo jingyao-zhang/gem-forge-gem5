@@ -247,7 +247,7 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynStreamPtr dynS,
       // This is only enforced when there is dependent streams.
       assert(dynS->inflyRequests == 0 && "Stream migrated with inflyRequests.");
     }
-    assert(!dynS->hasIndirectElemReadyToIssue() &&
+    assert(!dynS->hasDepIndElemReadyToIssue() &&
            "Stream migrated with readyIndirectElements.");
   }
 
@@ -476,10 +476,9 @@ void LLCStreamEngine::receiveStreamData(
   /**
    * Construct the ElementValue except for AtomicComputeS.
    * AtomicComputeS's value will be set in triggerAtomic.
-   * StoreComputeS's value will not be used, but we extract the value here to
-   * mark the elem valueReady so that we can track the latency.
+   * StoreComputeS's value will set when computed.
    */
-  if (!S->isAtomicComputeStream()) {
+  if (!S->isAtomicComputeStream() && !S->isStoreComputeStream()) {
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
       auto elem = dynS->getElemPanic(idx, "RecvElementData");
       if (elem->isReady()) {
@@ -624,22 +623,24 @@ void LLCStreamEngine::receiveStreamData(
     while (!dynS->idxToElementMap.empty()) {
       auto elemIter = dynS->idxToElementMap.begin();
       const auto &elem = elemIter->second;
-      if (!elem->areBaseElemsReady()) {
-        LLC_ELEMENT_DPRINTF(elem, "Cannot release AreBaseElementsReady %d.\n",
-                            elem->areBaseElemsReady());
-        break;
-      }
-      if (S->isStoreComputeStream()) {
-        if (!elem->isIndirectStoreAcked()) {
-          LLC_ELEMENT_DPRINTF(elem,
-                              "Cannot release IndirectStore not acked.\n");
+      if (!elem->isPredicatedOff()) {
+        if (!elem->areBaseElemsReady()) {
+          LLC_ELEMENT_DPRINTF(elem, "Cannot release AreBaseElementsReady %d.\n",
+                              elem->areBaseElemsReady());
           break;
         }
-      } else {
-        if (!elem->isReady()) {
-          LLC_ELEMENT_DPRINTF(elem, "Cannot release IsReady %d.\n",
-                              elem->isReady());
-          break;
+        if (S->isStoreComputeStream()) {
+          if (!elem->isIndirectStoreAcked()) {
+            LLC_ELEMENT_DPRINTF(elem,
+                                "Cannot release IndirectStore not acked.\n");
+            break;
+          }
+        } else {
+          if (!elem->isReady()) {
+            LLC_ELEMENT_DPRINTF(elem,
+                                "Cannot release NotReady & NotPredOff.\n");
+            break;
+          }
         }
       }
       dynS->eraseElem(elemIter);
@@ -804,11 +805,11 @@ bool LLCStreamEngine::canMigrateStream(LLCDynStream *dynS) const {
         return false;
       }
     }
-    if (dynS->hasIndirectElemReadyToIssue()) {
+    if (dynS->hasDepIndElemReadyToIssue()) {
       // We are still waiting for some indirect streams to be issued.
       LLC_S_DPRINTF(dynS->getDynStrandId(),
                     "[Delay Migrate] ReadyIndirectElements %llu.\n",
-                    dynS->getNumIndirectElemReadyToIssue());
+                    dynS->getNumDepIndElemReadyToIssue());
       return false;
     }
     /**
@@ -1761,22 +1762,22 @@ void LLCStreamEngine::issueStreamDirect(LLCDynStream *dynS) {
       for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
         assert(dynS->idxToElementMap.count(idx) &&
                "Missing element for StoreStream.");
-        const auto &element = dynS->idxToElementMap.at(idx);
-        assert(element->isReady() && "StoreElement is not ready.");
+        const auto &elem = dynS->idxToElementMap.at(idx);
+        assert(elem->isReady() && "StoreElement is not ready.");
 
         // Compute the overlap and set the data.
-        int elementOffset;
+        int elemOffset;
         int sliceOffset;
-        int overlapSize = element->computeOverlap(
-            sliceId.vaddr, sliceId.getSize(), sliceOffset, elementOffset);
-        requestIter->dataBlock.setData(element->getUInt8Ptr(elementOffset),
+        int overlapSize = elem->computeOverlap(sliceId.vaddr, sliceId.getSize(),
+                                               sliceOffset, elemOffset);
+        requestIter->dataBlock.setData(elem->getUInt8Ptr(elemOffset),
                                        sliceOffset, overlapSize);
         requestIter->storeSize = overlapSize;
         LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
-                           "Get StoreValue from element %llu, line [%#x, +%d), "
-                           "elementOffset %#x.\n",
-                           element->idx, sliceId.vaddr + sliceOffset,
-                           overlapSize, elementOffset);
+                           "Get StoreValue from elem %llu, line [%#x, +%d), "
+                           "elemOffset %#x.\n",
+                           elem->idx, sliceId.vaddr + sliceOffset, overlapSize,
+                           elemOffset);
       }
     }
 
@@ -1824,8 +1825,8 @@ void LLCStreamEngine::issueStreamDirect(LLCDynStream *dynS) {
     assert(sliceIter != this->allocatedSlices.end());
     while (!dynS->idxToElementMap.empty()) {
       auto elemIter = dynS->idxToElementMap.begin();
-      auto &element = elemIter->second;
-      if (element->idx >= sliceId.getStartIdx()) {
+      auto &elem = elemIter->second;
+      if (elem->idx >= sliceId.getStartIdx()) {
         break;
       }
       dynS->eraseElem(elemIter);
@@ -2413,6 +2414,14 @@ void LLCStreamEngine::issueStreamMsgToMLC(ResponseMsgPtr msg, bool forceIdea) {
 
   auto mlcMachineId = msg->m_Destination.singleElement();
   const auto &sliceId = msg->m_sliceIds.singleSliceId();
+
+  // Sample the traffic.
+  if (auto llcDynS = LLCDynStream::getLLCStream(sliceId.getDynStrandId())) {
+    auto S = llcDynS->getStaticS();
+    auto &statistic = S->statistic;
+    statistic.sampleSrcDest(statistic.remoteToLocalMsg, this->curRemoteBank(),
+                            mlcMachineId.getNum());
+  }
 
   if (forceIdea) {
     auto mlcController =
@@ -3328,8 +3337,11 @@ void LLCStreamEngine::predicateOffElem(LLCDynStreamPtr dynS,
     elemSliceId.getStartIdx() = elem->idx;
     elemSliceId.getEndIdx() = elem->idx + 1;
     this->issueStreamAckToMLC(elemSliceId);
+    if (dynS->isIndirect() && S->isStoreComputeStream()) {
+      elem->setIndirectStoreAcked();
+    }
   }
-  elem->setState(LLCStreamElement::State::PREDICATED_OFF);
+  elem->setStateToPredicatedOff();
   // Predicate all indirect element.
   for (const auto &IS : dynS->getIndStreams()) {
     auto indElem = IS->getElemPanic(elem->idx, "PredOff IndElem.");
@@ -3348,9 +3360,16 @@ void LLCStreamEngine::predicateOffElem(LLCDynStreamPtr dynS,
   while (!dynS->idxToElementMap.empty()) {
     auto elemIter = dynS->idxToElementMap.begin();
     const auto &elem = elemIter->second;
-    if (!elem->isPredicatedOff()) {
-      LLC_ELEMENT_DPRINTF(elem, "[LLCPred] Not Release: !PredOff.\n");
-      break;
+    if (dynS->isIndirect() && S->isStoreComputeStream()) {
+      if (!elem->isIndirectStoreAcked()) {
+        LLC_ELEMENT_DPRINTF(elem, "[LLCPred] Not Release: !IndStoreAck.\n");
+        break;
+      }
+    } else {
+      if (!elem->isPredicatedOff()) {
+        LLC_ELEMENT_DPRINTF(elem, "[LLCPred] Not Release: !PredOff.\n");
+        break;
+      }
     }
     dynS->eraseElem(elemIter);
   }
@@ -3373,11 +3392,11 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
   if (!IS->idxToElementMap.count(indElemIdx)) {
 
     if (IS->getStaticS()->isReduction() &&
-        IS->lastComputedReductionElemIdx >= indElemIdx) {
+        IS->lastComputedReduceElemIdx >= indElemIdx) {
       LLC_S_DPRINTF(
           IS->getDynStrandId(),
           "[TriggerInd] Skip ReduceS LastComputedElemIdx %lu > %lu.\n",
-          IS->lastComputedReductionElemIdx, indElemIdx);
+          IS->lastComputedReduceElemIdx, indElemIdx);
       return;
     }
 
@@ -4774,39 +4793,13 @@ void LLCStreamEngine::incrementIssueSlice(StreamStatistic &statistic) {
 Cycles LLCStreamEngine::lastSampleCycle = Cycles(0);
 int LLCStreamEngine::totalSamples = 0;
 
-void LLCStreamEngine::sampleLLCStream(LLCDynStreamPtr dynS) {
-
-  if (dynS->isTerminated() || !dynS->isRemoteConfigured()) {
-    // The dynS is not configured yet or already terminated.
-    return;
-  }
-
-  auto S = dynS->getStaticS();
-  auto &statistic = S->statistic;
-  statistic.sampleLLCAliveElements(dynS->idxToElementMap.size());
-  statistic.sampleLLCInflyComputation(dynS->incompleteComputations);
-
-  // LLC alive elements.
-  StreamStatistic::sampleStaticLLCAliveElements(curCycle(),
-                                                dynS->getDynStreamId().staticId,
-                                                dynS->idxToElementMap.size());
-  auto &staticStats =
-      StreamStatistic::getStaticStat(dynS->getDynStreamId().staticId);
-
-  // Remote infly requests.
-  staticStats.remoteInflyReq.sample(curCycle(), dynS->inflyRequests);
-  for (auto indS : dynS->getIndStreams()) {
-    this->sampleLLCStream(indS);
-  }
-}
-
 void LLCStreamEngine::sampleLLCStreams() {
   const Cycles sampleInterval = Cycles(100);
   if (curCycle() < LLCStreamEngine::lastSampleCycle + sampleInterval) {
     return;
   }
   for (const auto &e : LLCDynStream::getGlobalLLCDynStreamMap()) {
-    this->sampleLLCStream(e.second);
+    e.second->sample();
   }
   LLCStreamEngine::totalSamples++;
   LLCStreamEngine::lastSampleCycle = curCycle();

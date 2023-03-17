@@ -26,9 +26,9 @@ public:
 
   static PacketPtr createGemForgePacket(Addr paddr, int size,
                                         GemForgePacketHandler *handler,
-                                        uint8_t *data, RequestorID requestorID,
-                                        int contextId, Addr pc,
-                                        Request::Flags flags = 0);
+                                        const uint8_t *data,
+                                        RequestorID requestorID, int contextId,
+                                        Addr pc, Request::Flags flags = 0);
   static PacketPtr createGemForgeAMOPacket(Addr vaddr, Addr paddr, int size,
                                            GemForgePacketHandler *handler,
                                            RequestorID requestorID,

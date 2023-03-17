@@ -17,7 +17,7 @@ namespace gem5 {
 namespace ruby {
 class AbstractStreamAwareController;
 class MessageBuffer;
-}
+} // namespace ruby
 
 class MLCDynStream {
 public:
@@ -143,12 +143,13 @@ protected:
     // Whether the core's request is already here.
     bool dataReady;
     enum CoreStatusE {
-      NONE,
+      NONE = 0,
       WAIT_DATA, // The core is waiting the data.
       WAIT_ACK,  // The core is waiting the ack.
       ACK_READY, // The ack is ready, waiting to be reported to core in order.
       DONE,
-      FAULTED
+      FAULTED,
+      NUM_CORE_STATUS
     };
     CoreStatusE coreStatus;
     // For debug purpose, we also remember core's request sliceId.
@@ -251,6 +252,18 @@ public:
    * A helper function to dump some basic status of the stream when panic.
    */
   void panicDump() const;
+
+  Cycles curCycle() const { return this->controller->curCycle(); }
+
+  /**
+   * Sample some statistic.
+   */
+  virtual void sample() const;
+
+  /**
+   * Get the next credit element idx.
+   */
+  virtual uint64_t getNextCreditElemIdx() const = 0;
 };
 
 } // namespace gem5

@@ -26,32 +26,32 @@ const std::string StreamThrottler::name() const { return this->se->name(); }
  * Check if we actually want to throttle.
  *******************************************************************/
 
-void StreamThrottler::throttleStream(StreamElement *element) {
+void StreamThrottler::throttleStream(StreamElement *elem) {
   if (this->strategy == StrategyE::STATIC) {
     // Static means no throttling.
     return;
   }
-  auto S = element->stream;
+  auto S = elem->stream;
   if (S->isStoreStream()) {
     // No need to throttle for store stream.
     return;
   }
-  if (element->FIFOIdx.entryIdx < S->maxSize) {
+  if (elem->FIFOIdx.entryIdx < S->maxSize) {
     // Do not throttle for the first maxSize elements.
     return;
   }
-  if (element->valueReadyCycle == 0 || element->firstValueCheckCycle == 0) {
+  if (elem->valueReadyCycle == 0 || elem->firstValueCheckCycle == 0) {
     // No valid cycle record, do nothing.
     return;
   }
-  if (element->valueReadyCycle < element->firstValueCheckCycle + Cycles(2)) {
+  if (elem->valueReadyCycle < elem->firstValueCheckCycle + Cycles(2)) {
     // The element is ready earlier than user, do nothing.
     // We add 2 cycles buffer here.
     return;
   }
   // This is a late fetch, increase the counter.
   S->lateFetchCount++;
-  S_ELEMENT_DPRINTF(element, "[Throttle] LateCount %d.\n", S->lateFetchCount);
+  S_ELEMENT_DPRINTF(elem, "[Throttle] LateCount %d.\n", S->lateFetchCount);
   if (S->lateFetchCount < 10) {
     return;
   }
@@ -86,7 +86,7 @@ void StreamThrottler::throttleStream(StreamElement *element) {
                "RunAheadLength is not increased.");
       }
     } else if (this->strategy == StrategyE::GLOBAL) {
-      this->tryGlobalThrottle(element->stream);
+      this->tryGlobalThrottle(elem->stream);
     }
     // No matter what, just clear the lateFetchCount in the whole step
     // group.
@@ -164,6 +164,10 @@ bool StreamThrottler::tryGlobalThrottle(Stream *S) {
    * for reduction streams.
    */
   for (auto backBaseS : S->backBaseStreams) {
+    if (backBaseS->getConfigLoopLevel() < S->getLoopLevel()) {
+      // Do not bound by InnerLoopBackBaseS.
+      continue;
+    }
     if (backBaseS->maxSize < S->maxSize) {
       S_DPRINTF(S, "[Not Throttle] MyMaxSize %d >= %d of BackBaseS %s.\n",
                 S->maxSize, backBaseS->maxSize, backBaseS->getStreamName());
@@ -209,24 +213,19 @@ bool StreamThrottler::tryGlobalThrottle(Stream *S) {
      * For InnerS, we do not allocate too much if it's:
      * 1. Nested.
      * 2. Eliminated.
-     * 3. Can skip to end.
+     * 3. All streams floated.
+     * However, due to the boost phase, we don't know whether DynS would be
+     * floated or not. Here I just check if we enabled floating.
      */
-    bool isElimNestInnerS = false;
+    bool isElimNestInnerFloatedS = false;
     const auto &staticRegion = this->se->regionController->getStaticRegion(S);
     if (staticRegion.nestConfig.configFunc &&
         staticRegion.allStreamsLoopEliminated) {
-      bool canSkipToEnd = true;
-      for (const auto &dynRegion : staticRegion.dynRegions) {
-        if (!dynRegion.canSkipToEnd) {
-          canSkipToEnd = false;
-          break;
-        }
-      }
-      if (canSkipToEnd) {
-        isElimNestInnerS = true;
+      if (this->se->myParams->streamEngineEnableFloat) {
+        isElimNestInnerFloatedS = true;
       }
     }
-    if (isElimNestInnerS) {
+    if (isElimNestInnerFloatedS) {
       if (S->maxSize >= this->se->myParams->elimNestStreamInstances + 1) {
         S_DPRINTF(S,
                   "[Not Throttle] InnerS MyMaxSize %d >= %d "

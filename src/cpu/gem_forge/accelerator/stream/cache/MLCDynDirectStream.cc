@@ -187,6 +187,12 @@ MLCDynDirectStream::MLCDynDirectStream(
                   this->maxNumSlicesPerSegment);
   }
 
+  MLC_S_DPRINTF(this->getDynStreamId(),
+                "Final MaxNumSlicesPerSegment %llu MaxSlices %lu "
+                "MaxRunaheadSlices %lu.\n",
+                this->maxNumSlicesPerSegment, this->maxNumSlices,
+                this->maxNumRunaheadSlices);
+
   while (this->tailSliceIdx < this->maxNumSlicesPerSegment &&
          !this->slicedStream.hasOverflowed()) {
     this->allocateSlice();
@@ -688,6 +694,8 @@ void MLCDynDirectStream::sendCreditToLLC(const LLCSegmentPosition &segment) {
 
   // Remember the last credit paddr.
   this->lastCreditPAddr = remotePAddr;
+
+  this->nextCreditElemIdx = segment.endSliceId.getStartIdx();
 
   /**
    * Immediately initialize all the LLCStreamSlices and LLCStreamElements to
@@ -1339,4 +1347,32 @@ MLCDynDirectStream::getRemoteTailPAddrAndMachineType() const {
     return std::make_pair(endPAddr, endMachineType);
   }
 }
+
+void MLCDynDirectStream::sample() const {
+  MLCDynStream::sample();
+
+  // auto S = this->getStaticStream();
+  // auto &statistic = S->statistic;
+  // auto &staticStats = statistic.getStaticStat();
+
+  // auto countSliceFromSegments =
+  //     [](const LLCSegmentPositionListT &segs) -> size_t {
+  //   size_t totalSlices = 0;
+  //   for (const auto &seg : segs) {
+  //     totalSlices += seg.sliceIds.size();
+  //   }
+  //   return totalSlices;
+  // };
+
+  // auto creditNotSentSlices =
+  // countSliceFromSegments(this->llcSegmentsAllocated); auto creditSentSlices =
+  // countSliceFromSegments(this->llcSegments);
+
+  // statistic.localCreditNotSentSlice.sample(creditNotSentSlices);
+  // staticStats.localCreditNotSentSlice.sample(creditNotSentSlices);
+
+  // statistic.localCreditSentSlice.sample(creditSentSlices);
+  // staticStats.localCreditSentSlice.sample(creditSentSlices);
+}
+
 } // namespace gem5

@@ -18,7 +18,8 @@ public:
   MLCDynDirectStream(
       CacheStreamConfigureDataPtr _configData,
       ruby::AbstractStreamAwareController *_controller,
-      ruby::MessageBuffer *_responseMsgBuffer, ruby::MessageBuffer *_requestToLLCMsgBuffer,
+      ruby::MessageBuffer *_responseMsgBuffer,
+      ruby::MessageBuffer *_requestToLLCMsgBuffer,
       const std::vector<MLCDynIndirectStream *> &_indirectStreams);
 
   /**
@@ -28,7 +29,8 @@ public:
   getRemoteTailPAddrAndMachineType() const override;
 
   void receiveStreamData(const DynStreamSliceId &sliceId,
-                         const ruby::DataBlock &dataBlock, Addr paddrLine) override;
+                         const ruby::DataBlock &dataBlock,
+                         Addr paddrLine) override;
   void receiveReuseStreamData(Addr vaddr, const ruby::DataBlock &dataBlock);
   void setLLCCutLineVAddr(Addr vaddr) { this->llcCutLineVAddr = vaddr; }
 
@@ -61,6 +63,12 @@ public:
   void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr,
                          ruby::MachineType brokenMachineType) override;
 
+  void sample() const override;
+
+  uint64_t getNextCreditElemIdx() const override {
+    return this->nextCreditElemIdx;
+  }
+
 protected:
   SlicedDynStream slicedStream;
 
@@ -82,7 +90,8 @@ protected:
   // This stream has been cut by LLCStreamBound.
   bool llcStreamLoopBoundCutted = false;
   Addr llcStreamLoopBoundBrokenPAddr = 0;
-  ruby::MachineType llcStreamLoopBoundBrokenMachineType = ruby::MachineType_NULL;
+  ruby::MachineType llcStreamLoopBoundBrokenMachineType =
+      ruby::MachineType_NULL;
 
   struct LLCSegmentPosition {
     /**
@@ -110,8 +119,9 @@ protected:
   /**
    * Split the segments into multiple lists to improve the performance.
    */
-  std::list<LLCSegmentPosition> llcSegmentsAllocated;
-  std::list<LLCSegmentPosition> llcSegments;
+  using LLCSegmentPositionListT = std::list<LLCSegmentPosition>;
+  LLCSegmentPositionListT llcSegmentsAllocated;
+  LLCSegmentPositionListT llcSegments;
 
   bool blockedSendingCredit = false;
 
@@ -150,7 +160,8 @@ protected:
      */
     if (this->config->isPointerChase) {
       return mlc.getStartIdx() == core.getStartIdx() &&
-             ruby::makeLineAddress(mlc.vaddr) == ruby::makeLineAddress(core.vaddr);
+             ruby::makeLineAddress(mlc.vaddr) ==
+                 ruby::makeLineAddress(core.vaddr);
     } else {
       // By default match the vaddr.
       // TODO: This is really wrong.
@@ -201,6 +212,11 @@ protected:
    * Used to implement NonMigrating stream.
    */
   Addr lastCreditPAddr = 0;
+
+  /**
+   * Remember the next credit element idx.
+   */
+  uint64_t nextCreditElemIdx = 0;
 
   /**
    * Always remember the last segement.

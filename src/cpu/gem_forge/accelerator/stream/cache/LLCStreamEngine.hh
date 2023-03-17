@@ -581,7 +581,6 @@ private:
   void incrementIssueSlice(StreamStatistic &statistic);
 
   void sampleLLCStreams();
-  void sampleLLCStream(LLCDynStreamPtr dynS);
   static Cycles lastSampleCycle;
   static int totalSamples;
 };

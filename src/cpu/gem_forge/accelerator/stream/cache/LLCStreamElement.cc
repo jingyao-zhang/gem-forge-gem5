@@ -38,13 +38,13 @@ LLCStreamElement::LLCStreamElement(
 LLCStreamElement::~LLCStreamElement() {
 
   StreamStatistic::LLCElementSample s = {
-      this->firstCheckCycle, this->valueReadyCycle, this->reqIssueCycle};
+      this->firstCheckCycle, this->readyToIssueCycle, this->issueCycle,
+      this->valueReadyCycle};
 
-  if (this->valueReadyCycle > this->reqIssueCycle &&
-      this->valueReadyCycle != 0) {
+  if (this->valueReadyCycle > this->issueCycle && this->valueReadyCycle != 0) {
     LLC_ELEMENT_DPRINTF_(LLCStreamSample, this,
                          "[Sample] LLC Elem ReqIssue -> ValueReady %lu.\n",
-                         this->valueReadyCycle - this->reqIssueCycle);
+                         this->valueReadyCycle - this->issueCycle);
   }
 
   this->S->statistic.sampleLLCElement(s);
@@ -153,7 +153,7 @@ void LLCStreamElement::setValue(const StreamValue &value) {
           this->size);
   }
   memcpy(this->getUInt8Ptr(), value.uint8Ptr(), this->size);
-  this->readyBytes += this->size;
+  this->addReadyBytes(this->size);
   if (this->isReady()) {
     this->valueReadyCycle = this->mlcController->curCycle();
   }
@@ -257,7 +257,7 @@ void LLCStreamElement::extractElementDataFromSlice(
   }
 
   // Mark these bytes ready.
-  this->readyBytes += overlapSize;
+  this->addReadyBytes(overlapSize);
   if (this->readyBytes > this->size) {
     LLC_SLICE_PANIC(
         sliceId,
@@ -268,7 +268,7 @@ void LLCStreamElement::extractElementDataFromSlice(
   if (this->isReady()) {
     this->valueReadyCycle = this->mlcController->curCycle();
     LLC_ELEMENT_DPRINTF(this, "Elem Value Ready Cycle: Issue %lu Ready %lu.\n",
-                        this->reqIssueCycle, this->valueReadyCycle);
+                        this->issueCycle, this->valueReadyCycle);
   }
 }
 

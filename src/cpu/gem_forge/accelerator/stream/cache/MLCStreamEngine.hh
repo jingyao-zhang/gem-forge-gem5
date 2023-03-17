@@ -143,6 +143,8 @@ private:
         curCycle - this->prevRecordedStreamCycle;
     this->prevRecordedStreamCycle = curCycle;
   }
+
+  void recordStreamRespDelay(const ruby::ResponseMsg &msg);
 };
 
 } // namespace gem5

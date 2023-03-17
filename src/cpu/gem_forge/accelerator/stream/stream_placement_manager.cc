@@ -97,7 +97,7 @@ bool StreamPlacementManager::accessNoMSHR(
   // size_t hitLevel = this->caches.size();
   Cycles latency = Cycles(0);
 
-  auto vaddr = cacheBlockBreakdown.virtualAddr;
+  auto vaddr = cacheBlockBreakdown.vaddr;
   auto packetSize = cacheBlockBreakdown.size;
   Addr paddr;
   if (!se->getCPUDelegator()->translateVAddrOracle(vaddr, paddr)) {
@@ -138,7 +138,7 @@ bool StreamPlacementManager::accessExpress(
     return false;
   }
 
-  auto vaddr = cacheBlockBreakdown.virtualAddr;
+  auto vaddr = cacheBlockBreakdown.vaddr;
   auto packetSize = cacheBlockBreakdown.size;
   Addr paddr;
   if (!se->getCPUDelegator()->translateVAddrOracle(vaddr, paddr)) {
@@ -248,7 +248,7 @@ bool StreamPlacementManager::accessExpressFootprint(
     }
   }
 
-  auto vaddr = cacheBlockBreakdown.virtualAddr;
+  auto vaddr = cacheBlockBreakdown.vaddr;
   auto packetSize = cacheBlockBreakdown.size;
   Addr paddr;
   if (!se->getCPUDelegator()->translateVAddrOracle(vaddr, paddr)) {

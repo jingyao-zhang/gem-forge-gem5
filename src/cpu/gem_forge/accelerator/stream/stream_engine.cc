@@ -613,6 +613,18 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
         }
       }
     }
+    /**
+     * For LoopElimInCoreStoreCmpS, we have to wait until the elem is issued
+     * so that the write is sent to cache.
+     */
+    if (dynS->isLoopElimInCoreStoreCmpS()) {
+      if (!stepElem->isReqIssued()) {
+        S_ELEMENT_DPRINTF(
+            stepElem,
+            "[CanNotCommitStep] Req Not Issue for LoopElimInCoreStoreCmpS.\n");
+        return false;
+      }
+    }
     if (!dynS->areNextBackDepElementsReady(stepElem)) {
       S_ELEMENT_DPRINTF(stepElem,
                         "[CanNotCommitStep] BackDepElement Unready.\n");
@@ -2291,9 +2303,12 @@ void StreamEngine::issueElements() {
         }
       }
 
-      if (elem->isLoopElimInCoreStoreCmpElem() &&
-          !elem->isComputeValueReady()) {
-        S_ELEMENT_DPRINTF(elem, "Delay issue as waiting for StoreValue.\n");
+      if (elem->isLoopElimInCoreStoreCmpElem()) {
+        if (!elem->isComputeValueReady()) {
+          S_ELEMENT_DPRINTF(elem, "Delay issue as waiting for StoreValue.\n");
+        } else {
+          this->writebackElement(elem);
+        }
         continue;
       }
 
@@ -2396,7 +2411,7 @@ void StreamEngine::issueElement(StreamElement *elem) {
     const auto cacheLineSize = cpuDelegator->cacheLineSize();
     if ((cacheLineVAddr % cacheLineSize) != 0) {
       S_ELEMENT_PANIC(elem, "CacheBlock %d LineVAddr %#x invalid, VAddr %#x.\n",
-                      i, cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
+                      i, cacheLineVAddr, cacheBlockBreakdown.vaddr);
     }
     Addr cacheLinePAddr;
     if (!cpuDelegator->translateVAddrOracle(cacheLineVAddr, cacheLinePAddr)) {
@@ -2415,7 +2430,7 @@ void StreamEngine::issueElement(StreamElement *elem) {
     if ((cacheLinePAddr % cacheLineSize) != 0) {
       S_ELEMENT_PANIC(
           elem, "LinePAddr %#x invalid, LineVAddr %#x, VAddr %#x.\n",
-          cacheLinePAddr, cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
+          cacheLinePAddr, cacheLineVAddr, cacheBlockBreakdown.vaddr);
     }
 
     /**
@@ -2488,7 +2503,7 @@ void StreamEngine::issueElement(StreamElement *elem) {
         auto atomicOp = S->setupAtomicOp(elem->FIFOIdx, elem->size,
                                          dynS->storeFormalParams, getBaseValue);
         // * We should use element address here, not line address.
-        auto elementVAddr = cacheBlockBreakdown.virtualAddr;
+        auto elementVAddr = cacheBlockBreakdown.vaddr;
         auto lineOffset = elementVAddr % cacheLineSize;
         auto elementPAddr = cacheLinePAddr + lineOffset;
 
@@ -2583,7 +2598,7 @@ void StreamEngine::issueNDCElement(StreamElement *element) {
     if ((cacheLineVAddr % cacheLineSize) != 0) {
       S_ELEMENT_PANIC(element,
                       "CacheBlock %d LineVAddr %#x invalid, VAddr %#x.\n", i,
-                      cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
+                      cacheLineVAddr, cacheBlockBreakdown.vaddr);
     }
     Addr cacheLinePAddr;
     if (!cpuDelegator->translateVAddrOracle(cacheLineVAddr, cacheLinePAddr)) {
@@ -2595,38 +2610,37 @@ void StreamEngine::issueNDCElement(StreamElement *element) {
   }
 }
 
-void StreamEngine::prefetchElement(StreamElement *element) {
-  auto S = element->stream;
-  auto dynS = element->dynS;
-  S_ELEMENT_DPRINTF(element, "Prefetch.\n");
+void StreamEngine::prefetchElement(StreamElement *elem) {
+  auto S = elem->stream;
+  auto dynS = elem->dynS;
+  S_ELEMENT_DPRINTF(elem, "Prefetch.\n");
 
-  assert(element->isAddrReady() && "Address should be ready for prefetch.");
+  assert(elem->isAddrReady() && "Address should be ready for prefetch.");
   assert(S->isAtomicStream() && "So far we only prefetch for AtomicStream.");
-  assert(element->shouldIssue() && "Should not prefetch this element.");
-  assert(!element->isPrefetchIssued() && "Element prefetch already issued.");
-  assert(!element->isElemFloatedToCache() &&
+  assert(elem->shouldIssue() && "Should not prefetch this element.");
+  assert(!elem->isPrefetchIssued() && "Element prefetch already issued.");
+  assert(!elem->isElemFloatedToCache() &&
          "Should not prefetch for floating stream.");
 
   S->statistic.numPrefetched++;
-  element->setPrefetchIssued();
+  elem->setPrefetchIssued();
 
-  for (size_t i = 0; i < element->cacheBlocks; ++i) {
+  for (size_t i = 0; i < elem->cacheBlocks; ++i) {
     // Prefetch the whole cache line.
-    auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
+    auto &cacheBlockBreakdown = elem->cacheBlockBreakdownAccesses[i];
     const auto cacheLineVAddr = cacheBlockBreakdown.cacheBlockVAddr;
     const auto cacheLineSize = cpuDelegator->cacheLineSize();
     if ((cacheLineVAddr % cacheLineSize) != 0) {
-      S_ELEMENT_PANIC(element,
-                      "CacheBlock %d LineVAddr %#x invalid, VAddr %#x.\n", i,
-                      cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
+      S_ELEMENT_PANIC(elem, "CacheBlock %d LineVAddr %#x invalid, VAddr %#x.\n",
+                      i, cacheLineVAddr, cacheBlockBreakdown.vaddr);
     }
 
     /**
      * Skip prefetching if we found a previous element and it has the same
      * block.
      */
-    if (element != dynS->getFirstElem()) {
-      auto prevElement = dynS->getPrevElement(element);
+    if (elem != dynS->getFirstElem()) {
+      auto prevElement = dynS->getPrevElement(elem);
       bool prefetched = false;
       for (auto j = 0; j < prevElement->cacheBlocks; ++j) {
         const auto &prevCacheBlockBreakdown =
@@ -2645,8 +2659,7 @@ void StreamEngine::prefetchElement(StreamElement *element) {
     Addr cacheLinePAddr;
     if (!cpuDelegator->translateVAddrOracle(cacheLineVAddr, cacheLinePAddr)) {
       // If faulted, we just give up on this block.
-      S_ELEMENT_DPRINTF(element, "Fault on prefetch vaddr %#x.\n",
-                        cacheLineVAddr);
+      S_ELEMENT_DPRINTF(elem, "Fault on prefetch vaddr %#x.\n", cacheLineVAddr);
       continue;
     }
 
@@ -2674,7 +2687,7 @@ void StreamEngine::prefetchElement(StreamElement *element) {
     pkt->req->setVirt(cacheLineVAddr);
     pkt->req->getStatistic()->isStream = true;
     pkt->req->getStatistic()->streamName = S->streamName.c_str();
-    S_ELEMENT_DPRINTF(element, "Prefetched %dth request to %#x %d.\n", i,
+    S_ELEMENT_DPRINTF(elem, "Prefetched %dth request to %#x %d.\n", i,
                       pkt->getAddr(), pkt->getSize());
 
     S->statistic.numIssuedPrefetchRequest++;
@@ -2690,31 +2703,94 @@ void StreamEngine::prefetchElement(StreamElement *element) {
   }
 }
 
-void StreamEngine::writebackElement(StreamElement *element,
+void StreamEngine::writebackElement(StreamElement *elem) {
+
+  auto S = elem->stream;
+  auto dynS = elem->dynS;
+  S_ELEMENT_DPRINTF(elem, "Writeback.\n");
+
+  assert(elem->isAddrReady() && "Address should be ready to writeback.");
+  assert(dynS->isLoopElimInCoreStoreCmpS() &&
+         "So far only writeback for InCoreStoreCmpS.");
+  assert(elem->shouldIssue() && "Should not writeback this element.");
+  assert(!elem->isElemFloatedToCache() &&
+         "Should not writeback floated element.");
+  assert(!elem->isReqIssued() && "Element req already issued.");
+  assert(!elem->flushed && "Cannot writeback flushed element.");
+
+  S->statistic.numFetched++;
+  elem->setReqIssued();
+
+  for (size_t i = 0; i < elem->cacheBlocks; ++i) {
+    // Only writeback the required data.
+    auto &cacheBlockBreakdown = elem->cacheBlockBreakdownAccesses[i];
+    const auto cacheLineVAddr = cacheBlockBreakdown.cacheBlockVAddr;
+    const auto cacheLineSize = cpuDelegator->cacheLineSize();
+    const auto vaddr = cacheBlockBreakdown.vaddr;
+    const auto size = cacheBlockBreakdown.size;
+
+    const auto value = elem->getValuePtr(vaddr, size);
+    S_ELEMENT_DPRINTF(
+        elem, "[Writeback] CacheBlock %d Line %#x Actual [%#x, +%d) %s.\n", i,
+        cacheLineVAddr, vaddr, size, GemForgeUtils::dataToString(value, size));
+
+    Addr paddr;
+    if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
+      S_ELEMENT_PANIC(elem, "Fault on writeback vaddr %#x.\n", vaddr);
+      continue;
+    }
+
+    /**
+     * Here we don't actually wait for the response, so we use a dummy
+     * GemForgePacketReleaseHandler instead of normal StreamMemAccess.
+     * TODO: Use real StreamMemAccess and delay release until all store
+     * TODO: requests are done.
+     */
+    Request::Flags flags;
+    auto packetHandler = GemForgePacketReleaseHandler::get();
+    PacketPtr pkt = GemForgePacketHandler::createGemForgePacket(
+        paddr, size, packetHandler, value, cpuDelegator->dataRequestorId(),
+        0 /* ContextId */, S->getFirstCoreUserPC() /* PC */, flags);
+    pkt->req->setVirt(vaddr);
+    pkt->req->getStatistic()->isStream = true;
+    pkt->req->getStatistic()->streamName = S->streamName.c_str();
+
+    if (cpuDelegator->cpuType == GemForgeCPUDelegator::ATOMIC_SIMPLE) {
+      // Directly send to memory for atomic cpu.
+      this->cpuDelegator->sendRequest(pkt);
+    } else {
+      // Send the pkt to translation.
+      this->translationBuffer->addTranslation(
+          pkt, cpuDelegator->getSingleThreadContext(), nullptr);
+    }
+  }
+}
+
+void StreamEngine::writebackElement(StreamElement *elem,
                                     StreamStoreInst *inst) {
-  assert(element->isAddrReady() && "Address should be ready.");
-  auto S = element->stream;
+  assert(elem->isAddrReady() && "Address should be ready.");
+  auto S = elem->stream;
   assert(S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST &&
          "Should never writeback element for non store stream.");
 
   // Check the bookkeeping for infly writeback memory accesses.
-  assert(element->inflyWritebackMemAccess.count(inst) == 0 &&
+  assert(elem->inflyWritebackMemAccess.count(inst) == 0 &&
          "This StreamStoreInst has already been writebacked.");
   auto &inflyWritebackMemAccesses =
-      element->inflyWritebackMemAccess
+      elem->inflyWritebackMemAccess
           .emplace(std::piecewise_construct, std::forward_as_tuple(inst),
                    std::forward_as_tuple())
           .first->second;
 
-  S_ELEMENT_DPRINTF(element, "Writeback.\n");
+  S_ELEMENT_DPRINTF(elem, "Writeback.\n");
 
   // hack("Send packt for stream %s.\n", S->getStreamName().c_str());
 
-  for (size_t i = 0; i < element->cacheBlocks; ++i) {
-    auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
+  for (size_t i = 0; i < elem->cacheBlocks; ++i) {
+    auto &cacheBlockBreakdown = elem->cacheBlockBreakdownAccesses[i];
 
     // Translate the virtual address.
-    auto vaddr = cacheBlockBreakdown.virtualAddr;
+    auto vaddr = cacheBlockBreakdown.vaddr;
     auto packetSize = cacheBlockBreakdown.size;
     Addr paddr;
     if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
@@ -2723,7 +2799,7 @@ void StreamEngine::writebackElement(StreamElement *element,
 
     if (this->enableStreamPlacement) {
       // This means we have the placement manager.
-      if (this->streamPlacementManager->access(cacheBlockBreakdown, element,
+      if (this->streamPlacementManager->access(cacheBlockBreakdown, elem,
                                                true)) {
         // Stream placement manager handles this packet.
         continue;
@@ -2731,7 +2807,7 @@ void StreamEngine::writebackElement(StreamElement *element,
     }
 
     // Allocate the book-keeping StreamMemAccess.
-    auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
+    auto memAccess = elem->allocateStreamMemAccess(cacheBlockBreakdown);
     inflyWritebackMemAccesses.insert(memAccess);
     // Create the writeback package.
     auto pkt = GemForgePacketHandler::createGemForgePacket(
@@ -3047,7 +3123,7 @@ void StreamEngine::sendAtomicPacket(StreamElement *element,
   }
   const auto &cacheBlockBreakdownAccess =
       element->cacheBlockBreakdownAccesses[0];
-  auto vaddr = cacheBlockBreakdownAccess.virtualAddr;
+  auto vaddr = cacheBlockBreakdownAccess.vaddr;
   auto size = cacheBlockBreakdownAccess.size;
   Addr paddr;
   if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {

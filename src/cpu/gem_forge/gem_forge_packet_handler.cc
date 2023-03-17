@@ -5,7 +5,7 @@ namespace gem5 {
 GemForgePacketReleaseHandler GemForgePacketReleaseHandler::instance;
 
 PacketPtr GemForgePacketHandler::createGemForgePacket(
-    Addr paddr, int size, GemForgePacketHandler *handler, uint8_t *data,
+    Addr paddr, int size, GemForgePacketHandler *handler, const uint8_t *data,
     RequestorID reqestorID, int contextId, Addr pc, Request::Flags flags) {
   RequestPtr req = std::make_shared<Request>(paddr, size, flags, reqestorID);
   if (pc != 0) {
@@ -117,5 +117,5 @@ bool GemForgePacketHandler::needResponse(PacketPtr pkt) {
   }
   // So far all GemForgePacketHandler requires response.
   return true;
-}} // namespace gem5
-
+}
+} // namespace gem5

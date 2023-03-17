@@ -26,6 +26,15 @@ bool StreamRegionController::shouldRemoteConfigureNestRegion(
   if (!staticNestRegion.allStreamsLoopEliminated) {
     return false;
   }
+  for (auto S : staticNestRegion.streams) {
+    /**
+     * Don't allow InnerLoopBaseS to be remotely configured for now.
+     * In the future it may be benefitial to enable this feature.
+     */
+    if (!S->innerLoopDepEdges.empty()) {
+      return false;
+    }
+  }
   return true;
 }
 

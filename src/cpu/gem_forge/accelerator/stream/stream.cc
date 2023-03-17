@@ -154,7 +154,7 @@ void Stream::addBaseStream(StreamDepEdge::TypeE type, bool isInnerLoop,
     baseS->addrDepStreams.insert(this);
   } else if (type == StreamDepEdge::TypeE::Value) {
     if (baseS == this) {
-      STREAM_PANIC("ValueBasetream should not be self.");
+      STREAM_PANIC("ValueBaseStream should not be self.");
     }
     this->valueBaseStreams.insert(baseS);
     baseS->valueDepStreams.insert(this);
@@ -165,7 +165,7 @@ void Stream::addBaseStream(StreamDepEdge::TypeE type, bool isInnerLoop,
       baseS->hasBackDepReductionStream = true;
     }
   } else {
-    STREAM_PANIC("Unkown StreamEdgeType %s.", type);
+    STREAM_PANIC("Unknown StreamEdgeType %s.", type);
   }
 }
 
@@ -202,7 +202,7 @@ void Stream::addBaseStepStream(Stream *baseStepStream) {
     STREAM_PANIC("Base stream should not be self.");
   }
   this->baseStepStreams.insert(baseStepStream);
-  baseStepStream->dependentStepStreams.insert(this);
+  baseStepStream->depStepStreams.insert(this);
   if (baseStepStream->isStepRoot()) {
     this->baseStepRootStreams.insert(baseStepStream);
   } else {
@@ -341,6 +341,10 @@ void Stream::executeStreamConfig(uint64_t seqNum,
 
   // Try to set total trip count for back dependent streams.
   for (auto backDepS : this->backDepStreams) {
+    if (backDepS->getConfigLoopLevel() != this->getConfigLoopLevel()) {
+      // Not from the same loop level. Ignore. (Should be OuterLoopDepS).
+      continue;
+    }
     auto &backDepDynS = backDepS->getDynStream(seqNum);
     backDepDynS.setTotalAndInnerTripCount(dynStream.getTotalTripCount());
     DYN_S_DPRINTF(backDepDynS.dynStreamId,
@@ -773,16 +777,6 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
       this, dynStream.dynStreamId, this->getMemElementSize(),
       dynStream.addrGenFormalParams, dynStream.addrGenCallback);
 
-  // Set the MLC stream buffer size.
-  configData->mlcBufferNumSlices =
-      this->se->myParams->mlc_stream_buffer_init_num_entries;
-  if (this->se->myParams->mlc_stream_buffer_init_num_entries == 0) {
-    configData->mlcBufferNumSlices = std::min(this->maxSize, 32ul);
-  }
-  if (configData->mlcBufferNumSlices < 4) {
-    configData->mlcBufferNumSlices = 4;
-  }
-
   // Set the totalTripCount.
   configData->totalTripCount = dynStream.getTotalTripCount();
   configData->innerTripCount = dynStream.getInnerTripCount();
@@ -803,7 +797,9 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
            "Cannot offload reduction/ptr chase stream larger than 64 bytes.");
   }
   configData->reductionInitValue = dynStream.initialValue;
-  configData->finalValueNeededByCore = this->isInnerFinalValueUsedByCore();
+  // We need to the FinalReduceValue for core or InnerLoopDepS.
+  configData->finalValueNeededByCore =
+      this->isInnerFinalValueUsedByCore() || (!this->innerLoopDepEdges.empty());
 
   // Set the initial vaddr if this is not indirect stream.
   if (!isIndirect) {
@@ -1076,7 +1072,7 @@ Stream::ComputationCategory Stream::getComputationCategory() const {
   } else {
     this->memorizedComputationCategory.first =
         ComputationType::UnknownComputationType;
-    S_PANIC(this, "Unkown Computation.");
+    S_PANIC(this, "Unknown Computation.");
   }
 
   int numAffineLoadS = 0;
@@ -1098,6 +1094,16 @@ Stream::ComputationCategory Stream::getComputationCategory() const {
       numPointerChaseS++;
     } else if (backBaseS->isLoadStream()) {
       numIndirectLoadS++;
+    }
+  }
+  // Only consider InnerBaseS if we found no one.
+  if (numAffineLoadS == 0 && numPointerChaseS == 0 && numIndirectLoadS == 0) {
+    for (const auto &innerBaseE : this->innerLoopBaseEdges) {
+      auto innerBaseS = innerBaseE.toStream;
+      const auto innerCmpCategory = innerBaseS->getComputationCategory();
+      this->memorizedComputationCategory.second = innerCmpCategory.second;
+      this->computationCategoryMemorized = true;
+      return this->memorizedComputationCategory;
     }
   }
 
@@ -1130,7 +1136,9 @@ Stream::ComputationCategory Stream::getComputationCategory() const {
       this->memorizedComputationCategory.second =
           ComputationAddressPattern::PointerChase;
     } else {
-      S_PANIC(this, "Unkown Address.");
+      S_PANIC(this,
+              "Unknown Address Pattern: AffineLoad %d IndLoad %d PtrChase %d.",
+              numAffineLoadS, numIndirectLoadS, numPointerChaseS);
     }
   }
 

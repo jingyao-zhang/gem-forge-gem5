@@ -541,7 +541,7 @@ public:
 protected:
   StreamSet baseStepStreams;
   StreamSet baseStepRootStreams;
-  StreamSet dependentStepStreams;
+  StreamSet depStepStreams;
 
   AddrGenCallbackPtr addrGenCallback;
   ExecFuncPtr predCallback;

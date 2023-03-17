@@ -280,11 +280,13 @@ bool MLCDynStream::tryPopStream() {
      * We are also going to limit llcProgressElementIdx to the unreleased
      * IndirectElementIdx + 1024 / MemElementSize.
      */
-    for (auto remoteDynIS : remoteDynS->getIndStreams()) {
+    const int remoteISAliveBytes = 0;
+    for (auto remoteDynIS : remoteDynS->getAllIndStreams()) {
 
-      auto unreleasedElemIdx = remoteDynIS->getNextUnreleasedElementIdx();
+      auto unreleasedElemIdx = remoteDynIS->getNextUnreleasedElemIdx();
 
-      auto dynISElemOffset = 1024 / remoteDynIS->getMemElementSize();
+      auto dynISElemOffset =
+          remoteISAliveBytes / remoteDynIS->getMemElementSize();
 
       if (unreleasedElemIdx + dynISElemOffset < remoteDynISProgressElemIdx) {
 
@@ -463,7 +465,8 @@ void MLCDynStream::makeAck(MLCStreamSlice &slice) {
       continue;
     }
     if (ackSlice.coreStatus != MLCStreamSlice::CoreStatusE::ACK_READY) {
-      break;
+      // break;
+      continue;
     }
     const auto &ackSliceId = ackSlice.sliceId;
     // Set the core status to DONE.
@@ -479,20 +482,19 @@ void MLCDynStream::makeAck(MLCStreamSlice &slice) {
          strandElemIdx < ackSliceId.getEndIdx(); ++strandElemIdx) {
       if (std::dynamic_pointer_cast<LinearAddrGenCallback>(
               this->config->addrGenCallback)) {
-        auto elementVAddr =
+        auto elemVAddr =
             this->config->addrGenCallback
                 ->genAddr(strandElemIdx, this->config->addrGenFormalParams,
                           getStreamValueFail)
                 .uint64();
-        if (elementVAddr + this->config->elementSize >
+        if (elemVAddr + this->config->elementSize >
             ackSliceId.vaddr + ackSliceId.getSize()) {
           // This element spans to next slice, do not ack here.
           MLC_SLICE_DPRINTF(ackSliceId,
                             "Skipping Ack for multi-slice element %llu [%#x, "
                             "+%d) slice [%#x, +%d).\n",
-                            strandElemIdx, elementVAddr,
-                            this->config->elementSize, ackSliceId.vaddr,
-                            ackSliceId.getSize());
+                            strandElemIdx, elemVAddr, this->config->elementSize,
+                            ackSliceId.vaddr, ackSliceId.getSize());
           continue;
         }
       }
@@ -504,15 +506,14 @@ void MLCDynStream::makeAck(MLCStreamSlice &slice) {
       dynS->cacheAckedElements.insert(streamElemIdx);
 
       /**
-       * We call ElementInitCallback here.
+       * We call ElementAckCallback here.
        */
-      auto elementInitCallbackIter =
-          this->elementAckCallbacks.find(strandElemIdx);
-      if (elementInitCallbackIter != this->elementAckCallbacks.end()) {
-        for (auto &callback : elementInitCallbackIter->second) {
+      auto elemAckCallbackIter = this->elementAckCallbacks.find(strandElemIdx);
+      if (elemAckCallbackIter != this->elementAckCallbacks.end()) {
+        for (auto &callback : elemAckCallbackIter->second) {
           callback(this->getDynStreamId(), strandElemIdx);
         }
-        this->elementAckCallbacks.erase(elementInitCallbackIter);
+        this->elementAckCallbacks.erase(elemAckCallbackIter);
       }
     }
   }
@@ -605,4 +606,46 @@ void MLCDynStream::panicDump() const {
                    MLCStreamSlice::convertCoreStatusToString(slice.coreStatus));
   }
 }
+
+void MLCDynStream::sample() const {
+
+  auto S = this->getStaticStream();
+  auto &statistic = S->statistic;
+  auto &staticStats = statistic.getStaticStat();
+
+  auto aliveSlices = this->slices.size();
+
+  auto nextCreditElemIdx = this->getNextCreditElemIdx();
+  int creditSentSlices = 0;
+
+  std::array<int, MLCStreamSlice::CoreStatusE::NUM_CORE_STATUS>
+      sliceCoreStatus = {0};
+
+  for (const auto &slice : this->slices) {
+    if (slice.sliceId.getStartIdx() < nextCreditElemIdx) {
+      // This slice has the credit sent.
+      creditSentSlices++;
+    }
+    sliceCoreStatus[slice.coreStatus]++;
+  }
+  int creditNotSentSlices = aliveSlices - creditSentSlices;
+
+#define sample(sampler, v)                                                     \
+  statistic.sampler.sample(v);                                                 \
+  staticStats.sampler.sample(this->curCycle(), v);
+
+  sample(localAliveSlice, aliveSlices);
+  sample(localCreditNotSentSlice, creditNotSentSlices);
+  sample(localCreditSentSlice, creditSentSlices);
+  sample(localWaitDataSlice,
+         sliceCoreStatus[MLCStreamSlice::CoreStatusE::WAIT_DATA]);
+  sample(localWaitAckSlice,
+         sliceCoreStatus[MLCStreamSlice::CoreStatusE::WAIT_ACK]);
+  sample(localAckReadySlice,
+         sliceCoreStatus[MLCStreamSlice::CoreStatusE::ACK_READY]);
+  sample(localDoneSlice, sliceCoreStatus[MLCStreamSlice::CoreStatusE::DONE]);
+
+#undef sample
+}
+
 } // namespace gem5

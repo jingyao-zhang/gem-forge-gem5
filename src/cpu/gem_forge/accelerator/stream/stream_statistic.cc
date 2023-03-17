@@ -24,14 +24,16 @@ void StreamStatistic::sampleLLCElement(const LLCElementSample &s) {
       numLLCLateElement++;
     }
   }
-  if (s.valueReadyCycle != 0 && s.reqIssueCycle != 0) {
-    if (s.reqIssueCycle <= s.valueReadyCycle) {
-      auto issueToValueReadyCycle = s.valueReadyCycle - s.reqIssueCycle;
-      remoteIssueToValueReadyCycle.sample(issueToValueReadyCycle);
-
-      auto &staticStats = StreamStatistic::getStaticStat(this->staticStreamId);
-      staticStats.remoteIssueToValueReadyCycle.sample(issueToValueReadyCycle);
-    }
+  if (s.issueCycle > 0 && s.valueReadyCycle >= s.issueCycle) {
+    auto issueToValueReadyCycle = s.valueReadyCycle - s.issueCycle;
+    remoteIssueToValueReadyCycle.sample(issueToValueReadyCycle);
+    this->getStaticStat().remoteIssueToValueReadyCycle.sample(
+        issueToValueReadyCycle);
+  }
+  if (s.readyToIssueCycle > 0 && s.issueCycle >= s.readyToIssueCycle) {
+    auto readyToIssueCycle = s.issueCycle - s.readyToIssueCycle;
+    remoteReadyToIssueDelay.sample(readyToIssueCycle);
+    this->getStaticStat().remoteReadyToIssueDelay.sample(readyToIssueCycle);
   }
 }
 
@@ -49,13 +51,13 @@ void StreamStatistic::dump(std::ostream &os) const {
     auto avg = (divisor > 0) ? static_cast<double>(dividend) /                 \
                                    static_cast<double>(divisor)                \
                              : -1;                                             \
-    os << std::setw(40) << "  " #name << ' ' << std::setprecision(4) << avg    \
+    os << std::setw(40) << "  " #name << ' ' << std::setprecision(4)           \
+       << std::setw(10) << std::left << avg << std::right << " x " << divisor  \
        << '\n';                                                                \
   }
 #define dumpSingleAvgSample(name)                                              \
   {                                                                            \
     if (name.samples > 0) {                                                    \
-      dumpScalar(name.samples);                                                \
       dumpAvg(name.avg, name.value, name.samples);                             \
     }                                                                          \
   }
@@ -120,19 +122,29 @@ void StreamStatistic::dump(std::ostream &os) const {
     dumpSingleAvgSample(remoteForwardNoCDelay);
   }
 
-  if (numLLCAliveElementSamples > 0) {
-    dumpScalar(numLLCAliveElementSamples);
-    dumpAvg(avgLLCAliveElements, numLLCAliveElements,
-            numLLCAliveElementSamples);
-  }
+  dumpSingleAvgSample(localAliveSlice);
+  dumpSingleAvgSample(localCreditNotSentSlice);
+  dumpSingleAvgSample(localCreditSentSlice);
+  dumpSingleAvgSample(localWaitDataSlice);
+  dumpSingleAvgSample(localWaitAckSlice);
+  dumpSingleAvgSample(localAckReadySlice);
+  dumpSingleAvgSample(localDoneSlice);
+  dumpSingleAvgSample(remoteAliveElem);
+  dumpSingleAvgSample(remoteInitializedElem);
+  dumpSingleAvgSample(remoteReadyToIssueElem);
+  dumpSingleAvgSample(remoteIssuedElem);
+  dumpSingleAvgSample(remotePredicatedOffElem);
   dumpSingleAvgSample(remoteInflyReq);
+  dumpSingleAvgSample(remoteInflyCmp);
 
+  dumpSingleAvgSample(remoteReadyToIssueDelay);
   dumpSingleAvgSample(remoteIssueToValueReadyCycle);
   dumpSingleAvgSample(remoteIssueToReqGenDelay);
   dumpSingleAvgSample(remoteIndReqNoCDelay);
   dumpSingleAvgSample(remoteIndReqStreamBufInjectDelay);
   dumpSingleAvgSample(remoteIndReqMsgBufInjectDelay);
   dumpSingleAvgSample(remoteIndReqNoCInjectDelay);
+  dumpSingleAvgSample(remoteToLocalAckNoCDelay);
 
   dumpAvg(avgLength, numStepped, numConfigured);
   dumpAvg(avgUsed, numUsed, numConfigured);
@@ -190,14 +202,13 @@ void StreamStatistic::dump(std::ostream &os) const {
             numFloatAtomic);
   }
 
-  if (numLLCInflyComputationSample > 0) {
-    dumpAvg(avgLLCInflyComputation, numLLCInflyComputation,
-            numLLCInflyComputationSample);
-  }
-
   os << std::setw(40) << "LLCSendTo"
      << "\n";
   dumpSrcDest(this->numLLCSendTo, os);
+
+  os << std::setw(40) << "remoteToLocalMsg"
+     << "\n";
+  dumpSrcDest(this->remoteToLocalMsg, os);
 
   os << std::setw(40) << "RemoteNestConfig"
      << "\n";
@@ -346,29 +357,40 @@ void StreamStatistic::clear() {
   this->numFloatAtomicWaitForLockCycle = 0;
   this->numFloatAtomicWaitForUnlockCycle = 0;
   this->numLLCSendTo.clear();
+  this->remoteToLocalMsg.clear();
   this->numRemoteNestConfig.clear();
 
   this->numRemoteMulticastSlice = 0;
-
-  this->numLLCAliveElements = 0;
-  this->numLLCAliveElementSamples = 0;
-  this->numLLCInflyComputation = 0;
-  this->numLLCInflyComputationSample = 0;
 
   this->idealDataTrafficFix = 0;
   this->idealDataTrafficCached = 0;
   this->idealDataTrafficFloat = 0;
 
+  this->localAliveSlice.clear();
+  this->localCreditNotSentSlice.clear();
+  this->localCreditSentSlice.clear();
+  this->localWaitAckSlice.clear();
+  this->localWaitDataSlice.clear();
+  this->localAckReadySlice.clear();
+  this->localDoneSlice.clear();
+  this->remoteAliveElem.clear();
+  this->remoteInitializedElem.clear();
+  this->remoteReadyToIssueElem.clear();
+  this->remoteIssuedElem.clear();
+  this->remotePredicatedOffElem.clear();
+  this->remoteInflyReq.clear();
+  this->remoteInflyCmp.clear();
   this->remoteForwardNoCDelay.clear();
+  this->remoteReadyToIssueDelay.clear();
   this->remoteIssueToValueReadyCycle.clear();
   this->remoteIssueToReqGenDelay.clear();
   this->remoteIndReqNoCDelay.clear();
   this->remoteIndReqStreamBufInjectDelay.clear();
   this->remoteIndReqMsgBufInjectDelay.clear();
   this->remoteIndReqNoCInjectDelay.clear();
+  this->remoteToLocalAckNoCDelay.clear();
   this->llcReqLat.clear();
   this->memReqLat.clear();
-  this->remoteInflyReq.clear();
 
   for (auto &reasons : this->llcIssueReasons) {
     reasons = 0;

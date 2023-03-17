@@ -462,6 +462,17 @@ public:
   void dump() const;
   std::string dumpString() const;
 
+  /**
+   * Accessor to the NumInnerLoopDepS. Used to track that InnerLoopDepS
+   * has correctly got the value we can be released.
+   */
+  int getNumInnerLoopDepS() const { return this->numInnerLoopDepS; }
+  void incNumInnerLoopDepS() { this->numInnerLoopDepS++; }
+  void decNumInnerLoopDepS() {
+    assert(this->numInnerLoopDepS > 0);
+    this->numInnerLoopDepS--;
+  }
+
 private:
   /**
    * Remember the total trip count.
@@ -509,6 +520,11 @@ private:
    */
   std::list<DynStreamAddressRangePtr> receivedRanges;
   DynStreamAddressRangePtr currentWorkingRange = nullptr;
+
+  /**
+   * Number of InnerLoopDep streams to this stream.
+   */
+  int numInnerLoopDepS = 0;
 
   std::unordered_map<uint64_t, int> futureElemBanks;
 

@@ -47,7 +47,8 @@ public:
    * Receive data from LLC.
    */
   void receiveStreamData(const DynStreamSliceId &sliceId,
-                         const ruby::DataBlock &dataBlock, Addr paddrLine) override;
+                         const ruby::DataBlock &dataBlock,
+                         Addr paddrLine) override;
 
   /**
    * Receive data from the base direct stream.
@@ -89,6 +90,12 @@ public:
       uint64_t &streamElemIdxLhs, uint64_t &strandElemIdxLhs,
       DynStrandId &strandIdLhs, uint64_t &streamElemIdxRhs,
       uint64_t &strandElemIdxRhs, DynStrandId &strandIdRhs) const;
+
+  void sample() const override;
+
+  uint64_t getNextCreditElemIdx() const override {
+    return this->baseStream->getNextCreditElemIdx();
+  }
 
 private:
   // Remember the root stream id.
@@ -138,7 +145,8 @@ private:
    * @return whether this is handled as the FinalReductionValue.
    */
   bool receiveFinalReductionValue(const DynStreamSliceId &sliceId,
-                                  const ruby::DataBlock &dataBlock, Addr paddrLine);
+                                  const ruby::DataBlock &dataBlock,
+                                  Addr paddrLine);
 };
 
 } // namespace gem5

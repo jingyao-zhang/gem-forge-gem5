@@ -190,6 +190,7 @@ void DynStream::addBaseDynStreams() {
     DYN_S_DPRINTF(this->dynStreamId,
                   "[InnerLoopDep] Push myself to OuterLoopDepDynS %s.\n",
                   depDynS.dynStreamId);
+    this->incNumInnerLoopDepS();
     depDynS.pushInnerLoopBaseDynStream(edge.type, edge.fromStaticId,
                                        this->dynStreamId.streamInstance,
                                        edge.toStaticId);
@@ -614,8 +615,27 @@ void DynStream::addBaseElements(StreamElement *newElem) {
   /**
    * Remember the InnerLoopBaseElement will be initialized later.
    */
-  if (!this->stream->innerLoopBaseEdges.empty()) {
-    newElem->hasUnInitInnerLoopAddrBaseElements = true;
+  for (const auto &innerBaseEdge : this->stream->innerLoopBaseEdges) {
+    switch (innerBaseEdge.type) {
+    case StreamDepEdge::TypeE::Addr: {
+      newElem->hasUnInitInnerLoopAddrBaseElem = true;
+      break;
+    }
+    case StreamDepEdge::TypeE::Back: {
+      if (newElem->FIFOIdx.entryIdx > 0) {
+        newElem->hasUnInitInnerLoopValueBaseElem = true;
+      }
+      break;
+    }
+    case StreamDepEdge::TypeE::Value: {
+      newElem->hasUnInitInnerLoopValueBaseElem = true;
+      break;
+    }
+    default: {
+      S_ELEMENT_PANIC(newElem, "Unhandled InnerLoopBaseEdge %s.",
+                      innerBaseEdge.toStream->getStreamName());
+    }
+    }
   }
 }
 
@@ -690,7 +710,8 @@ void DynStream::addBackBaseElementEdge(StreamElement *newElem,
 void DynStream::tryAddInnerLoopBaseElements(StreamElement *elem) {
 
   if (this->stream->innerLoopBaseEdges.empty() ||
-      !elem->hasUnInitInnerLoopAddrBaseElements) {
+      !(elem->hasUnInitInnerLoopAddrBaseElem ||
+        elem->hasUnInitInnerLoopValueBaseElem)) {
     return;
   }
 
@@ -699,7 +720,8 @@ void DynStream::tryAddInnerLoopBaseElements(StreamElement *elem) {
   }
 
   this->addInnerLoopBaseElements(elem);
-  elem->hasUnInitInnerLoopAddrBaseElements = false;
+  elem->hasUnInitInnerLoopAddrBaseElem = false;
+  elem->hasUnInitInnerLoopValueBaseElem = false;
 }
 
 bool DynStream::areInnerLoopBaseElementsAllocated(StreamElement *elem) const {
@@ -710,38 +732,44 @@ bool DynStream::areInnerLoopBaseElementsAllocated(StreamElement *elem) const {
 
   auto elemIdx = elem->FIFOIdx.entryIdx;
 
-  DYN_S_DPRINTF(this->dynStreamId,
-                "[InnerLoopDep] Checking for NextElem %llu.\n", elemIdx);
+  S_ELEMENT_DPRINTF(elem, "[InnerLoopDep] Checking InnerLoopBaseElems.\n");
   for (const auto &edge : this->stream->innerLoopBaseEdges) {
+    if (edge.type == StreamDepEdge::Back && elemIdx == 0) {
+      continue;
+    }
     auto baseS = edge.toStream;
     const auto &dynEdges = this->getInnerLoopBaseEdges(edge.toStaticId);
-    if (elemIdx >= dynEdges.size()) {
+
+    auto adjustElemIdx =
+        edge.type == StreamDepEdge::Back ? (elemIdx - 1) : elemIdx;
+    if (adjustElemIdx >= dynEdges.size()) {
       // The inner-loop stream has not been allocated.
-      DYN_S_DPRINTF(this->dynStreamId,
-                    "[InnerLoopDep]   InnerLoopS %s Not Config.\n",
-                    baseS->getStreamName());
+      S_ELEMENT_DPRINTF(
+          elem, "[InnerLoopDep]   InnerLoopS %s AdjElemIdx %lu Not Config.\n",
+          baseS->getStreamName(), adjustElemIdx);
       return false;
     }
-    const auto &dynEdge = dynEdges.at(elemIdx);
+
+    const auto &dynEdge = dynEdges.at(adjustElemIdx);
+
     auto &baseDynS = baseS->getDynStreamByInstance(dynEdge.baseInstanceId);
-    DYN_S_DPRINTF(this->dynStreamId, "[InnerLoopDep]   InnerLoopDynS %s.\n",
-                  baseDynS.dynStreamId);
+    S_ELEMENT_DPRINTF(elem, "[InnerLoopDep]   InnerLoopDynS %s.\n",
+                      baseDynS.dynStreamId);
     if (!baseDynS.hasTotalTripCount()) {
-      DYN_S_DPRINTF(this->dynStreamId, "[InnerLoopDep]   NoTripCount.\n");
+      S_ELEMENT_DPRINTF(elem, "[InnerLoopDep]   NoTripCount.\n");
       return false;
     }
     auto baseTripCount = baseDynS.getTotalTripCount();
     if (baseDynS.FIFOIdx.entryIdx <= baseTripCount) {
-      DYN_S_DPRINTF(
-          this->dynStreamId,
-          "[InnerLoopDep]   TripCount %llu > BaseDynS NextElem %lu.\n",
+      S_ELEMENT_DPRINTF(
+          elem, "[InnerLoopDep]   TripCount %llu > BaseDynS NextElem %lu.\n",
           baseTripCount, baseDynS.FIFOIdx.entryIdx);
       return false;
     }
     auto baseElement = baseDynS.getElemByIdx(baseTripCount);
     if (!baseElement) {
-      DYN_S_PANIC(
-          this->dynStreamId,
+      S_ELEMENT_PANIC(
+          elem,
           "[InnerLoopDep]   InnerLoopDynS %s TripCount %llu ElemReleased.",
           baseDynS.dynStreamId, baseTripCount);
     }
@@ -758,14 +786,22 @@ void DynStream::addInnerLoopBaseElements(StreamElement *elem) {
 
   auto elemIdx = elem->FIFOIdx.entryIdx;
   for (const auto &edge : this->stream->innerLoopBaseEdges) {
+    if (edge.type == StreamDepEdge::Back && elemIdx == 0) {
+      continue;
+    }
     auto baseS = edge.toStream;
     const auto &dynEdges = this->getInnerLoopBaseEdges(edge.toStaticId);
-    if (elemIdx >= dynEdges.size()) {
+
+    auto adjustElemIdx =
+        edge.type == StreamDepEdge::Back ? (elemIdx - 1) : elemIdx;
+    if (adjustElemIdx >= dynEdges.size()) {
       // The inner-loop stream has not been allocated.
-      S_ELEMENT_PANIC(elem, "[InnerLoopDep] InnerLoopS %s Not Config.\n",
-                      baseS->getStreamName());
+      S_ELEMENT_PANIC(
+          elem, "[InnerLoopDep] InnerLoopS %s AdjustElemIdx %lu Not Config.\n",
+          baseS->getStreamName(), adjustElemIdx);
     }
-    const auto &dynEdge = dynEdges.at(elemIdx);
+    const auto &dynEdge = dynEdges.at(adjustElemIdx);
+
     auto &baseDynS = baseS->getDynStreamByInstance(dynEdge.baseInstanceId);
     if (!baseDynS.hasTotalTripCount()) {
       S_ELEMENT_PANIC(elem, "[InnerLoopDep] NoTripCount.\n");
@@ -781,18 +817,27 @@ void DynStream::addInnerLoopBaseElements(StreamElement *elem) {
     if (baseS->isInnerSecondFinalValueUsedByCore()) {
       baseElemIdx = baseTripCount - 1;
     }
-    auto baseElement = baseDynS.getElemByIdx(baseElemIdx);
-    if (!baseElement) {
+    auto baseElem = baseDynS.getElemByIdx(baseElemIdx);
+    if (!baseElem) {
       S_ELEMENT_PANIC(
           elem, "[InnerLoopDep] %s TripCount %llu BaseElemIdx %llu Released.",
           baseDynS.dynStreamId, baseTripCount, baseElemIdx);
     }
     S_ELEMENT_DPRINTF(elem, "[InnerLoopDep] Add Type %s BaseElem: %s.\n",
-                      edge.type, baseElement->FIFOIdx);
+                      edge.type, baseElem->FIFOIdx);
+    baseDynS.decNumInnerLoopDepS();
     switch (edge.type) {
-    case StreamDepEdge::TypeE::Addr:
-      elem->addrBaseElements.emplace_back(baseElement);
+    case StreamDepEdge::TypeE::Addr: {
+      elem->addrBaseElements.emplace_back(baseElem);
+      baseElem->innerLoopDepElements.emplace_back(elem);
       break;
+    }
+    case StreamDepEdge::TypeE::Back:
+    case StreamDepEdge::TypeE::Value: {
+      elem->valueBaseElements.emplace_back(baseElem);
+      baseElem->innerLoopDepElements.emplace_back(elem);
+      break;
+    }
     default: {
       S_ELEMENT_DPRINTF(elem, "Unsupported InnerLoopDep %s.", edge.type);
     }
@@ -804,8 +849,8 @@ bool DynStream::shouldCoreSEIssue() const {
   /**
    * If the stream has floated, and no core user/dependent streams here,
    * then we don't have to issue for the data.
-   * ZeroTripCount stream will never issue. This is common for EpilogueLoop when
-   * the loop is perfectly vectorized.
+   * ZeroTripCount stream will never issue. This is common for EpilogueLoop
+   * when the loop is perfectly vectorized.
    */
   auto S = this->stream;
   if (this->hasZeroTripCount()) {
@@ -813,8 +858,15 @@ bool DynStream::shouldCoreSEIssue() const {
   }
 
   if (!S->hasCoreUser() && this->isFloatedToCache()) {
-    // Check that dependent dynS all offloaded to cache (except ZeroTripCount).
+    // Check that dependent dynS all offloaded to cache (except
+    // ZeroTripCount).
     for (auto depS : S->addrDepStreams) {
+
+      if (depS->getLoopLevel() < S->getConfigLoopLevel()) {
+        // I am an InnerLoopBaseS. Do not check.
+        continue;
+      }
+
       const auto &depDynS = depS->getDynStream(this->configSeqNum);
       // If the AddrDepStream issues, then we have to issue to compute the
       // address.
@@ -826,6 +878,12 @@ bool DynStream::shouldCoreSEIssue() const {
       }
     }
     for (auto backDepS : S->backDepStreams) {
+
+      if (backDepS->getLoopLevel() < S->getConfigLoopLevel()) {
+        // I am an InnerLoopBaseS. Do not check.
+        continue;
+      }
+
       const auto &backDepDynS = backDepS->getDynStream(this->configSeqNum);
       if (!backDepDynS.isFloatedToCache()) {
         DYN_S_DPRINTF(this->dynStreamId,
@@ -835,6 +893,12 @@ bool DynStream::shouldCoreSEIssue() const {
       }
     }
     for (auto valDepS : S->valueDepStreams) {
+
+      if (valDepS->getLoopLevel() < S->getConfigLoopLevel()) {
+        // I am an InnerLoopBaseS. Do not check.
+        continue;
+      }
+
       const auto &valDepDynS = valDepS->getDynStream(this->configSeqNum);
       if (valDepDynS.shouldCoreSEIssue()) {
         DYN_S_DPRINTF(this->dynStreamId,
@@ -854,9 +918,9 @@ bool DynStream::shouldCoreSEIssue() const {
     return false;
   }
   /**
-   * A special rule for conditional AtomicStream that already alias with a load.
-   * This is common pattern to first load to check if we want to perform the
-   * atomic. For such pattern, we do not issue.
+   * A special rule for conditional AtomicStream that already alias with a
+   * load. This is common pattern to first load to check if we want to perform
+   * the atomic. For such pattern, we do not issue.
    */
   if (!S->hasCoreUser() && S->isAtomicStream() && !S->isAtomicComputeStream() &&
       S->getIsConditional() && S->aliasBaseStream->aliasedStreams.size() > 1) {
@@ -1404,7 +1468,12 @@ void DynStream::setInnerFinalValue(uint64_t elemIdx, const StreamValue &value) {
   if (this->innerFinalValueMap.count(elemIdx)) {
     DYN_S_PANIC(this->dynStreamId, "Reset InnerFinalValue at %lu.", elemIdx);
   }
+  DYN_S_DPRINTF(this->dynStreamId,
+                "[InnerLoopDep] Set InnerFinalValue at %lu %s.\n", elemIdx,
+                value);
   this->innerFinalValueMap.emplace(elemIdx, value);
+  // We should add ourselves back to the IssuingList.
+  this->se->addIssuingDynS(this);
 }
 
 bool DynStream::isInnerFinalValueReady(uint64_t elemIdx) const {

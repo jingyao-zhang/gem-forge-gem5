@@ -496,10 +496,13 @@ private:
    */
   void releaseElementStepped(DynStream *dynS, bool isEnd, bool doThrottle);
   void issueElements();
-  void issueElement(StreamElement *element);
-  void issueNDCElement(StreamElement *element);
-  void prefetchElement(StreamElement *element);
-  void writebackElement(StreamElement *element, StreamStoreInst *inst);
+  void issueElement(StreamElement *elem);
+  void issueNDCElement(StreamElement *elem);
+  void prefetchElement(StreamElement *elem);
+  // For InCoreStoreCmpS.
+  void writebackElement(StreamElement *elem);
+  // This is the old implementation for LLVMTraceCPU.
+  void writebackElement(StreamElement *elem, StreamStoreInst *inst);
 
   /**
    * Flush the PEB entries.
