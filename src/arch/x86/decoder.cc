@@ -827,8 +827,8 @@ Decoder::decode(ExtMachInst mach_inst, Addr addr)
         }
     }
 
-    DPRINTF(Decode, "Decode: Decoded %s instruction: %#x\n",
-            si->getName(), mach_inst);
+    DPRINTF(Decode, "Decode: Decoded %s instruction at %#x: %#x\n",
+            si->getName(), origPC, mach_inst);
     return si;
 }
 
