@@ -40,6 +40,10 @@ def get_processes(args):
         # Yield wakeup every 10us.
         process.yieldWakeup = '2us'
 
+        if args.env:
+            with open(args.env, "r") as f:
+                process.env = [line.rstrip() for line in f]
+
         if len(pargs) > idx:
             process.cmd = [wrkld] + pargs[idx].split()
         else:
