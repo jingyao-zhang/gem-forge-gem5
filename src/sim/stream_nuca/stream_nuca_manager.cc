@@ -130,15 +130,16 @@ void StreamNUCAManager::defineRegion(const std::string &regionName, Addr start,
   for (const auto &s : arraySizes) {
     numElement *= s;
   }
+  auto assignedName = this->assignRegionGroup(regionName);
   DPRINTF(StreamNUCAManager,
           "[StreamNUCA] Define Region %s %#x %ld %ld=%ldx%ldx%ld %lukB.\n",
-          regionName, start, elementSize, numElement, arraySizes[0],
+          assignedName, start, elementSize, numElement, arraySizes[0],
           arraySizes.size() > 1 ? arraySizes[1] : 1,
           arraySizes.size() > 2 ? arraySizes[2] : 1,
           elementSize * numElement / 1024);
   this->startVAddrRegionMap.emplace(
       std::piecewise_construct, std::forward_as_tuple(start),
-      std::forward_as_tuple(regionName, start, elementSize, numElement,
+      std::forward_as_tuple(assignedName, start, elementSize, numElement,
                             arraySizes));
 }
 
@@ -2176,4 +2177,22 @@ StreamNUCAManager::getAlignDimsForDirectRegion(const StreamRegion &region) {
   }
   return ret;
 }
+
+std::string
+StreamNUCAManager::assignRegionGroup(const std::string &regionName) {
+  if (regionName.empty() || regionName.back() != '/') {
+    return regionName;
+  }
+  const auto regionGroup = regionName.substr(0, regionName.size() - 1);
+  int currentRegionsInGroup = 0;
+  for (const auto &entry : this->startVAddrRegionMap) {
+    const auto &region = entry.second;
+    if (region.getRegionGroup() == regionGroup) {
+      currentRegionsInGroup++;
+    }
+  }
+  auto newRegionName = regionName + std::to_string(currentRegionsInGroup);
+  return newRegionName;
+}
+
 } // namespace gem5

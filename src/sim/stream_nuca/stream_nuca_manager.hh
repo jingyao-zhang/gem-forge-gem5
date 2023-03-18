@@ -138,6 +138,8 @@ public:
     uint64_t cachedElements;
   };
 
+  std::string assignRegionGroup(const std::string &regionName);
+
   StreamRegion &getRegionFromStartVAddr(Addr vaddr);
   StreamRegion &getRegionFromName(const std::string &name);
   const StreamRegion &getContainingStreamRegion(Addr vaddr) const;
