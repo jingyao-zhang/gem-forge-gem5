@@ -119,6 +119,15 @@
                         }
                     }
                 }
+                0x9C: decode REX_W {
+                    0x0: decode EVEX_B {
+                        0x0: decode EVEX_L_EXTEND {
+                            0x2: VFNMADD132PS(VZqo, WZqo);
+                            0x1: VFNMADD132PS(VYdo, WYdo);
+                            0x0: VFNMADD132PS(Vo, Wo);
+                        }
+                    }
+                }
                 0xA8: decode REX_W {
                     0x0: decode EVEX_B {
                         0x0: decode EVEX_L_EXTEND {

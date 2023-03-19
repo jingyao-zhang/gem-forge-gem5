@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VCVTSD2SS_XMM_XMM {
     cvtf2f xmm0, xmm0m, destSize=4, srcSize=8, ext=Scalar
@@ -24,4 +24,4 @@ def macroop VCVTSD2SS_XMM_P {
     vclear dest=xmm2, destVL=16
 };
 
-'''
+"""

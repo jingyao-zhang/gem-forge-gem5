@@ -166,8 +166,10 @@ let {{
         def getAllocator(self, microFlags):
             className = self.className
             allocator = '''new %(class_name)s(machInst, macrocodeBlock,
-                    %(flags)s, %(srcType)s, %(dest)s, %(src1)s, %(src2)s, %(src3)s,
-                    %(destSize)s, %(destVL)s, %(srcSize)s, %(srcVL)s, %(imm8)s, %(ext)s,
+                    %(flags)s, %(srcType)s, %(dest)s,
+                    %(src1)s, %(src2)s, %(src3)s,
+                    %(destSize)s, %(destVL)s, %(srcSize)s, %(srcVL)s,
+                    %(imm8)s, %(ext)s,
                     %(mask)s)''' % {
                 "class_name" : className,
                 "flags" : self.microFlagsText(microFlags),
@@ -217,7 +219,8 @@ let {{
     class Varithp(AVXOp):
         # Used in packed arithmetic ops, e.g. vaddps.
         abstract = True
-        def __init__(self, dest, src1, src2, size, VL, mask='GpRegIndex(int_reg::K0)'):
+        def __init__(self, dest, src1, src2, size, VL,
+                     mask='GpRegIndex(int_reg::K0)'):
             super(Varithp, self).__init__(
                 dest=dest, src1=src1, src2=src2,
                 destSize=size, destVL=VL, srcSize=size, srcVL=VL,
@@ -236,7 +239,8 @@ let {{
             if (mask != int_reg::_K0Idx) {
                 // We also need the dest regs as src.
                 this->addAVXDestAsSrcRegs();
-                assert(_numSrcRegs + 1 <= MaxInstSrcRegs && "MaskRegs overflow.");
+                assert(_numSrcRegs + 1 <= MaxInstSrcRegs
+                    && "MaskRegs overflow.");
                 srcRegIdxArr[_numSrcRegs] = intRegClass[mask];
                 _numSrcRegs++;
             }
@@ -300,6 +304,12 @@ let {{
         opClass = 'SimdAddOp'
         code = '''
             this->doPackedBinaryOp(xc, BinaryOp::IntAdd);
+        '''
+
+    class Vaddsi(Varithp):
+        opClass = 'SimdAddOp'
+        code = '''
+            this->doPackedBinaryOp(xc, BinaryOp::IntSatAdd);
         '''
 
     class Vsubi(Varithp):
@@ -411,29 +421,33 @@ let {{
             // The last one is the dest register.
             srcRegIdxArr[3] = floatRegClass[dest] ;
         '''
-    
+
     class Vfmaddf(Vfused):
         opClass = 'SimdFloatMultAccOp'
         code = '''
-            this->doFusedPackedBinaryOp(xc, BinaryOp::FloatMul, BinaryOp::FloatAdd);
+            this->doFusedPackedBinaryOp(xc,
+                BinaryOp::FloatMul, BinaryOp::FloatAdd);
         '''
 
     class Vfnmaddf(Vfused):
         opClass = 'SimdFloatMultAccOp'
         code = '''
-            this->doFusedPackedBinaryOp(xc, BinaryOp::FloatNegMul, BinaryOp::FloatAdd);
+            this->doFusedPackedBinaryOp(xc,
+                BinaryOp::FloatNegMul, BinaryOp::FloatAdd);
         '''
 
     class Sfmaddf(Sfused):
         opClass = 'SimdFloatMultAccOp'
         code = '''
-            this->doFusedSingleBinaryOp(xc, BinaryOp::FloatMul, BinaryOp::FloatAdd);
+            this->doFusedSingleBinaryOp(xc,
+                BinaryOp::FloatMul, BinaryOp::FloatAdd);
         '''
 
     class Sfnmaddf(Sfused):
         opClass = 'SimdFloatMultAccOp'
         code = '''
-            this->doFusedSingleBinaryOp(xc, BinaryOp::FloatNegMul, BinaryOp::FloatAdd);
+            this->doFusedSingleBinaryOp(xc,
+                BinaryOp::FloatNegMul, BinaryOp::FloatAdd);
         '''
 
     class Vbroadcast8(AVXOp):
@@ -715,7 +729,7 @@ let {{
         # Compare two floating point vectors.
         def __init__(self, dest, src1, src2, imm8, VL, size):
             super(Vcmpf, self).__init__(
-                # ! GemForge: Change from GpRegIndex to FpRegIndex
+                # ! Change from GpRegIndex to FpRegIndex
                 dest="FpRegIndex((%s).index)" % dest,
                 src1=src1, src2=src2, imm8=imm8,
                 srcVL=VL, destVL=8, srcSize=size, destSize=8,
@@ -748,7 +762,7 @@ let {{
         # Compare two floating point scalar.
         def __init__(self, dest, src1, src2, imm8, VL, size):
             super(Scmpf, self).__init__(
-                # ! GemForge: Change from GpRegIndex to FpRegIndex
+                # ! Change from GpRegIndex to FpRegIndex
                 dest="FpRegIndex((%s).index)" % dest,
                 src1=src1, src2=src2, imm8=imm8,
                 srcVL=VL, destVL=8, srcSize=size, destSize=8,
@@ -870,7 +884,7 @@ let {{
         # Extra from the src.
         def __init__(self, dest, src, imm8, srcVL, destVL, size):
             super(Vextract, self).__init__(
-                # ! GemForge: Change from GpRegIndex to FpRegIndex
+                # ! Change from GpRegIndex to FpRegIndex
                 dest="FpRegIndex((%s).index)" % dest,
                 src1=src, imm8=imm8,
                 srcVL=srcVL, destVL=destVL, srcSize=size, destSize=size,
@@ -927,9 +941,10 @@ let {{
     class AVXRegOp(AVXOp):
         # Support masked mov.
         abstract = True
-        def __init__(self, dest, src, size, VL, mask='GpRegIndex(int_reg::K0)'):
+        def __init__(self, dest, src, size, VL,
+                     mask='GpRegIndex(int_reg::K0)'):
             super(AVXRegOp, self).__init__(
-                dest=dest, src1=src, 
+                dest=dest, src1=src,
                 destSize=size, destVL=VL, srcSize=size, srcVL=VL,
                 mask=mask
             )
@@ -945,12 +960,12 @@ let {{
             if (mask != int_reg::_K0Idx) {
                 // We also need the dest regs as src.
                 this->addAVXDestAsSrcRegs();
-                assert(_numSrcRegs + 1 <= MaxInstSrcRegs && "MaskRegs overflow.");
+                assert(_numSrcRegs + 1 <= MaxInstSrcRegs
+                    && "MaskRegs overflow.");
                 srcRegIdxArr[_numSrcRegs] = intRegClass[mask];
                 _numSrcRegs++;
             }
         '''
-    
     class Vmov(AVXRegOp):
         opClass = 'SimdMiscOp'
         code = '''

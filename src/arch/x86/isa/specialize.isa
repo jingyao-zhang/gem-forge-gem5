@@ -122,9 +122,11 @@ let {{
                 self.size = match.group("ssize")
 
     # EVEX will extend ModRMReg with EVEX_R'.
-    ModRMRegIndex = "(MODRM_REG | (REX_R << 3) | ((EVEX_PRESENT ? EVEX_R_PRIME : 0) << 4))"
+    ModRMRegIndex = \
+        "(MODRM_REG | (REX_R << 3) | ((EVEX_PRESENT ? EVEX_R_PRIME : 0) << 4))"
     # EVEX will extend ModRMRM with REX_X.
-    ModRMRMIndex = "(MODRM_RM | (REX_B << 3) | ((EVEX_PRESENT ? REX_X : 0) << 4))"
+    ModRMRMIndex = \
+        "(MODRM_RM | (REX_B << 3) | ((EVEX_PRESENT ? REX_X : 0) << 4))"
     InstRegIndex = "(OPCODE_OP_BOTTOM3 | (REX_B << 3))"
 
     # This function specializes the given piece of code to use a particular
@@ -136,7 +138,8 @@ let {{
             opType = OpType(opTypes[0])
             opTypes.pop(0)
 
-            if opType.tag not in ("I", "J", "P", "PR", "Q", "V", "VR", "W", "WY", "WZ"):
+            if opType.tag not in ("I", "J", "P", "PR", "Q", "V", "VR",
+                                  "W", "WY", "WZ"):
                 if opType.size:
                     env.setSize(opType.size)
 

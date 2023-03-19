@@ -39,6 +39,10 @@
                     0x1: VBROADCASTSS(VYdo, Wq);
                     0x0: VBROADCASTSS(Vo, Wq);
                 }
+                0x28: decode EVEX_L {
+                    0x1: VPMULDQ(VYdo, WYdo);
+                    0x0: VPMULDQ(Vo, Wo);
+                }
                 0x2B: decode EVEX_L {
                     0x1: VPACKUSDW(VYdo, WYdo);
                     0x0: VPACKUSDW(Vo, Wo);
@@ -46,6 +50,10 @@
                 0x30: decode EVEX_L {
                     0x1: VPMOVZXBW(VYdo, WYdo);
                     0x0: VPMOVZXBW(Vo, Wo);
+                }
+                0x39: decode EVEX_L {
+                    0x1: VPMINSD(VYdo, WYdo);
+                    0x0: VPMINSD(Vo, Wo);
                 }
                 0x58: decode EVEX_L {
                     0x1: VPBROADCASTD(VYdo, Wd);

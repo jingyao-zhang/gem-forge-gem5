@@ -1,5 +1,4 @@
-
-microcode = '''
+microcode = """
 def macroop VSUBPD_XMM_XMM {
     vsubf dest=xmm0, src1=xmm0v, src2=xmm0m, size=8, VL=16
 };
@@ -45,4 +44,4 @@ def macroop VSUBPD_ZMM_P {
     vsubf dest=xmm0, src1=xmm0v, src2=ufp1, size=8, VL=64
 };
 
-'''
+"""

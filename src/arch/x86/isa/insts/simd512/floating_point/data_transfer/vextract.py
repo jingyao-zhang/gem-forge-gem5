@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VEXTRACT256L_YMM_ZMM_I {
     movfp xmm0, xmm0m, dataSize=8
@@ -106,4 +106,4 @@ def macroop VEXTRACT128HH_P_ZMM_I {
     stfp xmm7, seg, riprel, "DISPLACEMENT + 8", dataSize=8
 };
 
-'''
+"""

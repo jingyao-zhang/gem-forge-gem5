@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 def macroop VMOVSLDUP_XMM_XMM {
     mmovsdup dest=xmm0, src1=xmm0m, size=4, ext=0
     mmovsdup dest=xmm1, src1=xmm1m, size=4, ext=0
@@ -82,4 +82,4 @@ def macroop VMOVSLDUP_ZMM_P {
     mmovsdup dest=xmm6, src1=ufp7, size=4, ext=0
     mmovsdup dest=xmm7, src1=ufp8, size=4, ext=0
 };
-'''
+"""

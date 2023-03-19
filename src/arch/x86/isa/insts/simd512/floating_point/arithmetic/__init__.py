@@ -3,6 +3,7 @@ categories = [
     "vaddsd",
     "vaddps",
     "vmaxps",
+    "vmaxpd",
     "vaddpd",
     "vandps",
     "vcmpps",
@@ -13,6 +14,7 @@ categories = [
     "vfmadd213ps",
     "vfmadd213ss",
     "vfmadd231ss",
+    "vfnmadd132ps",
     "vfnmadd213ps",
     "vfnmadd213ss",
     "vfnmadd231ps",
@@ -24,6 +26,7 @@ categories = [
     "vminsd",
     "vminss",
     "vminps",
+    "vminpd",
     "vmaxss",
     "vmulps",
     "vmulpd",
@@ -39,9 +42,9 @@ categories = [
     "vpxor",
 ]
 
-microcode = '''
+microcode = """
 # AVX512 instructions
-'''
+"""
 for category in categories:
     exec("from . import {s} as cat".format(s=category))
     microcode += cat.microcode

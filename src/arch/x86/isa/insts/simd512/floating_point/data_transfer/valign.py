@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VALIGND_XMM_XMM_I {
     valign dest=xmm0, src1=xmm0v, src2=xmm0m, imm8="(IMMEDIATE) & 0x1", VL=16, size=4
@@ -103,4 +103,4 @@ def macroop VALIGNQ_ZMM_P_I {
 };
 
 
-'''
+"""

@@ -1,5 +1,4 @@
-
-microcode = '''
+microcode = """
 def macroop VXORPS_XMM_XMM {
     vxor dest=xmm0, src1=xmm0v, src2=xmm0m, size=4, VL=16
     vclear dest=xmm2, destVL=16
@@ -38,4 +37,19 @@ def macroop VXORPS_YMM_P {
     vclear dest=xmm4, destVL=32
 };
 
-'''
+def macroop VXORPS_ZMM_ZMM {
+    vxor dest=xmm0, src1=xmm0v, src2=xmm0m, size=4, VL=64
+};
+
+def macroop VXORPS_ZMM_M {
+    ldfp512 ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=64
+    vxor dest=xmm0, src1=xmm0v, src2=ufp1, size=4, VL=64
+};
+
+def macroop VXORPS_ZMM_P {
+    rdip t7
+    ldfp512 ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=64
+    vxor dest=xmm0, src1=xmm0v, src2=ufp1, size=4, VL=64
+};
+
+"""

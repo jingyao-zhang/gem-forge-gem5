@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VUNPCKLPS_XMM_XMM {
     unpack xmm0, xmm0v, xmm0m, ext=0, size=4
@@ -90,4 +90,4 @@ def macroop VUNPCKHPS_YMM_P {
     unpack xmm3, xmm3v, ufp2, ext=1, size=4
 };
 
-'''
+"""

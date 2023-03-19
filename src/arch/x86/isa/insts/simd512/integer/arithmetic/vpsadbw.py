@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 def macroop VPSADBW_XMM_XMM {
     msad xmm0, xmm0, xmm0m, srcSize=1, destSize=2
     msad xmm1, xmm1, xmm1m, srcSize=1, destSize=2
@@ -76,4 +76,4 @@ def macroop VPSADBW_ZMM_P {
     msad xmm6, xmm6, ufp7, srcSize=1, destSize=2
     msad xmm7, xmm7, ufp8, srcSize=1, destSize=2
 };
-'''
+"""

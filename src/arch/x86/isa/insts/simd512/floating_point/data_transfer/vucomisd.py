@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VUCOMISD_XMM_XMM {
     mcmpf2rf xmm0, xmm0m, size=8
@@ -16,4 +16,4 @@ def macroop VUCOMISD_XMM_P {
 };
 
 
-'''
+"""

@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VPERMILPD_XMM_XMM_I {
     mpermilpd dest=xmm0, src1=xmm0m, op2=xmm1m, size=8, ext="(IMMEDIATE >> 0) & 0x1"
@@ -83,4 +83,4 @@ def macroop VPERMILPD_ZMM_P_I {
     mpermilpd dest=xmm6, src1=ufp7, op2=ufp8, size=8, ext="(IMMEDIATE >> 6) & 0x1"
     mpermilpd dest=xmm7, src1=ufp7, op2=ufp8, size=8, ext="(IMMEDIATE >> 7) & 0x1"
 };
-'''
+"""

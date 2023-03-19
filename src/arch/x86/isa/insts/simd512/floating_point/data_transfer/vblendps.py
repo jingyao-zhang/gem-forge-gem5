@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VBLENDPS_XMM_XMM_I {
     mblend op1=xmm0, op2=xmm0v, op3=xmm0m, size=4, ext="(IMMEDIATE >> 0) & 0x3"
@@ -48,4 +48,4 @@ def macroop VBLENDPS_YMM_P_I {
     vclear dest=xmm4, destVL=32
 };
 
-'''
+"""

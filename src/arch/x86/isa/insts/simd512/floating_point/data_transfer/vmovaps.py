@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VMOVAPS_XMM_XMM {
     vmov dest=xmm0, src=xmm0m, size=4, VL=16, mask=maskka
@@ -72,4 +72,4 @@ def macroop VMOVAPS_P_ZMM {
     stfp512 xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=64
 };
 
-'''
+"""

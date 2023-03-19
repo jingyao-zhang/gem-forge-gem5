@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VPEXTRW_R_XMM_I {
     vextract reg, xmm0m, imm8="IMMEDIATE", srcVL=16, destVL=8, size=2
@@ -26,4 +26,4 @@ def macroop VPEXTRW_P_XMM_I {
     st t1, seg, riprel, disp, dataSize=2
 };
 
-'''
+"""

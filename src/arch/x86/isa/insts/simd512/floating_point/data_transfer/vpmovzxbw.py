@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VPMOVZXBW_XMM_XMM {
     vmovzx dest=xmm0, src=xmm0m, srcSize=1, destVL=16
@@ -37,4 +37,4 @@ def macroop VPMOVZXBW_YMM_P {
 };
 
 
-'''
+"""

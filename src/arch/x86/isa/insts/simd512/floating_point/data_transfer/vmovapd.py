@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 def macroop VMOVAPD_XMM_XMM {
     movfp128 reg1=xmm0, reg2=xmm0m, dataSize=16
     vclear dest=xmm2, destVL=16
@@ -71,4 +71,4 @@ def macroop VMOVAPD_P_ZMM {
     stfp512 xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=64
 };
 
-'''
+"""

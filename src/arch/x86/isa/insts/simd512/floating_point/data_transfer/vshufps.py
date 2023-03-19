@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VSHUFPS_XMM_XMM_I {
     shuffle ufp1, xmm0v, xmm1v, size=4, ext="IMMEDIATE"
@@ -59,4 +59,4 @@ def macroop VSHUFPS_YMM_P_I {
     movfp xmm2, ufp6, dataSize=8
 };
 
-'''
+"""

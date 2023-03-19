@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VBROADCASTSD_YMM_XMM {
     movfp reg1=xmm0, reg2=xmm0m, dataSize=8
@@ -63,4 +63,4 @@ def macroop VBROADCASTSD_ZMM_P {
     movfp reg1=xmm7, reg2=ufp1, dataSize=8
 };
 
-'''
+"""

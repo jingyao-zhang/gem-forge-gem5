@@ -1,5 +1,4 @@
-
-microcode = '''
+microcode = """
 def macroop VPXOR_XMM_XMM {
     vxor dest=xmm0, src1=xmm0v, src2=xmm0m, size=8, VL=16
     vclear dest=xmm2, destVL=16
@@ -51,4 +50,4 @@ def macroop VPXOR_ZMM_P {
     vxor dest=xmm0, src1=xmm0v, src2=ufp1, size=8, VL=64
 };
 
-'''
+"""

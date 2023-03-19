@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VINSERTPS_XMM_XMM_I {
     movfp ufp1, xmm0m, dataSize=8
@@ -29,4 +29,4 @@ def macroop VINSERTPS_XMM_P_I {
     vclear dest=xmm2, destVL=16
 };
 
-'''
+"""

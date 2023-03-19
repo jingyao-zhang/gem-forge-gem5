@@ -1,5 +1,4 @@
-
-microcode = '''
+microcode = """
 def macroop VPORD_XMM_XMM {
     vor dest=xmm0, src1=xmm0v, src2=xmm0m, size=4, VL=16, mask=maskka
     vclear dest=xmm2, destVL=16
@@ -51,4 +50,4 @@ def macroop VPORD_ZMM_P {
     vor dest=xmm0, src1=xmm0v, src2=ufp1, size=4, VL=64, mask=maskka
 };
 
-'''
+"""

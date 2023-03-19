@@ -99,9 +99,11 @@ let {{
                     typeQual = match.group("typeQual")
                 src2_name = "%sFpSrcReg2%s" % (match.group("prefix"), typeQual)
                 self.buildCppClasses(name, Name, suffix,
-                        matcher.sub(src2_name, code), operand_types, additional_params)
+                        matcher.sub(src2_name, code), operand_types,
+                        additional_params)
                 self.buildCppClasses(name + "i", Name, suffix + "Imm",
-                        matcher.sub("imm8", code), imm_operand_types, additional_params)
+                        matcher.sub("imm8", code), imm_operand_types,
+                        additional_params)
                 return
 
             base = "X86ISA::InstOperands<" + \
@@ -140,7 +142,7 @@ let {{
                 additional_params = []
                 if hasattr(cls, 'op_class'):
                     additional_params.append(cls.op_class)
-                mcls.buildCppClasses(cls, name, Name, "", code, operand_types, 
+                mcls.buildCppClasses(cls, name, Name, "", code, operand_types,
                                      additional_params)
 
                 # Hook into the microassembler dict
@@ -911,7 +913,8 @@ let {{
                     arg1.i = arg1Bits;
                     arg2.i = arg2Bits;
                     res.f = arg1.f + arg2.f;
-                    DPRINTF(X86MediaMicroop, "maddf32 %s(%f) + %s(%f) = %s(%f).\\n",
+                    DPRINTF(X86MediaMicroop,
+                        "maddf32 %s(%f) + %s(%f) = %s(%f).\\n",
                         srcRegIdx(0), arg1.f,
                         srcRegIdx(1), arg2.f,
                         destRegIdx(0), res.f);
@@ -921,7 +924,8 @@ let {{
                     arg1.i = arg1Bits;
                     arg2.i = arg2Bits;
                     res.d = arg1.d + arg2.d;
-                    DPRINTF(X86MediaMicroop, "maddf64 %s(%f) + %s(%f) = %s(%f).\\n",
+                    DPRINTF(X86MediaMicroop,
+                        "maddf64 %s(%f) + %s(%f) = %s(%f).\\n",
                         srcRegIdx(0), arg1.d,
                         srcRegIdx(1), arg2.d,
                         destRegIdx(0), res.d);
@@ -966,7 +970,8 @@ let {{
                     arg1.i = arg1Bits;
                     arg2.i = arg2Bits;
                     res.f = arg1.f - arg2.f;
-                    DPRINTF(X86MediaMicroop, "msubf32 %s - %s = %s, %f - %f = %f.\\n",
+                    DPRINTF(X86MediaMicroop,
+                        "msubf32 %s - %s = %s, %f - %f = %f.\\n",
                         srcRegIdx(0), srcRegIdx(1), destRegIdx(0),
                         arg1.f, arg2.f, res.f);
                     resBits = res.i;
@@ -1016,7 +1021,8 @@ let {{
                     arg1.i = arg1Bits;
                     arg2.i = arg2Bits;
                     res.f = arg1.f * arg2.f;
-                    DPRINTF(X86MediaMicroop, "mmulf32 %s(%f) * %s(%f) = %s(%f).\\n",
+                    DPRINTF(X86MediaMicroop,
+                        "mmulf32 %s(%f) * %s(%f) = %s(%f).\\n",
                         srcRegIdx(0), arg1.f,
                         srcRegIdx(1), arg2.f,
                         destRegIdx(0), res.f);
@@ -1026,7 +1032,8 @@ let {{
                     arg1.i = arg1Bits;
                     arg2.i = arg2Bits;
                     res.d = arg1.d * arg2.d;
-                    DPRINTF(X86MediaMicroop, "mmulf64 %s(%f) * %s(%f) = %s(%f).\\n",
+                    DPRINTF(X86MediaMicroop,
+                        "mmulf64 %s(%f) * %s(%f) = %s(%f).\\n",
                         srcRegIdx(0), arg1.d,
                         srcRegIdx(1), arg2.d,
                         destRegIdx(0), res.d);
@@ -1101,7 +1108,8 @@ let {{
                 uint64_t arg2Bits = bits(FpSrcReg2_uqw, hiIndex, loIndex);
                 uint64_t resBits = arg1Bits + arg2Bits;
 
-                DPRINTF(X86MediaMicroop, "MAddi %d %s(%#x) + %s(#x) = %s(#x), rm %d, v %d.\\n",
+                DPRINTF(X86MediaMicroop,
+                    "MAddi %d %s(%#x) + %s(#x) = %s(#x), rm %d, v %d.\\n",
                     i, srcRegIdx(0), arg1Bits,
                     srcRegIdx(1), arg2Bits,
                     destRegIdx(0), resBits,

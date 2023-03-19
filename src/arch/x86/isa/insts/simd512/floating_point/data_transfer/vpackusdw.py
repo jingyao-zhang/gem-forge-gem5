@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VPACKUSDW_XMM_XMM {
     vpackus xmm0, xmm0v, xmm0m, size=4, VL=16
@@ -46,4 +46,4 @@ def macroop VPACKUSDW_ZMM_P {
 };
 
 
-'''
+"""

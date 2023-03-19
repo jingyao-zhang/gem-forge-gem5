@@ -1,5 +1,4 @@
-
-microcode = '''
+microcode = """
 
 def macroop VCMPPS_ZMM_ZMM_I {
     vcmpf dest=maskk, src1=xmm0v, src2=xmm0m, imm8="(IMMEDIATE) & 0x1F", size=4, VL=64
@@ -16,4 +15,4 @@ def macroop VCMPPS_ZMM_P_I {
     vcmpf dest=maskk, src1=xmm0v, src2=ufp1, imm8="(IMMEDIATE) & 0x1F", size=4, VL=64
 };
 
-'''
+"""

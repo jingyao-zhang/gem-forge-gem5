@@ -1,5 +1,4 @@
-
-microcode = '''
+microcode = """
 def macroop VDIVSS_XMM_XMM {
     mdivf xmm0, xmm0v, xmm0m, size=4, ext=Scalar
     movfph2h xmm0, xmm0v, dataSize=4
@@ -24,4 +23,4 @@ def macroop VDIVSS_XMM_P {
     vclear dest=xmm2, destVL=16
 };
 
-'''
+"""

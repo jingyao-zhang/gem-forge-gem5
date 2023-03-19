@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VPBROADCASTQ_ZMM_R {
     mov2fp ufp1, regm, destSize=8, srcSize=8
@@ -135,4 +135,4 @@ def macroop VPBROADCASTW_ZMM_P {
     vbroadcast srcSize=2, dest=xmm0, src=ufp1, destVL=64
 };
 
-'''
+"""

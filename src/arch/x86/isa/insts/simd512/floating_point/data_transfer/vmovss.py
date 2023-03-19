@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 def macroop VMOVSS_XMM_XMM {
     movfp128 reg1=xmm0, reg2=xmm0v, dataSize=16
     movfpl2l xmm0, xmm0m, dataSize=4
@@ -30,4 +30,4 @@ def macroop VMOVSS_P_XMM {
     stfp xmm0, seg, riprel, disp, dataSize=4
 };
 
-'''
+"""

@@ -134,6 +134,7 @@
                     0x0: VXORPS(Vo,Wo);
                 }
             }
+            // 0x66 packed double
             0x1: decode OPCODE_OP_BOTTOM3 {
                 0x7: decode EVEX_L {
                     0x1: VXORPD(VYdo,WYdo);
@@ -167,9 +168,17 @@
                     0x1: VSUBPS(VYdo, WYdo);
                     0x0: VSUBPS(Vo, Wo);
                 }
+                0x5: decode EVEX_L {
+                    0x1: VMINPS(VYdo, WYdo);
+                    0x0: VMINPS(Vo, Wo);
+                }
                 0x6: decode EVEX_L {
                     0x1: VDIVPS(VYdo, WYdo);
                     0x0: VDIVPS(Vo, Wo);
+                }
+                0x7: decode EVEX_L {
+                    0x1: VMAXPS(VYdo, WYdo);
+                    0x0: VMAXPS(Vo, Wo);
                 }
             }
             // 0x66 packed double
@@ -190,9 +199,17 @@
                     0x1: VSUBPD(VYdo, WYdo);
                     0x0: VSUBPD(Vo, Wo);
                 }
+                0x5: decode EVEX_L {
+                    0x1: VMINPD(VYdo, WYdo);
+                    0x0: VMINPD(Vo, Wo);
+                }
                 0x6: decode EVEX_L {
                     0x1: VDIVPD(VYdo, WYdo);
                     0x0: VDIVPD(Vo, Wo);
+                }
+                0x7: decode EVEX_L {
+                    0x1: VMAXPD(VYdo, WYdo);
+                    0x0: VMAXPD(Vo, Wo);
                 }
             }
             // 0xF3 scalar single
@@ -377,7 +394,16 @@
             }
         }
         0x1D: decode LEGACY_DECODEVAL {
+            // 0x66
             0x1: decode OPCODE_OP_BOTTOM3 {
+                0x4: decode EVEX_L {
+                    0x1: VPADDSB(VYdo, WYdo);
+                    0x0: VPADDSB(Vo, Wo);
+                }
+                0x5: decode EVEX_L {
+                    0x1: VPADDSW(VYdo, WYdo);
+                    0x0: VPADDSW(Vo, Wo);
+                }
                 0x7: decode EVEX_L {
                     0x1: VPXOR(VYdo, WYdo);
                     0x0: VPXOR(Vo, Wo);
@@ -402,11 +428,11 @@
         0x1F: decode LEGACY_DECODEVAL {
             // 0x66
             0x1: decode OPCODE_OP_BOTTOM3 {
-                0x3: decode EVEX_L_EXTEND {
+                0x3: decode EVEX_L {
                     0x1: VPSUBQ(VYdo, WYdo);
                     0x0: VPSUBQ(Vo, Wo);
                 }
-                0x4: decode EVEX_L{
+                0x4: decode EVEX_L {
                     0x1: VPADDB(VYdo, WYdo);
                     0x0: VPADDB(Vo, Wo);
                 }

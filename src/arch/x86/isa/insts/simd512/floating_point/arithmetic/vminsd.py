@@ -1,5 +1,4 @@
-
-microcode = '''
+microcode = """
 def macroop VMINSD_XMM_XMM {
     mminf xmm0, xmm0v, xmm0m, size=8, ext=Scalar
     movfp reg1=xmm1, reg2=xmm1v, dataSize=8
@@ -21,4 +20,4 @@ def macroop VMINSD_XMM_P {
     vclear dest=xmm2, destVL=16
 };
 
-'''
+"""

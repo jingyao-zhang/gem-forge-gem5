@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VMOVDDUP_XMM_XMM {
     movfp xmm0, xmm0m, dataSize=8
@@ -79,4 +79,4 @@ def macroop VMOVDDUP_ZMM_P {
 };
 
 
-'''
+"""

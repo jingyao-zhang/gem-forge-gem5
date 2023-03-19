@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VPUNPCKLQDQ_XMM_XMM {
     movfp xmm1, xmm0m, dataSize=8
@@ -19,4 +19,4 @@ def macroop VPUNPCKLQDQ_XMM_P {
 };
 
 
-'''
+"""

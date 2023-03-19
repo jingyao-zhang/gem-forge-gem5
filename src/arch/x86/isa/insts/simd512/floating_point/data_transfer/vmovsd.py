@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 def macroop VMOVSD_XMM_XMM {
     panic "VMOVSD_XMM_XMM not implemented."
 };
@@ -42,4 +42,4 @@ def macroop VMOVSD_ZMM_P {
     vclear dest=xmm2, destVL=16
 };
 
-'''
+"""

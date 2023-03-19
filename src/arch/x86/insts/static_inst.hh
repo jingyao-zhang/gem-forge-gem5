@@ -53,8 +53,7 @@ namespace X86ISA
 {
 
 /**
- * ! GemForge
- * GemForge and AVX-512 microops still depends on this.
+ * ! AVX-512 microops still uses a fixed size src/dest reg array.
  */
 const int MaxInstSrcRegs = 32;
 const int MaxInstDestRegs = 8;

@@ -7,10 +7,12 @@ namespace gem5 {
 
 namespace X86ISA {
 
-class AVXOpBase : public X86MicroopBase {
+class AVXOpBase : public X86MicroopBase
+{
 
 public:
-  enum SrcType {
+  enum SrcType
+  {
     Non = 0,
     Reg,
     RegReg,
@@ -59,40 +61,48 @@ protected:
     setRegIdxArrays(reinterpret_cast<RegIdArrayPtr>(
                         &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
                     reinterpret_cast<RegIdArrayPtr>(
-                        &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+                        &std::remove_pointer_t<decltype(this)>::destRegIdxArr)
+                    );
   }
 
   std::string generateDisassembly(Addr pc,
                                   const loader::SymbolTable *symtab) const;
 
-  union FloatInt {
-    struct __attribute__((packed)) {
+  union FloatInt
+  {
+    struct __attribute__((packed))
+    {
       float f1;
       float f2;
     } f;
     double d;
-    struct __attribute__((packed)) {
+    struct __attribute__((packed))
+    {
       uint32_t i1;
       uint32_t i2;
     } ui;
-    struct __attribute__((packed)) {
+    struct __attribute__((packed))
+    {
       int32_t i1;
       int32_t i2;
     } si;
-    struct __attribute__((packed)) {
+    struct __attribute__((packed))
+    {
       uint16_t i1;
       uint16_t i2;
       uint16_t i3;
       uint16_t i4;
     } us;
     uint16_t us_array[4];
-    struct __attribute__((packed)) {
+    struct __attribute__((packed))
+    {
       int16_t i1;
       int16_t i2;
       int16_t i3;
       int16_t i4;
     } ss;
-    struct __attribute__((packed)) {
+    struct __attribute__((packed))
+    {
       uint8_t i1;
       uint8_t i2;
       uint8_t i3;
@@ -103,7 +113,8 @@ protected:
       uint8_t i8;
     } uc;
     uint8_t uc_array[8];
-    struct __attribute__((packed)) {
+    struct __attribute__((packed))
+    {
       int8_t i1;
       int8_t i2;
       int8_t i3;
@@ -117,7 +128,8 @@ protected:
     int64_t sl;
   };
 
-  enum BinaryOp {
+  enum BinaryOp
+  {
     FloatAdd,
     FloatSub,
     FloatMul,
@@ -127,6 +139,7 @@ protected:
     FloatNegMul,
     // Add/Sub can ignore sign.
     IntAdd,
+    IntSatAdd,
     IntSub,
     IntAnd,
     IntXor,
@@ -144,9 +157,11 @@ protected:
   // A helper function to perform packed src1 op src2
   void doPackedBinaryOp(ExecContext *xc, BinaryOp op) const;
   // A helper function to perform packed (src1 op1 src2) op2 src3
-  void doFusedPackedBinaryOp(ExecContext *xc, BinaryOp op1, BinaryOp op2) const;
+  void doFusedPackedBinaryOp(ExecContext *xc,
+    BinaryOp op1, BinaryOp op2) const;
   // A helper function to perform single (src1 op1 src2) op2 src3
-  void doFusedSingleBinaryOp(ExecContext *xc, BinaryOp op1, BinaryOp op2) const;
+  void doFusedSingleBinaryOp(ExecContext *xc,
+    BinaryOp op1, BinaryOp op2) const;
   // A helper function to perform pack operation
   void doPackOp(ExecContext *xc, BinaryOp op) const;
   // A helper function to perform extract operation

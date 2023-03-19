@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VPTERNLOGD_XMM_XMM_I {
     vpternlog dest=xmm0, src1=xmm0v, src2=xmm0m, imm8="(IMMEDIATE) & 0xFF", VL=16, size=4
@@ -104,4 +104,4 @@ def macroop VPTERNLOGQ_ZMM_P_I {
 };
 
 
-'''
+"""

@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VBROADCASTSS_XMM_XMM {
     vbroadcast srcSize=4, dest=xmm0, src=xmm0m, destVL=16
@@ -51,4 +51,4 @@ def macroop VBROADCASTSS_ZMM_P {
     vbroadcast srcSize=4, dest=xmm0, src=ufp1, destVL=64
 };
 
-'''
+"""

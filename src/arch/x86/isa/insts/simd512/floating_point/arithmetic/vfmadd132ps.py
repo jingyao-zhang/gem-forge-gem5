@@ -1,5 +1,4 @@
-
-microcode = '''
+microcode = """
 def macroop VFMADD132PS_XMM_XMM {
     vfmaddf dest=xmm0, src1=xmm0, src2=xmm0m, src3=xmm0v, size=4, VL=16
     vclear dest=xmm2, destVL=16
@@ -68,4 +67,4 @@ def macroop VFMADD132PSBROADCAST_ZMM_P {
     vfmaddf dest=xmm0, src1=xmm0, src2=ufp1, src3=xmm0v, size=4, VL=64
 };
 
-'''
+"""

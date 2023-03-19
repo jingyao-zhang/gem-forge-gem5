@@ -1,4 +1,4 @@
-microcode = '''
+microcode = """
 
 def macroop VZEROUPPER {
     vclear dest="FpRegIndex(float_reg::xmmIdx(0, 2))", destVL=16
@@ -35,4 +35,4 @@ def macroop VZEROUPPER {
     vclear dest="FpRegIndex(float_reg::xmmIdx(31, 2))", destVL=16
 };
 
-'''
+"""
