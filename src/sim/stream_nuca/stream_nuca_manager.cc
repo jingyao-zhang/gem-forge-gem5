@@ -154,11 +154,12 @@ void StreamNUCAManager::setProperty(Addr start, uint64_t property,
   }
 #define CASE(E)                                                                \
   case RegionProperty::E: {                                                    \
-    region.userDefinedProperties.emplace(RegionProperty::E, value);            \
+    region.properties.emplace(RegionProperty::E, value);                       \
     break;                                                                     \
   }
 
     CASE(INTERLEAVE);
+    CASE(START_BANK);
     CASE(USE_PUM);
     CASE(PUM_NO_INIT);
     CASE(PUM_TILE_SIZE_DIM0);
@@ -167,6 +168,39 @@ void StreamNUCAManager::setProperty(Addr start, uint64_t property,
 
 #undef CASE
   }
+}
+
+uint64_t StreamNUCAManager::getProperty(Addr vaddr, RegionProperty property) {
+
+  if (property == RegionProperty::TOTAL_BANKS) {
+    return StreamNUCAMap::getNumCols() * StreamNUCAMap::getNumRows();
+  }
+  if (property == RegionProperty::BANK_COLS) {
+    return StreamNUCAMap::getNumCols();
+  }
+  if (property == RegionProperty::BANK_ROWS) {
+    return StreamNUCAMap::getNumRows();
+  }
+
+  auto &region = this->getContainingStreamRegion(vaddr);
+
+  if (property == RegionProperty::START_VADDR) {
+    return region.vaddr;
+  }
+  if (property == RegionProperty::END_VADDR) {
+    return region.vaddr + region.elementSize * region.numElement;
+  }
+
+  auto iter = region.properties.find(property);
+  if (iter == region.properties.end()) {
+    panic("[StreamNUCA] No property %s %llu.", region.name, property);
+  }
+
+  auto value = iter->second;
+  DPRINTF(StreamNUCAManager, "[StreamNUCA] Get Property %#x %lu %lu.\n", vaddr,
+          property, value);
+
+  return value;
 }
 
 void StreamNUCAManager::defineAlign(Addr A, Addr B, int64_t elemOffset) {
@@ -312,7 +346,26 @@ void StreamNUCAManager::remap(ThreadContext *tc) {
     }
   }
 
+  // Filter out those we already remapped.
+  {
+    AddrVecT notremapped;
+    for (const auto vaddr : sortedRegionVAddrs) {
+      const auto &region = this->getRegionFromStartVAddr(vaddr);
+      if (!region.remapped) {
+        notremapped.push_back(vaddr);
+      } else {
+        DPRINTF(StreamNUCAManager, "[StreamNUCA] Skip remapped region %s.\n",
+                region.name);
+      }
+    }
+    sortedRegionVAddrs = notremapped;
+  }
   this->remapRegions(tc, sortedRegionVAddrs);
+  // Mark these region as remapped.
+  for (const auto vaddr : sortedRegionVAddrs) {
+    auto &region = this->getRegionFromStartVAddr(vaddr);
+    region.remapped = true;
+  }
 
   this->computeCacheSet();
 
@@ -448,7 +501,7 @@ void StreamNUCAManager::remapRegions(ThreadContext *tc,
   }
 }
 
-void StreamNUCAManager::remapDirectRegionNUCA(const StreamRegion &region) {
+void StreamNUCAManager::remapDirectRegionNUCA(StreamRegion &region) {
   if (!this->isPAddrContinuous(region)) {
     panic("[StreamNUCA] Region %s %#x PAddr is not continuous.", region.name,
           region.vaddr);
@@ -461,6 +514,10 @@ void StreamNUCAManager::remapDirectRegionNUCA(const StreamRegion &region) {
   uint64_t interleave = this->determineInterleave(region);
   int startBank = this->determineStartBank(region, interleave);
   int startSet = 0;
+
+  // Remember the interleave and start bank.
+  region.properties.emplace(RegionProperty::INTERLEAVE, interleave);
+  region.properties.emplace(RegionProperty::START_BANK, startBank);
 
   StreamNUCAMap::addRangeMap(startPAddr, endPAddr, interleave, startBank,
                              startSet);
@@ -1527,12 +1584,12 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
    * If the region has user-defined interleave, use it.
    * Check that there are no alignment defined.
    */
-  if (region.userDefinedProperties.count(RegionProperty::INTERLEAVE)) {
+  if (region.properties.count(RegionProperty::INTERLEAVE)) {
     if (!region.aligns.empty()) {
       panic("Range %s has both aligns and user-defined interleave.",
             region.name);
     }
-    return region.userDefinedProperties.at(RegionProperty::INTERLEAVE) *
+    return region.properties.at(RegionProperty::INTERLEAVE) *
            region.elementSize;
   }
 
@@ -1620,6 +1677,12 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
 
 int StreamNUCAManager::determineStartBank(const StreamRegion &region,
                                           uint64_t interleave) {
+
+  auto iter = region.properties.find(RegionProperty::START_BANK);
+  if (iter != region.properties.end()) {
+    // Override if we have some user-specified start bank.
+    return iter->second;
+  }
 
   auto startVAddr = region.vaddr;
   auto startPAddr = this->translate(startVAddr);
@@ -1769,8 +1832,8 @@ bool StreamNUCAManager::canRemapDirectRegionPUM(const StreamRegion &region) {
    * to PUM.
    * TODO: Add pseudo-instructions to pass in this information.
    */
-  if (region.userDefinedProperties.count(RegionProperty::USE_PUM) &&
-      region.userDefinedProperties.at(RegionProperty::USE_PUM) == 0) {
+  if (region.properties.count(RegionProperty::USE_PUM) &&
+      region.properties.at(RegionProperty::USE_PUM) == 0) {
     DPRINTF(StreamNUCAManager, "[StreamPUM] Region %s Manually Disabled PUM.\n",
             region.name);
     return false;
@@ -1872,10 +1935,9 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
           std::min(this->forcePUMTilingSize.front(), alignDimTileSize);
     }
     if (this->forcePUMTilingDim == "none" &&
-        region.userDefinedProperties.count(
-            RegionProperty::PUM_TILE_SIZE_DIM0)) {
+        region.properties.count(RegionProperty::PUM_TILE_SIZE_DIM0)) {
       auto userDefinedTileSize =
-          region.userDefinedProperties.at(RegionProperty::PUM_TILE_SIZE_DIM0);
+          region.properties.at(RegionProperty::PUM_TILE_SIZE_DIM0);
       if (userDefinedTileSize < alignDimTileSize) {
         alignDimTileSize = userDefinedTileSize;
       }
@@ -1916,7 +1978,7 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
         tileSizeChosen = true;
       }
       if (!tileSizeChosen &&
-          region.userDefinedProperties.count(RegionProperty::REDUCE_DIM)) {
+          region.properties.count(RegionProperty::REDUCE_DIM)) {
 
         /**
          * We add a special case for reducing over inner dim.
@@ -1924,8 +1986,7 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
          * e.g. mm_inner.
          */
 
-        auto reduceDim =
-            region.userDefinedProperties.at(RegionProperty::REDUCE_DIM);
+        auto reduceDim = region.properties.at(RegionProperty::REDUCE_DIM);
         assert(alignDims.at(0) == reduceDim);
         auto reduceDimArraySize = arraySizes.at(reduceDim);
 
@@ -1941,7 +2002,7 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
       }
 
       if (!tileSizeChosen &&
-          region.userDefinedProperties.count(RegionProperty::BROADCAST_DIM)) {
+          region.properties.count(RegionProperty::BROADCAST_DIM)) {
 
         /**
          * We add a special case for reducing over inner dim.
@@ -1949,8 +2010,7 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
          * e.g. mm_inner.
          */
 
-        auto broadcastDim =
-            region.userDefinedProperties.at(RegionProperty::BROADCAST_DIM);
+        auto broadcastDim = region.properties.at(RegionProperty::BROADCAST_DIM);
         assert(alignDims.at(0) == broadcastDim);
         auto broadcastDimArraySize = arraySizes.at(broadcastDim);
 
@@ -2110,8 +2170,8 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
           "[StreamPUM] Map %s PAddr %#x ElemBit %d StartWdLine %d Tile %s.\n",
           region.name, startPAddr, elemBits, startWordline, pumTile);
 
-  if (region.userDefinedProperties.count(RegionProperty::PUM_NO_INIT) &&
-      region.userDefinedProperties.at(RegionProperty::PUM_NO_INIT) == 1) {
+  if (region.properties.count(RegionProperty::PUM_NO_INIT) &&
+      region.properties.at(RegionProperty::PUM_NO_INIT) == 1) {
     this->markRegionCached(region.vaddr);
   }
 }
@@ -2134,7 +2194,7 @@ StreamNUCAManager::getAlignDimsForDirectRegion(const StreamRegion &region) {
     return ret;
   }
 
-  if (region.userDefinedProperties.count(RegionProperty::PUM_TILE_SIZE_DIM0)) {
+  if (region.properties.count(RegionProperty::PUM_TILE_SIZE_DIM0)) {
     /**
      * User specified dim0 tile size. So we just set align to dim0.
      */

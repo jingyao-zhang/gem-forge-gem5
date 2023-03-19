@@ -34,6 +34,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include <assert.h>
 
 #include <gem5/asm/generic/m5ops.h>
 
@@ -71,7 +72,7 @@ void m5_work_mark(uint64_t workid, uint64_t threadid);
 void m5_llvm_trace_map(const char *base, void *vaddr);
 void m5_llvm_trace_replay(const char *trace, void *vaddr);
 
-void m5_stream_nuca_region(const char *regionName, void *buffer,
+void m5_stream_nuca_region(const char *regionName, const void *buffer,
                            uint64_t elementSize, uint64_t dim1, uint64_t dim2,
                            uint64_t dim3);
 /**
@@ -175,7 +176,7 @@ inline int64_t m5_stream_nuca_encode_csr_index() {
   return -(stream_nuca_affinity_encode(STREAM_NUCA_AFFINITY_NUM_FIELDS, 2));
 }
 
-void m5_stream_nuca_align(void *A, void *B, int64_t elementOffset);
+void m5_stream_nuca_align(const void *A, const void *B, int64_t elementOffset);
 
 /**
  * A generic implementation to set some property of the region.
@@ -194,10 +195,24 @@ enum StreamNUCARegionProperty {
   STREAM_NUCA_REGION_PROPERTY_REDUCE_DIM,
   // Specify which dimension we are going to broadcast.
   STREAM_NUCA_REGION_PROPERTY_BROADCAST_DIM,
+  // Get total number of banks.
+  STREAM_NUCA_REGION_PROPERTY_TOTAL_BANKS,
+  // Get number of bank rows.
+  STREAM_NUCA_REGION_PROPERTY_BANK_ROWS,
+  // Get number of bank cols.
+  STREAM_NUCA_REGION_PROPERTY_BANK_COLS,
+  // Start bank after remapped.
+  STREAM_NUCA_REGION_PROPERTY_START_BANK,
+  // Start vaddr.
+  STREAM_NUCA_REGION_PROPERTY_START_VADDR,
+  // End vaddr.
+  STREAM_NUCA_REGION_PROPERTY_END_VADDR,
 };
-void m5_stream_nuca_set_property(void *buffer,
+void m5_stream_nuca_set_property(const void *buffer,
                                  enum StreamNUCARegionProperty property,
                                  uint64_t value);
+uint64_t m5_stream_nuca_get_property(const void *buffer,
+                                     enum StreamNUCARegionProperty property);
 
 void m5_stream_nuca_remap();
 uint64_t m5_stream_nuca_get_cached_bytes(void *buffer);

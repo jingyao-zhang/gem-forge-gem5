@@ -39,8 +39,15 @@ public:
     PUM_TILE_SIZE_DIM0,
     REDUCE_DIM,
     BROADCAST_DIM,
+    TOTAL_BANKS,
+    BANK_ROWS,
+    BANK_COLS,
+    START_BANK,
+    START_VADDR,
+    END_VADDR
   };
   void setProperty(Addr start, uint64_t property, uint64_t value);
+  uint64_t getProperty(Addr vaddr, RegionProperty property);
 
   /**
    * Negative element offset will specify some indirect alignment.
@@ -113,7 +120,7 @@ public:
      * Some user-defined properties.
      */
     using UserDefinedPropertyMap = std::map<RegionProperty, uint64_t>;
-    UserDefinedPropertyMap userDefinedProperties;
+    UserDefinedPropertyMap properties;
     StreamRegion(const std::string &_name, Addr _vaddr, uint64_t _elementSize,
                  int64_t _numElement, const std::vector<int64_t> &_arraySizes)
         : name(_name), vaddr(_vaddr), elementSize(_elementSize),
@@ -136,6 +143,10 @@ public:
      * cache all elements.
      */
     uint64_t cachedElements;
+    /**
+     * Remember whether we have already remapped the region.
+     */
+    bool remapped = false;
   };
 
   std::string assignRegionGroup(const std::string &regionName);
@@ -185,7 +196,7 @@ private:
   int64_t getVirtualBitlinesForPUM(const std::vector<Addr> &pumRegionVAddrs);
   int64_t getVirtualBitlinesForPUM(const StreamRegion &region);
   void remapDirectRegionPUM(const StreamRegion &region, int64_t vBitlines);
-  void remapDirectRegionNUCA(const StreamRegion &region);
+  void remapDirectRegionNUCA(StreamRegion &region);
   uint64_t determineInterleave(const StreamRegion &region);
   int determineStartBank(const StreamRegion &region, uint64_t interleave);
 

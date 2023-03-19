@@ -89,7 +89,8 @@
 #define M5OP_STREAM_NUCA_REMAP            0x68
 #define M5OP_STREAM_NUCA_GET_CACHED_BYTES 0x69
 #define M5OP_STREAM_NUCA_SET_PROPERTY     0x70
-#define M5OP_WORKLOAD           0x71
+#define M5OP_STREAM_NUCA_GET_PROPERTY     0x71
+#define M5OP_WORKLOAD           0x80
 
 #define M5OP_FOREACH                                            \
     M5OP(m5_arm, M5OP_ARM)                                      \

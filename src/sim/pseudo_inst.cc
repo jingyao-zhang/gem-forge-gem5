@@ -706,6 +706,14 @@ void stream_nuca_set_property(ThreadContext *tc,
         A, property, value);
 }
 
+uint64_t stream_nuca_get_property(ThreadContext *tc,
+    Addr A, uint64_t property) {
+    DPRINTF(PseudoInst, "PseudoInst::stream_nuca_get_value(%p, %lu).\n",
+        A, property);
+    return tc->getProcessPtr()->streamNUCAManager->getProperty(
+        A, static_cast<StreamNUCAManager::RegionProperty>(property));
+}
+
 void stream_nuca_remap(ThreadContext *tc) {
     DPRINTF(PseudoInst, "PseudoInst::stream_nuca_remap().\n");
     tc->getProcessPtr()->streamNUCAManager->remap(tc);

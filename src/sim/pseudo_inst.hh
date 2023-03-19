@@ -104,6 +104,8 @@ void stream_nuca_align(ThreadContext *tc,
     Addr A, Addr B, uint64_t elementOffset);
 void stream_nuca_set_property(ThreadContext *tc,
     Addr A, uint64_t property, uint64_t value);
+uint64_t stream_nuca_get_property(ThreadContext *tc,
+    Addr A, uint64_t property);
 void stream_nuca_remap(ThreadContext *tc);
 uint64_t stream_nuca_get_cached_bytes(ThreadContext *tc, Addr start);
 
@@ -264,6 +266,10 @@ pseudoInstWork(ThreadContext *tc, uint8_t func, uint64_t &result)
 
       case M5OP_STREAM_NUCA_SET_PROPERTY:
         invokeSimcall<ABI>(tc, stream_nuca_set_property);
+        return true;
+
+      case M5OP_STREAM_NUCA_GET_PROPERTY:
+        result = invokeSimcall<ABI>(tc, stream_nuca_get_property);
         return true;
 
       case M5OP_STREAM_NUCA_REMAP:
