@@ -1589,8 +1589,7 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
       panic("Range %s has both aligns and user-defined interleave.",
             region.name);
     }
-    return region.properties.at(RegionProperty::INTERLEAVE) *
-           region.elementSize;
+    return region.properties.at(RegionProperty::INTERLEAVE);
   }
 
   auto numRows = StreamNUCAMap::getNumRows();
