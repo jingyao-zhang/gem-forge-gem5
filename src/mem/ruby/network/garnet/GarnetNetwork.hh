@@ -143,8 +143,11 @@ class GarnetNetwork : public Network
         m_packet_queueing_latency[vnet] += latency;
     }
 
-    void increment_injected_flits(int vnet) { m_flits_injected[vnet]++; }
-    void increment_injected_flit_type(int type) { m_flit_types_injected[type]++; }
+    void increment_injected_flits(int vnet, int type)
+    {
+        m_flits_injected[vnet]++;
+        m_flit_types_injected[type]++;
+    }
     void increment_received_flits(int vnet) { m_flits_received[vnet]++; }
 
     void

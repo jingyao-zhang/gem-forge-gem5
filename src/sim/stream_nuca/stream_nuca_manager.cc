@@ -1492,6 +1492,17 @@ StreamNUCAManager::getRegionFromName(const std::string &name) {
   panic("Failed to find StreamRegion %s.", name);
 }
 
+StreamNUCAManager::StreamRegion *
+StreamNUCAManager::tryGetRegionFromName(const std::string &name) {
+  for (auto &entry : this->startVAddrRegionMap) {
+    auto &region = entry.second;
+    if (region.name == name) {
+      return &region;
+    }
+  }
+  return nullptr;
+}
+
 bool StreamNUCAManager::isPAddrContinuous(const StreamRegion &region) {
   auto pTable = this->process->pTable;
   auto pageSize = pTable->pageSize();

@@ -34,6 +34,9 @@ bool StreamRegionController::shouldRemoteConfigureNestRegion(
     if (!S->innerLoopDepEdges.empty()) {
       return false;
     }
+    if (S->isInnerFinalValueUsedByCore()) {
+      return false;
+    }
   }
   return true;
 }

@@ -58,7 +58,8 @@ void StreamFloatPolicy::setFloatPlanManual(DynStream &dynS) {
 
   if (manualFloatToMemSet.count(streamName)) {
     if (this->enabledFloatMem) {
-      floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_Directory);
+      floatPlan.addFloatChangePoint(firstElementIdx,
+                                    ruby::MachineType_Directory);
     } else {
       // By default we float to L2 cache (LLC in MESI_Three_Level).
       floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_L2Cache);
@@ -78,7 +79,8 @@ void StreamFloatPolicy::setFloatPlanManual(DynStream &dynS) {
     if (region.cachedElements == 0 && this->enabledFloatMem) {
       DYN_S_DPRINTF(dynS.dynStreamId,
                     "Directly float to Mem as zero cached elements.\n");
-      floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_Directory);
+      floatPlan.addFloatChangePoint(firstElementIdx,
+                                    ruby::MachineType_Directory);
       return;
     }
   }
@@ -168,7 +170,8 @@ void StreamFloatPolicy::setFloatPlanForRodiniaSrad(DynStream &dynS) {
   if (myStartVAddr >= llcEndVAddr) {
     // We accessing rows not cached in LLC.
     if (this->enabledFloatMem) {
-      floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_Directory);
+      floatPlan.addFloatChangePoint(firstElementIdx,
+                                    ruby::MachineType_Directory);
     } else {
       floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_L2Cache);
     }
@@ -197,38 +200,53 @@ void StreamFloatPolicy::setFloatPlanForBinTree(DynStream &dynS) {
   auto threadContext = S->getCPUDelegator()->getSingleThreadContext();
   auto streamNUCAManager = threadContext->getStreamNUCAManager();
 
-  const auto &streamNUCARegion =
-      streamNUCAManager->getRegionFromName("gfm.bin_tree.tree");
-
+  // We have some initial guess.
   // We minus 1 to avoid overwhelming the cache.
-  auto cachedElements = streamNUCARegion.cachedElements - 1;
-  auto logCachedElements = static_cast<int>(log2(cachedElements));
+  int64_t cachedElems = 2 * 1024 * 1024 - 1;
+  int64_t elemSize = 64;
+  if (const auto *treeRegion =
+          streamNUCAManager->tryGetRegionFromName("gfm.bin_tree.tree")) {
+    cachedElems = treeRegion->cachedElements - 1;
+    elemSize = treeRegion->elementSize;
+  }
+
+  auto logCachedElems = static_cast<int>(log2(cachedElems));
 
   auto privateCacheSize = this->getPrivateCacheCapacity();
-  auto privateCachedElements =
-      privateCacheSize / streamNUCARegion.elementSize - 1;
-  auto logPrivateCachedElements = static_cast<int>(log2(privateCachedElements));
+  auto privCachedElems = privateCacheSize / elemSize - 1;
+  auto logPrivCachedElems = static_cast<int>(log2(privCachedElems));
+
+  // Override the decision if user specified.
+  {
+    auto userSetMidwayElemIdx =
+        S->se->params().streamEngineMidwayFloatElementIdx;
+    if (userSetMidwayElemIdx != -1) {
+      logPrivCachedElems = userSetMidwayElemIdx;
+    }
+  }
 
   DYN_S_DPRINTF(
       dynS.dynStreamId,
       "ElemSize %d PrivCached %lu LogPrivCached %d Cached %lu LogCached %d.\n",
-      streamNUCARegion.elementSize, privateCachedElements,
-      logPrivateCachedElements, cachedElements, logCachedElements);
-  logS(dynS) << "[BinTree] ElemSize " << streamNUCARegion.elementSize
-             << " PrivCached " << privateCachedElements << " PrivLogCached "
-             << logPrivateCachedElements << " Cached " << cachedElements
-             << " LogCached " << logCachedElements << ".\n"
+      elemSize, privCachedElems, logPrivCachedElems, cachedElems,
+      logCachedElems);
+  logS(dynS) << "[BinTree] ElemSize " << elemSize << " PrivCached "
+             << privCachedElems << " PrivLogCached " << logPrivCachedElems
+             << " Cached " << cachedElems << " LogCached " << logCachedElems
+             << ".\n"
              << std::flush;
 
   /**
    * We start from core to LLC to mem.
    */
-  dynS.setNextCacheDoneElemIdx(logPrivateCachedElements);
-  floatPlan.addFloatChangePoint(0, ruby::MachineType_NULL);
-  floatPlan.addFloatChangePoint(logPrivateCachedElements, ruby::MachineType_L2Cache);
+  dynS.setNextCacheDoneElemIdx(logPrivCachedElems);
+  if (logPrivCachedElems > 0) {
+    floatPlan.addFloatChangePoint(0, ruby::MachineType_NULL);
+  }
+  floatPlan.addFloatChangePoint(logPrivCachedElems, ruby::MachineType_L2Cache);
   if (this->enabledFloatMem) {
-    floatPlan.addFloatChangePoint(logCachedElements, ruby::MachineType_Directory);
+    floatPlan.addFloatChangePoint(logCachedElems, ruby::MachineType_Directory);
   }
   return;
-}} // namespace gem5
-
+}
+} // namespace gem5

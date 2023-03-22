@@ -241,11 +241,39 @@ void StreamStatistic::dump(std::ostream &os) const {
 void StreamStatistic::dumpSrcDest(const SrcDestStatsT &stats,
                                   std::ostream &os) {
   if (!stats.empty()) {
+
+    // Collect the total and sender/receiver distribution.
     size_t total = 0;
+    std::map<int, size_t> sendDist, recvDist;
     for (const auto &entry : stats) {
-      total += entry.second;
+      auto from = entry.first.first;
+      auto to = entry.first.second;
+      auto cnt = entry.second;
+      total += cnt;
+      sendDist.emplace(from, 0).first->second += cnt;
+      recvDist.emplace(to, 0).first->second += cnt;
     }
+
     os << std::setw(40) << " Total" << ' ' << total << '\n';
+
+    // Dump the distribution.
+    auto dumpDistbution = [&os,
+                           total](const std::map<int, size_t> &dist) -> void {
+      auto avg = static_cast<float>(total) / dist.size();
+      for (const auto &entry : dist) {
+        auto key = entry.first;
+        auto cnt = entry.second;
+        auto ratio = static_cast<float>(cnt) / static_cast<float>(total);
+        auto diff = (cnt - avg) / avg;
+        os << std::setw(5) << key << ' ' << std::setw(10) << cnt << ' '
+           << std::setw(10) << ratio << ' ' << std::setw(10) << diff << '\n';
+      }
+    };
+    os << std::setw(40) << " Send" << '\n';
+    dumpDistbution(sendDist);
+    os << std::setw(40) << " Recv" << '\n';
+    dumpDistbution(recvDist);
+
     for (const auto &entry : stats) {
       auto from = entry.first.first;
       auto to = entry.first.second;

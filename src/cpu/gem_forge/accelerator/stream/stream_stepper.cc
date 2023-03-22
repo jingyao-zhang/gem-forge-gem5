@@ -423,6 +423,57 @@ bool StreamRegionController::endStream(DynRegion &dynRegion) {
                                    staticRegion.region.relative_path());
 
   SE_DPRINTF("[Stepper] Try End %s.\n", staticRegion.region.region());
+
+  /**
+   * We need some additional check for SE ended region:
+   * 1. If has loop bound, it is evaluated.
+   * 2. If the last element has a core user, wait for it. Usually happens for
+   * reduction.
+   */
+  if (staticRegion.region.is_loop_bound()) {
+    if (!dynRegion.loopBound.brokenOut) {
+      SE_DPRINTF("[Stepper] NoEnd as LoopBound not BrokenOut.\n");
+      return false;
+    }
+  }
+  for (auto S : staticRegion.streams) {
+    if (!S->isInnerFinalValueUsedByCore()) {
+      continue;
+    }
+    auto &dynS = S->getDynStream(dynRegion.seqNum);
+    assert(dynS.hasTotalTripCount());
+    auto tripCount = dynS.getTotalTripCount();
+    auto endElem = dynS.getFirstUnsteppedElem();
+    if (!endElem) {
+      SE_DPRINTF(
+          "[Stepper] NoEnd as No FIrstUnstepElem Next %ld TripCount %ld.\n",
+          dynS.FIFOIdx.entryIdx, tripCount);
+      return false;
+    }
+    if (endElem->FIFOIdx.entryIdx != tripCount) {
+      SE_DPRINTF(
+          "[Stepper] NoEnd as FirstUnstepElem %s is not TripCount %ld.\n",
+          endElem->FIFOIdx, tripCount);
+      return false;
+    }
+    if (!endElem->isFirstUserDispatched()) {
+      SE_DPRINTF(
+          "[Stepper] NoEnd as CoreUser not Distpatched for EndElem %s.\n",
+          endElem->FIFOIdx);
+      return false;
+    }
+    auto iter = this->se->elementUserMap.find(endElem);
+    if (iter != this->se->elementUserMap.end()) {
+      const auto &users = iter->second;
+      if (!users.empty()) {
+        SE_DPRINTF(
+            "[Stepper] NoEnd as CoreUser %lu not Committed for EndElem %s.\n",
+            *users.begin(), endElem->FIFOIdx);
+        return false;
+      }
+    }
+  }
+
   bool canDispatch = this->canDispatchStreamEndImpl(staticRegion, dynRegion);
   if (!canDispatch) {
     SE_DPRINTF("[Stepper] NoDispatchEnd.\n");
@@ -439,18 +490,6 @@ bool StreamRegionController::endStream(DynRegion &dynRegion) {
   if (!canCommit) {
     SE_DPRINTF("[Stepper] NoCommitEnd.\n");
     return false;
-  }
-
-  /**
-   * The above check assumes the StreamEnd is from the core. We need some
-   * additional check for SE ended region:
-   * 1. If has loop bound, it is evaluated.
-   */
-  if (staticRegion.region.is_loop_bound()) {
-    if (!dynRegion.loopBound.brokenOut) {
-      SE_DPRINTF("[Stepper] NoEnd as LoopBound not BrokenOut.\n");
-      return false;
-    }
   }
 
   SE_DPRINTF("[Stepper] End %s ConfigSeqNum %lu.\n",
