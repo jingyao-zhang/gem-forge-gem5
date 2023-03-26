@@ -1530,12 +1530,12 @@ bool StreamFloatController::isMidwayFloatReady(
     DYN_S_PANIC(config->dynamicId,
                 "[MidwayFloat] DynS released before MidwayFloat released.");
   }
-  auto firstFloatElementIdx = config->floatPlan.getFirstFloatElementIdx();
-  if (dynS->FIFOIdx.entryIdx <= firstFloatElementIdx) {
+  auto firstFloatElemIdx = config->floatPlan.getFirstFloatElementIdx();
+  if (dynS->FIFOIdx.entryIdx <= firstFloatElemIdx) {
     DYN_S_DPRINTF(dynS->dynStreamId,
                   "[MidwayFloat] DynS TailElem %llu < FirstFloatElem %llu. "
                   "Not Yet Float.\n",
-                  dynS->FIFOIdx.entryIdx, firstFloatElementIdx);
+                  dynS->FIFOIdx.entryIdx, firstFloatElemIdx);
     return false;
   }
   /**
@@ -1545,24 +1545,24 @@ bool StreamFloatController::isMidwayFloatReady(
       "[MidwayFloat] Check LoopBound before MidwayFloat", dynS->configSeqNum);
   if (dynRegion.staticRegion->region.is_loop_bound()) {
     auto &dynBound = dynRegion.loopBound;
-    if (dynBound.nextElemIdx > firstFloatElementIdx) {
+    if (dynBound.nextElemIdx > firstFloatElemIdx) {
       DYN_S_PANIC(dynS->dynStreamId,
                   "[MidwayFloat] Impossible! LoopBound NextElem %llu > "
                   "FirstFloatElem %llu.",
-                  dynBound.nextElemIdx, firstFloatElementIdx);
+                  dynBound.nextElemIdx, firstFloatElemIdx);
     }
-    if (dynBound.nextElemIdx < firstFloatElementIdx) {
+    if (dynBound.nextElemIdx < firstFloatElemIdx) {
       DYN_S_DPRINTF(dynS->dynStreamId,
                     "[MidwayFloat] LoopBound NextElem %llu < FirstFloatElem "
                     "%llu. Not Yet Float.\n",
-                    dynBound.nextElemIdx, firstFloatElementIdx);
+                    dynBound.nextElemIdx, firstFloatElemIdx);
       return false;
     }
     if (dynBound.brokenOut) {
       DYN_S_DPRINTF(dynS->dynStreamId,
                     "[MidwayFloat] LoopBound BrokenOut NextElem %llu <= "
                     "FirstFloatElem %llu. Don't Float.\n",
-                    dynBound.nextElemIdx, firstFloatElementIdx);
+                    dynBound.nextElemIdx, firstFloatElemIdx);
       return false;
     }
   }
@@ -1571,14 +1571,14 @@ bool StreamFloatController::isMidwayFloatReady(
      * Since these streams are one iteration behind, we require them to be value
      * ready.
      */
-    auto firstFloatElement = dynS->getElemByIdx(firstFloatElementIdx);
-    if (!firstFloatElement) {
+    auto firstFloatElem = dynS->getElemByIdx(firstFloatElemIdx);
+    if (!firstFloatElem) {
       DYN_S_PANIC(dynS->dynStreamId,
                   "[MidwayFloat] FirstFloatElem already released.");
     }
-    if (!firstFloatElement->isValueReady) {
+    if (!firstFloatElem->isValueReady) {
       S_ELEMENT_DPRINTF(
-          firstFloatElement,
+          firstFloatElem,
           "[MidwayFloat] FirstFloatElem of Reduce/PtrChase not ValueReady.\n");
       return false;
     }

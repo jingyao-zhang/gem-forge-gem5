@@ -187,6 +187,15 @@ void StreamRegionController::receiveOffloadedLoopBoundRet(
       auto &dynS = S->getDynStream(dynRegion.seqNum);
       dynS.setTotalAndInnerTripCount(tripCount);
     }
+    for (auto &dynGroup : dynRegion.step.stepGroups) {
+      assert(dynGroup.totalTripCount == 0 &&
+             "Already have StepGroupTripCount.");
+      dynGroup.totalTripCount = tripCount;
+    }
+    // If we delayed the SkipToEnd, we retry it.
+    if (dynRegion.canSkipToEnd) {
+      this->trySkipToStreamEnd(dynRegion);
+    }
   }
 }
 } // namespace gem5

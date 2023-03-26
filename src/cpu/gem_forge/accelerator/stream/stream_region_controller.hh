@@ -133,6 +133,8 @@ public:
         uint64_t nextElemIdx = 0;
         int64_t totalTripCount = 0;
         int64_t levelTripCount = INT64_MAX;
+        constexpr static uint64_t InvalidFirstFloatElemIdx = UINT64_MAX;
+        uint64_t firstFloatElemIdx = InvalidFirstFloatElemIdx;
         // Remember this info for simplicity.
         int loopLevel;
         // Remember the index to StaticGroup.
@@ -265,7 +267,11 @@ private:
   void dispatchStreamConfigForStep(const ConfigArgs &args,
                                    DynRegion &dynRegion);
   void executeStreamConfigForStep(const ConfigArgs &args, DynRegion &dynRegion);
+  void commitStreamConfigForStep(const ConfigArgs &args, DynRegion &dynRegion);
   void stepStream(DynRegion &dynRegion);
+  void tryStepToStreamEnd(DynRegion &dynRegion, DynRegion::DynStep &dynStep,
+                          DynRegion::DynStep::DynStepGroupInfo &dynGroup,
+                          DynStream &stepRootDynS);
   bool endStream(DynRegion &dynRegion);
 
   /**

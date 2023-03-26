@@ -634,24 +634,34 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
       auto stepNextElement = stepElem->next;
       if (!stepNextElement) {
         /**
-         * Due to the allocation algorithm, the only case that StepNextElement
-         * is not allocated is at the first element, where we are waiting for
-         * StreamConfig to be executed.
+         * There is one exception -- we are the FirstFloatElem, where we only
+         * check that we are value ready.
+         * NOTE: Here we just use FirstFloatElemIdx, not
+         * AdjustedFirstFloatElemIdx.
          */
-        S_ELEMENT_DPRINTF(
-            stepElem,
-            "[CanNotCommitStep] No Reduction/PtrChaseIV NextElement.\n");
-        return false;
-      }
-      if (stepNextElement->isElemFloatedToCache()) {
-      } else {
-        // If not offloaded, The next steped element should be ValueReady.
-        if (!stepNextElement->isValueReady) {
-          S_ELEMENT_DPRINTF(stepElem,
-                            "[CanNotCommitStep] Reduction/PtrChaseIV "
-                            "NextElement %llu not ValueReady.\n",
-                            stepNextElement->FIFOIdx.entryIdx);
+        if (stepElem->FIFOIdx.entryIdx == dynS->getFirstFloatElemIdx()) {
+          if (!stepElem->isValueReady) {
+            S_ELEMENT_DPRINTF(stepElem, "[CanNotCommitStep] Reduce/PtrChaseIV "
+                                        "FirstFloatElem Not ValueReady.\n");
+            return false;
+          }
+        } else {
+          S_ELEMENT_DPRINTF(
+              stepElem,
+              "[CanNotCommitStep] No Reduction/PtrChaseIV NextElement.\n");
           return false;
+        }
+      } else {
+        if (stepNextElement->isElemFloatedToCache()) {
+        } else {
+          // If not offloaded, The next steped element should be ValueReady.
+          if (!stepNextElement->isValueReady) {
+            S_ELEMENT_DPRINTF(stepElem,
+                              "[CanNotCommitStep] Reduction/PtrChaseIV "
+                              "NextElement %llu not ValueReady.\n",
+                              stepNextElement->FIFOIdx.entryIdx);
+            return false;
+          }
         }
       }
     }
@@ -2725,7 +2735,6 @@ void StreamEngine::writebackElement(StreamElement *elem) {
     // Only writeback the required data.
     auto &cacheBlockBreakdown = elem->cacheBlockBreakdownAccesses[i];
     const auto cacheLineVAddr = cacheBlockBreakdown.cacheBlockVAddr;
-    const auto cacheLineSize = cpuDelegator->cacheLineSize();
     const auto vaddr = cacheBlockBreakdown.vaddr;
     const auto size = cacheBlockBreakdown.size;
 

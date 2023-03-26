@@ -808,7 +808,7 @@ bool LLCStreamEngine::canMigrateStream(LLCDynStream *dynS) const {
     if (dynS->hasDepIndElemReadyToIssue()) {
       // We are still waiting for some indirect streams to be issued.
       LLC_S_DPRINTF(dynS->getDynStrandId(),
-                    "[Delay Migrate] ReadyIndirectElements %llu.\n",
+                    "[Delay Migrate] ReadyIndirectElems %llu.\n",
                     dynS->getNumDepIndElemReadyToIssue());
       return false;
     }
@@ -820,24 +820,32 @@ bool LLCStreamEngine::canMigrateStream(LLCDynStream *dynS) const {
       if (IS->getStaticS()->isReduction() ||
           IS->getStaticS()->isPointerChaseIndVar()) {
         // We wait for the reduction element to be done.
+
+        if (IS->incompleteComputations > 0) {
+          LLC_S_DPRINTF(dynS->getDynStrandId(),
+                        "[Delay Migrate] IS %s IncompleteCmp %d.\n",
+                        IS->getDynStrandId(), IS->incompleteComputations);
+          return false;
+        }
+
         if (!IS->idxToElementMap.empty()) {
-          const auto &element = IS->idxToElementMap.begin()->second;
+          const auto &elem = IS->idxToElementMap.begin()->second;
           /**
            * ! Due to the current hack implementation, an element may
            * already be allocated for the next bank. Our way to
            * hack this is check if the base is already ready. If
            * not, then they are for next bank.
            */
-          if (!element->isReady()) {
-            for (const auto &baseE : element->baseElements) {
+          if (!elem->isReady()) {
+            for (const auto &baseE : elem->baseElements) {
               if (baseE->strandId == dynS->getDynStrandId()) {
                 if (baseE->isReady()) {
                   // The base element is ready, which means this is
                   // from this bank. If it's not ready, then we
                   // should have inflyRequest.
-                  LLC_S_DPRINTF(IS->getDynStrandId(),
-                                "[Delay Migrate] Reduction Elem %lu.\n",
-                                element->idx);
+                  LLC_S_DPRINTF(dynS->getDynStrandId(),
+                                "[Delay Migrate] Reduction Elem %s-%lu.\n",
+                                IS->getDynStrandId(), elem->idx);
                   return false;
                 }
               }

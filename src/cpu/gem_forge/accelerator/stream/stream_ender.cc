@@ -234,13 +234,21 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
 
     /**
      * If we are InnerLoopBaseS, we need to ensure OuterLoopDepElem already
-     * got the value.
+     * got the value. It's possible that OuterLoopDepS is not in the issue list,
+     * If so, we try to add them back.
      */
     if (dynS.getNumInnerLoopDepS()) {
       // We should not release.
       S_ELEMENT_DPRINTF(endElem,
                         "[StreamEnd] NoCommit as Unseen InnerDepElem %d.\n",
                         dynS.getNumInnerLoopDepS());
+      for (const auto &innerLoopDepId : dynS.getInnerLoopDepS()) {
+        auto innerLoopDepS = this->se->getStream(innerLoopDepId.staticId);
+        assert(innerLoopDepS);
+        auto &innerLoopDepDynS = innerLoopDepS->getDynStreamByInstance(
+            innerLoopDepId.streamInstance);
+        this->se->addIssuingDynS(&innerLoopDepDynS);
+      }
       return false;
     }
     for (const auto &innerLoopDepElem : endElem->innerLoopDepElements) {

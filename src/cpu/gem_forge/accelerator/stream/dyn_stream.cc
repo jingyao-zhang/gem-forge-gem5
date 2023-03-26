@@ -190,7 +190,7 @@ void DynStream::addBaseDynStreams() {
     DYN_S_DPRINTF(this->dynStreamId,
                   "[InnerLoopDep] Push myself to OuterLoopDepDynS %s.\n",
                   depDynS.dynStreamId);
-    this->incNumInnerLoopDepS();
+    this->pushInnerLoopDepS(depDynS.dynStreamId);
     depDynS.pushInnerLoopBaseDynStream(edge.type, edge.fromStaticId,
                                        this->dynStreamId.streamInstance,
                                        edge.toStaticId);
@@ -825,7 +825,7 @@ void DynStream::addInnerLoopBaseElements(StreamElement *elem) {
     }
     S_ELEMENT_DPRINTF(elem, "[InnerLoopDep] Add Type %s BaseElem: %s.\n",
                       edge.type, baseElem->FIFOIdx);
-    baseDynS.decNumInnerLoopDepS();
+    baseDynS.popInnerLoopDepS(this->dynStreamId);
     switch (edge.type) {
     case StreamDepEdge::TypeE::Addr: {
       elem->addrBaseElements.emplace_back(baseElem);
@@ -1572,16 +1572,22 @@ void DynStream::setElementRemoteBank(uint64_t elemIdx, int remoteBank) {
 std::string DynStream::dumpString() const {
   std::stringstream ss;
   ss << "===== " << this->dynStreamId.staticId << '-'
-     << this->dynStreamId.streamInstance << " total " << this->totalTripCount
-     << " ack " << this->cacheAckedElements.size() << " step " << this->stepSize
-     << " alloc " << this->allocSize << " max " << this->stream->maxSize
-     << " ========\n";
-  auto element = this->tail;
-  while (element != this->head) {
-    element = element->next;
-    ss << element->FIFOIdx.entryIdx << '('
-       << static_cast<int>(element->isAddrReady())
-       << static_cast<int>(element->isValueReady) << ')';
+     << this->dynStreamId.streamInstance;
+  ss << " total " << this->totalTripCount;
+  ss << " ack " << this->cacheAckedElements.size();
+  ss << " step " << this->stepSize;
+  ss << " alloc " << this->allocSize;
+  ss << " max " << this->stream->maxSize;
+  ss << " next " << this->FIFOIdx.entryIdx;
+  if (this->stream->isInnerFinalValueUsedByCore() && this->isFloatedToCache()) {
+    ss << " final-elem " << this->innerFinalValueMap.size();
+  }
+  ss << " ========\n";
+  auto elem = this->tail;
+  while (elem != this->head) {
+    elem = elem->next;
+    ss << elem->FIFOIdx.entryIdx << '(' << static_cast<int>(elem->isAddrReady())
+       << static_cast<int>(elem->isValueReady) << ')';
     ss << ' ';
   }
   return ss.str();

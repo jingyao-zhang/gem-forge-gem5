@@ -19,6 +19,27 @@ bool StreamRegionController::canSkipAllocatingDynS(StaticRegion &staticRegion,
 
   auto &stepDynStreams = stepRootDynS.stepDynStreams;
 
+  /**
+   * If the dynRegion has marked skipToEnd, but the dynS has no TotalTripCount,
+   * we have to wait if we have reached the FirstFloatElemIdx.
+   *
+   * Things get complicated when we have MidWay float with PtrChase or Reduce,
+   * where we can allocate until FirstFloatElemIdx + 1.
+   */
+  const auto &dynRegion =
+      this->getDynRegion("CanSkipAllocatingDynS", stepRootDynS.configSeqNum);
+  if (dynRegion.canSkipToEnd && !stepRootDynS.hasTotalTripCount()) {
+    auto firstFloatElemIdx = stepRootDynS.getFirstFloatElemIdx();
+    auto nextElemIdx = stepRootDynS.FIFOIdx.entryIdx;
+    if (nextElemIdx > firstFloatElemIdx) {
+      DYN_S_DPRINTF(stepRootDynS.dynStreamId,
+                    "[StreamAlloc] NoAlloc as NoTripCount to SkipToEnd. Next "
+                    "%lu == FirstFloatElemIdx %lu.\n",
+                    nextElemIdx, firstFloatElemIdx);
+      return true;
+    }
+  }
+
   int64_t maxTailElemIdx = -1;
   if (stepRootDynS.hasTotalTripCount()) {
     maxTailElemIdx =
@@ -210,8 +231,9 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
      * In such case we won't allocate last element and SteamEnd would consume
      * no one.
      */
+    const auto &allocRootDynId = allocatingStepRootDynS->dynStreamId;
     {
-      auto allocSize = allocatingStepRootDynS->allocSize;
+      const auto allocSize = allocatingStepRootDynS->allocSize;
 
       if (maxAllocSize > allocSize) {
         auto nextEntryIdx = allocatingStepRootDynS->FIFOIdx.entryIdx;
@@ -238,7 +260,7 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
                 backBaseS->getDynStream(allocatingStepRootDynS->configSeqNum);
             auto backBaseLastElemIdx = backBaseDynS.FIFOIdx.entryIdx;
             if (nextEntryIdx != 0 && backBaseLastElemIdx < nextEntryIdx - 1) {
-              DYN_S_PANIC(allocatingStepRootDynS->dynStreamId,
+              DYN_S_PANIC(allocRootDynId,
                           "NextElemIdx %llu BackBaseLastElem %s.", nextEntryIdx,
                           backBaseDynS.FIFOIdx);
             }
@@ -275,16 +297,43 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
           maxAllocSize = (allocSize > MaxElementPerPointerChaseDynStream)
                              ? allocSize
                              : MaxElementPerPointerChaseDynStream;
-          DYN_S_DPRINTF(allocatingStepRootDynS->dynStreamId,
-                        "Limit MaxElement/DynPointerChaseStream. AllocSize %d "
-                        "MaxAllocSize %d.\n",
-                        allocSize, maxAllocSize);
+          DYN_S_DPRINTF(
+              allocRootDynId,
+              "Limit MaxElem/DynPointerChaseStream. Alloc %d MaxAlloc %d.\n",
+              allocSize, maxAllocSize);
+        }
+      }
+      const auto &dynRegion = this->getDynRegion(
+          "AllocateElements", allocatingStepRootDynS->configSeqNum);
+      if (dynRegion.canSkipToEnd &&
+          !allocatingStepRootDynS->hasTotalTripCount()) {
+        /**
+         * Do not allocate beyond:
+         * 1. If FirstFloatElemIdx == 0, this is not MidwayFloat. Do not
+         * allocate 0.
+         * 2. If FirstFloatElemIdx > 0, this is MidwayFloat. Do not
+         * allocate FirstFloatElemIdx + 1.
+         */
+        auto firstFloatElemIdx = allocatingStepRootDynS->getFirstFloatElemIdx();
+        auto allocUntilElemIdx =
+            (firstFloatElemIdx == 0) ? 0 : (firstFloatElemIdx + 1);
+        auto nextElemIdx = allocatingStepRootDynS->FIFOIdx.entryIdx;
+        assert(maxAllocSize >= allocSize);
+        assert(nextElemIdx <= allocUntilElemIdx);
+        auto extraElems = allocUntilElemIdx - nextElemIdx;
+        if (maxAllocSize - allocSize > extraElems) {
+          maxAllocSize = allocSize + extraElems;
+          DYN_S_DPRINTF(allocRootDynId,
+                        "Limit for DelayedSkipToEndS. Alloc %d MaxAlloc %d "
+                        "FirstFloat %lu Until %lu Next %lu.\n",
+                        allocSize, maxAllocSize, firstFloatElemIdx,
+                        allocUntilElemIdx, nextElemIdx);
         }
       }
     }
 
     DYN_S_DPRINTF(
-        allocatingStepRootDynS->dynStreamId,
+        allocRootDynId,
         "Allocating StepRootDynS AllocSize %d MaxSize %d MaxAllocSize %d.\n",
         stepRootStream->getAllocSize(), stepRootStream->maxSize, maxAllocSize);
 
@@ -303,8 +352,7 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
           S_DPRINTF(S, "No FreeElement.\n");
           break;
         }
-        auto &dynS = S->getDynStreamByInstance(
-            allocatingStepRootDynS->dynStreamId.streamInstance);
+        auto &dynS = S->getDynStreamByInstance(allocRootDynId.streamInstance);
         if (S->getAllocSize() >= S->maxSize) {
           DYN_S_DPRINTF(dynS.dynStreamId, "Reached MaxAllocSize %d >= %d.\n",
                         S->getAllocSize(), S->maxSize);

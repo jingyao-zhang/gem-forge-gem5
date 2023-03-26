@@ -466,11 +466,22 @@ public:
    * Accessor to the NumInnerLoopDepS. Used to track that InnerLoopDepS
    * has correctly got the value we can be released.
    */
-  int getNumInnerLoopDepS() const { return this->numInnerLoopDepS; }
-  void incNumInnerLoopDepS() { this->numInnerLoopDepS++; }
-  void decNumInnerLoopDepS() {
-    assert(this->numInnerLoopDepS > 0);
-    this->numInnerLoopDepS--;
+  int getNumInnerLoopDepS() const { return this->innerLoopDepS.size(); }
+  const std::vector<DynStreamId> &getInnerLoopDepS() const {
+    return this->innerLoopDepS;
+  }
+  void pushInnerLoopDepS(const DynStreamId &dynId) {
+    this->innerLoopDepS.push_back(dynId);
+  }
+  void popInnerLoopDepS(const DynStreamId &dynId) {
+    for (auto iter = this->innerLoopDepS.begin();
+         iter != this->innerLoopDepS.end(); ++iter) {
+      if (*iter == dynId) {
+        this->innerLoopDepS.erase(iter);
+        return;
+      }
+    }
+    assert(false && "No InnerLoopDepS");
   }
 
 private:
@@ -522,9 +533,9 @@ private:
   DynStreamAddressRangePtr currentWorkingRange = nullptr;
 
   /**
-   * Number of InnerLoopDep streams to this stream.
+   * InnerLoopDep streams to this stream.
    */
-  int numInnerLoopDepS = 0;
+  std::vector<DynStreamId> innerLoopDepS;
 
   std::unordered_map<uint64_t, int> futureElemBanks;
 

@@ -224,6 +224,68 @@ void StreamRegionController::executeStreamConfigForStep(const ConfigArgs &args,
   }
 }
 
+void StreamRegionController::commitStreamConfigForStep(const ConfigArgs &args,
+                                                       DynRegion &dynRegion) {
+  auto &staticRegion = *dynRegion.staticRegion;
+  /**
+   * Try to record FirstFloatElemIdx.
+   */
+  const auto &staticGroups = staticRegion.step.stepGroups;
+  auto &dynGroups = dynRegion.step.stepGroups;
+  // First collect trip counts.
+  for (auto &dynGroup : dynGroups) {
+    auto stepRootS = staticGroups[dynGroup.staticGroupIdx].stepRootS;
+    for (auto S : this->se->getStepStreamList(stepRootS)) {
+      const auto &dynS = S->getDynStream(dynRegion.seqNum);
+      if (dynS.isFloatedToCache()) {
+        auto firstFloatElemIdx = dynS.getFirstFloatElemIdx();
+        if (dynGroup.firstFloatElemIdx ==
+            DynRegion::DynStep::DynStepGroupInfo::InvalidFirstFloatElemIdx) {
+          dynGroup.firstFloatElemIdx = firstFloatElemIdx;
+          DYN_S_DPRINTF(dynS.dynStreamId,
+                        "[Stepper] Set FirstFloatElemIdx %lu.",
+                        firstFloatElemIdx);
+        } else {
+          if (dynGroup.firstFloatElemIdx != firstFloatElemIdx) {
+            DYN_S_PANIC(dynS.dynStreamId,
+                        "[Stepper] Mismatch in FirstFloatElemIdx %lu != %lu.",
+                        firstFloatElemIdx, dynGroup.firstFloatElemIdx);
+          }
+        }
+      }
+    }
+  }
+}
+
+void StreamRegionController::tryStepToStreamEnd(
+    DynRegion &dynRegion, DynRegion::DynStep &dynStep,
+    DynRegion::DynStep::DynStepGroupInfo &dynGroup, DynStream &stepRootDynS) {
+  /**
+   * If the DynRegion is skipped to the end, we need to adjust the NextElemIdx
+   * once we have reached the AllocUntilElemIdx (see stream_allocator.cc).
+   * 1. If not MidwayFloat (FirstFloatElemIdx == 0), skip when NextElemIdx == 0.
+   * 2. If MidwayFloat (FirstFloatElemIdx > 0), skip when NextElemIdx ==
+   * FirstFloatElemIdx + 1.
+   */
+  auto totalTripCount = stepRootDynS.getTotalTripCount();
+  const auto firstFloatElemIdx = dynGroup.firstFloatElemIdx;
+  if (firstFloatElemIdx ==
+      DynRegion::DynStep::DynStepGroupInfo::InvalidFirstFloatElemIdx) {
+    DYN_S_PANIC(stepRootDynS.dynStreamId,
+                "[Stepper] Try StepToEnd without FirstFloatElemIdx.");
+  }
+  const auto allocUntilElemIdx =
+      firstFloatElemIdx == 0 ? 0 : firstFloatElemIdx + 1;
+  if (dynGroup.nextElemIdx == allocUntilElemIdx) {
+    DYN_S_DPRINTF(stepRootDynS.dynStreamId,
+                  "[Stepper] SkipToEnd: Next %lu = Total %lu FirstFloat %lu "
+                  "AllocUntil %lu.\n",
+                  dynGroup.nextElemIdx, totalTripCount, firstFloatElemIdx,
+                  allocUntilElemIdx);
+    dynGroup.nextElemIdx = totalTripCount;
+  }
+}
+
 void StreamRegionController::stepStream(DynRegion &dynRegion) {
   auto &staticRegion = *dynRegion.staticRegion;
   if (!staticRegion.someStreamsLoopEliminated) {
@@ -234,15 +296,22 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
   auto &dynGroup = dynStep.stepGroups[dynStep.nextDynGroupIdx];
   auto &staticStep = staticRegion.step;
   auto &staticGroup = staticStep.stepGroups[dynGroup.staticGroupIdx];
+  auto stepRootS = staticGroup.stepRootS;
+  auto stepRootStreamId = stepRootS->staticId;
+  auto &stepRootDynS = stepRootS->getDynStream(dynRegion.seqNum);
+
+  if (dynRegion.canSkipToEnd && stepRootDynS.hasTotalTripCount()) {
+    auto totalTripCount = stepRootDynS.getTotalTripCount();
+    if (dynGroup.nextElemIdx < totalTripCount) {
+      this->tryStepToStreamEnd(dynRegion, dynStep, dynGroup, stepRootDynS);
+    }
+  }
 
   /**
    * First check that we have handled possible NestStream and LoopBound
    * for the next stepped iteration.
    */
   const auto &dynBound = dynRegion.loopBound;
-  auto stepRootS = staticGroup.stepRootS;
-  auto stepRootStreamId = stepRootS->staticId;
-  auto &stepRootDynS = stepRootS->getDynStream(dynRegion.seqNum);
   if (staticRegion.region.is_loop_bound()) {
     if (dynGroup.nextElemIdx >= dynBound.nextElemIdx) {
       DYN_S_DPRINTF(stepRootDynS.dynStreamId,

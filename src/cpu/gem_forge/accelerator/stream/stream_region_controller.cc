@@ -119,6 +119,7 @@ void StreamRegionController::commitStreamConfig(const ConfigArgs &args) {
 
   SE_DPRINTF("[Region] Commit Config SeqNum %llu for region %s.\n", args.seqNum,
              dynRegion.staticRegion->region.region());
+  this->commitStreamConfigForStep(args, dynRegion);
 
   dynRegion.configCommitted = true;
 }
@@ -304,8 +305,10 @@ bool StreamRegionController::canSkipToStreamEnd(
    * 4. No NestRegion.
    * For all streams:
    * 1. No core user.
-   * 2. No last/second-last element user.
-   * 3. Has known TripCount.
+   * 2. No second-last element user.
+   *
+   * If the trip count is unkown, we delay allocating its elements
+   * until the loop bound is evaluated to break out the loop.
    */
   auto staticRegion = dynRegion.staticRegion;
   if (!staticRegion->region.loop_eliminated()) {
@@ -324,18 +327,26 @@ bool StreamRegionController::canSkipToStreamEnd(
   }
   for (auto S : staticRegion->streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
-    if (S->isInnerFinalValueUsedByCore() ||
-        S->isInnerSecondFinalValueUsedByCore() || S->hasCoreUser()) {
+    if (S->isInnerSecondFinalValueUsedByCore() || S->hasCoreUser()) {
       DYN_S_DPRINTF(dynS.dynStreamId,
-                    "[Region] NoSkipToEnd: NeededByCore InnerFinalValue %d "
-                    "InnerSecondFinalValue %d CoreUser %d.\n",
-                    S->isInnerFinalValueUsedByCore(),
+                    "[Region] NoSkipToEnd: NeededByCore InnerSecondFinalValue "
+                    "%d CoreUser %d.\n",
                     S->isInnerSecondFinalValueUsedByCore(), S->hasCoreUser());
       return false;
     }
-    if (!dynS.hasTotalTripCount()) {
-      DYN_S_DPRINTF(dynS.dynStreamId, "[Region] NoSkipToEnd: No TripCount.\n");
+    if (S->isInnerFinalValueUsedByCore() &&
+        S->getConfigLoopLevel() < S->getLoopLevel()) {
+      DYN_S_DPRINTF(
+          dynS.dynStreamId,
+          "[Region] NoSkipToEnd: InnerFinalValue -> Core with OuterConfig.\n");
       return false;
+    }
+    if (!dynS.hasTotalTripCount()) {
+      if (!staticRegion->loopBound.boundFunc) {
+        DYN_S_DPRINTF(dynS.dynStreamId,
+                      "[Region] NoSkipToEnd: No TripCount nor LoopBound.\n");
+        return false;
+      }
     }
   }
   return true;
@@ -346,17 +357,23 @@ void StreamRegionController::trySkipToStreamEnd(DynRegion &dynRegion) {
   if (!dynRegion.canSkipToEnd) {
     return;
   }
+  // We need to check that we have TotalTripCount.
   auto staticRegion = dynRegion.staticRegion;
+  for (auto S : staticRegion->streams) {
+    auto &dynS = S->getDynStream(dynRegion.seqNum);
+    if (!dynS.hasTotalTripCount()) {
+      DYN_S_DPRINTF(dynS.dynStreamId,
+                    "[Region] Delay Skip to End as NoTotalTripCount.\n");
+      return;
+    }
+  }
+
   for (auto S : staticRegion->streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
     DYN_S_DPRINTF(dynS.dynStreamId, "[Region] Skip to End %llu.\n",
                   dynS.getTotalTripCount());
     dynS.FIFOIdx.entryIdx = dynS.getTotalTripCount();
   }
-  // Don't forget to update the Stepper.
-  for (auto &group : dynRegion.step.stepGroups) {
-    SE_DPRINTF("[Region] Skip Group to End %llu.\n", group.totalTripCount);
-    group.nextElemIdx = group.totalTripCount;
-  }
+  // The stepper will update itself in tryStepToStreamEnd().
 }
 } // namespace gem5
