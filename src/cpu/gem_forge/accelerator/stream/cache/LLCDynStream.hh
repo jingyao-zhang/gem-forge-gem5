@@ -283,6 +283,7 @@ public:
                            const StreamValue &value);
   void tryComputeNextDirectReduceElem(LLCStreamEngine *se,
                                       const LLCStreamElementPtr &elem);
+  void tryComputeNextIndirectReduceElem(LLCStreamEngine *se);
   void completeFinalReduce(LLCStreamEngine *se);
 
   int getMaxInflyRequests() const { return this->maxInflyRequests; }
@@ -527,11 +528,6 @@ private:
   LLCStreamCommitController *commitController = nullptr;
 
   /**
-   * IndirectElems are triggered in order.
-   */
-  uint64_t nextTriggerIndElemIdx = 0;
-
-  /**
    * Initialize the element for myself and all UsedByStream.
    */
   void initNextElem(Addr vaddr);
@@ -549,13 +545,6 @@ public:
   void addCommitMessage(const DynStreamSliceId &sliceId);
   uint64_t getNextInitElementIdx() const { return this->nextInitStrandElemIdx; }
   uint64_t getNextCommitElementIdx() const { return this->nextCommitElemIdx; }
-  uint64_t getNextTriggerIndElemIdx() const {
-    return this->nextTriggerIndElemIdx;
-  }
-  void markElemTriggeredIndirect(uint64_t elemIdx) {
-    assert(this->nextTriggerIndElemIdx == elemIdx);
-    this->nextTriggerIndElemIdx++;
-  }
 
   /**
    * Only indirect stream is managed in element-grainularity.

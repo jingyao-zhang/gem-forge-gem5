@@ -551,21 +551,15 @@ void LLCStreamEngine::receiveStreamData(
   }
 
   if (!dynS->getIndStreams().empty()) {
-    for (auto &idxElem : dynS->idxToElementMap) {
-      auto &elem = idxElem.second;
-      LLC_SLICE_DPRINTF(
-          sliceId, "Try Trigger Elem %llu Ready %d NextTriggerIndElem %lu.\n",
-          elem->idx, elem->isReady(), dynS->getNextTriggerIndElemIdx());
-      if (elem->idx < dynS->getNextTriggerIndElemIdx()) {
+    for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
+      auto elem = dynS->getElemPanic(idx, "RecvElemData to TriggerInd.");
+      LLC_SLICE_DPRINTF(sliceId, "Try Trigger Elem %llu Ready %d.\n", elem->idx,
+                        elem->isReady());
+      if (!elem->isReady()) {
+        // Not ready yet. Continue.
         continue;
       }
-      if (!elem->isReady()) {
-        // Not ready yet. Break.
-        break;
-      }
-      // Make sure we are triggering IndElem at correct bank.
       this->triggerIndElems(dynS, elem);
-      dynS->markElemTriggeredIndirect(elem->idx);
     }
   }
 
@@ -625,19 +619,19 @@ void LLCStreamEngine::receiveStreamData(
       const auto &elem = elemIter->second;
       if (!elem->isPredicatedOff()) {
         if (!elem->areBaseElemsReady()) {
-          LLC_ELEMENT_DPRINTF(elem, "Cannot release AreBaseElementsReady %d.\n",
+          LLC_SE_ELEM_DPRINTF(elem, "Cannot release AreBaseElementsReady %d.\n",
                               elem->areBaseElemsReady());
           break;
         }
         if (S->isStoreComputeStream()) {
           if (!elem->isIndirectStoreAcked()) {
-            LLC_ELEMENT_DPRINTF(elem,
+            LLC_SE_ELEM_DPRINTF(elem,
                                 "Cannot release IndirectStore not acked.\n");
             break;
           }
         } else {
           if (!elem->isReady()) {
-            LLC_ELEMENT_DPRINTF(elem,
+            LLC_SE_ELEM_DPRINTF(elem,
                                 "Cannot release NotReady & NotPredOff.\n");
             break;
           }
@@ -1385,7 +1379,7 @@ void LLCStreamEngine::issueStreams() {
           const auto &prevElement = idxElement.second;
           if (prevElement->vaddr == elem->vaddr &&
               !prevElement->isComputedValueReady()) {
-            LLC_ELEMENT_DPRINTF(elem,
+            LLC_SE_ELEM_DPRINTF(elem,
                                 "[NotIssue] Aliased Indirect "
                                 "UpdateElement %llu %#x.\n",
                                 prevElement->idx, prevElement->vaddr);
@@ -3313,7 +3307,7 @@ bool LLCStreamEngine::tryToProcessIndirectAtomicUnlockReq(
 
 void LLCStreamEngine::predicateOffElem(LLCDynStreamPtr dynS,
                                        LLCStreamElementPtr elem) {
-  LLC_ELEMENT_DPRINTF_(LLCStreamPredicate, elem, "[LLCPred] Predicated Off.\n");
+  LLC_SE_ELEM_DPRINTF_(LLCStreamPredicate, elem, "[LLCPred] Predicated Off.\n");
 
   /**
    * Some sanity check cause so far we only have partial support for
@@ -3359,7 +3353,7 @@ void LLCStreamEngine::predicateOffElem(LLCDynStreamPtr dynS,
   dynS->skipIssuingPredOffElems();
   // If the IndS has ready elem, add it back to IssueList.
   if (dynS->isIndirect() && dynS->hasElemReadyToIssue()) {
-    LLC_ELEMENT_DPRINTF(elem,
+    LLC_SE_ELEM_DPRINTF(elem,
                         "[IndS] PredOff but add to Issue List ReadyElems %d.\n",
                         dynS->getNumElemReadyToIssue());
     this->addIssuingIndDynS(dynS);
@@ -3370,12 +3364,12 @@ void LLCStreamEngine::predicateOffElem(LLCDynStreamPtr dynS,
     const auto &elem = elemIter->second;
     if (dynS->isIndirect() && S->isStoreComputeStream()) {
       if (!elem->isIndirectStoreAcked()) {
-        LLC_ELEMENT_DPRINTF(elem, "[LLCPred] Not Release: !IndStoreAck.\n");
+        LLC_SE_ELEM_DPRINTF(elem, "[LLCPred] Not Release: !IndStoreAck.\n");
         break;
       }
     } else {
       if (!elem->isPredicatedOff()) {
-        LLC_ELEMENT_DPRINTF(elem, "[LLCPred] Not Release: !PredOff.\n");
+        LLC_SE_ELEM_DPRINTF(elem, "[LLCPred] Not Release: !PredOff.\n");
         break;
       }
     }
@@ -3415,11 +3409,11 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
 
   // Not predicated, add to readyElements.
   bool areBaseElemsReady = indElem->areBaseElemsReady();
-  LLC_ELEMENT_DPRINTF(indElem, "Check if BaseElemReady %d.\n",
+  LLC_SE_ELEM_DPRINTF(indElem, "Check if BaseElemReady %d.\n",
                       areBaseElemsReady);
   if (!areBaseElemsReady) {
     for (const auto &baseE : indElem->baseElements) {
-      LLC_ELEMENT_DPRINTF(indElem, "BaseElems Ready %d %s%llu.\n",
+      LLC_SE_ELEM_DPRINTF(indElem, "BaseElems Ready %d %s%llu.\n",
                           baseE->isReady(), baseE->strandId, baseE->idx);
     }
     return;
@@ -3439,7 +3433,7 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
         LLC_ELEMENT_PANIC(indElem, "[LLCPred] PredValue not ready: %s%lu.",
                           baseElem->strandId, baseElem->idx);
       }
-      LLC_ELEMENT_DPRINTF_(LLCStreamPredicate, indElem,
+      LLC_SE_ELEM_DPRINTF_(LLCStreamPredicate, indElem,
                            "[LLCPred] Got %d Expected %d.\n",
                            baseElem->getPredValue(), IS->getPredValue());
       predOn = (baseElem->getPredValue() == IS->getPredValue());
@@ -3507,7 +3501,7 @@ void LLCStreamEngine::triggerIndElems(LLCDynStreamPtr dynS,
     auto indElemIdxRhs =
         IS->configData->convertBaseToDepElemIdx(idx + 1, reuse, skip);
 
-    LLC_ELEMENT_DPRINTF(elem, "Trigger IndS %s Reuse %d Elems [%lu, %lu).\n",
+    LLC_SE_ELEM_DPRINTF(elem, "Trigger IndS %s Reuse %d Elems [%lu, %lu).\n",
                         IS->getDynStrandId(), reuse, indElemIdxLhs,
                         indElemIdxRhs);
 
@@ -3867,7 +3861,7 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
        * not be ready.
        */
       if (S->isUpdateStream() && !element->isReady()) {
-        LLC_ELEMENT_DPRINTF(element, "[Update] Slice blocked by me.\n");
+        LLC_SE_ELEM_DPRINTF(element, "[Update] Slice blocked by me.\n");
         return ++sliceIter;
       }
     }
@@ -4189,7 +4183,7 @@ void LLCStreamEngine::postProcessIndirectAtomicSlice(
       auto elemIter = dynS->idxToElementMap.begin();
       const auto &elem = elemIter->second;
       if (!elem->isComputationDone() && !elem->isPredicatedOff()) {
-        LLC_ELEMENT_DPRINTF(
+        LLC_SE_ELEM_DPRINTF(
             elem, "[IndirectAtomic] Not Release: !CmpDone && !PredOff.\n");
         break;
       }
@@ -4284,7 +4278,7 @@ bool LLCStreamEngine::tryProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
      * not be ready.
      */
     if (!elem->isReady()) {
-      LLC_ELEMENT_DPRINTF(elem, "[Update] Slice blocked by me.\n");
+      LLC_SE_ELEM_DPRINTF(elem, "[Update] Slice blocked by me.\n");
       return false;
     }
   }
@@ -4524,20 +4518,20 @@ void LLCStreamEngine::tryVectorizeElem(LLCStreamElementPtr &elem,
   }
 
   if (shouldVectorized) {
-    LLC_ELEMENT_DPRINTF(elem, "[PushReadyCmp] Vectorized.\n");
+    LLC_SE_ELEM_DPRINTF(elem, "[PushReadyCmp] Vectorized.\n");
     elem->vectorizedComputation();
   }
 }
 
 void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &elem,
                                            bool tryVectorize) {
-  LLC_ELEMENT_DPRINTF(elem, "[PushReadyCmp] #Ready %d #Infly %d TryVec %d.\n",
+  LLC_SE_ELEM_DPRINTF(elem, "[PushReadyCmp] #Ready %d #Infly %d TryVec %d.\n",
                       this->readyComputations.size(),
                       this->inflyComputations.size(), tryVectorize);
   assert(elem->areBaseElemsReady() && "Element is not ready yet.");
   if (elem->S->isComputationNop()) {
     // Nop computation is directly skipped.
-    LLC_ELEMENT_DPRINTF(elem, "Skip nop.\n");
+    LLC_SE_ELEM_DPRINTF(elem, "Skip nop.\n");
     elem->vectorizedComputation();
     this->skipComputation(elem);
     return;
@@ -4545,7 +4539,7 @@ void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &elem,
   if (!elem->isNDCElement) {
     auto dynS = LLCDynStream::getLLCStream(elem->strandId);
     if (!dynS) {
-      LLC_ELEMENT_DPRINTF(elem, "Skip computation as Stream is released.\n");
+      LLC_SE_ELEM_DPRINTF(elem, "Skip computation as Stream is released.\n");
       return;
     }
     if (!dynS->hasComputation()) {
@@ -4585,7 +4579,7 @@ void LLCStreamEngine::skipComputation(LLCStreamElementPtr &elem) {
   assert(!dynS->isIndirectReduction() &&
          "IndReduction should never be skipped.");
 
-  LLC_ELEMENT_DPRINTF(elem, "Skip computation. Vectorized %d.\n",
+  LLC_SE_ELEM_DPRINTF(elem, "Skip computation. Vectorized %d.\n",
                       elem->isComputationVectorized());
   StreamValue result = dynS->computeElemValue(elem);
   dynS->completeComputation(this, elem, result);
@@ -4709,7 +4703,7 @@ void LLCStreamEngine::startComputation() {
        */
       assert(!elem->isComputationVectorized() && "NDC cannot be vectorized.");
       if (!this->ndcController->computeStreamElementValue(elem, result)) {
-        LLC_ELEMENT_DPRINTF(elem,
+        LLC_SE_ELEM_DPRINTF(elem,
                             "Discard NDC computation as stream is released.\n");
         this->readyComputations.pop_front();
         continue;
@@ -4720,24 +4714,22 @@ void LLCStreamEngine::startComputation() {
        */
       auto dynS = LLCDynStream::getLLCStream(elem->strandId);
       if (!dynS) {
-        LLC_ELEMENT_DPRINTF(elem,
+        LLC_SE_ELEM_DPRINTF(elem,
                             "Discard computation as stream is released.\n");
         this->readyComputations.pop_front();
         continue;
       }
 
-      if (!dynS->isIndirectReduction()) {
-        LLC_ELEMENT_DPRINTF(
-            elem,
-            "Start computation. Latency %llu (ZeroLat %d) Vectorized %d.\n",
+      if (dynS->isIndirectReduction()) {
+        LLC_SE_ELEM_DPRINTF(
+            elem, "[IndReduce] Start fake cmp. Lat %llu (ZeroLat %d).\n",
+            latency, forceZeroLat);
+        result.fill(0);
+      } else {
+        LLC_SE_ELEM_DPRINTF(
+            elem, "Start computation. Lat %llu (ZeroLat %d) Vectorized %d.\n",
             latency, forceZeroLat, elem->isComputationVectorized());
         result = dynS->computeElemValue(elem);
-      } else {
-        LLC_ELEMENT_DPRINTF(elem,
-                            "Start IndirectReduction fake computation. Latency "
-                            "%llu (ZeroLat %d).\n",
-                            latency, forceZeroLat);
-        result.fill(0);
       }
     }
     this->pushInflyComputation(elem, result, latency);
@@ -4762,7 +4754,7 @@ void LLCStreamEngine::completeComputation() {
     if (computation.readyCycle > curCycle) {
       break;
     }
-    LLC_ELEMENT_DPRINTF(elem, "Complete computation.\n");
+    LLC_SE_ELEM_DPRINTF(elem, "Complete computation.\n");
     if (elem->isNDCElement) {
       this->ndcController->completeComputation(elem, computation.result);
     } else {
@@ -4770,7 +4762,7 @@ void LLCStreamEngine::completeComputation() {
       if (dynS) {
         dynS->completeComputation(this, elem, computation.result);
       } else {
-        LLC_ELEMENT_DPRINTF(
+        LLC_SE_ELEM_DPRINTF(
             elem, "Discard computation result as stream is released.\n");
       }
     }

@@ -97,6 +97,9 @@ namespace gem5 {
 #define LLC_SE_MSG(format, args...)                                            \
   "[%s_SE%d]: " format, this->curRemoteMachineType(), this->curRemoteBank(),   \
       ##args
+#define LLC_SE_ELEM_MSG(elem, format, args...)                                 \
+  "[%s_SE%d]%s%lu-: " format, this->curRemoteMachineType(),                    \
+      this->curRemoteBank(), (elem)->strandId, (elem)->idx, ##args
 #define LLC_ELEMENT_MSG(element, format, args...)                              \
   "[%s_SE%d]%s%lu-: " format, (element)->curRemoteMachineType(),               \
       (element)->curRemoteBank(), (element)->strandId, (element)->idx, ##args
@@ -124,6 +127,15 @@ namespace gem5 {
 #define LLC_SE_DPRINTF(format, args...)                                        \
   LLC_SE_DPRINTF_(DEBUG_TYPE, format, ##args)
 #define LLC_SE_PANIC(format, args...) panic(LLC_SE_MSG(format, ##args))
+
+#define LLC_SE_ELEM_DPRINTF_(X, element, format, args...)                      \
+  DPRINTF(X, LLC_SE_ELEM_MSG(element, format, ##args))
+#define LLC_SE_ELEM_DPRINTF(element, format, args...)                          \
+  LLC_SE_ELEM_DPRINTF_(DEBUG_TYPE, element, format, ##args)
+#define LLC_SE_ELEM_PANIC(element, format, args...)                            \
+  panic(LLC_SE_ELEM_MSG(element, format, ##args))
+#define LLC_SE_ELEM_HACK(element, format, args...)                             \
+  hack(LLC_SE_ELEM_MSG(element, format, ##args))
 
 #define LLC_ELEMENT_DPRINTF_(X, element, format, args...)                      \
   DPRINTF(X, LLC_ELEMENT_MSG(element, format, ##args))

@@ -76,11 +76,6 @@ LLCDynStream::LLCDynStream(ruby::AbstractStreamAwareController *_mlcController,
     this->nextAllocElemIdx = firstFloatElemIdx;
     this->nextIssueElemIdx = firstFloatElemIdx;
     this->nextLoopBoundElementIdx = firstFloatElemIdx;
-    this->nextTriggerIndElemIdx = firstFloatElemIdx;
-  }
-
-  if (this->isOneIterationBehind()) {
-    this->nextTriggerIndElemIdx++;
   }
 
   // Extract predicated stream information.
@@ -766,14 +761,14 @@ void LLCDynStream::initNextElem(Addr vaddr) {
      * latency is charged at each indirect banks, but to keep things simple,
      * the real computation is still carried out serially.
      *
-     * Therefore, we do not add PrevReductionElement as the base element for
-     * IndirectReductionStream. Also, since the compute value is not truly
+     * Therefore, we do not add PrevReduceElem as the base element for
+     * IndirectReduceS. Also, since the compute value is not truly
      * ready, we have to avoid any user of the reduction value.
      */
     if (this->isIndirectReduction()) {
       if (!this->configData->depEdges.empty()) {
         LLC_S_PANIC(this->getDynStrandId(),
-                    "Dependence of IndirectReductionStream is not supported.");
+                    "Dependence of IndirectReduceS is not supported.");
       }
     } else {
       // Direct reduction.
@@ -1019,29 +1014,11 @@ void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
                       sliceId.getDynStrandId());
   }
   /**
-   * Try to trigger IndElem.
+   * Try to self trigger IndElem.
    * Otherwise, the LLC SE should check me for ready elements.
    */
   if (this->isIndirect()) {
-    /**
-     * The BaseS will trigger IndElem in order, even if the BaseElem is ready.
-     * Here we respect that.
-     */
-    bool baseElemFound = false;
-    bool baseElemTriggered = true;
-    for (auto &baseElem : recvElem->baseElements) {
-      if (baseElem->S == this->baseStream->getStaticS()) {
-        // This is our BaseS element
-        baseElemFound = true;
-        baseElemTriggered =
-            baseElem->idx < this->baseStream->getNextTriggerIndElemIdx();
-      }
-    }
-    assert(baseElemFound && "No BaseElem.");
-    if (baseElemTriggered) {
-      // BaseS already triggered, we can try again.
-      se->triggerIndElem(this, recvElem->idx);
-    }
+    se->triggerIndElem(this, recvElem->idx);
   }
 }
 
@@ -1387,65 +1364,61 @@ bool LLCDynStream::hasComputation() const {
          S->isUpdateStream() || S->isAtomicComputeStream();
 }
 
-StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &element) {
+StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &elem) {
 
-  auto S = element->S;
+  auto S = elem->S;
   const auto &config = this->configData;
 
-  auto getBaseStreamValue = [&element](uint64_t baseStreamId) -> StreamValue {
-    return element->getBaseStreamValue(baseStreamId);
+  auto getBaseStreamValue = [&elem](uint64_t baseStreamId) -> StreamValue {
+    return elem->getBaseStreamValue(baseStreamId);
   };
-  auto getBaseOrMyStreamValue =
-      [&element](uint64_t baseStreamId) -> StreamValue {
-    return element->getBaseOrMyStreamValue(baseStreamId);
+  auto getBaseOrMyStreamValue = [&elem](uint64_t baseStreamId) -> StreamValue {
+    return elem->getBaseOrMyStreamValue(baseStreamId);
   };
   if (S->isReduction() || S->isPointerChaseIndVar()) {
     // This is a reduction stream.
-    assert(element->idx > 0 &&
-           "Reduction stream ElementIdx should start at 1.");
+    assert(elem->idx > 0 && "Reduction stream ElementIdx should start at 1.");
 
     // Perform the reduction.
     auto getBaseOrPrevReductionStreamValue =
-        [&element, this](uint64_t baseStreamId) -> StreamValue {
-      if (element->S->isCoalescedHere(baseStreamId)) {
-        auto prevReductionElement = element->getPrevReduceElem();
-        assert(prevReductionElement && "Missing prev reduction element.");
-        assert(prevReductionElement->isReady() &&
-               "Prev reduction element is not ready.");
+        [&elem, this](uint64_t baseStreamId) -> StreamValue {
+      if (elem->S->isCoalescedHere(baseStreamId)) {
+        auto prevReduceElem = elem->getPrevReduceElem();
+        assert(prevReduceElem && "Missing prev reduction element.");
+        assert(prevReduceElem->isReady() && "PrevReduceElem is not ready.");
 
         /**
-         * Special case for computing Reduction: If the PrevReductionElem is
+         * Special case for computing ReduceS: If the PrevReductionElem is
          * InnerLastElem, we will use the InitialValue.
-         * This is the case when the ReductionStream is configured at OuterLoop.
+         * This is the case when the ReduceS is configured at OuterLoop.
          */
-        if (element->S->isReduction() &&
-            this->isInnerLastElem(prevReductionElement->idx)) {
+        if (elem->S->isReduction() &&
+            this->isInnerLastElem(prevReduceElem->idx)) {
           return this->configData->reductionInitValue;
         }
 
-        return prevReductionElement->getValueByStreamId(baseStreamId);
+        return prevReduceElem->getValueByStreamId(baseStreamId);
       }
-      return element->getBaseStreamValue(baseStreamId);
+      return elem->getBaseStreamValue(baseStreamId);
     };
 
     Cycles latency = S->getEstimatedComputationLatency();
-    auto newReductionValue = config->addrGenCallback->genAddr(
-        element->idx, config->addrGenFormalParams,
-        getBaseOrPrevReductionStreamValue);
+    auto newReduceVal =
+        config->addrGenCallback->genAddr(elem->idx, config->addrGenFormalParams,
+                                         getBaseOrPrevReductionStreamValue);
     if (Debug::LLCRubyStreamReduce) {
       std::stringstream ss;
-      for (const auto &baseElement : element->baseElements) {
+      for (const auto &baseElement : elem->baseElements) {
         ss << "\n  " << baseElement->strandId << baseElement->idx << ": "
            << baseElement->getValue(0, baseElement->size);
       }
-      ss << "\n  -> " << element->strandId << element->idx << ": "
-         << newReductionValue;
-      LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, element,
+      ss << "\n  -> " << elem->strandId << elem->idx << ": " << newReduceVal;
+      LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, elem,
                            "[Latency %llu] Do reduction %s.\n", latency,
                            ss.str());
     }
 
-    return newReductionValue;
+    return newReduceVal;
 
   } else if (S->isStoreComputeStream()) {
     Cycles latency = config->storeCallback->getEstimatedLatency();
@@ -1453,7 +1426,7 @@ StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &element) {
                                             getBaseStreamValue);
     auto storeValue = config->storeCallback->invoke(params);
 
-    LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, element,
+    LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, elem,
                          "[Latency %llu] Compute StoreValue %s.\n", latency,
                          storeValue);
     return storeValue;
@@ -1464,7 +1437,7 @@ StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &element) {
                                             getBaseOrMyStreamValue);
     auto loadComputeValue = config->loadCallback->invoke(params);
 
-    LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, element,
+    LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, elem,
                          "[Latency %llu] Compute LoadComputeValue %s.\n",
                          latency, loadComputeValue);
     return loadComputeValue;
@@ -1476,7 +1449,7 @@ StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &element) {
                                             getBaseOrMyStreamValue);
     auto storeValue = config->storeCallback->invoke(params);
 
-    LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, element,
+    LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, elem,
                          "[Latency %llu] Compute StoreComputeValue %s.\n",
                          latency, storeValue);
     return storeValue;
@@ -1484,13 +1457,13 @@ StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &element) {
   } else if (S->isAtomicComputeStream()) {
 
     // So far Atomic are really computed at completeComputation.
-    LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, element,
+    LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, elem,
                          "[Latency %llu] Compute Dummy AtomicValue.\n",
                          S->getEstimatedComputationLatency());
     return StreamValue();
 
   } else {
-    LLC_ELEMENT_PANIC(element, "No Computation for this stream.");
+    LLC_ELEMENT_PANIC(elem, "No Computation for this stream.");
   }
 }
 
@@ -1567,44 +1540,12 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
   } else if (S->isReduction() || S->isPointerChaseIndVar()) {
     if (this->isIndirectReduction()) {
       /**
-       * If this is IndirectReductionStream, perform the real computation.
-       * Notice that here we charge zero latency, as we already charged it
-       * when schedule the computation.
+       * If this is IndirectReduceS, perform the real computation.
        */
-      LLC_S_DPRINTF_(LLCRubyStreamReduce, this->getDynStrandId(),
-                     "[IndirectReduce] Start real computation from "
-                     "LastComputedElem %llu.\n",
-                     this->lastComputedReduceElemIdx);
-      while (this->lastComputedReduceElemIdx < this->getTotalTripCount()) {
-        auto nextComputingElemIdx = this->lastComputedReduceElemIdx + 1;
-        auto nextComputingElem = this->getElem(nextComputingElemIdx);
-        if (!nextComputingElem) {
-          LLC_S_DPRINTF_(
-              LLCRubyStreamReduce, this->getDynStrandId(),
-              "[IndirectReduce] Missing NextComputingElem %llu. Break.\n",
-              nextComputingElemIdx);
-          break;
-        }
-        if (!nextComputingElem->isComputationDone()) {
-          LLC_S_DPRINTF_(
-              LLCRubyStreamReduce, this->getDynStrandId(),
-              "[IndirectReduce] NextComputingElem %llu not done. Break.\n",
-              nextComputingElemIdx);
-          break;
-        }
-        // Really do the computation.
-        LLC_S_DPRINTF_(
-            LLCRubyStreamReduce, this->getDynStrandId(),
-            "[IndirectReduce] Really computed NextComputingElem %llu.\n",
-            nextComputingElemIdx);
-        auto result = this->computeElemValue(nextComputingElem);
-        nextComputingElem->setValue(result);
-        this->lastComputedReduceElemIdx++;
-      }
+      this->tryComputeNextIndirectReduceElem(se);
     } else {
       /**
-       * If this is DirectReductionStream, check and schedule the next
-       * element.
+       * If this is DirectReduceS, check and schedule the next element.
        */
       if (this->lastComputedReduceElemIdx + 1 != elem->idx) {
         LLC_S_PANIC(this->getDynStrandId(),
@@ -1614,7 +1555,6 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
 
       // Trigger indirect elements.
       se->triggerIndElems(this, elem);
-      this->markElemTriggeredIndirect(elem->idx);
     }
 
     /**
@@ -1690,6 +1630,43 @@ void LLCDynStream::tryComputeNextDirectReduceElem(
     }
   } else {
     LLC_ELEMENT_DPRINTF(elem, "NextElem not initialized.\n");
+  }
+}
+
+void LLCDynStream::tryComputeNextIndirectReduceElem(LLCStreamEngine *se) {
+  /**
+   * IndirectReduce is separated into fake reduction at each IndBank, and real
+   * reduction that is still serialized. Here we try to compute the real one.
+   * Notice that here we charge zero latency, as we already charged it
+   * when schedule the computation.
+   */
+  LLC_S_DPRINTF_(
+      LLCRubyStreamReduce, this->getDynStrandId(),
+      "[IndReduce] Start real computation from LastComputedElem %llu.\n",
+      this->lastComputedReduceElemIdx);
+  assert(this->hasTotalTripCount() && "Missing TotalTripCount for IndReduce.");
+  while (this->lastComputedReduceElemIdx < this->getTotalTripCount()) {
+    auto nextComputingElemIdx = this->lastComputedReduceElemIdx + 1;
+    auto nextComputingElem = this->getElem(nextComputingElemIdx);
+    if (!nextComputingElem) {
+      LLC_S_DPRINTF_(LLCRubyStreamReduce, this->getDynStrandId(),
+                     "[IndReduce] Missing NextComputingElem %llu. Break.\n",
+                     nextComputingElemIdx);
+      break;
+    }
+    if (!nextComputingElem->isComputationDone()) {
+      LLC_S_DPRINTF_(LLCRubyStreamReduce, this->getDynStrandId(),
+                     "[IndReduce] NextComputingElem %llu not done. Break.\n",
+                     nextComputingElemIdx);
+      break;
+    }
+    // Really do the computation.
+    LLC_S_DPRINTF_(LLCRubyStreamReduce, this->getDynStrandId(),
+                   "[IndReduce] Really computed NextComputingElem %llu.\n",
+                   nextComputingElemIdx);
+    auto result = this->computeElemValue(nextComputingElem);
+    nextComputingElem->setValue(result);
+    this->lastComputedReduceElemIdx++;
   }
 }
 
