@@ -464,15 +464,15 @@ void MLCDynDirectStream::trySendCreditToLLC() {
     {
       auto remoteDynS = LLCDynStream::getLLCStreamPanic(this->getDynStrandId(),
                                                         "trySendCredit()");
-      auto inflyElemTotalSize = remoteDynS->idxToElementMap.size() *
-                                this->getStaticStream()->getMemElementSize();
-      auto inflyBytesThreshold = this->config->mlcBufferNumSlices * 64 * 2;
-      if (inflyElemTotalSize >= inflyBytesThreshold) {
+      auto inflySlices = remoteDynS->idxToElementMap.size() /
+                         this->slicedStream.getElemPerSlice();
+      auto inflySlicesThreshold = this->config->mlcBufferNumSlices * 2;
+      if (inflySlices >= inflySlicesThreshold) {
         MLC_S_DPRINTF(this->getDynStrandId(),
-                      "Delayed sending Credit since InflyElem %dx%d > %dB.\n",
+                      "Delayed sending Credit since InflySlices %d/%f > %d.\n",
                       remoteDynS->idxToElementMap.size(),
-                      this->getStaticStream()->getMemElementSize(),
-                      inflyBytesThreshold);
+                      this->slicedStream.getElemPerSlice(),
+                      inflySlicesThreshold);
 
         /**
          * PUMPrefetchStream won't send back anything, we here we register a

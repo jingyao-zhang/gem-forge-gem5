@@ -303,6 +303,16 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
   if (dynRegion.canSkipToEnd && stepRootDynS.hasTotalTripCount()) {
     auto totalTripCount = stepRootDynS.getTotalTripCount();
     if (dynGroup.nextElemIdx < totalTripCount) {
+      /**
+       * Do not bother to skip until config committed. This is because
+       * we need the FirstFloatElemIdx, which is only set when committing
+       * the config.
+       */
+      if (!dynRegion.configCommitted) {
+        DYN_S_DPRINTF(stepRootDynS.dynStreamId,
+                      "[Stepper] Wait For Config Commit to Skip.\n");
+        return;
+      }
       this->tryStepToStreamEnd(dynRegion, dynStep, dynGroup, stepRootDynS);
     }
   }

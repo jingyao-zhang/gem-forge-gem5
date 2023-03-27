@@ -3522,7 +3522,7 @@ void LLCStreamEngine::triggerIndElems(LLCDynStreamPtr dynS,
 }
 
 void LLCStreamEngine::triggerUpdate(LLCDynStreamPtr dynS,
-                                    LLCStreamElementPtr element,
+                                    LLCStreamElementPtr elem,
                                     const DynStreamSliceId &sliceId,
                                     const ruby::DataBlock &storeValueBlock,
                                     ruby::DataBlock &loadValueBlock,
@@ -3531,14 +3531,11 @@ void LLCStreamEngine::triggerUpdate(LLCDynStreamPtr dynS,
   auto S = dynS->getStaticS();
 
   // Perform the operation.
-  auto elementMemSize = S->getMemElementSize();
-  auto elementCoreSize = S->getCoreElementSize();
-  assert(elementCoreSize <= elementMemSize &&
-         "CoreElementSize should not exceed MemElementSize.");
-  auto elementVAddr = element->vaddr;
+  auto elemMemSize = S->getMemElementSize();
+  auto elemVAddr = elem->vaddr;
 
-  Addr elementPAddr;
-  assert(dynS->translateToPAddr(elementVAddr, elementPAddr) &&
+  Addr elemPAddr;
+  assert(dynS->translateToPAddr(elemVAddr, elemPAddr) &&
          "Fault on vaddr of UpdateStream.");
   const auto lineSize = ruby::RubySystem::getBlockSizeBytes();
 
@@ -3552,9 +3549,9 @@ void LLCStreamEngine::triggerUpdate(LLCDynStreamPtr dynS,
    * TODO: Reload the value here to avoid aliased update stream.
    * TODO: Multi-Line Update should really be careful.
    */
-  if (!element->isComputedValueReady()) {
-    auto getStreamValue = [&element](uint64_t streamId) -> StreamValue {
-      return element->getBaseOrMyStreamValue(streamId);
+  if (!elem->isComputedValueReady()) {
+    auto getStreamValue = [&elem](uint64_t streamId) -> StreamValue {
+      return elem->getBaseOrMyStreamValue(streamId);
     };
     auto params = convertFormalParamToParam(dynS->configData->storeFormalParams,
                                             getStreamValue);
@@ -3570,17 +3567,16 @@ void LLCStreamEngine::triggerUpdate(LLCDynStreamPtr dynS,
     this->controller->m_statLLCScheduledComputeMicroOps += numMicroOps;
     this->recordComputationMicroOps(S);
 
-    element->setComputedValue(storeValue);
-    assert(elementMemSize <= sizeof(storeValue) &&
-           "UpdateStream size overflow.");
-    for (int storedSize = 0; storedSize < elementMemSize;) {
-      Addr vaddr = elementVAddr + storedSize;
+    elem->setComputedValue(storeValue);
+    assert(elemMemSize <= sizeof(storeValue) && "UpdateStream size overflow.");
+    for (int storedSize = 0; storedSize < elemMemSize;) {
+      Addr vaddr = elemVAddr + storedSize;
       Addr paddr;
       if (!dynS->translateToPAddr(vaddr, paddr)) {
-        LLC_ELEMENT_PANIC(element, "Fault on vaddr of UpdateStream.");
+        LLC_ELEMENT_PANIC(elem, "Fault on vaddr of UpdateStream.");
       }
       auto lineOffset = vaddr % lineSize;
-      auto size = elementMemSize - storedSize;
+      auto size = elemMemSize - storedSize;
       if (lineOffset + size > lineSize) {
         size = lineSize - lineOffset;
       }
@@ -3597,9 +3593,9 @@ void LLCStreamEngine::triggerUpdate(LLCDynStreamPtr dynS,
   Addr loadBlockVAddrLine = ruby::makeLineAddress(sliceId.vaddr);
   int elementOffset = 0;
   int loadBlockOffset = 0;
-  auto overlapSize = element->computeOverlap(loadBlockVAddrLine, lineSize,
-                                             loadBlockOffset, elementOffset);
-  loadValueBlock.setData(element->getUInt8Ptr(elementOffset), loadBlockOffset,
+  auto overlapSize = elem->computeOverlap(loadBlockVAddrLine, lineSize,
+                                          loadBlockOffset, elementOffset);
+  loadValueBlock.setData(elem->getUInt8Ptr(elementOffset), loadBlockOffset,
                          overlapSize);
   payloadSize = overlapSize;
 }
@@ -4764,10 +4760,6 @@ void LLCStreamEngine::completeComputation() {
     auto &computation = this->inflyComputations.front();
     auto &elem = computation.elem;
     if (computation.readyCycle > curCycle) {
-      LLC_ELEMENT_DPRINTF(elem,
-                          "Cannot complete computation, readyCycle "
-                          "%llu, curCycle %llu.\n",
-                          computation.readyCycle, curCycle);
       break;
     }
     LLC_ELEMENT_DPRINTF(elem, "Complete computation.\n");

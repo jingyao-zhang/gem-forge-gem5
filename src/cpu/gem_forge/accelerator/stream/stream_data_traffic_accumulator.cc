@@ -149,10 +149,10 @@ void StreamDataTrafficAccumulator::computeTrafficFloat(
   auto coreUsed = element->isFirstUserDispatched();
   int toCoreHops = 0;
   if (hasCoreUser && coreUsed) {
-    auto coreElementSize = S->getCoreElementSize();
+    auto coreElemSize = S->getCoreElementSize();
     int myBank = this->getMyBank();
     auto distance = this->getDistance(dataBank, myBank);
-    auto flits = this->getNumFlits(coreElementSize);
+    auto flits = this->getNumFlits(coreElemSize);
     toCoreHops += distance * flits;
   }
   auto totalHops = addrBaseHops + valueBaseHops + toCoreHops;
@@ -169,5 +169,5 @@ int StreamDataTrafficAccumulator::getElementDataBank(
     return -1;
   }
   return this->mapPAddrToBank(paddr);
-}} // namespace gem5
-
+}
+} // namespace gem5

@@ -967,7 +967,7 @@ void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
 
       LLC_S_DPRINTF(
           this->getDynStrandId(),
-          "[Fwd] Recv Send %s%lu(%lu) by R/S %d/%d = Recv %d-%lu(%lu).\n",
+          "[Fwd] Recv Send %s%lu(%lu) by R/S %d/%d = Recv %d%lu(%lu).\n",
           sliceId.getDynStrandId(), sendStrandElemIdx, sendStreamElemIdx,
           baseEdge.reuse, baseEdge.skip, recvStrandId, recvStrandElemIdx,
           recvStreamElemIdx);
@@ -1531,26 +1531,23 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
   if (S->isUpdateStream()) {
 
     // Perform the operation.
-    auto elementMemSize = S->getMemElementSize();
-    auto elementCoreSize = S->getCoreElementSize();
-    assert(elementCoreSize <= elementMemSize &&
-           "CoreElementSize should not exceed MemElementSize.");
-    auto elementVAddr = elem->vaddr;
+    auto elemMemSize = S->getMemElementSize();
+    auto elemVAddr = elem->vaddr;
 
-    Addr elementPAddr;
-    assert(this->translateToPAddr(elementVAddr, elementPAddr) &&
+    Addr elemPAddr;
+    assert(this->translateToPAddr(elemVAddr, elemPAddr) &&
            "Fault on vaddr of UpdateStream.");
     const auto lineSize = ruby::RubySystem::getBlockSizeBytes();
 
-    assert(elementMemSize <= sizeof(value) && "UpdateStream size overflow.");
-    for (int storedSize = 0; storedSize < elementMemSize;) {
-      Addr vaddr = elementVAddr + storedSize;
+    assert(elemMemSize <= sizeof(value) && "UpdateStream size overflow.");
+    for (int storedSize = 0; storedSize < elemMemSize;) {
+      Addr vaddr = elemVAddr + storedSize;
       Addr paddr;
       if (!this->translateToPAddr(vaddr, paddr)) {
         LLC_ELEMENT_PANIC(elem, "Fault on vaddr of UpdateStream.");
       }
       auto lineOffset = vaddr % lineSize;
-      auto size = elementMemSize - storedSize;
+      auto size = elemMemSize - storedSize;
       if (lineOffset + size > lineSize) {
         size = lineSize - lineOffset;
       }

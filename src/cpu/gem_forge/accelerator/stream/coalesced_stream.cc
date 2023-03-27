@@ -174,15 +174,6 @@ void Stream::selectPrimeLogicalStream() {
     if (!LSStaticInfo.no_core_user()) {
       this->coalescedNoCoreUser = false;
     }
-    // If more than one coalesced stream, then CoreElementSize must be
-    // the same as the MemElementSize.
-    if (this->logicals.size() > 1) {
-      if (LS->getCoreElementSize() != LS->getMemElementSize()) {
-        panic("Mismatch in %s CoreElementSize %d and MemElementSize %d.\n",
-              LS->info.name(), LS->getCoreElementSize(),
-              LS->getMemElementSize());
-      }
-    }
   }
 }
 
@@ -231,8 +222,13 @@ void Stream::fixInnerLoopBaseStreams() {
       this->addBaseStream(type, true /* isInnerLoop */, baseStreamId.id(),
                           info.id(), baseS);
     } else {
-      // Sanity check that this should never be added as normal base stream.
-      if (!isBaseEdgeAdded(this->baseEdges, baseStreamId, type)) {
+      /**
+       * Sanity check that this should:
+       * 1. Already be added as normal base stream.
+       * 2. Or coalesced here.
+       */
+      if (!isBaseEdgeAdded(this->baseEdges, baseStreamId, type) &&
+          baseS != this) {
         S_PANIC(this, "Missing NormalBaseS %s.", baseS->getStreamName());
       }
     }

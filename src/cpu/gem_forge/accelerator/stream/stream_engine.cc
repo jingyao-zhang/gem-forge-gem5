@@ -1147,13 +1147,13 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
      * may be a coalesced stream.
      */
     auto S = this->getStream(streamId);
-    auto element = streamToElementMap.at(S);
+    auto elem = streamToElementMap.at(S);
     args.values->emplace_back();
     /**
      * Make sure we zero out the data.
      */
     args.values->back().fill(0);
-    if (element->isElemFloatedToCache() || element->isElemFloatedAsNDC()) {
+    if (elem->isElemFloatedToCache() || elem->isElemFloatedAsNDC()) {
       /**
        * There are certain cases we are not really return the value.
        * 1. StreamStore does not really return any value.
@@ -1171,16 +1171,16 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
      * If this is a unfloated LoadComputeStream, we should read the
      * LoadComputeValue.
      */
-    auto size = S->getCoreElementSize();
-    if (S->isLoadComputeStream() && !element->isElemFloatedToCache()) {
-      element->getLoadComputeValue(args.values->back().data(),
-                                   StreamUserArgs::MaxElementSize);
+    if (S->isLoadComputeStream() && !elem->isElemFloatedToCache()) {
+      elem->getLoadComputeValue(args.values->back().data(),
+                                StreamUserArgs::MaxElementSize);
     } else {
-      element->getValueByStreamId(streamId, args.values->back().data(),
-                                  StreamUserArgs::MaxElementSize);
+      elem->getValueByStreamId(streamId, args.values->back().data(),
+                               StreamUserArgs::MaxElementSize);
     }
+    auto size = S->getCoreElementSize();
     S_ELEMENT_DPRINTF(
-        element, "Execute StreamUser, Value %s.\n",
+        elem, "Execute StreamUser, Value %s.\n",
         GemForgeUtils::dataToString(args.values->back().data(), size));
   }
 }
