@@ -875,7 +875,7 @@ void StreamElement::getValueByStreamId(StaticId streamId, uint8_t *val,
   // Handle offset for coalesced stream.
   int32_t offset;
   this->stream->getCoalescedOffsetAndSize(streamId, offset, size);
-  assert(size <= valLen && "ElementSize overflow.");
+  assert(size <= valLen && "ElemSize overflow.");
   vaddr += offset;
   this->getValue(vaddr, size, val);
 }
@@ -942,16 +942,16 @@ StreamValue StreamElement::getValueBaseByStreamId(StaticId id) {
        * For unfloated LoadComputeStream, we should use the LoadComputeValue.
        * Except when I am the LoadComputeStream of course.
        */
-      StreamValue elementValue;
+      StreamValue elemValue;
       if (baseE != this && baseE->stream->isLoadComputeStream() &&
           !baseE->isElemFloatedToCache()) {
-        baseE->getLoadComputeValue(elementValue.uint8Ptr(),
-                                   sizeof(elementValue));
+        baseE->getLoadComputeValue(elemValue.uint8Ptr(), sizeof(elemValue));
       } else {
-        baseE->getValueByStreamId(id, elementValue.uint8Ptr(),
-                                  sizeof(elementValue));
+        baseE->getValueByStreamId(id, elemValue.uint8Ptr(), sizeof(elemValue));
       }
-      return elementValue;
+      S_ELEMENT_DPRINTF(this, "GetBaseValue %s Id %d Val %s.\n", baseE->FIFOIdx,
+                        id, elemValue);
+      return elemValue;
     }
   }
   S_ELEMENT_PANIC(this, "Failed to find ValueBaseE for %s.",
