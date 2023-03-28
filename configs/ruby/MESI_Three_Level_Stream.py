@@ -173,6 +173,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 enable_stream_range_sync=\
                     options.gem_forge_enable_stream_range_sync,
                 enable_stream_float_mem=options.gem_forge_stream_engine_enable_float_mem,
+                enable_distributed_indirect_reduce=\
+                    options.gem_forge_enable_stream_float_distributed_indirect_reduction,
                 )
 
             cpu_seq = RubySequencer(version=i * num_cpus_per_cluster + j,
@@ -287,6 +289,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_pum_optimized_directory,
                 stream_pum_fix_stream_at_req_bank=\
                     options.gem_forge_stream_pum_fix_stream_at_req_bank,
+                enable_distributed_indirect_reduce=\
+                    options.gem_forge_enable_stream_float_distributed_indirect_reduction,
                 )
 
             exec("ruby_system.l0_cntrl%d = l0_cntrl"
@@ -429,6 +433,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_pum_enable_parallel_way_read,
                 enable_stream_vectorize=\
                     options.gem_forge_enable_stream_vectorize,
+                enable_distributed_indirect_reduce=\
+                    options.gem_forge_enable_stream_float_distributed_indirect_reduction,
                 )
 
             exec("ruby_system.l2_cntrl%d = l2_cntrl"
@@ -537,6 +543,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.ind_stream_max_inqueue_req = options.gem_forge_stream_engine_llc_max_ind_req_inqueue_per_stream
         dir_cntrl.ind_stream_req_max_per_multicast_msg = options.gem_forge_stream_engine_llc_multicast_max_ind_req_per_message
         dir_cntrl.ind_stream_req_multicast_group_size = options.gem_forge_stream_engine_llc_multicast_ind_req_bank_group_size
+        dir_cntrl.enable_distributed_indirect_reduce = options.gem_forge_enable_stream_float_distributed_indirect_reduction
 
     for i, dma_port in enumerate(dma_ports):
         #

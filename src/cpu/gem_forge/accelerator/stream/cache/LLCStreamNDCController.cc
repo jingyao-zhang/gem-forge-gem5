@@ -230,9 +230,9 @@ void LLCStreamNDCController::handleStoreNDC(NDCContext &context) {
   llcSE->pushReadyComputation(context.element);
 }
 
-void LLCStreamNDCController::handleForwardNDC(NDCContext &context,
-                                              const DynStreamSliceId &sliceId,
-                                              const ruby::DataBlock &dataBlock) {
+void LLCStreamNDCController::handleForwardNDC(
+    NDCContext &context, const DynStreamSliceId &sliceId,
+    const ruby::DataBlock &dataBlock) {
 
   auto S = context.ndc->stream;
   auto dynS = S->getDynStream(context.ndc->entryIdx.streamId);
@@ -262,7 +262,7 @@ void LLCStreamNDCController::handleForwardNDC(NDCContext &context,
   msg->m_Type = requestType;
   msg->m_Requestors.add(
       ruby::MachineID(static_cast<ruby::MachineType>(selfMachineId.type - 1),
-                sliceId.getDynStreamId().coreId));
+                      sliceId.getDynStreamId().coreId));
   msg->m_Destination.add(destMachineId);
   msg->m_MessageSize = ruby::MessageSizeType_Control;
   msg->m_sliceIds.add(sliceId);
@@ -328,24 +328,24 @@ void LLCStreamNDCController::issueStreamNDCResponseToMLC(
     int dataSize, int payloadSize, int lineOffset, bool forceIdea) {
 
   auto msg = llcSE->createStreamMsgToMLC(
-      sliceId, ruby::CoherenceResponseType_STREAM_NDC, paddrLine, data, dataSize,
-      payloadSize, lineOffset);
+      sliceId, ruby::CoherenceResponseType_STREAM_NDC, paddrLine, data,
+      dataSize, payloadSize, lineOffset);
   llcSE->issueStreamMsgToMLC(msg, forceIdea);
 }
 
 bool LLCStreamNDCController::computeStreamElementValue(
-    const LLCStreamElementPtr &element, StreamValue &result) {
+    const LLCStreamElementPtr &elem, StreamValue &result) {
 
-  auto S = element->S;
-  auto dynS = S->getDynStream(element->strandId.dynStreamId);
+  auto S = elem->S;
+  auto dynS = S->getDynStream(elem->strandId.dynStreamId);
   if (!dynS) {
-    LLC_ELEMENT_DPRINTF_(StreamNearDataComputing, element,
+    LLC_ELEMENT_DPRINTF_(StreamNearDataComputing, elem,
                          "Discard LLC NDC Element as no DynS.");
     return false;
   }
 
-  auto getBaseStreamValue = [&element](uint64_t baseStreamId) -> StreamValue {
-    return element->getBaseStreamValue(baseStreamId);
+  auto getBaseStreamValue = [&elem](uint64_t baseStreamId) -> StreamValue {
+    return elem->getBaseStreamValue(baseStreamId);
   };
 
   if (S->isStoreComputeStream()) {
@@ -354,35 +354,35 @@ bool LLCStreamNDCController::computeStreamElementValue(
         convertFormalParamToParam(dynS->storeFormalParams, getBaseStreamValue);
     auto storeValue = dynS->storeCallback->invoke(params);
 
-    LLC_ELEMENT_DPRINTF_(StreamNearDataComputing, element,
+    LLC_ELEMENT_DPRINTF_(StreamNearDataComputing, elem,
                          "[Latency %llu] Compute StoreValue %s.\n", latency,
                          storeValue);
     result = storeValue;
     return true;
 
   } else {
-    LLC_ELEMENT_PANIC(element, "No Computation for this stream.");
+    LLC_ELEMENT_PANIC(elem, "No Computation for this stream.");
   }
 }
 
 void LLCStreamNDCController::completeComputation(
-    const LLCStreamElementPtr &element, const StreamValue &value) {
-  auto S = element->S;
-  element->doneComputation();
+    const LLCStreamElementPtr &elem, const StreamValue &value) {
+  auto S = elem->S;
+  elem->doneComputation();
   /**
    * LoadComputeStream store computed value in LoadComputeValue.
    * IndirectReductionStream separates compuation from charging the latency.
    */
-  element->setValue(value);
+  elem->setValue(value);
 
   DynStreamSliceId sliceId;
-  sliceId.getDynStrandId() = element->strandId;
-  sliceId.getStartIdx() = element->idx;
-  sliceId.getEndIdx() = element->idx + 1;
+  sliceId.getDynStrandId() = elem->strandId;
+  sliceId.getStartIdx() = elem->idx;
+  sliceId.getEndIdx() = elem->idx + 1;
 
   auto *context = this->getContextFromSliceId(sliceId);
   if (!context) {
-    LLC_ELEMENT_PANIC(element, "Missing NDC Context.");
+    LLC_ELEMENT_PANIC(elem, "Missing NDC Context.");
   }
 
   if (S->isStoreComputeStream()) {
@@ -408,5 +408,5 @@ void LLCStreamNDCController::completeComputation(
                   "Illegal NDC StreamType in CompleteComputation.");
   }
   this->eraseContextFromSliceId(sliceId);
-}} // namespace gem5
-
+}
+} // namespace gem5

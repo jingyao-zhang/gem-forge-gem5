@@ -1542,6 +1542,9 @@ void StreamEngine::initializeStreams(
       newStream->setNested();
     }
   }
+  for (auto newStream : createdStreams) {
+    newStream->postFinalize();
+  }
   /**
    * ! Hack: Some stream has crazy large element size, e.g. vectorized
    * ! stream_memset, we should limit the maxSize for them to 2.

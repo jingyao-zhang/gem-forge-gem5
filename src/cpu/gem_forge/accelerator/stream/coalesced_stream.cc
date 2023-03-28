@@ -78,6 +78,18 @@ void Stream::finalize() {
   STREAM_DPRINTF("Finalized ====================================.\n");
 }
 
+void Stream::postFinalize() {
+  if (this->isReduction()) {
+    for (auto backBaseS : this->backBaseStreams) {
+      if (backBaseS->isMemStream() && !backBaseS->isDirectMemStream() &&
+          !backBaseS->isPointerChaseLoadStream()) {
+        STREAM_DPRINTF("Is IndReduce.\n");
+        this->isIndReduce = true;
+      }
+    }
+  }
+}
+
 void Stream::selectPrimeLogicalStream() {
   assert(!this->logicals.empty());
   // Other sanity check for coalesced streams.

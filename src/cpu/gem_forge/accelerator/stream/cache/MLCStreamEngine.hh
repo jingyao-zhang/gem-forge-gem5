@@ -54,7 +54,7 @@ public:
   void receiveStreamData(const ruby::ResponseMsg &msg);
   void receiveStreamDataForSingleSlice(const DynStreamSliceId &sliceId,
                                        const ruby::DataBlock &dataBlock,
-                                       Addr paddrLine);
+                                       Addr paddrLine, bool isAck);
 
   bool isStreamRequest(const DynStreamSliceId &slice);
   bool isStreamOffloaded(const DynStreamSliceId &slice);

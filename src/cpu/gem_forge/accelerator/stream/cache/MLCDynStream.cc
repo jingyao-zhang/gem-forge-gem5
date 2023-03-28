@@ -104,6 +104,17 @@ MLCDynStream::WaitType MLCDynStream::checkWaiting() const {
         MLC_S_DPRINTF(this->getDynStrandId(),
                       "CoreSE Not Issue. Atomic/UpdateS. Wait Ack.\n");
         return WaitType::Ack;
+      } else if (this->stream->isIndirectReduction()) {
+        // If distributed, wait nothing. Otherwise, wait ack.
+        if (this->controller->myParams->enable_distributed_indirect_reduce) {
+          MLC_S_DPRINTF(this->getDynStrandId(),
+                        "CoreSE Not Issue. Dist IndReduce. Wait Nothing.\n");
+          return WaitType::Nothing;
+        } else {
+          MLC_S_DPRINTF(this->getDynStrandId(),
+                        "CoreSE Not Issue. Non-Dist IndReduce. Wait Ack.\n");
+          return WaitType::Ack;
+        }
       } else {
         // Other streams does not write. Need nothing.
         MLC_S_DPRINTF(this->getDynStrandId(),
@@ -458,14 +469,13 @@ void MLCDynStream::makeAck(MLCStreamSlice &slice) {
                     this->slices.front().sliceId,
                     MLCStreamSlice::convertCoreStatusToString(
                         this->slices.front().coreStatus));
-  // Send back ack in order.
+  // Send back ack.
   auto dynS = this->getCoreDynS();
   for (auto &ackSlice : this->slices) {
     if (ackSlice.coreStatus == MLCStreamSlice::CoreStatusE::DONE) {
       continue;
     }
     if (ackSlice.coreStatus != MLCStreamSlice::CoreStatusE::ACK_READY) {
-      // break;
       continue;
     }
     const auto &ackSliceId = ackSlice.sliceId;
@@ -491,8 +501,8 @@ void MLCDynStream::makeAck(MLCStreamSlice &slice) {
             ackSliceId.vaddr + ackSliceId.getSize()) {
           // This element spans to next slice, do not ack here.
           MLC_SLICE_DPRINTF(ackSliceId,
-                            "Skipping Ack for multi-slice element %llu [%#x, "
-                            "+%d) slice [%#x, +%d).\n",
+                            "Skipping Ack for multi-slice elem %llu [%#x, +%d) "
+                            "slice [%#x, +%d).\n",
                             strandElemIdx, elemVAddr, this->config->elementSize,
                             ackSliceId.vaddr, ackSliceId.getSize());
           continue;

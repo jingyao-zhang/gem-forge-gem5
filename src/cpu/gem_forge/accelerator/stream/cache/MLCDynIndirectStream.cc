@@ -50,7 +50,7 @@ void MLCDynIndirectStream::setBaseStream(MLCDynStream *baseStream) {
 
 void MLCDynIndirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
                                              const ruby::DataBlock &dataBlock,
-                                             Addr paddrLine) {
+                                             Addr paddrLine, bool isAck) {
 
   // It is indeed a problem to synchronize the flow control between
   // base stream and indirect stream.
@@ -62,7 +62,8 @@ void MLCDynIndirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
                     sliceId.vaddr, paddrLine);
 
   // Intercept the reduction value.
-  if (this->receiveFinalReductionValue(sliceId, dataBlock, paddrLine)) {
+  if (!isAck &&
+      this->receiveFinalReductionValue(sliceId, dataBlock, paddrLine)) {
     return;
   }
 
@@ -115,9 +116,9 @@ void MLCDynIndirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
   /**
    * Find the correct stream slice and insert the data there.
    */
-  auto elementSlices = this->findSliceByElementIdx(sliceId.getStartIdx());
-  auto slicesBegin = elementSlices.first;
-  auto slicesEnd = elementSlices.second;
+  auto elemSlices = this->findSliceByElementIdx(sliceId.getStartIdx());
+  auto slicesBegin = elemSlices.first;
+  auto slicesEnd = elemSlices.second;
 
   auto sliceIter = slicesBegin;
   // We only check for the address if we are not waiting for Ack.
@@ -380,15 +381,21 @@ void MLCDynIndirectStream::allocateSlice() {
   this->slices.emplace_back(sliceId);
   this->stream->statistic.numMLCAllocatedSlice++;
 
+  auto &slice = this->slices.back();
+
   /**
-   * The core still wait for ack from the MergedStoreStream to synchronize with
-   * the LLC. So far this is done with hack.
-   * It would not issue request for reduction stream.
+   * The core still wait for ack to synchronize with the LLC. So far this is
+   * done with hack. It would not issue request for reduction stream.
    */
   if (this->isWaitingAck()) {
-    this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::WAIT_ACK;
+    // Except the first element if we are one iter behind.
+    if (this->isOneIterationBehind && sliceId.getStartIdx() == 0) {
+      slice.coreStatus = MLCStreamSlice::CoreStatusE::DONE;
+    } else {
+      slice.coreStatus = MLCStreamSlice::CoreStatusE::WAIT_ACK;
+    }
   } else if (this->isWaitingNothing()) {
-    this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::DONE;
+    slice.coreStatus = MLCStreamSlice::CoreStatusE::DONE;
   }
 
   this->tailSliceIdx++;
@@ -533,8 +540,8 @@ bool MLCDynIndirectStream::receiveFinalReductionValue(
     // Only Reduction/PtrChaseIV need final value.
     return false;
   }
-  if (!this->isWaitingNothing()) {
-    // We are expecting something.
+  if (this->isWaitingData()) {
+    // We are expecting the data value for every element.
     return false;
   }
 

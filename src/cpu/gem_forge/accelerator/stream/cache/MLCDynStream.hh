@@ -67,7 +67,7 @@ public:
 
   virtual void receiveStreamData(const DynStreamSliceId &sliceId,
                                  const ruby::DataBlock &dataBlock,
-                                 Addr paddrLine) = 0;
+                                 Addr paddrLine, bool isAck) = 0;
   void recvCoreReq(const DynStreamSliceId &sliceId);
   void recvCoreReqHit(const DynStreamSliceId &sliceId);
 

@@ -196,6 +196,7 @@ public:
    */
   void addStreamInfo(const LLVM::TDG::StreamInfo &info);
   void finalize();
+  void postFinalize();
   void fixInnerLoopBaseStreams();
   void addBaseStepStream(Stream *baseStepStream);
   void registerStepDependentStreamToRoot(Stream *newDependentStream);
@@ -609,6 +610,7 @@ protected:
   int32_t baseOffset = -1;
   bool coalescedNoCoreUser = true;
   bool isNonSpec = false;
+  bool isIndReduce = false;
 
   void selectPrimeLogicalStream();
   void initializeBaseStreams();
@@ -708,6 +710,7 @@ public:
     }
     return false;
   }
+  bool isIndirectReduction() const { return this->isIndReduce; }
 
   bool isPointerChase() const {
     return this->primeLogical->info.static_info().val_pattern() ==

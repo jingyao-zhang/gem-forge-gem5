@@ -95,9 +95,7 @@ public:
   }
   bool isIndirect() const { return this->baseStream != nullptr; }
   bool isIndirectReduction() const {
-    return this->isIndirect() && this->baseStream->isIndirect() &&
-           this->baseStream->getStaticS()->isMemStream() &&
-           this->getStaticS()->isReduction();
+    return this->getStaticS()->isIndirectReduction();
   }
   bool shouldRangeSync() const { return this->configData->rangeSync; }
 
@@ -285,6 +283,8 @@ public:
                                       const LLCStreamElementPtr &elem);
   void tryComputeNextIndirectReduceElem(LLCStreamEngine *se);
   void completeFinalReduce(LLCStreamEngine *se);
+  void completeIndReduceElem(LLCStreamEngine *se,
+                             const LLCStreamElementPtr &elem);
 
   int getMaxInflyRequests() const { return this->maxInflyRequests; }
 

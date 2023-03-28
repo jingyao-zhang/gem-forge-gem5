@@ -277,6 +277,7 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
     }
 
     // There is always a dummy element for StreamEnd to step through.
+    bool shouldCheckAck = false;
     if (S->getEnabledStoreFunc()) {
       /**
        * We need to check that all stream element has acked in range-sync.
@@ -285,7 +286,6 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
        * remote streams commit.
        * Therefore, we wait here to check that we collected the last StreamAck.
        */
-      bool shouldCheckAck = false;
       if (dynS.isFloatedToCache() && !dynS.shouldCoreSEIssue() &&
           dynS.shouldRangeSync() && endElemIdx > 0) {
         shouldCheckAck = true;
@@ -304,15 +304,19 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
           shouldCheckAck = true;
         }
       }
-      if (shouldCheckAck && dynS.cacheAckedElements.size() <
-                                dynS.getNumFloatedElemUntil(endElemIdx)) {
-        S_ELEMENT_DPRINTF(
-            endElem,
-            "[StreamEnd] Cannot commit as not enough Ack %llu < %llu.\n",
-            dynS.cacheAckedElements.size(),
-            dynS.getNumFloatedElemUntil(endElemIdx));
-        return false;
-      }
+    }
+    if (S->isIndirectReduction() && dynS.isFloatedToCache() && endElemIdx > 0 &&
+        !this->se->params().enableFloatDistributedIndirectReduction) {
+      // Non-distributed IndReduce also need to check the ack.
+      shouldCheckAck = true;
+    }
+    if (shouldCheckAck && dynS.cacheAckedElements.size() <
+                              dynS.getNumFloatedElemUntil(endElemIdx)) {
+      S_ELEMENT_DPRINTF(
+          endElem, "[StreamEnd] Cannot commit as not enough Ack %llu < %llu.\n",
+          dynS.cacheAckedElements.size(),
+          dynS.getNumFloatedElemUntil(endElemIdx));
+      return false;
     }
     /**
      * Similarly to the above case, we also check that we collected the last

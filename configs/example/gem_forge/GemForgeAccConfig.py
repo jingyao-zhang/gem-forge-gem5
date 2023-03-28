@@ -93,6 +93,8 @@ def initializeStreamEngine(args):
         args.gem_forge_enable_stream_range_sync
     se.enableFloatIndirectReduction =\
         args.gem_forge_enable_stream_float_indirect_reduction
+    se.enableFloatDistributedIndirectReduction =\
+        args.gem_forge_enable_stream_float_distributed_indirect_reduction
     se.enableFloatMultiLevelIndirectStoreCompute =\
         args.gem_forge_enable_stream_float_multi_level_indirect_store_compute
     se.enableFineGrainedNearDataComputing =\

@@ -120,7 +120,10 @@ class RubyStreamAwareController(RubyController):
     enable_stream_advance_migrate = Param.Bool(False, "Whether to enable advance stream migrate.")
     enable_stream_multicast = Param.Bool(False, "Whether to enable multicast stream.")
     enable_mlc_prefetch_stream = Param.Bool(False, "Whether to enable MLC prefetching stream.")
-    stream_multicast_group_size = Param.UInt32(0, "MulticastGroup is Size x Size, 0 means all.")
+    enable_distributed_indirect_reduce = \
+        Param.Bool(False, "Whether to enable distributed indirect reduce.")
+    stream_multicast_group_size = \
+        Param.UInt32(0, "MulticastGroup is Size x Size, 0 means all.")
     stream_multicast_issue_policy = \
         Param.String("any", "Multicast issue policy, default is the relaxed.")
     ind_stream_max_inqueue_req = \

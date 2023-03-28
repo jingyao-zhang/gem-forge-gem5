@@ -1542,6 +1542,7 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
       /**
        * If this is IndirectReduceS, perform the real computation.
        */
+      this->completeIndReduceElem(se, elem);
       this->tryComputeNextIndirectReduceElem(se);
     } else {
       /**
@@ -1674,28 +1675,27 @@ void LLCDynStream::completeFinalReduce(LLCStreamEngine *se) {
 
   // This is the last reduction of one inner loop.
   auto S = this->getStaticS();
-  auto finalReductionElem = this->getElemPanic(this->lastComputedReduceElemIdx,
-                                               "Return FinalReductionValue.");
+  auto finalReduceElem = this->getElemPanic(this->lastComputedReduceElemIdx,
+                                            "Return FinalReductionValue.");
 
   DynStreamSliceId sliceId;
   sliceId.vaddr = 0;
-  sliceId.size = finalReductionElem->size;
+  sliceId.size = finalReduceElem->size;
   sliceId.getDynStrandId() = this->getDynStrandId();
   sliceId.getStartIdx() = this->lastComputedReduceElemIdx;
   sliceId.getEndIdx() = this->lastComputedReduceElemIdx + 1;
-  auto finalReductionValue =
-      finalReductionElem->getValueByStreamId(S->staticId);
+  auto finalReductionValue = finalReduceElem->getValueByStreamId(S->staticId);
 
   Addr paddrLine = 0;
   int dataSize = sizeof(finalReductionValue);
-  int payloadSize = finalReductionElem->size;
+  int payloadSize = finalReduceElem->size;
   int lineOffset = 0;
   bool forceIdea = false;
 
   if (this->configData->finalValueNeededByCore) {
     se->issueStreamDataToMLC(sliceId, paddrLine, finalReductionValue.uint8Ptr(),
                              dataSize, payloadSize, lineOffset, forceIdea);
-    LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReductionElem,
+    LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReduceElem,
                          "[Reduce] Send result back to core.\n");
   }
 
@@ -1704,12 +1704,38 @@ void LLCDynStream::completeFinalReduce(LLCStreamEngine *se) {
   dataBlock.setData(finalReductionValue.uint8Ptr(), lineOffset, payloadSize);
 
   for (const auto &edge : this->sendToEdges) {
-    LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReductionElem,
+    LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReduceElem,
                          "[Reduce] Send result to %s.\n", edge.data->dynamicId);
     se->issueStreamDataToLLC(
         this, sliceId, dataBlock, edge,
         ruby::RubySystem::getBlockSizeBytes() /* PayloadSize */);
   }
+}
+
+void LLCDynStream::completeIndReduceElem(LLCStreamEngine *se,
+                                         const LLCStreamElementPtr &elem) {
+  /**
+   * If we enabled distributed indirect reduce, we don't need to
+   * do anything here. The final value is supposed to be collected by a final
+   * multicast message (not implemented yet).
+   *
+   * Otherwise, we approximate the effect of sending back the data by sending
+   * back an Ack message for each indirect reduce element.
+   */
+  if (se->controller->myParams->enable_distributed_indirect_reduce) {
+    return;
+  }
+  DynStreamSliceId sliceId;
+  sliceId.vaddr = 0;
+  sliceId.size = elem->size;
+  sliceId.getDynStrandId() = this->getDynStrandId();
+  sliceId.getStartIdx() = elem->idx;
+  sliceId.getEndIdx() = elem->idx + 1;
+
+  bool forceIdea = false;
+  se->issueStreamAckToMLC(sliceId, forceIdea);
+  LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, elem,
+                       "[IndReduce] Send Ack back to core.\n");
 }
 
 bool LLCDynStream::isNextIdeaAck() const {

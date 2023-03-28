@@ -29,8 +29,8 @@ public:
   getRemoteTailPAddrAndMachineType() const override;
 
   void receiveStreamData(const DynStreamSliceId &sliceId,
-                         const ruby::DataBlock &dataBlock,
-                         Addr paddrLine) override;
+                         const ruby::DataBlock &dataBlock, Addr paddrLine,
+                         bool isAck) override;
   void receiveReuseStreamData(Addr vaddr, const ruby::DataBlock &dataBlock);
   void setLLCCutLineVAddr(Addr vaddr) { this->llcCutLineVAddr = vaddr; }
 

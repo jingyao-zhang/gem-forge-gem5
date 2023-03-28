@@ -213,7 +213,8 @@ void StreamFloatPolicy::setFloatPlanForBinTree(DynStream &dynS) {
   auto logCachedElems = static_cast<int>(log2(cachedElems));
 
   auto privateCacheSize = this->getPrivateCacheCapacity();
-  auto privCachedElems = privateCacheSize / elemSize - 1;
+  // We divide by 8 to favor near-memory computing at LLC.
+  auto privCachedElems = privateCacheSize / elemSize / 8;
   auto logPrivCachedElems = static_cast<int>(log2(privCachedElems));
 
   // Override the decision if user specified.

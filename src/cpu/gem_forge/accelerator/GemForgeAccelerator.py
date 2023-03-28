@@ -127,6 +127,8 @@ class StreamEngine(GemForgeAccelerator):
         "Whether enable range-based synchronization between core and LLC SE.")
     enableFloatIndirectReduction = Param.Bool(False,
         "Whether indirect reduction streams can be floated.")
+    enableFloatDistributedIndirectReduction = Param.Bool(False,
+        "Whether indirect reduction is distributed.")
     enableFloatMultiLevelIndirectStoreCompute = Param.Bool(False,
         "Whether multi-level indirect store compute stream can be floated.")
     enableFineGrainedNearDataComputing = Param.Bool(False,

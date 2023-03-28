@@ -3,6 +3,7 @@
 #include "mem/simple_mem.hh"
 
 #include "LLCDynStream.hh"
+#include "LLCStreamEngine.hh"
 
 #include "debug/LLCRubyStreamBase.hh"
 #include "debug/LLCStreamSample.hh"
@@ -71,6 +72,9 @@ int LLCStreamElement::curRemoteBank() const {
    * So far we don't have a good definition of the current LLC bank for an
    * element.
    */
+  if (this->llcSE) {
+    return this->llcSE->curRemoteBank();
+  }
   return -1;
 }
 
@@ -79,6 +83,9 @@ const char *LLCStreamElement::curRemoteMachineType() const {
    * So far we don't have a good definition of the current remote bank for an
    * element.
    */
+  if (this->llcSE) {
+    return this->llcSE->curRemoteMachineType();
+  }
   return "XXX";
 }
 

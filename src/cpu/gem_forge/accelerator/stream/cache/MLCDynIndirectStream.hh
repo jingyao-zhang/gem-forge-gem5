@@ -47,8 +47,8 @@ public:
    * Receive data from LLC.
    */
   void receiveStreamData(const DynStreamSliceId &sliceId,
-                         const ruby::DataBlock &dataBlock,
-                         Addr paddrLine) override;
+                         const ruby::DataBlock &dataBlock, Addr paddrLine,
+                         bool isAck) override;
 
   /**
    * Receive data from the base direct stream.

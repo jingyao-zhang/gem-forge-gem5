@@ -264,6 +264,9 @@ parser.add_argument("--gem-forge-stream-atomic-lock-type", type=str, default="mu
 parser.add_argument("--gem-forge-enable-stream-float-indirect-reduction", action="store_true",
                   default="False",
                   help="Enable floating indirect reduction stream.")
+parser.add_argument("--gem-forge-enable-stream-float-distributed-indirect-reduction", action="store_true",
+                  default="False",
+                  help="Enable performing indirect reduction stream distributively.")
 parser.add_argument("--gem-forge-enable-stream-float-multi-level-indirect-store-compute",
                   action="store_true", default="False",
                   help="Enable floating multi-level indirect store compute stream.")

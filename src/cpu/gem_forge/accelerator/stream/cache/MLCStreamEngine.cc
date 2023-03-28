@@ -167,14 +167,15 @@ void MLCStreamEngine::receiveStreamData(const ruby::ResponseMsg &msg) {
     if (sliceCoreId != myCoreId) {
       continue;
     }
-    this->receiveStreamDataForSingleSlice(sliceId, msg.m_DataBlk,
-                                          msg.getaddr());
+    bool isAck = msg.getType() == ruby::CoherenceResponseType_STREAM_ACK;
+    this->receiveStreamDataForSingleSlice(sliceId, msg.m_DataBlk, msg.getaddr(),
+                                          isAck);
   }
 }
 
 void MLCStreamEngine::receiveStreamDataForSingleSlice(
     const DynStreamSliceId &sliceId, const ruby::DataBlock &dataBlock,
-    Addr paddrLine) {
+    Addr paddrLine, bool isAck) {
   MLC_SLICE_DPRINTF(
       sliceId, "Recv data vaddr %#x %s.\n", sliceId.vaddr,
       GemForgeUtils::dataToString(dataBlock.getData(0, 1),
@@ -182,7 +183,7 @@ void MLCStreamEngine::receiveStreamDataForSingleSlice(
   auto stream = this->getStreamFromStrandId(sliceId.getDynStrandId());
   if (stream) {
     // Found the stream.
-    stream->receiveStreamData(sliceId, dataBlock, paddrLine);
+    stream->receiveStreamData(sliceId, dataBlock, paddrLine, isAck);
     this->reuseSlice(sliceId, dataBlock);
     return;
   }

@@ -719,7 +719,7 @@ void MLCDynDirectStream::sendCreditToLLC(const LLCSegmentPosition &segment) {
 
 void MLCDynDirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
                                            const ruby::DataBlock &dataBlock,
-                                           Addr paddrLine) {
+                                           Addr paddrLine, bool isAck) {
   assert(sliceId.isValid() && "Invalid stream slice id for stream data.");
 
   auto numElements = sliceId.getNumElements();
