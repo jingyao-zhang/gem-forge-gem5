@@ -38,6 +38,13 @@ public:
    */
   void reset();
 
+  /**
+   * Set the OuterStreamRegionSeqNum.
+   */
+  void setOuterStreamRegionSeqNum(InstSeqNum outerSeqNum) {
+    this->outerSeqNum = outerSeqNum;
+  }
+
 #define DeclareStreamInstHandler(Inst)                                         \
   bool canDispatchStream##Inst(const GemForgeDynInstInfo &dynInfo);            \
   void dispatchStream##Inst(const GemForgeDynInstInfo &dynInfo,                \
@@ -258,6 +265,12 @@ private:
    */
   void increamentStreamRegionInfoNumExecutedInsts(
       DynStreamRegionInfo &dynStreamRegionInfo);
+
+  /**
+   * Used to passing the outer DynRegion info when configuring a NestRegion.
+   */
+  constexpr static InstSeqNum InvalidInstSeqNum = 0;
+  InstSeqNum outerSeqNum = InvalidInstSeqNum;
 };
 
 } // namespace gem5

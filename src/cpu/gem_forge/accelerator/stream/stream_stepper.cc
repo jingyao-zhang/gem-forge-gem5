@@ -243,7 +243,7 @@ void StreamRegionController::commitStreamConfigForStep(const ConfigArgs &args,
             DynRegion::DynStep::DynStepGroupInfo::InvalidFirstFloatElemIdx) {
           dynGroup.firstFloatElemIdx = firstFloatElemIdx;
           DYN_S_DPRINTF(dynS.dynStreamId,
-                        "[Stepper] Set FirstFloatElemIdx %lu.",
+                        "[Stepper] Set FirstFloatElemIdx %lu.\n",
                         firstFloatElemIdx);
         } else {
           if (dynGroup.firstFloatElemIdx != firstFloatElemIdx) {

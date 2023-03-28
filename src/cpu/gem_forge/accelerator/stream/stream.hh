@@ -457,10 +457,10 @@ public:
 
   std::list<DynStream> dynamicStreams;
   bool hasDynStream() const { return !this->dynamicStreams.empty(); }
-  DynStream &getDynStream(uint64_t seqNum);
-  DynStream &getDynStreamByEndSeqNum(uint64_t seqNum);
+  DynStream &getDynStream(InstSeqNum seqNum);
+  DynStream &getDynStreamByEndSeqNum(InstSeqNum seqNum);
   DynStream &getDynStreamByInstance(InstanceId instance);
-  DynStream &getDynStreamBefore(uint64_t seqNum);
+  DynStream &getDynStreamBefore(InstSeqNum seqNum);
   DynStream *getDynStream(const DynStreamId &dynId);
   DynStream &getLastDynStream() {
     assert(!this->dynamicStreams.empty() && "No dynamic stream.");

@@ -58,20 +58,25 @@ public:
    * use the inst sequence number and protobuf field
    * as the arguments.
    */
-
+  constexpr static InstSeqNum InvalidInstSeqNum = DynStream::InvalidInstSeqNum;
   struct StreamConfigArgs {
     using InputVec = DynStreamParamV;
     using InputMap = std::unordered_map<uint64_t, InputVec>;
-    uint64_t seqNum; // Just the instruction sequence number.
+    InstSeqNum seqNum; // Just the instruction sequence number.
     const std::string &infoRelativePath; // Where to find the info.
     const InputMap *inputMap;            // Live input of streams.
     // Only valid at dispatchStreamConfig for execution simulation.
     ThreadContext *const tc;
+    /**
+     * Optional information of OuterDynRegion to track InnerLoopDep.
+     */
+    InstSeqNum outerSeqNum = InvalidInstSeqNum;
     StreamConfigArgs(uint64_t _seqNum, const std::string &_infoRelativePath,
                      InputMap *_inputMap = nullptr,
-                     ThreadContext *_tc = nullptr)
+                     ThreadContext *_tc = nullptr,
+                     InstSeqNum _outerSeqNum = InvalidInstSeqNum)
         : seqNum(_seqNum), infoRelativePath(_infoRelativePath),
-          inputMap(_inputMap), tc(_tc) {}
+          inputMap(_inputMap), tc(_tc), outerSeqNum(_outerSeqNum) {}
   };
 
   bool canStreamConfig(const StreamConfigArgs &args) const;

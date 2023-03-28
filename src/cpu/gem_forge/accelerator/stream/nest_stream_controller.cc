@@ -314,6 +314,16 @@ void StreamRegionController::configureNestStream(
     }
     return;
   }
+  /**
+   * Limit by the total number of ElimStreamInstances at the NestSE.
+   */
+  auto numDynNestRegions = nestSE->regionController->getNumDynRegion(
+      staticNestRegion.region.region());
+  if (numDynNestRegions > this->se->myParams->elimNestStreamInstances) {
+    SE_DPRINTF("[Nest] Too Many Infly RemoteNestConfig %d.\n",
+               numDynNestRegions);
+    return;
+  }
 
   /**
    * Since allocating a new stream will take one element, we check that
@@ -323,13 +333,6 @@ void StreamRegionController::configureNestStream(
     SE_DPRINTF("[Nest] No Total Free Elem to allocate NestConfig, Has %d, "
                "Required %d.\n",
                nestSE->numFreeFIFOEntries, staticNestRegion.streams.size());
-    return;
-  }
-  auto numDynNestRegions = nestSE->regionController->getNumDynRegion(
-      staticNestRegion.region.region());
-  if (numDynNestRegions > this->se->myParams->elimNestStreamInstances) {
-    SE_DPRINTF("[Nest] Too Many Infly RemoteNestConfig %d.\n",
-               numDynNestRegions);
     return;
   }
   for (auto S : staticNestRegion.streams) {
@@ -374,11 +377,13 @@ void StreamRegionController::configureNestStream(
     }
   }
 
-  auto &configIsaHandler = nestSE->regionController->isaHandler;
-  configIsaHandler.resetISAStreamEngine();
+  auto &isaHandler = nestSE->regionController->isaHandler;
+  auto &isaSE = isaHandler.getISAStreamEngine();
+  isaSE.reset();
+  isaSE.setOuterStreamRegionSeqNum(dynRegion.seqNum);
   auto configFuncStartSeqNum = dynNestConfig.getConfigSeqNum(
       nestSE, dynNestConfig.nextConfigElemIdx, dynRegion.seqNum);
-  dynNestConfig.configFunc->invoke(actualParams, &configIsaHandler,
+  dynNestConfig.configFunc->invoke(actualParams, &isaHandler,
                                    configFuncStartSeqNum);
 
   // Remember the NestConfigSeqNum and parent/child relationship.

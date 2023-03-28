@@ -40,7 +40,7 @@ public:
   /**
    * Reset the ISAStreamEngine to initial state.
    */
-  void resetISAStreamEngine() { this->se.reset(); }
+  ISAStreamEngine &getISAStreamEngine() { return this->se; }
 
 private:
   GemForgeCPUDelegator *cpuDelegator;

@@ -178,22 +178,29 @@ void DynStream::addBaseDynStreams() {
     }
     }
   }
+}
 
+void DynStream::addOuterDepDynStreams(InstSeqNum outerSeqNum) {
   /**
    * Register myself to OuterLoopDepStream.
-   * Since StreamConfigure is dispatched in order, the user should be the last
-   * DynStream at the moment.
+   * If we specified the outerSeqNum (from nest stream), we use that DynRegion.
+   * Otherwise, we just get the last DynRegion.
    */
   for (const auto &edge : this->stream->innerLoopDepEdges) {
     auto depS = edge.toStream;
-    auto &depDynS = depS->getLastDynStream();
+    DynStream *depDynS = nullptr;
+    if (outerSeqNum != InvalidInstSeqNum) {
+      depDynS = &depS->getDynStream(outerSeqNum);
+    } else {
+      depDynS = &depS->getLastDynStream();
+    }
     DYN_S_DPRINTF(this->dynStreamId,
                   "[InnerLoopDep] Push myself to OuterLoopDepDynS %s.\n",
-                  depDynS.dynStreamId);
-    this->pushInnerLoopDepS(depDynS.dynStreamId);
-    depDynS.pushInnerLoopBaseDynStream(edge.type, edge.fromStaticId,
-                                       this->dynStreamId.streamInstance,
-                                       edge.toStaticId);
+                  depDynS->dynStreamId);
+    this->pushInnerLoopDepS(depDynS->dynStreamId);
+    depDynS->pushInnerLoopBaseDynStream(edge.type, edge.fromStaticId,
+                                        this->dynStreamId.streamInstance,
+                                        edge.toStaticId);
   }
 }
 
@@ -797,7 +804,7 @@ void DynStream::addInnerLoopBaseElements(StreamElement *elem) {
     if (adjustElemIdx >= dynEdges.size()) {
       // The inner-loop stream has not been allocated.
       S_ELEMENT_PANIC(
-          elem, "[InnerLoopDep] InnerLoopS %s AdjustElemIdx %lu Not Config.\n",
+          elem, "[InnerLoopDep] InnerLoopS %s AdjElemIdx %lu Not Config.\n",
           baseS->getStreamName(), adjustElemIdx);
     }
     const auto &dynEdge = dynEdges.at(adjustElemIdx);

@@ -27,10 +27,12 @@ struct DynStream {
   using StaticId = DynStreamId::StaticId;
   using InstanceId = DynStreamId::InstanceId;
 
+  constexpr static InstSeqNum InvalidInstSeqNum = 0;
+
   Stream *stream;
   StreamEngine *se;
   const DynStreamId dynStreamId;
-  const uint64_t configSeqNum;
+  const InstSeqNum configSeqNum;
   const Cycles configCycle;
   ThreadContext *tc;
 
@@ -275,6 +277,7 @@ public:
   StreamEdges baseEdges;
   StreamEdges backDepEdges;
   void addBaseDynStreams();
+  void addOuterDepDynStreams(InstSeqNum outerSeqNum);
 
   /**
    * Get the reuse/skip count on a BaseS.

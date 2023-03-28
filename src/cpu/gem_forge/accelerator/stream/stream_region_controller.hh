@@ -83,7 +83,8 @@ public:
        * ConfigSeqNum of configured NestRegion.
        * So far this is only used to end eliminated nest stream.
        */
-      constexpr static InstSeqNum InvalidConfigSeqNum = 0;
+      constexpr static InstSeqNum InvalidConfigSeqNum =
+          StreamEngine::InvalidInstSeqNum;
       InstSeqNum lastConfigSeqNum = InvalidConfigSeqNum;
 
       struct NestDynRegion {

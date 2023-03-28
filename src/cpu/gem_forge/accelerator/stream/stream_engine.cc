@@ -392,6 +392,7 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
   for (auto &S : configStreams) {
     auto &dynS = S->getLastDynStream();
     dynS.addBaseDynStreams();
+    dynS.addOuterDepDynStreams(args.outerSeqNum);
     if (S->stepRootStream == S) {
       dynS.addStepStreams();
     }

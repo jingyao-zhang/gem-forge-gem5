@@ -375,7 +375,8 @@ void ISAStreamEngine::dispatchStreamReady(
 
   const auto &infoRelativePath = this->curStreamRegionInfo->infoRelativePath;
   StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath,
-                                      nullptr /* InputVec */, dynInfo.tc);
+                                      nullptr /* InputVec */, dynInfo.tc,
+                                      this->outerSeqNum);
   auto se = this->getStreamEngine();
   se->dispatchStreamConfig(args);
 
@@ -1392,5 +1393,6 @@ void ISAStreamEngine::reset() {
   this->regionStreamIdTableStack.clear();
   this->seqNumToDynInfoMap.clear();
   this->curStreamRegionInfo = nullptr;
+  this->outerSeqNum = InvalidInstSeqNum;
 }
 } // namespace gem5
