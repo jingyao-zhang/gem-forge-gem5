@@ -491,68 +491,9 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
 
   if (command.type == "cmp") {
 
-    bool forceInt =
-        this->controller->myParams->stream_pum_force_data_type == "int";
-    bool forceFloat =
-        this->controller->myParams->stream_pum_force_data_type == "fp";
-
-    auto wordlineBits = command.wordline_bits;
-    auto wordlineBitsSquare = wordlineBits * wordlineBits;
-    int computeLatency = wordlineBits;
-    switch (command.opClass) {
-    default:
-      panic("Unknown PUM OpClass %s.", enums::OpClassStrings[command.opClass]);
-      break;
-
-    case No_OpClass:
-    case SimdMiscOp:
-      computeLatency = 1;
-      break;
-
-    case FloatMemReadOp:
-      // Assume one cycle to read 1 bit of constant value.
-      computeLatency = wordlineBits;
-      break;
-
-    case SimdCmpOp:
-    case IntAluOp:
-      computeLatency = forceFloat ? wordlineBitsSquare : wordlineBits;
-      break;
-
-    case IntMultOp:
-      computeLatency = forceFloat ? wordlineBitsSquare : wordlineBitsSquare / 2;
-      break;
-
-    case FloatAddOp:
-    case SimdFloatAddOp:
-      computeLatency = forceInt ? wordlineBits : wordlineBitsSquare;
-      break;
-
-    case FloatMultOp:
-    case SimdFloatMultOp:
-      computeLatency = forceInt ? wordlineBitsSquare / 2 : wordlineBitsSquare;
-      break;
-
-    case SimdFloatDivOp:
-      computeLatency = wordlineBitsSquare;
-      break;
-
-    case SimdMultAccOp:
-      computeLatency = forceFloat ? (2 * wordlineBitsSquare)
-                                  : (wordlineBitsSquare / 2 + wordlineBits);
-      break;
-
-    case FloatMultAccOp:
-    case SimdFloatMultAccOp:
-      computeLatency = forceInt ? (wordlineBitsSquare / 2 + wordlineBits)
-                                : (2 * wordlineBitsSquare);
-      break;
-
-    case SimdFloatCmpOp:
-      computeLatency = forceInt ? wordlineBits : wordlineBitsSquare;
-      break;
-    }
-    return Cycles(computeLatency);
+    assert(this->pumManager);
+    auto computeLat = this->pumManager->getComputeLat(command);
+    return computeLat;
   }
 
   panic("Unknown PUMCommand %s.", command.type);
@@ -562,7 +503,7 @@ int PUMEngine::getVBitlineRatio(const PUMCommand &command) {
   auto pBitlines = this->hwConfig->array_cols;
   auto tileSize = command.srcMapPattern.getCanonicalTotalTileSize();
   auto ratio = (tileSize + pBitlines - 1) / pBitlines;
-  if (ratio < 1 || ratio > 2) {
+  if (ratio < 1 || ratio > 4) {
     panic("Illegal ratio %ld.", ratio);
   }
   return ratio;

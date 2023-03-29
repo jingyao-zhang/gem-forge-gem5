@@ -229,13 +229,14 @@ void compileTDFG(const ::LLVM::TDG::TDFG &tdfg) {
     }
   }
 }
+} // namespace gem5
 
 int main(int argc, char *argv[]) {
 
   if (argc == 1) {
     // shiftRhs1D();
     // shiftRhs2D();
-    broadcastRhs2D();
+    gem5::broadcastRhs2D();
     return 0;
   }
 
@@ -271,16 +272,17 @@ int main(int argc, char *argv[]) {
   }
 
   printf("Parsed TDFG.\n");
-  compileTDFG(tdfg);
+  gem5::compileTDFG(tdfg);
 
   return 0;
 }
 
+namespace gem5 {
 /**
  * @brief Copied from OpClass.cc but get rid of the pybind stuff.
  * TODO: Figure out a better way to solve this link problem.
  */
-namespace Enums {
+namespace enums {
 const char *OpClassStrings[Num_OpClass] = {
     "No_OpClass",
     "IntAlu",
@@ -337,5 +339,5 @@ const char *OpClassStrings[Num_OpClass] = {
     "InstPrefetch",
     "Accelerator",
 };
-} // namespace Enums} // namespace gem5
-
+} // namespace enums
+} // namespace gem5

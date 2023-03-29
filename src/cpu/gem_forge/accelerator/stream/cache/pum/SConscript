@@ -30,5 +30,5 @@ RealExecutable('pum-jitter',
                'TDFG.pb.cc',
                '../../../../../../base/logging.cc',
                '../../../../../../base/cprintf.cc',
-        #        '../../../../../../enums/OpClass.cc',
+               '../../../../../../base/debug.cc',
 )

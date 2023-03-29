@@ -2464,7 +2464,7 @@ void MLCPUMManager::compileCompute(PUMContext &context,
   // Compute the number of bits required.
   for (const auto &cmd : commands) {
     if (cmd.type == "cmp") {
-      auto numBitOps = this->estimateComputeBits(cmd);
+      auto numBitOps = this->getComputeLat(cmd);
       auto numWords = node->pattern.getTotalTrip(); // Optimistic estimate.
       auto numBits = numBitOps * numWords;
 
@@ -2526,8 +2526,7 @@ void MLCPUMManager::compileCompute(PUMContext &context,
                           commands.end());
 }
 
-Cycles MLCPUMManager::estimateComputeBits(const PUMCommand &command) const {
-  // FIX: This is duplicated code from the PUMEngine.
+Cycles MLCPUMManager::getComputeLat(const PUMCommand &command) const {
 
   assert(command.type == "cmp");
 
@@ -2554,6 +2553,7 @@ Cycles MLCPUMManager::estimateComputeBits(const PUMCommand &command) const {
     computeLatency = wordlineBits;
     break;
 
+  case SimdAddOp:
   case SimdCmpOp:
   case IntAluOp:
     computeLatency = forceFloat ? wordlineBitsSquare : wordlineBits;
@@ -3993,6 +3993,9 @@ void MLCPUMManager::decoalesceAndDevectorizePattern(const ConfigPtr &config,
       assert(newPat.params.size() >= 1);
       auto stride0 = newPat.params.at(0).stride;
       auto scalarSize = AlignToScalarElem(size);
+      MLC_S_DPRINTF(config->dynamicId,
+                    "[Devectorize] Size %d Stride0 %d ScalarSize %d.\n", size,
+                    stride0, scalarSize);
       if (stride0 == scalarSize) {
         // A heuristic that the first is vectorized.
         newPat.params.at(0).stride = 1;

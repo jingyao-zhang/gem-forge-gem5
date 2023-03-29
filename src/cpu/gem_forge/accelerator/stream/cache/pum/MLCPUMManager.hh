@@ -89,6 +89,12 @@ public:
    */
   bool isInPUM() const { return !this->contexts.empty(); }
 
+  /**
+   * Estimate the bits read and write by this compute command. Used for
+   * energy modelling.
+   */
+  Cycles getComputeLat(const PUMCommand &command) const;
+
 private:
   using ConfigPtr = CacheStreamConfigureDataPtr;
   MLCStreamEngine *mlcSE;
@@ -631,12 +637,6 @@ private:
    * Compile the computation instruction.
    */
   void compileCompute(PUMContext &context, PUMDataGraphNode *node);
-
-  /**
-   * Estimate the bits read and write by this compute command. Used for
-   * energy modelling.
-   */
-  Cycles estimateComputeBits(const PUMCommand &command) const;
 
   /**
    * Compile the final reduction instruction.

@@ -1888,7 +1888,7 @@ StreamNUCAManager::getVirtualBitlinesForPUM(const StreamRegion &region) {
   auto totalElems = region.numElement;
   auto ratio = (totalElems + totalBitlines - 1) / totalBitlines;
 
-  if (ratio > 2 || ratio < 1) {
+  if (ratio > 4 || ratio < 1) {
     panic("[StreamPUM] Region %s TotalElem %lu / Bitlines %ld = %lu Illegal.",
           region.name, totalElems, totalBitlines, ratio);
   }
