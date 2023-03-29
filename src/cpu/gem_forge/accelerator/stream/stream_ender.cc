@@ -243,11 +243,12 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
                         "[StreamEnd] NoCommit as Unseen InnerDepElem %d.\n",
                         dynS.getNumInnerLoopDepS());
       for (const auto &innerLoopDepId : dynS.getInnerLoopDepS()) {
-        auto innerLoopDepS = this->se->getStream(innerLoopDepId.staticId);
+        auto depSE = innerLoopDepId.se;
+        auto innerLoopDepS = innerLoopDepId.S;
         assert(innerLoopDepS);
         auto &innerLoopDepDynS = innerLoopDepS->getDynStreamByInstance(
-            innerLoopDepId.streamInstance);
-        this->se->addIssuingDynS(&innerLoopDepDynS);
+            innerLoopDepId.dynId.streamInstance);
+        depSE->addIssuingDynS(&innerLoopDepDynS);
       }
       return false;
     }

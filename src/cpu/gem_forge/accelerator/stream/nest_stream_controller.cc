@@ -28,12 +28,10 @@ bool StreamRegionController::shouldRemoteConfigureNestRegion(
   }
   for (auto S : staticNestRegion.streams) {
     /**
-     * Don't allow InnerLoopBaseS to be remotely configured for now.
-     * In the future it may be benefitial to enable this feature.
+     * So far we allow InnerLoopBaseS to be remotely configured, but the
+     * traffic to communicate back the value is not modelled.
+     * TODO: Model the traffic to get value from RemoteConfig InnerLoopBaseS.
      */
-    if (!S->innerLoopDepEdges.empty()) {
-      return false;
-    }
     if (S->isInnerFinalValueUsedByCore()) {
       return false;
     }
@@ -380,7 +378,8 @@ void StreamRegionController::configureNestStream(
   auto &isaHandler = nestSE->regionController->isaHandler;
   auto &isaSE = isaHandler.getISAStreamEngine();
   isaSE.reset();
-  isaSE.setOuterStreamRegionSeqNum(dynRegion.seqNum);
+  isaSE.setOuterSE(this->se, dynRegion.seqNum);
+  nestSE->tryInitializeStreams(dynRegion.staticRegion->region);
   auto configFuncStartSeqNum = dynNestConfig.getConfigSeqNum(
       nestSE, dynNestConfig.nextConfigElemIdx, dynRegion.seqNum);
   dynNestConfig.configFunc->invoke(actualParams, &isaHandler,

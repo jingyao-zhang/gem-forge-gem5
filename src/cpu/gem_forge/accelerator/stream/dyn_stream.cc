@@ -153,9 +153,10 @@ void DynStream::addBaseDynStreams() {
        * Simply initialize it to 1, as the most general case.
        */
       auto reuseBaseElement = 1;
-      this->baseEdges.emplace_back(
-          edge.type, edge.toStaticId, baseDynS.dynStreamId.streamInstance,
-          edge.fromStaticId, alignBaseElementIdx, reuseBaseElement);
+      this->baseEdges.emplace_back(edge.type, baseS, edge.toStaticId,
+                                   baseDynS.dynStreamId.streamInstance,
+                                   edge.fromStaticId, alignBaseElementIdx,
+                                   reuseBaseElement);
       break;
     }
     case StreamDepEdge::TypeE::Back: {
@@ -163,12 +164,12 @@ void DynStream::addBaseDynStreams() {
        * For back dependence, the reuse count should always be 1.
        */
       auto reuseBaseElement = 1;
-      this->baseEdges.emplace_back(StreamDepEdge::TypeE::Back, edge.toStaticId,
-                                   baseDynS.dynStreamId.streamInstance,
-                                   edge.fromStaticId, alignBaseElementIdx,
-                                   reuseBaseElement);
+      this->baseEdges.emplace_back(
+          StreamDepEdge::TypeE::Back, baseS, edge.toStaticId,
+          baseDynS.dynStreamId.streamInstance, edge.fromStaticId,
+          alignBaseElementIdx, reuseBaseElement);
       baseDynS.backDepEdges.emplace_back(
-          StreamDepEdge::TypeE::Back, edge.toStaticId,
+          StreamDepEdge::TypeE::Back, baseS, edge.toStaticId,
           baseDynS.dynStreamId.streamInstance, edge.fromStaticId,
           alignBaseElementIdx, reuseBaseElement);
       break;
@@ -180,27 +181,33 @@ void DynStream::addBaseDynStreams() {
   }
 }
 
-void DynStream::addOuterDepDynStreams(InstSeqNum outerSeqNum) {
+void DynStream::addOuterDepDynStreams(StreamEngine *outerSE,
+                                      InstSeqNum outerSeqNum) {
   /**
    * Register myself to OuterLoopDepStream.
    * If we specified the outerSeqNum (from nest stream), we use that DynRegion.
    * Otherwise, we just get the last DynRegion.
    */
   for (const auto &edge : this->stream->innerLoopDepEdges) {
-    auto depS = edge.toStream;
+    StreamEngine *depSE = nullptr;
+    Stream *depS = nullptr;
     DynStream *depDynS = nullptr;
-    if (outerSeqNum != InvalidInstSeqNum) {
+    if (outerSE != nullptr && outerSeqNum != InvalidInstSeqNum) {
+      depSE = outerSE;
+      depS = outerSE->getStream(edge.toStaticId);
       depDynS = &depS->getDynStream(outerSeqNum);
     } else {
+      depSE = this->se;
+      depS = edge.toStream;
       depDynS = &depS->getLastDynStream();
     }
     DYN_S_DPRINTF(this->dynStreamId,
                   "[InnerLoopDep] Push myself to OuterLoopDepDynS %s.\n",
                   depDynS->dynStreamId);
-    this->pushInnerLoopDepS(depDynS->dynStreamId);
-    depDynS->pushInnerLoopBaseDynStream(edge.type, edge.fromStaticId,
-                                        this->dynStreamId.streamInstance,
-                                        edge.toStaticId);
+    this->pushInnerLoopDepS(depSE, depS, depDynS->dynStreamId);
+    depDynS->pushInnerLoopBaseDynStream(
+        edge.type, this->stream, edge.fromStaticId,
+        this->dynStreamId.streamInstance, edge.toStaticId);
   }
 }
 
@@ -247,11 +254,11 @@ DynStream::getInnerLoopBaseEdges(StaticId baseStaticId) const {
 }
 
 void DynStream::pushInnerLoopBaseDynStream(StreamDepEdge::TypeE type,
-                                           StaticId baseStaticId,
+                                           Stream *baseS, StaticId baseStaticId,
                                            InstanceId baseInstanceId,
                                            StaticId depStaticId) {
   auto &edges = this->getInnerLoopBaseEdges(baseStaticId);
-  edges.emplace_back(type, baseStaticId, baseInstanceId, depStaticId,
+  edges.emplace_back(type, baseS, baseStaticId, baseInstanceId, depStaticId,
                      0 /* AlignBaseElementIdx */, 1 /* ReuseBaseElement */);
 }
 
@@ -646,44 +653,42 @@ void DynStream::addBaseElements(StreamElement *newElem) {
   }
 }
 
-void DynStream::addAddrBaseElementEdge(StreamElement *newElement,
+void DynStream::addAddrBaseElementEdge(StreamElement *newElem,
                                        const StreamDepEdge &edge) {
   auto S = this->stream;
   auto baseS = S->se->getStream(edge.baseStaticId);
   auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
-  auto baseElemIdx = edge.getBaseElemIdx(newElement->FIFOIdx.entryIdx);
+  auto baseElemIdx = edge.getBaseElemIdx(newElem->FIFOIdx.entryIdx);
   S_ELEMENT_DPRINTF(
-      newElement,
+      newElem,
       "BaseElementIdx(%llu), Align(%llu), Reuse (%llu), BaseStream %s.\n",
       baseElemIdx, edge.alignBaseElement, edge.baseElemReuseCnt,
       baseS->getStreamName());
   // Try to find this element.
-  auto baseElement = baseDynS.getElemByIdx(baseElemIdx);
-  assert(baseElement && "Failed to find base element.");
-  newElement->addrBaseElements.emplace_back(baseElement);
+  auto baseElem = baseDynS.getElemByIdx(baseElemIdx);
+  assert(baseElem && "Failed to find base element.");
+  newElem->addrBaseElements.emplace_back(baseElem);
 }
 
-void DynStream::addValueBaseElementEdge(StreamElement *newElement,
+void DynStream::addValueBaseElementEdge(StreamElement *newElem,
                                         const StreamDepEdge &edge) {
 
   auto S = this->stream;
-  auto newElemIdx = newElement->FIFOIdx.entryIdx;
+  auto newElemIdx = newElem->FIFOIdx.entryIdx;
 
   auto baseS = S->se->getStream(edge.baseStaticId);
   const auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
   auto baseElemIdx = edge.getBaseElemIdx(newElemIdx);
   // Try to find this element.
-  auto baseElement = baseDynS.getElemByIdx(baseElemIdx);
-  if (!baseElement) {
-    S_ELEMENT_PANIC(newElement,
-                    "Failed to find value base element %llu from %s.",
+  auto baseElem = baseDynS.getElemByIdx(baseElemIdx);
+  if (!baseElem) {
+    S_ELEMENT_PANIC(newElem, "Failed to find value base element %llu from %s.",
                     baseElemIdx, baseDynS.dynStreamId);
   }
-  S_ELEMENT_DPRINTF(newElement, "Add ValueBaseElement: %s.\n",
-                    baseElement->FIFOIdx);
-  newElement->valueBaseElements.emplace_back(baseElement);
+  S_ELEMENT_DPRINTF(newElem, "Add ValueBaseElement: %s.\n", baseElem->FIFOIdx);
+  newElem->valueBaseElements.emplace_back(baseElem);
 }
 
 void DynStream::addBackBaseElementEdge(StreamElement *newElem,
@@ -744,7 +749,6 @@ bool DynStream::areInnerLoopBaseElementsAllocated(StreamElement *elem) const {
     if (edge.type == StreamDepEdge::Back && elemIdx == 0) {
       continue;
     }
-    auto baseS = edge.toStream;
     const auto &dynEdges = this->getInnerLoopBaseEdges(edge.toStaticId);
 
     auto adjustElemIdx =
@@ -753,11 +757,12 @@ bool DynStream::areInnerLoopBaseElementsAllocated(StreamElement *elem) const {
       // The inner-loop stream has not been allocated.
       S_ELEMENT_DPRINTF(
           elem, "[InnerLoopDep]   InnerLoopS %s AdjElemIdx %lu Not Config.\n",
-          baseS->getStreamName(), adjustElemIdx);
+          edge.toStream->getStreamName(), adjustElemIdx);
       return false;
     }
 
     const auto &dynEdge = dynEdges.at(adjustElemIdx);
+    auto baseS = dynEdge.baseS;
 
     auto &baseDynS = baseS->getDynStreamByInstance(dynEdge.baseInstanceId);
     S_ELEMENT_DPRINTF(elem, "[InnerLoopDep]   InnerLoopDynS %s.\n",
@@ -796,7 +801,6 @@ void DynStream::addInnerLoopBaseElements(StreamElement *elem) {
     if (edge.type == StreamDepEdge::Back && elemIdx == 0) {
       continue;
     }
-    auto baseS = edge.toStream;
     const auto &dynEdges = this->getInnerLoopBaseEdges(edge.toStaticId);
 
     auto adjustElemIdx =
@@ -805,10 +809,11 @@ void DynStream::addInnerLoopBaseElements(StreamElement *elem) {
       // The inner-loop stream has not been allocated.
       S_ELEMENT_PANIC(
           elem, "[InnerLoopDep] InnerLoopS %s AdjElemIdx %lu Not Config.\n",
-          baseS->getStreamName(), adjustElemIdx);
+          edge.toStream->getStreamName(), adjustElemIdx);
     }
-    const auto &dynEdge = dynEdges.at(adjustElemIdx);
 
+    const auto &dynEdge = dynEdges.at(adjustElemIdx);
+    auto baseS = dynEdge.baseS;
     auto &baseDynS = baseS->getDynStreamByInstance(dynEdge.baseInstanceId);
     if (!baseDynS.hasTotalTripCount()) {
       S_ELEMENT_PANIC(elem, "[InnerLoopDep] NoTripCount.\n");

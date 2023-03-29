@@ -7,10 +7,12 @@
 
 namespace gem5 {
 
+class StreamEngine;
+
 class StreamFloatPolicy {
 public:
-  StreamFloatPolicy(bool _enabled, bool _enabledFloatMem, bool _enabledHistory,
-                    const std::string &_policy,
+  StreamFloatPolicy(StreamEngine *_se, bool _enabled, bool _enabledFloatMem,
+                    bool _enabledHistory, const std::string &_policy,
                     const std::string &_levelPolicy);
   ~StreamFloatPolicy();
 
@@ -41,6 +43,7 @@ public:
                      CacheStreamConfigureVec &rootConfigVec);
 
 private:
+  StreamEngine *se;
   bool enabled;
   bool enabledFloatMem;
   bool enabledHistory;
@@ -56,10 +59,17 @@ private:
     LEVEL_MANUAL2,
     LEVEL_SMART,
   } levelPolicy;
-  std::vector<uint64_t> cacheCapacity;
+  mutable std::vector<uint64_t> cacheCapacity;
 
-  uint64_t getPrivateCacheCapacity() const { return this->cacheCapacity.at(1); }
-  uint64_t getSharedLLCCapacity() const { return this->cacheCapacity.back(); }
+  void initCacheCapacity() const;
+  uint64_t getPrivateCacheCapacity() const {
+    this->initCacheCapacity();
+    return this->cacheCapacity.at(1);
+  }
+  uint64_t getSharedLLCCapacity() const {
+    this->initCacheCapacity();
+    return this->cacheCapacity.back();
+  }
 
   FloatDecision shouldFloatStreamManual(DynStream &dynS);
   FloatDecision shouldFloatStreamSmart(DynStream &dynS);

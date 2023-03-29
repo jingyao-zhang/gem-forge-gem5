@@ -51,11 +51,18 @@ std::vector<uint64_t> getCacheCapacity(StreamEngine *se) {
 
 } // namespace
 
-StreamFloatPolicy::StreamFloatPolicy(bool _enabled, bool _enabledFloatMem,
+void StreamFloatPolicy::initCacheCapacity() const {
+  if (this->cacheCapacity.empty()) {
+    this->cacheCapacity = getCacheCapacity(se);
+  }
+}
+
+StreamFloatPolicy::StreamFloatPolicy(StreamEngine *_se, bool _enabled,
+                                     bool _enabledFloatMem,
                                      bool _enabledHistory,
                                      const std::string &_policy,
                                      const std::string &_levelPolicy)
-    : enabled(_enabled), enabledFloatMem(_enabledFloatMem),
+    : se(_se), enabled(_enabled), enabledFloatMem(_enabledFloatMem),
       enabledHistory(_enabledHistory) {
   if (_policy == "static") {
     this->policy = PolicyE::STATIC;
@@ -116,9 +123,6 @@ StreamFloatPolicy::shouldFloatStream(DynStream &dynS) {
   }
   // Initialize the private cache capacity.
   auto S = dynS.stream;
-  if (this->cacheCapacity.empty()) {
-    this->cacheCapacity = getCacheCapacity(S->se);
-  }
   /**
    * ! Crazy hack to avoid float akk and bk in GaussElim.
    * ! This causes problem in the coherence protocol with the
@@ -505,7 +509,8 @@ void StreamFloatPolicy::setFloatPlan(DynStream &dynS) {
    */
   if (this->levelPolicy == LevelPolicyE::LEVEL_STATIC) {
     if (this->enabledFloatMem) {
-      floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_Directory);
+      floatPlan.addFloatChangePoint(firstElementIdx,
+                                    ruby::MachineType_Directory);
     } else {
       // By default we float to L2 cache (LLC in MESI_Three_Level).
       floatPlan.addFloatChangePoint(firstElementIdx, ruby::MachineType_L2Cache);
@@ -518,5 +523,5 @@ void StreamFloatPolicy::setFloatPlan(DynStream &dynS) {
 
   panic("Smart FloatPlan not implemented.\n");
   return;
-}} // namespace gem5
-
+}
+} // namespace gem5

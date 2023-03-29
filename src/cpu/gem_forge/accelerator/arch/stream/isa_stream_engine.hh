@@ -41,7 +41,8 @@ public:
   /**
    * Set the OuterStreamRegionSeqNum.
    */
-  void setOuterStreamRegionSeqNum(InstSeqNum outerSeqNum) {
+  void setOuterSE(StreamEngine *outerSE, InstSeqNum outerSeqNum) {
+    this->outerSE = outerSE;
     this->outerSeqNum = outerSeqNum;
   }
 
@@ -267,9 +268,11 @@ private:
       DynStreamRegionInfo &dynStreamRegionInfo);
 
   /**
-   * Used to passing the outer DynRegion info when configuring a NestRegion.
+   * Used to passing the outer SE and DynRegion SeqNum info when configuring a
+   * NestRegion.
    */
   constexpr static InstSeqNum InvalidInstSeqNum = 0;
+  StreamEngine *outerSE = nullptr;
   InstSeqNum outerSeqNum = InvalidInstSeqNum;
 };
 

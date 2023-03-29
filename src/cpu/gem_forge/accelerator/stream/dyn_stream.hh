@@ -254,16 +254,17 @@ public:
     enum TypeE { Addr, Value, Back, Pred };
     static const char *typeToString(const TypeE &type);
     const TypeE type = Addr;
+    Stream *const baseS = nullptr;
     const StaticId baseStaticId = DynStreamId::InvalidStaticStreamId;
     const InstanceId baseInstanceId = DynStreamId::InvalidInstanceId;
     const StaticId depStaticId = DynStreamId::InvalidStaticStreamId;
     const uint64_t alignBaseElement = 0;
     uint64_t baseElemReuseCnt = 1; // When the BaseS is from OuterLoop.
     uint64_t baseElemSkipCnt = 0;  // When the BaseS is from InnerLoop.
-    StreamDepEdge(TypeE _type, StaticId _baseStaticId,
+    StreamDepEdge(TypeE _type, Stream *_baseS, StaticId _baseStaticId,
                   InstanceId _baseInstanceId, StaticId _depStaticId,
                   uint64_t _alignBaseElement, uint64_t _reuseBaseElement)
-        : type(_type), baseStaticId(_baseStaticId),
+        : type(_type), baseS(_baseS), baseStaticId(_baseStaticId),
           baseInstanceId(_baseInstanceId), depStaticId(_depStaticId),
           alignBaseElement(_alignBaseElement),
           baseElemReuseCnt(_reuseBaseElement) {}
@@ -277,7 +278,7 @@ public:
   StreamEdges baseEdges;
   StreamEdges backDepEdges;
   void addBaseDynStreams();
-  void addOuterDepDynStreams(InstSeqNum outerSeqNum);
+  void addOuterDepDynStreams(StreamEngine *outerSE, InstSeqNum outerSeqNum);
 
   /**
    * Get the reuse/skip count on a BaseS.
@@ -297,7 +298,7 @@ public:
   InnerLoopBaseDynStreamMapT innerLoopBaseEdges;
   StreamEdges &getInnerLoopBaseEdges(StaticId baseStaticId);
   const StreamEdges &getInnerLoopBaseEdges(StaticId baseStaticId) const;
-  void pushInnerLoopBaseDynStream(StreamDepEdge::TypeE type,
+  void pushInnerLoopBaseDynStream(StreamDepEdge::TypeE type, Stream *baseS,
                                   StaticId baseStaticId,
                                   InstanceId baseInstanceId,
                                   StaticId depStaticId);
@@ -465,28 +466,6 @@ public:
   void dump() const;
   std::string dumpString() const;
 
-  /**
-   * Accessor to the NumInnerLoopDepS. Used to track that InnerLoopDepS
-   * has correctly got the value we can be released.
-   */
-  int getNumInnerLoopDepS() const { return this->innerLoopDepS.size(); }
-  const std::vector<DynStreamId> &getInnerLoopDepS() const {
-    return this->innerLoopDepS;
-  }
-  void pushInnerLoopDepS(const DynStreamId &dynId) {
-    this->innerLoopDepS.push_back(dynId);
-  }
-  void popInnerLoopDepS(const DynStreamId &dynId) {
-    for (auto iter = this->innerLoopDepS.begin();
-         iter != this->innerLoopDepS.end(); ++iter) {
-      if (*iter == dynId) {
-        this->innerLoopDepS.erase(iter);
-        return;
-      }
-    }
-    assert(false && "No InnerLoopDepS");
-  }
-
 private:
   /**
    * Remember the total trip count.
@@ -538,8 +517,41 @@ private:
   /**
    * InnerLoopDep streams to this stream.
    */
-  std::vector<DynStreamId> innerLoopDepS;
+  struct InnerLoopDepDynId {
+    StreamEngine *se;
+    Stream *S;
+    DynStreamId dynId;
+    InnerLoopDepDynId(StreamEngine *_se, Stream *_S, const DynStreamId &_dynId)
+        : se(_se), S(_S), dynId(_dynId) {}
+  };
+  using InnerLoopDepDynIdVec = std::vector<InnerLoopDepDynId>;
+  InnerLoopDepDynIdVec innerLoopDepDynIds;
 
+public:
+  /**
+   * Accessor to the NumInnerLoopDepS. Used to track that InnerLoopDepS
+   * has correctly got the value we can be released.
+   */
+  int getNumInnerLoopDepS() const { return this->innerLoopDepDynIds.size(); }
+  const InnerLoopDepDynIdVec &getInnerLoopDepS() const {
+    return this->innerLoopDepDynIds;
+  }
+  void pushInnerLoopDepS(StreamEngine *se, Stream *S,
+                         const DynStreamId &dynId) {
+    this->innerLoopDepDynIds.emplace_back(se, S, dynId);
+  }
+  void popInnerLoopDepS(const DynStreamId &dynId) {
+    for (auto iter = this->innerLoopDepDynIds.begin();
+         iter != this->innerLoopDepDynIds.end(); ++iter) {
+      if (iter->dynId == dynId) {
+        this->innerLoopDepDynIds.erase(iter);
+        return;
+      }
+    }
+    assert(false && "No InnerLoopDepS");
+  }
+
+private:
   std::unordered_map<uint64_t, int> futureElemBanks;
 
   void tryCancelFloat();

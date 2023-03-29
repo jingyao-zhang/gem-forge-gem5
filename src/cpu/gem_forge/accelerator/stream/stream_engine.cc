@@ -80,8 +80,9 @@ StreamEngine::StreamEngine(const Params &params)
   this->enableStreamFloatCancel = params.streamEngineEnableFloatCancel;
 
   auto streamFloatPolicy = std::make_unique<StreamFloatPolicy>(
-      this->enableStreamFloat, params.enableFloatMem, params.enableFloatHistory,
-      params.streamEngineFloatPolicy, params.floatLevelPolicy);
+      this, this->enableStreamFloat, params.enableFloatMem,
+      params.enableFloatHistory, params.streamEngineFloatPolicy,
+      params.floatLevelPolicy);
   this->floatController = std::make_unique<StreamFloatController>(
       this, std::move(streamFloatPolicy));
 
@@ -367,16 +368,7 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
 
   // Initialize all the streams if this is the first time we encounter the
   // loop.
-  for (const auto &streamInfo : streamRegion.streams()) {
-    const auto &streamId = streamInfo.id();
-    // Remember to also check the coalesced id map.
-    if (this->streamMap.count(streamId) == 0 &&
-        this->coalescedStreamIdMap.count(streamId) == 0) {
-      // We haven't initialize streams in this loop.
-      this->initializeStreams(streamRegion);
-      break;
-    }
-  }
+  this->tryInitializeStreams(streamRegion);
 
   const auto &configStreams = this->getConfigStreamsInRegion(streamRegion);
   for (auto &S : configStreams) {
@@ -392,7 +384,7 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
   for (auto &S : configStreams) {
     auto &dynS = S->getLastDynStream();
     dynS.addBaseDynStreams();
-    dynS.addOuterDepDynStreams(args.outerSeqNum);
+    dynS.addOuterDepDynStreams(args.outerSE, args.outerSeqNum);
     if (S->stepRootStream == S) {
       dynS.addStepStreams();
     }
@@ -1482,6 +1474,20 @@ bool StreamEngine::hasAliasWithPendingWritebackElements(
   return false;
 }
 
+void StreamEngine::tryInitializeStreams(
+    const ::LLVM::TDG::StreamRegion &streamRegion) {
+  for (const auto &streamInfo : streamRegion.streams()) {
+    const auto &streamId = streamInfo.id();
+    // Remember to also check the coalesced id map.
+    if (this->streamMap.count(streamId) == 0 &&
+        this->coalescedStreamIdMap.count(streamId) == 0) {
+      // We haven't initialize streams in this loop.
+      this->initializeStreams(streamRegion);
+      break;
+    }
+  }
+}
+
 void StreamEngine::initializeStreams(
     const ::LLVM::TDG::StreamRegion &streamRegion) {
 
@@ -1572,14 +1578,7 @@ void StreamEngine::initializeStreams(
     const auto &nestStreamRegion =
         this->getStreamRegion(nestRegionRelativePath);
 
-    for (const auto &streamInfo : nestStreamRegion.streams()) {
-      const auto &streamId = streamInfo.id();
-      if (this->streamMap.count(streamId) == 0 &&
-          this->coalescedStreamIdMap.count(streamId) == 0) {
-        this->initializeStreams(nestStreamRegion);
-        break;
-      }
-    }
+    this->tryInitializeStreams(nestStreamRegion);
   }
 
   /**

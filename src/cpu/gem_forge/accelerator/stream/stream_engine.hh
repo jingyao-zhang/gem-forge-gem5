@@ -68,15 +68,18 @@ public:
     // Only valid at dispatchStreamConfig for execution simulation.
     ThreadContext *const tc;
     /**
-     * Optional information of OuterDynRegion to track InnerLoopDep.
+     * Optional information of OuterSE and DynRegion to track InnerLoopDep.
      */
+    StreamEngine *outerSE = nullptr;
     InstSeqNum outerSeqNum = InvalidInstSeqNum;
     StreamConfigArgs(uint64_t _seqNum, const std::string &_infoRelativePath,
                      InputMap *_inputMap = nullptr,
                      ThreadContext *_tc = nullptr,
+                     StreamEngine *_outerSE = nullptr,
                      InstSeqNum _outerSeqNum = InvalidInstSeqNum)
         : seqNum(_seqNum), infoRelativePath(_infoRelativePath),
-          inputMap(_inputMap), tc(_tc), outerSeqNum(_outerSeqNum) {}
+          inputMap(_inputMap), tc(_tc), outerSE(_outerSE),
+          outerSeqNum(_outerSeqNum) {}
   };
 
   bool canStreamConfig(const StreamConfigArgs &args) const;
@@ -460,6 +463,7 @@ private:
   };
   std::unordered_map<Addr, CacheBlockInfo> cacheBlockRefMap;
 
+  void tryInitializeStreams(const ::LLVM::TDG::StreamRegion &streamRegion);
   void initializeStreams(const ::LLVM::TDG::StreamRegion &streamRegion);
   void
   generateCoalescedStreamIdMap(const ::LLVM::TDG::StreamRegion &streamRegion,

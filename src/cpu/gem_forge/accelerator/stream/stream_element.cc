@@ -937,7 +937,7 @@ StreamValue StreamElement::getValueBaseByStreamId(StaticId id) {
   auto baseS = this->se->getStream(id);
   for (const auto &baseElement : this->valueBaseElements) {
     auto baseE = baseElement.getElement();
-    if (baseE->stream == baseS) {
+    if (baseE->stream->isCoalescedHere(id)) {
       /**
        * For unfloated LoadComputeStream, we should use the LoadComputeValue.
        * Except when I am the LoadComputeStream of course.
