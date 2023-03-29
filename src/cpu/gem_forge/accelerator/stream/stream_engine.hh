@@ -543,6 +543,9 @@ private:
   using DynStreamList = std::list<DynStream *>;
   using DynStreamSet = std::set<DynStream *>;
   DynStreamSet issuingDynStreamSet;
+  bool isDynSIssuing(DynStream *dynS) const {
+    return this->issuingDynStreamSet.count(dynS);
+  }
   void addIssuingDynS(DynStream *dynS);
   DynStreamSet::iterator removeIssuingDynS(DynStreamSet::iterator iter);
   void removeIssuingDynS(DynStream *dynS);

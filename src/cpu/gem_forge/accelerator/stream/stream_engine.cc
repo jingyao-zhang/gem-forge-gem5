@@ -572,7 +572,7 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
      * Except for NestStream with EliminatedLoop, which may be independently
      * stepped by each dynamic stream.
      */
-    const DynStream *dynS = &S->getFirstDynStream();
+    DynStream *dynS = &S->getFirstDynStream();
     if (args.dynInstanceId != DynStreamId::InvalidInstanceId) {
       dynS = &S->getDynStreamByInstance(args.dynInstanceId);
     }
@@ -608,13 +608,19 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
     }
     /**
      * For LoopElimInCoreStoreCmpS, we have to wait until the elem is issued
-     * so that the write is sent to cache.
+     * so that the write is sent to cache. If not issued but ValueReady, we add
+     * to issuing list.
      */
     if (dynS->isLoopElimInCoreStoreCmpS()) {
       if (!stepElem->isReqIssued()) {
-        S_ELEMENT_DPRINTF(
-            stepElem,
-            "[CanNotCommitStep] Req Not Issue for LoopElimInCoreStoreCmpS.\n");
+        auto cmpValReady = stepElem->isComputeValueReady();
+        S_ELEMENT_DPRINTF(stepElem,
+                          "[CanNotCommitStep] ReqNotIssue for "
+                          "LoopElimInCoreStoreCmpS CmpValReady %d.\n",
+                          cmpValReady);
+        if (cmpValReady) {
+          this->addIssuingDynS(dynS);
+        }
         return false;
       }
     }

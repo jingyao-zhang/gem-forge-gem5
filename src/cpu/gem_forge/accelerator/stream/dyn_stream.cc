@@ -1594,16 +1594,28 @@ std::string DynStream::dumpString() const {
   if (this->stream->isInnerFinalValueUsedByCore() && this->isFloatedToCache()) {
     ss << " final-elem " << this->innerFinalValueMap.size();
   }
+  if (this->shouldCoreSEIssue()) {
+    ss << " issuing " << this->se->isDynSIssuing(const_cast<DynStream *>(this));
+  }
   ss << " ========\n";
   auto elem = this->tail;
   while (elem != this->head) {
     elem = elem->next;
-    ss << elem->FIFOIdx.entryIdx << '(' << static_cast<int>(elem->isAddrReady())
-       << static_cast<int>(elem->isValueReady) << ')';
+    ss << elem->FIFOIdx.entryIdx;
+    ss << '(';
+    ss << elem->isAddrReady();
+    ss << elem->isValueReady;
+    if (elem->shouldIssue()) {
+      ss << elem->isReqIssued();
+    }
+    ss << ')';
     ss << ' ';
   }
   return ss.str();
 }
 
-void DynStream::dump() const { inform("%s\n", this->dumpString()); }
+void DynStream::dump() const {
+  // I don't want the file location.
+  Logger::getInfo().print(Logger::Loc("", 0), "%s\n", this->dumpString());
+}
 } // namespace gem5

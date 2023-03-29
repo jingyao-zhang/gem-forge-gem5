@@ -1265,8 +1265,11 @@ void Stream::incrementOffloadedStepped() {
 }
 
 void Stream::dump() const {
-  inform("Stream %50s DynS %d ==========================\n",
-         this->getStreamName().c_str(), this->dynamicStreams.size());
+  Logger::getInfo().print(
+      Logger::Loc("", 0),
+      "Stream -%d-%d- %50s DynS %d ==========================\n",
+      this->getCPUDelegator()->cpuId(), this->staticId, this->getStreamName(),
+      this->dynamicStreams.size());
   for (const auto &dynS : this->dynamicStreams) {
     dynS.dump();
   }
