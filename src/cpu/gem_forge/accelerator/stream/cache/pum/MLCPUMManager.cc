@@ -2559,6 +2559,7 @@ Cycles MLCPUMManager::getComputeLat(const PUMCommand &command) const {
     computeLatency = forceFloat ? wordlineBitsSquare : wordlineBits;
     break;
 
+  case SimdMultOp:
   case IntMultOp:
     computeLatency = forceFloat ? wordlineBitsSquare : wordlineBitsSquare / 2;
     break;
@@ -3450,8 +3451,12 @@ void MLCPUMManager::addPUMLoadStream(PUMContext &context,
    * 3. The original SplitOutDim is considered now Wait for round.
    */
   auto broadcastPat = recvPat;
-  auto newRecvPat = broadcastPat.splitFromDim(loopLevelDiff);
-  newRecvPat.mergeOutDim(recvSplitOutDim);
+  auto newRecvPat = recvSplitOutDim;
+  if (loopLevelDiff < broadcastPat.numDimension()) {
+    // More to split.
+    newRecvPat = broadcastPat.splitFromDim(loopLevelDiff);
+    newRecvPat.mergeOutDim(recvSplitOutDim);
+  }
 
   // Fill in missing dimensions of BroadcastPattern.
   auto arraySizes = loadNode->pumTile.getArraySize();

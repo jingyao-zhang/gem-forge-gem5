@@ -2847,16 +2847,16 @@ void StreamEngine::dumpFIFO() const {
     }
   }
   if (dumped) {
-    inform("Total elements %d, free %d, totalRunAhead %d\n",
-           this->FIFOArray.size(), this->numFreeFIFOEntries,
-           this->getTotalRunAheadLength());
+    NO_LOC_INFORM("Total elements %d, free %d, totalRunAhead %d\n",
+                  this->FIFOArray.size(), this->numFreeFIFOEntries,
+                  this->getTotalRunAheadLength());
   }
 }
 
 void StreamEngine::dumpUser() const {
   for (const auto &userElement : this->userElementMap) {
     auto user = userElement.first;
-    inform("--seqNum %llu used element.\n", user);
+    NO_LOC_INFORM("--seqNum %llu used element.\n", user);
     for (auto element : userElement.second) {
       element->dump();
     }

@@ -145,6 +145,9 @@ namespace gem5 {
   panic(LLC_ELEMENT_MSG(element, format, ##args))
 #define LLC_ELEMENT_HACK(element, format, args...)                             \
   hack(LLC_ELEMENT_MSG(element, format, ##args))
+
+#define NO_LOC_INFORM(args...)                                                 \
+  Logger::getInfo().print(Logger::Loc("", 0), ##args)
 } // namespace gem5
 
 #endif

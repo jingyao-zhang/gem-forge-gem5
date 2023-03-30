@@ -1157,9 +1157,8 @@ void StreamElement::setPrefetchIssued() {
 }
 
 void StreamElement::dump() const {
-  inform("Stream %50s %d.%d (%d%d).\n", this->stream->getStreamName().c_str(),
-         this->FIFOIdx.streamId.streamInstance, this->FIFOIdx.entryIdx,
-         static_cast<int>(this->isAddrReady()),
-         static_cast<int>(this->isValueReady));
+  NO_LOC_INFORM("%50s %d.%d (%d%d).\n", this->stream->getStreamName().c_str(),
+                this->FIFOIdx.streamId.streamInstance, this->FIFOIdx.entryIdx,
+                this->isAddrReady(), this->isValueReady);
 }
 } // namespace gem5

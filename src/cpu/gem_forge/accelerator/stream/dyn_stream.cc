@@ -1616,6 +1616,6 @@ std::string DynStream::dumpString() const {
 
 void DynStream::dump() const {
   // I don't want the file location.
-  Logger::getInfo().print(Logger::Loc("", 0), "%s\n", this->dumpString());
+  NO_LOC_INFORM("%s\n", this->dumpString());
 }
 } // namespace gem5
