@@ -129,6 +129,8 @@ protected:
   void pushNewLLCSegment(Addr startPAddr, uint64_t startSliceIdx);
   LLCSegmentPosition &getLastLLCSegment();
   const LLCSegmentPosition &getLastLLCSegment() const;
+  bool hasLastCreditedLLCSegment() const;
+  const LLCSegmentPosition &getLastCreditedLLCSegment() const;
   uint64_t getLLCTailSliceIdx() const {
     return this->getLastLLCSegment().endSliceIdx;
   }
@@ -221,7 +223,7 @@ protected:
   /**
    * Always remember the last segement.
    */
-  bool lastSegementValid = false;
+  bool lastSegmentValid = false;
   LLCSegmentPosition lastSegment;
 };
 

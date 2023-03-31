@@ -132,7 +132,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
       streamConfigureData->dynamicId, streamConfigureData->strandIdx,
       streamConfigureData->totalStrands));
   LLC_S_DPRINTF_(LLCRubyStreamLife, S->getDynStrandId(),
-                 "Configured InitCredit %d TripCount %lld.\n",
+                 "Config InitCredit %d TripCount %lld.\n",
                  streamConfigureData->initCreditedIdx, S->getTotalTripCount());
   S->remoteConfigured(this->controller);
 
@@ -173,7 +173,8 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 
 void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   auto endStrandId = *(pkt->getPtr<DynStrandId *>());
-  LLC_S_DPRINTF_(LLCRubyStreamLife, *endStrandId, "Received StreamEnd.\n");
+  LLC_S_DPRINTF_(LLCRubyStreamLife, *endStrandId, "Recv StreamEnd at %s.\n",
+                 this->controller->getMachineID());
   // Search for this stream.
   for (auto streamIter = this->streams.begin(), streamEnd = this->streams.end();
        streamIter != streamEnd; ++streamIter) {
@@ -271,8 +272,8 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynStreamPtr dynS,
 
 void LLCStreamEngine::receiveStreamFlow(const DynStreamSliceId &sliceId) {
   // Simply append it to the list.
-  LLC_SLICE_DPRINTF(sliceId, "Received stream flow [%lu, +%lu).\n",
-                    sliceId.getStartIdx(), sliceId.getNumElements());
+  LLC_SLICE_DPRINTF_(LLCRubyStreamLife, sliceId, "Recv credit [%lu, +%lu).\n",
+                     sliceId.getStartIdx(), sliceId.getNumElements());
   this->pendingStreamFlowControlMsgs.push_back(sliceId);
   this->scheduleEvent(Cycles(1));
 }
@@ -1271,8 +1272,9 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
           dynS->getLLCController() == this->controller &&
           msg.getStartIdx() == dynS->creditedSliceIdx) {
         // The stream is at our bank. Update the idx.
-        LLC_S_DPRINTF(dynS->getDynStrandId(), "Add credit %lu -> %lu.\n",
-                      msg.getStartIdx(), msg.getEndIdx());
+        LLC_S_DPRINTF_(LLCRubyStreamLife, dynS->getDynStrandId(),
+                       "Add credit %lu -> %lu.\n", msg.getStartIdx(),
+                       msg.getEndIdx());
         dynS->addCredit(msg.getNumElements());
         // Maybe we want to resort the Multicast group.
         if (this->controller->isStreamMulticastEnabled() &&
@@ -1284,10 +1286,10 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
     } else {
       // Delete the credit message if the stream is already released
       // due to StreamLoopBound.
-      LLC_S_DPRINTF(msg.getDynStrandId(),
-                    "[Credit] Discard credit %lu -> %lu as LLCDynStream "
-                    "already released.\n",
-                    msg.getStartIdx(), msg.getEndIdx());
+      LLC_S_DPRINTF_(LLCRubyStreamLife, msg.getDynStrandId(),
+                     "[Credit] Discard credit %lu -> %lu as LLCDynStream "
+                     "already released.\n",
+                     msg.getStartIdx(), msg.getEndIdx());
       processed = true;
     }
     if (processed) {

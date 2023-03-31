@@ -15,6 +15,7 @@
 
 #include "base/trace.hh"
 #include "debug/MLCRubyStreamBase.hh"
+#include "debug/MLCRubyStreamLife.hh"
 #include "debug/MLCStreamLoopBound.hh"
 #include "debug/StreamRangeSync.hh"
 
@@ -396,7 +397,7 @@ void MLCDynDirectStream::tryReleaseNonRangeSyncSegment() {
       MLC_SLICE_DPRINTF(
           seg.getStartSliceId(), "Release NonRangeSync Seg [%lu, %lu).\n",
           seg.getStartSliceId().getStartIdx(), seg.endSliceId.getStartIdx());
-      this->lastSegementValid = true;
+      this->lastSegmentValid = true;
       this->lastSegment = seg;
       iter = this->llcSegments.erase(iter);
       continue;
@@ -676,10 +677,11 @@ void MLCDynDirectStream::sendCreditToLLC(const LLCSegmentPosition &segment) {
   auto remoteBank =
       this->controller->mapAddressToLLCOrMem(remotePAddr, startElemMachineType);
 
-  MLC_S_DPRINTF(this->strandId,
-                "Extended %lu (Elem %lu) -> %lu at %s (DisableMigration %d).\n",
-                segment.startSliceIdx, startElemIdx, segment.endSliceIdx,
-                remoteBank, this->config->disableMigration);
+  MLC_S_DPRINTF_(
+      MLCRubyStreamLife, this->strandId,
+      "Extended %lu (Elem %lu) -> %lu at %s (DisableMigration %d).\n",
+      segment.startSliceIdx, startElemIdx, segment.endSliceIdx, remoteBank,
+      this->config->disableMigration);
   auto msg = std::make_shared<ruby::RequestMsg>(this->controller->clockEdge());
   msg->m_addr = ruby::makeLineAddress(remotePAddr);
   msg->m_Type = ruby::CoherenceRequestType_STREAM_FLOW;
@@ -1095,7 +1097,7 @@ MLCDynDirectStream::getLastLLCSegment() {
   if (!this->llcSegments.empty()) {
     return this->llcSegments.back();
   }
-  if (this->lastSegementValid) {
+  if (this->lastSegmentValid) {
     return this->lastSegment;
   }
   MLC_S_PANIC(this->getDynStrandId(), "Missing Last LLCSegment.");
@@ -1109,10 +1111,25 @@ MLCDynDirectStream::getLastLLCSegment() const {
   if (!this->llcSegments.empty()) {
     return this->llcSegments.back();
   }
-  if (this->lastSegementValid) {
+  if (this->lastSegmentValid) {
     return this->lastSegment;
   }
   MLC_S_PANIC(this->getDynStrandId(), "Missing Last LLCSegment.");
+}
+
+bool MLCDynDirectStream::hasLastCreditedLLCSegment() const {
+  return this->lastSegmentValid || !this->llcSegments.empty();
+}
+
+const MLCDynDirectStream::LLCSegmentPosition &
+MLCDynDirectStream::getLastCreditedLLCSegment() const {
+  if (!this->llcSegments.empty()) {
+    return this->llcSegments.back();
+  }
+  if (this->lastSegmentValid) {
+    return this->lastSegment;
+  }
+  MLC_S_PANIC(this->getDynStrandId(), "Missing Last Credited LLCSegment.");
 }
 
 void MLCDynDirectStream::checkCoreCommitProgress() {
@@ -1318,8 +1335,8 @@ MLCDynDirectStream::getRemoteTailPAddrAndMachineType() const {
     auto endPAddr = config->initPAddr;
     auto endMachineType = ruby::MachineType_L2Cache;
 
-    if (this->getTailSliceIdx() > 0) {
-      const auto &lastSegment = this->getLastLLCSegment();
+    if (this->hasLastCreditedLLCSegment()) {
+      const auto &lastSegment = this->getLastCreditedLLCSegment();
       auto endElemIdx = lastSegment.endSliceId.getStartIdx();
       endPAddr = lastSegment.endPAddr;
       endMachineType = this->config->floatPlan.getMachineTypeAtElem(endElemIdx);
@@ -1341,7 +1358,7 @@ MLCDynDirectStream::getRemoteTailPAddrAndMachineType() const {
       }
 
     } else {
-      // We haven't allocate any slice.
+      // We haven't credited any slice.
     }
 
     return std::make_pair(endPAddr, endMachineType);

@@ -1057,15 +1057,17 @@ void LLCDynStream::setState(State state) {
 }
 
 void LLCDynStream::remoteConfigured(
-    ruby::AbstractStreamAwareController *llcController) {
+    ruby::AbstractStreamAwareController *llcCtrl) {
   this->setState(State::RUNNING);
-  this->setLLCController(llcController);
+  this->setLLCController(llcCtrl);
   assert(this->prevConfiguredCycle == Cycles(0) && "Already RemoteConfigured.");
   this->prevConfiguredCycle = this->curCycle();
   auto &stats = this->getStaticS()->statistic;
   stats.numRemoteConfig++;
   stats.numRemoteConfigNoCCycle +=
       this->prevConfiguredCycle - this->initializedCycle;
+  LLC_S_DPRINTF_(LLCRubyStreamLife, this->getDynStrandId(),
+                 "RemoteConfig at %s.\n", llcCtrl->getMachineID());
   if (auto *dynS = this->getStaticS()->getDynStream(this->getDynStreamId())) {
     stats.numRemoteConfigCycle += this->prevConfiguredCycle - dynS->configCycle;
   }
@@ -1081,6 +1083,8 @@ void LLCDynStream::migratingStart() {
   this->traceEvent(::LLVM::TDG::StreamFloatEvent::MIGRATE_OUT);
   this->getStaticS()->se->numLLCMigrated++;
 
+  LLC_S_DPRINTF_(LLCRubyStreamLife, this->getDynStrandId(),
+                 "Migrate from %s.\n", this->llcController->getMachineID());
   auto &stats = this->getStaticS()->statistic;
   stats.numRemoteRunCycle +=
       this->prevMigratedCycle - this->prevConfiguredCycle;
@@ -1095,8 +1099,7 @@ void LLCDynStream::setLLCController(
   }
 }
 
-void LLCDynStream::migratingDone(
-    ruby::AbstractStreamAwareController *llcController) {
+void LLCDynStream::migratingDone(ruby::AbstractStreamAwareController *llcCtrl) {
 
   /**
    * Notify the previous LLC SE that I have arrived.
@@ -1104,9 +1107,12 @@ void LLCDynStream::migratingDone(
   assert(this->llcController && "Missing PrevLLCController after migration.");
   auto prevSE = this->llcController->getLLCStreamEngine();
   auto &prevMigrateController = prevSE->migrateController;
-  prevMigrateController->migratedTo(this, llcController->getMachineID());
+  prevMigrateController->migratedTo(this, llcCtrl->getMachineID());
 
-  this->setLLCController(llcController);
+  LLC_S_DPRINTF_(LLCRubyStreamLife, this->getDynStrandId(), "Migrated to %s.\n",
+                 llcCtrl->getMachineID());
+
+  this->setLLCController(llcCtrl);
   this->setState(State::RUNNING);
   for (auto IS : this->getAllIndStreams()) {
     IS->setState(State::RUNNING);
@@ -1212,8 +1218,9 @@ void LLCDynStream::allocateLLCStreams(
       }
       ++i;
     }
-    assert(mlcGroups.size() < mlcGroupThreshold &&
-           "Too many MLCGroups, streams are not released?");
+    if (mlcGroups.size() >= mlcGroupThreshold) {
+      panic("Too many MLCGroups for %s.", configs.front()->dynamicId);
+    }
   }
 
   for (auto iter = mlcGroups.begin(), end = mlcGroups.end(); iter != end;) {
@@ -1232,10 +1239,10 @@ void LLCDynStream::allocateLLCStreams(
     DPRINTF(LLCRubyStreamLife, "Release MLCGroup %d.\n", mlcNum);
     for (auto &llcS : group) {
       DPRINTF(LLCRubyStreamLife, "Release MLCGroup: %s.\n",
-              llcS->getDynStreamId());
+              llcS->getDynStrandId());
       if (mlcNum != llcS->getDynStreamId().coreId) {
         panic("LLCStream %s released from wrong MLCGroup %d.",
-              llcS->getDynStreamId(), mlcNum);
+              llcS->getDynStrandId(), mlcNum);
       }
       delete llcS;
       llcS = nullptr;

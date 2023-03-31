@@ -1378,13 +1378,13 @@ void MLCStrandManager::tryMarkPUMRegionCached(const DynStreamId &dynId) {
 
 void MLCStrandManager::endStream(const DynStreamId &endId,
                                  RequestorID requestorId) {
-  MLC_S_DPRINTF_(MLCRubyStreamLife, endId, "Received StreamEnd.\n");
+  MLC_S_DPRINTF_(MLCRubyStreamLife, endId, "Recv StreamEnd.\n");
 
   this->tryMarkPUMRegionCached(endId);
 
   /**
-   * Find all root strands and record the PAddr and ruby::MachineType to multicast
-   * the StreamEnd message.
+   * Find all root strands and record the PAddr and ruby::MachineType to
+   * multicast the StreamEnd message.
    */
   std::vector<std::pair<DynStrandId, std::pair<Addr, ruby::MachineType>>>
       rootStrandTailPAddrMachineTypeVec;
@@ -1450,7 +1450,8 @@ void MLCStrandManager::endStream(const DynStreamId &endId,
 
     if (this->controller->myParams->enable_stream_idea_end) {
       auto remoteController =
-          ruby::AbstractStreamAwareController::getController(rootStreamOffloadedBank);
+          ruby::AbstractStreamAwareController::getController(
+              rootStreamOffloadedBank);
       auto remoteSE = remoteController->getLLCStreamEngine();
       // StreamAck is also disguised as StreamData.
       remoteSE->receiveStreamEnd(pkt);
@@ -1459,7 +1460,8 @@ void MLCStrandManager::endStream(const DynStreamId &endId,
 
     } else {
       // Enqueue a end packet to the target LLC bank.
-      auto msg = std::make_shared<ruby::RequestMsg>(this->controller->clockEdge());
+      auto msg =
+          std::make_shared<ruby::RequestMsg>(this->controller->clockEdge());
       msg->m_addr = rootLLCStreamPAddrLine;
       msg->m_Type = ruby::CoherenceRequestType_STREAM_END;
       msg->m_Requestors.add(this->controller->getMachineID());
@@ -1557,4 +1559,3 @@ bool MLCStrandManager::isStreamElemAcked(
   return true;
 }
 } // namespace gem5
-
