@@ -503,7 +503,7 @@ int PUMEngine::getVBitlineRatio(const PUMCommand &command) {
   auto pBitlines = this->hwConfig->array_cols;
   auto tileSize = command.srcMapPattern.getCanonicalTotalTileSize();
   auto ratio = (tileSize + pBitlines - 1) / pBitlines;
-  if (ratio < 1 || ratio > 10) {
+  if (ratio < 1 || ratio > 16) {
     panic("Illegal ratio %ld.", ratio);
   }
   return ratio;

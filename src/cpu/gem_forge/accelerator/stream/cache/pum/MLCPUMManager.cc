@@ -3778,16 +3778,17 @@ void MLCPUMManager::markComputedRegionsCached(PUMContext &context) {
 
       // Get the last compute node for wordlines storing the final result.
       assert(context.pumDataGraphNodes.size() >= 2);
-      auto lastCmpNode =
+      auto lastNonSyncNode =
           context.pumDataGraphNodes.at(context.pumDataGraphNodes.size() - 2);
-      assert(lastCmpNode->isCompute() && !lastCmpNode->isConstVal());
+      assert((lastNonSyncNode->isCompute() || lastNonSyncNode->isMove()) &&
+             !lastNonSyncNode->isConstVal());
 
       auto cpuDelegator = S->getCPUDelegator();
       Addr startPAddr;
       panic_if(!cpuDelegator->translateVAddrOracle(region.vaddr, startPAddr),
                "Translation Fault on Region %s.", region.name);
-      StreamNUCAMap::setWordlineForRange(startPAddr, lastCmpNode->startWordline,
-                                         !this->modelRegPressure);
+      StreamNUCAMap::setWordlineForRange(
+          startPAddr, lastNonSyncNode->startWordline, !this->modelRegPressure);
     }
   }
 }

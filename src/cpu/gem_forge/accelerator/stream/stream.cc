@@ -1265,7 +1265,7 @@ void Stream::incrementOffloadedStepped() {
 }
 
 void Stream::dump() const {
-  NO_LOC_INFORM("Stream -%d-%d- %50s DynS %d ==========================\n",
+  NO_LOC_INFORM("===== -%d-%d- %50s DynS %d ==========================\n",
                 this->getCPUDelegator()->cpuId(), this->staticId,
                 this->getStreamName(), this->dynamicStreams.size());
   for (const auto &dynS : this->dynamicStreams) {

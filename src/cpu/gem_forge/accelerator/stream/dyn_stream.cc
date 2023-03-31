@@ -1583,8 +1583,11 @@ void DynStream::setElementRemoteBank(uint64_t elemIdx, int remoteBank) {
 
 std::string DynStream::dumpString() const {
   std::stringstream ss;
-  ss << "===== " << this->dynStreamId.staticId << '-'
-     << this->dynStreamId.streamInstance;
+  ss << "===== ";
+  ss << '-' << this->dynStreamId.coreId;
+  ss << '-' << this->dynStreamId.staticId;
+  ss << '-' << this->dynStreamId.streamInstance;
+  ss << '-';
   ss << " total " << this->totalTripCount;
   ss << " ack " << this->cacheAckedElements.size();
   ss << " step " << this->stepSize;
@@ -1597,20 +1600,46 @@ std::string DynStream::dumpString() const {
   if (this->shouldCoreSEIssue()) {
     ss << " issuing " << this->se->isDynSIssuing(const_cast<DynStream *>(this));
   }
-  ss << " ========\n";
+  ss << " ========";
+  if (!this->innerLoopDepDynIds.empty()) {
+    ss << '\n';
+    ss << "-- InnerLoopDepS";
+    for (const auto &depId : innerLoopDepDynIds) {
+      ss << ' ' << depId.dynId;
+    }
+  }
   auto elem = this->tail;
+
+  auto dumpEdge = [&](const StreamElement::ElementEdge &baseEdge) -> void {
+    ss << ' ';
+    ss << baseEdge.getIdx();
+    ss << ' ';
+    ss << 'V';
+    ss << baseEdge.isValid();
+  };
+
   while (elem != this->head) {
     elem = elem->next;
+    ss << '\n';
+    ss << "  ";
     ss << elem->FIFOIdx.entryIdx;
     ss << '(';
     ss << elem->isAddrReady();
     ss << elem->isValueReady;
-    if (elem->shouldIssue()) {
+    if (elem->shouldIssue() && this->stream->isMemStream()) {
       ss << elem->isReqIssued();
     }
     ss << ')';
-    ss << ' ';
+    ss << " AddrBaseE";
+    for (const auto &baseEdge : elem->addrBaseElements) {
+      dumpEdge(baseEdge);
+    }
+    ss << " ValBaseE";
+    for (const auto &baseEdge : elem->valueBaseElements) {
+      dumpEdge(baseEdge);
+    }
   }
+
   return ss.str();
 }
 

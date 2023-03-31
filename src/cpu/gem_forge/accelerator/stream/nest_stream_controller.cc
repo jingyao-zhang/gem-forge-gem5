@@ -193,6 +193,7 @@ bool StreamRegionController::hasRemainingNestRegions(
 void StreamRegionController::configureNestStream(
     DynRegion &dynRegion, DynRegion::DynNestConfig &dynNestConfig) {
 
+  auto &staticRegion = *dynRegion.staticRegion;
   auto &staticNestRegion = *(dynNestConfig.staticRegion);
   auto &staticNestConfig = staticNestRegion.nestConfig;
 
@@ -257,6 +258,46 @@ void StreamRegionController::configureNestStream(
   for (auto baseE : baseElems) {
     if (baseE->isLastElement()) {
       S_ELEMENT_DPRINTF(baseE, "[Nest] Reached TripCount.\n");
+      return;
+    }
+  }
+
+  /**
+   * To avoid deadlock when there is InnerLoopBaseE, make sure that the
+   * InnerLoopDepS has allocated that element.
+   */
+  for (auto S : staticRegion.streams) {
+    if (S->innerLoopBaseEdges.empty()) {
+      continue;
+    }
+    auto &dynS = S->getDynStream(dynRegion.seqNum);
+    if (dynS.FIFOIdx.entryIdx <= nextElemIdx + 1) {
+      // The consuming InnerLoopDepElem is not allocated.
+      SE_DPRINTF("[Nest] InnerLoopDepE Not Alloc %s <= %lu + 1.\n",
+                 dynS.FIFOIdx.entryIdx, nextElemIdx + 1);
+
+      /**
+       * There is a potential deadlock here: when all InnerLoopDepS
+       * have one element allocated and reaches max alloc size.
+       * We don't fix that for now, but add a sanity check here.
+       */
+      if (S->getAllocSize() == S->maxSize &&
+          S->maxSize <= S->getNumDynStreams()) {
+        bool allAllocLessEqualOne = true;
+        for (const auto &dynS : S->dynamicStreams) {
+          if (dynS.allocSize > 1) {
+            allAllocLessEqualOne = false;
+            break;
+          }
+        }
+        if (allAllocLessEqualOne) {
+          NO_LOC_INFORM("!!! !!! Potential Deadlock for InnerLoopDepS.\n");
+          S->dump();
+          DYN_S_PANIC(dynS.dynStreamId,
+                      "Potential Deadlock for InnerLoopDepS.");
+        }
+      }
+
       return;
     }
   }

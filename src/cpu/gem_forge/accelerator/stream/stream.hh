@@ -457,6 +457,7 @@ public:
 
   std::list<DynStream> dynamicStreams;
   bool hasDynStream() const { return !this->dynamicStreams.empty(); }
+  size_t getNumDynStreams() const { return this->dynamicStreams.size(); }
   DynStream &getDynStream(InstSeqNum seqNum);
   DynStream &getDynStreamByEndSeqNum(InstSeqNum seqNum);
   DynStream &getDynStreamByInstance(InstanceId instance);

@@ -446,7 +446,7 @@ bool Stream::isReductionDistributable() const {
       reduceOp == ::LLVM::TDG::ExecFuncInfo_ComputeOp_INT_ADD) {
     // Supported float addition.
     return true;
-  } else if (this->getStreamName().find("bfs_pull") != std::string::npos ||
+  } else if (this->getStreamName().find("bfs") != std::string::npos ||
              this->getStreamName().find("mm_inner") != std::string::npos ||
              this->getStreamName().find("pntnet2") != std::string::npos) {
     /**
