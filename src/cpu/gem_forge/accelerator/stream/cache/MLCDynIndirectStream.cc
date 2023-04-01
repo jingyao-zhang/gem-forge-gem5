@@ -407,10 +407,8 @@ bool MLCDynIndirectStream::hasOverflowed() const {
          this->tailElementIdx > this->getTotalTripCount();
 }
 
-void MLCDynIndirectStream::setTotalTripCount(
-    int64_t totalTripCount, Addr brokenPAddr,
-    ruby::MachineType brokenMachineType) {
-  MLC_S_PANIC(this->getDynStrandId(), "Set TotalTripCount for IndirectS.");
+void MLCDynIndirectStream::breakOutLoop(int64_t totalTripCount) {
+  this->baseStream->breakOutLoop(totalTripCount);
 }
 
 Addr MLCDynIndirectStream::genElemVAddr(uint64_t strandElemIdx,

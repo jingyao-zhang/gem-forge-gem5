@@ -100,20 +100,20 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
     return;
   }
 
-  auto nextElementIdx = dynBound.nextElemIdx;
+  auto nextElemIdx = dynBound.nextElemIdx;
   std::unordered_set<StreamElement *> baseElements;
   for (auto baseS : staticBound.baseStreams) {
     auto &baseDynS = baseS->getDynStream(dynRegion.seqNum);
-    auto baseElement = baseDynS.getElemByIdx(nextElementIdx);
+    auto baseElement = baseDynS.getElemByIdx(nextElemIdx);
     if (!baseElement) {
-      if (baseDynS.FIFOIdx.entryIdx > nextElementIdx) {
+      if (baseDynS.FIFOIdx.entryIdx > nextElemIdx) {
         DYN_S_PANIC(baseDynS.dynStreamId, "[LoopBound] Miss Element %llu.\n",
-                    nextElementIdx);
+                    nextElemIdx);
       } else {
         // The base element is not allocated yet.
         DYN_S_DPRINTF(baseDynS.dynStreamId,
                       "[LoopBound] BaseElement %llu not Allocated.\n",
-                      nextElementIdx);
+                      nextElemIdx);
         return;
       }
     }
@@ -176,7 +176,7 @@ void StreamRegionController::receiveOffloadedLoopBoundRet(
   if (tripCount != dynBound.nextElemIdx + 1) {
     SE_PANIC("[LoopBound] Received TripCount %llu != NextElem %llu + 1, "
              "BrokenOut %d Region %s.\n",
-             tripCount, dynBound.nextElemIdx + 1, brokenOut,
+             tripCount, dynBound.nextElemIdx, brokenOut,
              staticRegion.region.region());
   }
 

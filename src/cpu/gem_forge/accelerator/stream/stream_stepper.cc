@@ -329,14 +329,14 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
                     dynGroup.nextElemIdx, dynBound.nextElemIdx);
       return;
     }
-  } else {
-    // We don't have StreamLoopBound.
-    if (dynGroup.nextElemIdx >= dynGroup.totalTripCount) {
-      DYN_S_DPRINTF(stepRootDynS.dynStreamId,
-                    "[Stepper] Wait For TripCount: %llu >= %llu.\n",
-                    dynGroup.nextElemIdx, dynGroup.totalTripCount);
-      return;
-    }
+  }
+  // Check for TotalTripCount.
+  if (stepRootDynS.hasTotalTripCount() &&
+      dynGroup.nextElemIdx >= stepRootDynS.getTotalTripCount()) {
+    DYN_S_DPRINTF(stepRootDynS.dynStreamId,
+                  "[Stepper] Wait For TripCount: %llu >= %llu.\n",
+                  dynGroup.nextElemIdx, dynGroup.totalTripCount);
+    return;
   }
 
   for (const auto &dynNestConfig : dynRegion.nestConfigs) {

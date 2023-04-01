@@ -71,6 +71,7 @@ public:
   size_t numPrefetched = 0;
   size_t numNDCed = 0;
   size_t numStepped = 0;
+  size_t numTotalTripCount = 0;
   size_t numUsed = 0;
   size_t numAliased = 0;
   size_t numFlushed = 0;

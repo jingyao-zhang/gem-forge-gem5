@@ -76,6 +76,7 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numPrefetched);
   dumpScalarIfNonZero(numNDCed);
   dumpScalar(numStepped);
+  dumpScalar(numTotalTripCount);
   dumpScalar(numUsed);
   dumpScalar(numAliased);
   dumpScalar(numFlushed);
@@ -146,7 +147,8 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpSingleAvgSample(remoteIndReqNoCInjectDelay);
   dumpSingleAvgSample(remoteToLocalAckNoCDelay);
 
-  dumpAvg(avgLength, numStepped, numConfigured);
+  dumpAvg(avgStepped, numStepped, numConfigured);
+  dumpAvg(avgLen, numTotalTripCount, numConfigured);
   dumpAvg(avgUsed, numUsed, numConfigured);
 
   dumpScalar(numCoreEarlyElement);
@@ -325,6 +327,7 @@ void StreamStatistic::clear() {
   this->numFetched = 0;
   this->numNDCed = 0;
   this->numStepped = 0;
+  this->numTotalTripCount = 0;
   this->numUsed = 0;
   this->numAliased = 0;
   this->numFlushed = 0;

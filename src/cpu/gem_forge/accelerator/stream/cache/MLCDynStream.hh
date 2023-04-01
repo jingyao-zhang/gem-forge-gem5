@@ -102,8 +102,10 @@ public:
   virtual bool hasTotalTripCount() const = 0;
   virtual int64_t getInnerTripCount() const = 0;
   virtual bool hasInnerTripCount() const = 0;
-  virtual void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr,
-                                 ruby::MachineType brokenMachineType) = 0;
+  virtual void breakOutLoop(int64_t totalTripCount) = 0;
+  bool hasLoopBound() const {
+    return this->config->loopBoundCallback != nullptr;
+  }
 
   bool isWaitingAck() const { return this->isWaiting == WaitType::Ack; }
   bool isWaitingData() const { return this->isWaiting == WaitType::Data; }
@@ -264,6 +266,18 @@ public:
    * Get the next credit element idx.
    */
   virtual uint64_t getNextCreditElemIdx() const = 0;
+
+  /**
+   * State to serialize the LLCStreamLoopBound results.
+   */
+  uint64_t nextLoopBoundDoneElemIdx = 0;
+  std::map<uint64_t, bool> loopBoundResults;
+  void receiveStreamLoopBoundResult(uint64_t elemIdx, bool brokenOut);
+  void advanceStreamLoopBound();
+
+  // This stream has been cut by LLCStreamBound.
+  bool loopBoundBrokenOut = false;
+
 };
 
 } // namespace gem5

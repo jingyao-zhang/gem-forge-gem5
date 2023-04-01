@@ -60,8 +60,7 @@ public:
   bool hasInnerTripCount() const override {
     return this->slicedStream.hasInnerTripCount();
   }
-  void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr,
-                         ruby::MachineType brokenMachineType) override;
+  void breakOutLoop(int64_t totalTripCount) override;
 
   void sample() const override;
 
@@ -86,12 +85,6 @@ protected:
   DynStreamSliceIdVec nextSegmentSliceIds;
   Addr tailPAddr;
   DynStreamSliceId tailSliceId;
-
-  // This stream has been cut by LLCStreamBound.
-  bool llcStreamLoopBoundCutted = false;
-  Addr llcStreamLoopBoundBrokenPAddr = 0;
-  ruby::MachineType llcStreamLoopBoundBrokenMachineType =
-      ruby::MachineType_NULL;
 
   struct LLCSegmentPosition {
     /**

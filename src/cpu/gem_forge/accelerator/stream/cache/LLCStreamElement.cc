@@ -173,6 +173,20 @@ void LLCStreamElement::setComputedValue(const StreamValue &value) {
   this->valueReadyCycle = this->mlcController->curCycle();
 }
 
+bool LLCStreamElement::isLastSlice(const DynStreamSliceId &sliceId) const {
+  int sliceOffset;
+  int elemOffset;
+  int overlapSize = this->computeOverlap(sliceId.vaddr, sliceId.getSize(),
+                                         sliceOffset, elemOffset);
+  assert(overlapSize > 0 && "Empty overlap.");
+  if (elemOffset + overlapSize == this->size) {
+    // This slice contains the last element byte.
+    return true;
+  } else {
+    return false;
+  }
+}
+
 int LLCStreamElement::computeOverlap(Addr rangeVAddr, int rangeSize,
                                      int &rangeOffset,
                                      int &elementOffset) const {

@@ -77,8 +77,7 @@ public:
   bool hasInnerTripCount() const override {
     return this->baseStream->hasInnerTripCount();
   }
-  void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr,
-                         ruby::MachineType brokenMachineType) override;
+  void breakOutLoop(int64_t totalTripCount) override;
   int getBaseStreamReuse() const { return this->baseStreamReuse; }
   int getBaseStreamSkip() const { return 0; }
 

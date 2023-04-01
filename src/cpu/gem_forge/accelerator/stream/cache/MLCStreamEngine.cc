@@ -232,15 +232,15 @@ bool MLCStreamEngine::isStreamRequest(const DynStreamSliceId &slice) {
     return false;
   }
   // So far just check if the target stream is configured here.
-  auto stream = this->strandManager->getStreamFromCoreSliceId(slice);
-  if (!stream) {
+  auto dynS = this->strandManager->getStreamFromCoreSliceId(slice);
+  if (!dynS) {
     return false;
   }
   // If this is a PseudoOffload, we do not treate it as stream request.
-  if (stream->getIsPseudoOffload()) {
+  if (dynS->getIsPseudoOffload()) {
     return false;
   }
-  if (slice.getStartIdx() < stream->getFirstFloatElemIdx()) {
+  if (slice.getStartIdx() < dynS->getFirstFloatElemIdx()) {
     return false;
   }
   return true;
@@ -428,15 +428,18 @@ void MLCStreamEngine::wakeup() {
   }
 }
 
-void MLCStreamEngine::receiveStreamTotalTripCount(
-    const DynStrandId &strandId, int64_t totalTripCount, Addr brokenPAddr,
-    ruby::MachineType brokenMachineType) {
+void MLCStreamEngine::receiveStreamLoopBound(const DynStrandId &strandId,
+                                             int64_t elemIdx, bool broken) {
   assert(strandId.totalStrands == 1 && "StreamLoopBound with Strand?");
-  auto dynS = this->getStreamFromStrandId(strandId);
-  if (!dynS) {
+  if (auto dynS = this->getStreamFromStrandId(strandId)) {
+    dynS->receiveStreamLoopBoundResult(elemIdx, broken);
+    return;
+  }
+
+  if (!this->endedStreamDynamicIds.count(strandId.dynStreamId)) {
+    // The MLCDynS may already ended.
     MLC_S_PANIC_NO_DUMP(strandId, "Failed to get MLC S for StreamLoopBound.");
   }
-  dynS->setTotalTripCount(totalTripCount, brokenPAddr, brokenMachineType);
 }
 
 void MLCStreamEngine::issueStreamDataToLLC(

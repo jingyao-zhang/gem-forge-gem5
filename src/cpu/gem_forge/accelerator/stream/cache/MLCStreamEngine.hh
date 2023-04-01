@@ -70,11 +70,10 @@ public:
   void receiveStreamNDCResponse(const ruby::ResponseMsg &msg);
 
   /**
-   * Receive a StreamLoopBound TotalTripCount.
+   * Receive a StreamLoopBound Result.
    */
-  void receiveStreamTotalTripCount(const DynStrandId &strandId,
-                                   int64_t totalTripCount, Addr brokenPAddr,
-                                   ruby::MachineType brokenMachineType);
+  void receiveStreamLoopBound(const DynStrandId &strandId, int64_t elemIdx,
+                              bool broken);
 
   /**
    * Issue a StreamData to LLC. Used to forwarding some reduction results from

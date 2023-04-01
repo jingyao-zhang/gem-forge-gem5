@@ -121,33 +121,33 @@ void LLCStreamRangeBuilder::tryBuildRange() {
 }
 
 void LLCStreamRangeBuilder::pushNextRangeTailElementIdx(
-    uint64_t nextRangeTailElementIdx) {
+    uint64_t nextRangeTailElemIdx) {
   /**
    * Due to multi-slice elements, it is possible that we have multiple same
-   * nextRangeTailElementIdx pushed. Handle this case by ensuring non-decreasing
+   * nextRangeTailElemIdx pushed. Handle this case by ensuring non-decreasing
    * property.
    */
-  if (nextRangeTailElementIdx == 0) {
+  if (nextRangeTailElemIdx == 0) {
     LLC_S_PANIC(this->stream->getDynStrandId(),
                 "[RangeBuilder] Zero NextRangeTailElementIdx.\n");
   }
-  if (this->prevNextRangeTailElementIdx > nextRangeTailElementIdx) {
+  if (this->prevNextRangeTailElementIdx > nextRangeTailElemIdx) {
     LLC_S_PANIC(this->stream->getDynStrandId(),
                 "[RangeBuilder] NextRangeTailElementIdx out-of-order %llu < "
                 "back %llu.",
-                nextRangeTailElementIdx, this->prevNextRangeTailElementIdx);
-  } else if (this->prevNextRangeTailElementIdx == nextRangeTailElementIdx) {
+                nextRangeTailElemIdx, this->prevNextRangeTailElementIdx);
+  } else if (this->prevNextRangeTailElementIdx == nextRangeTailElemIdx) {
     LLC_S_DPRINTF(this->stream->getDynStrandId(),
                   "[RangeBuilder] Ignore NextRangeTailElementIdx %llu == "
                   "PrevTailElementIdx %llu.",
-                  nextRangeTailElementIdx, this->prevNextRangeTailElementIdx);
+                  nextRangeTailElemIdx, this->prevNextRangeTailElementIdx);
     return;
   }
   LLC_S_DPRINTF(this->stream->getDynStrandId(),
                 "[RangeBuilder] NextRangeTailElementIdx %llu.\n",
-                nextRangeTailElementIdx);
-  this->nextRangeTailElementIdxQueue.push_back(nextRangeTailElementIdx);
-  this->prevNextRangeTailElementIdx = nextRangeTailElementIdx;
+                nextRangeTailElemIdx);
+  this->nextRangeTailElementIdxQueue.push_back(nextRangeTailElemIdx);
+  this->prevNextRangeTailElementIdx = nextRangeTailElemIdx;
 }
 
 void LLCStreamRangeBuilder::receiveLoopBoundRet(int64_t totalTripCount) {
@@ -168,5 +168,5 @@ void LLCStreamRangeBuilder::receiveLoopBoundRet(int64_t totalTripCount) {
       this->tryBuildRange();
     }
   }
-}} // namespace gem5
-
+}
+} // namespace gem5

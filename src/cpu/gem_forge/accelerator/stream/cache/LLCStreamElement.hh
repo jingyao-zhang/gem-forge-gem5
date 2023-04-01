@@ -118,6 +118,11 @@ public:
     assert(!this->computationDone && "Computaion already done.");
     this->computationDone = true;
   }
+  bool isLoopBoundDone() const { return this->loopBoundDone; }
+  void doneLoopBound() {
+    assert(!this->loopBoundDone && "LoopBound already done.");
+    this->loopBoundDone = true;
+  }
   bool isPredicatedOff() const { return this->state == State::PREDICATED_OFF; }
 
   StreamValue getValue(int offset = 0, int size = sizeof(StreamValue)) const;
@@ -143,6 +148,7 @@ public:
    */
   int computeOverlap(Addr rangeVAddr, int rangeSize, int &rangeOffset,
                      int &elementOffset) const;
+  bool isLastSlice(const DynStreamSliceId &sliceId) const;
   /**
    * @brief Compute the overlap for LoadComputeValue.
    *
@@ -239,6 +245,7 @@ private:
   bool computationVectorized = false;
   Cycles computationScheduledCycle = Cycles(0);
   bool computationDone = false;
+  bool loopBoundDone = false;
   static constexpr int MAX_SIZE = 128;
   std::array<uint64_t, MAX_SIZE> value;
 

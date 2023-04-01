@@ -159,11 +159,10 @@ MLCDynDirectStream::MLCDynDirectStream(
     if (dynCoreIS) {
       if (IS->isAtomicComputeStream() && dynIS->shouldRangeSync() &&
           dynCoreIS->shouldCoreSEIssue()) {
-        auto elementsPerSlice = this->slicedStream.getElemPerSlice();
+        auto elemPerSlice = this->slicedStream.getElemPerSlice();
         auto newMaxNumSlicesPerSegment =
-            std::max(1, static_cast<int>(16 / elementsPerSlice));
-        auto newMaxNumSlices =
-            std::max(1, static_cast<int>(16 / elementsPerSlice));
+            std::max(1, static_cast<int>(16 / elemPerSlice));
+        auto newMaxNumSlices = std::max(1, static_cast<int>(16 / elemPerSlice));
         MLC_S_DPRINTF(this->getDynStrandId(),
                       "Adjust MaxNumSlicesPerSegment %llu -> %llu, "
                       "MaxNumSlices %llu -> %llu.\n",
@@ -698,10 +697,11 @@ void MLCDynDirectStream::sendCreditToLLC(const LLCSegmentPosition &segment) {
   this->lastCreditPAddr = remotePAddr;
 
   this->nextCreditElemIdx = segment.endSliceId.getStartIdx();
-
   /**
    * Immediately initialize all the LLCStreamSlices and LLCStreamElements to
-   * simplify the implementation.
+   * simplify the implementation. This is needed here as the first slice
+   * is not initialized at LLCDynS, since LLCDynS is not created yet when we
+   * construct the MLCDynS and allocate the first slice.
    */
   auto llcS = LLCDynStream::getLLCStreamPanic(this->getDynStrandId());
   llcS->initDirectStreamSlicesUntil(segment.endSliceIdx);
@@ -1295,21 +1295,18 @@ void MLCDynDirectStream::receiveStreamDone(const DynStreamSliceId &sliceId) {
   }
 }
 
-void MLCDynDirectStream::setTotalTripCount(
-    int64_t totalTripCount, Addr brokenPAddr,
-    ruby::MachineType brokenMachineType) {
+void MLCDynDirectStream::breakOutLoop(int64_t totalTripCount) {
   /**
-   * If broken out by LoopBound, it will not migrate to the next place, so we
-   * remember the broken machine type.
+   * If broken out by LoopBound, it will not migrate to the next place,
+   * so we remember the broken machine type.
    */
-  MLC_S_DPRINTF_(
-      MLCStreamLoopBound, this->getDynStreamId(),
-      "[LoopBound] Set TotalTripCount %lld. BrokenPAddr %#x at %s.\n",
-      totalTripCount, brokenPAddr, brokenMachineType);
+  MLC_S_DPRINTF_(MLCStreamLoopBound, this->getDynStreamId(),
+                 "[LoopBound] Set TotalTripCount %lld.\n", totalTripCount);
   this->slicedStream.setTotalAndInnerTripCount(totalTripCount);
-  this->llcStreamLoopBoundCutted = true;
-  this->llcStreamLoopBoundBrokenPAddr = brokenPAddr;
-  this->llcStreamLoopBoundBrokenMachineType = brokenMachineType;
+  this->loopBoundBrokenOut = true;
+  for (auto dynIS : this->indirectStreams) {
+    dynIS->loopBoundBrokenOut = true;
+  }
 }
 
 std::pair<Addr, ruby::MachineType>
@@ -1319,7 +1316,9 @@ MLCDynDirectStream::getRemoteTailPAddrAndMachineType() const {
    * complicated with StreamLoopBound, as we may have allocated more
    * credits and the LLCStream may stop iterating before consuming all
    * of our credits.
-   * For such cutted streams, we directly query the LLCStream's location.
+   *
+   * For such cutted streams, we directly query the LLCStream's
+   * location.
    */
   if (this->config->disableMigration) {
     // Stays at the req. bank.
@@ -1327,9 +1326,21 @@ MLCDynDirectStream::getRemoteTailPAddrAndMachineType() const {
     auto endMachineType = ruby::MachineType_L2Cache;
     return std::make_pair(endPAddr, endMachineType);
   }
-  if (this->llcStreamLoopBoundCutted) {
-    return std::make_pair(this->llcStreamLoopBoundBrokenPAddr,
-                          this->llcStreamLoopBoundBrokenMachineType);
+  if (this->loopBoundBrokenOut) {
+
+    /**
+     * Magically get the current remote machine of the stream.
+     */
+    auto llcDynS = LLCDynStream::getLLCStreamPanic(this->getDynStrandId(),
+                                                   "GetRemoteTail");
+    auto llcCtrl = llcDynS->curOrNextRemoteCtrl();
+    auto llcMachineId = llcCtrl->getMachineID();
+
+    // The getAddressToOurLLC() is not working for Directory.
+    assert(llcMachineId.getType() == ruby::MachineType_L2Cache);
+
+    return std::make_pair(llcCtrl->getAddressToOurLLC(),
+                          llcMachineId.getType());
   } else {
 
     auto endPAddr = config->initPAddr;
@@ -1343,9 +1354,10 @@ MLCDynDirectStream::getRemoteTailPAddrAndMachineType() const {
 
       /**
        * We have introduced a tiny optimization in
-       * LLCStreamEngine::isNextElemHandledHere(). When the stream has reached
-       * the end, we do not bother to migrate them to the next bank. Therefore,
-       * here we need to adjust the endElemIdx by -1?
+       * LLCStreamEngine::isNextElemHandledHere(). When the
+       * stream has reached the end, we do not bother to migrate
+       * them to the next bank. Therefore, here we need to
+       * adjust the endElemIdx by -1?
        */
       if (this->hasTotalTripCount() &&
           endElemIdx == this->getTotalTripCount()) {
@@ -1382,7 +1394,8 @@ void MLCDynDirectStream::sample() const {
   // };
 
   // auto creditNotSentSlices =
-  // countSliceFromSegments(this->llcSegmentsAllocated); auto creditSentSlices =
+  // countSliceFromSegments(this->llcSegmentsAllocated); auto
+  // creditSentSlices =
   // countSliceFromSegments(this->llcSegments);
 
   // statistic.localCreditNotSentSlice.sample(creditNotSentSlices);

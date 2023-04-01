@@ -704,7 +704,7 @@ bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
    * Add UsedAffineIVS.
    */
   for (auto addrBaseIVAffineS : addrBaseIVAffineStreams) {
-    this->allocateAddUsedAffineIV(config, dynS, addrBaseIVAffineS);
+    this->addUsedAffineIV(config, dynS, addrBaseIVAffineS);
   }
 
   /**
@@ -962,7 +962,7 @@ void StreamFloatController::floatDirectStoreComputeOrUpdateStream(
   auto config = S->allocateCacheConfigureData(dynS->configSeqNum);
   for (auto valueBaseS : S->valueBaseStreams) {
     if (valueBaseS->isAffineIVStream()) {
-      this->allocateAddUsedAffineIV(config, dynS, valueBaseS);
+      this->addUsedAffineIV(config, dynS, valueBaseS);
       continue;
     }
     auto &valueBaseConfig = floatedMap.at(valueBaseS);
@@ -1139,7 +1139,7 @@ void StreamFloatController::floatDirectOrPtrChaseReduceStreams(
 
     // Add all the UsedAffineIVS.
     for (auto usedAffineIVS : usedAffineIVStreams) {
-      this->allocateAddUsedAffineIV(reductionConfig, dynS, usedAffineIVS);
+      this->addUsedAffineIV(reductionConfig, dynS, usedAffineIVS);
     }
   }
 }
@@ -1257,7 +1257,7 @@ void StreamFloatController::floatIndReduceStream(const Args &args,
    * Add UsedAffineIVS.
    */
   for (auto backBaseIVAffineS : backBaseIVAffineStreams) {
-    this->allocateAddUsedAffineIV(reduceConfig, dynS, backBaseIVAffineS);
+    this->addUsedAffineIV(reduceConfig, dynS, backBaseIVAffineS);
     StreamFloatPolicy::logS(*dynS)
         << "[Float] as IndReduce with BackBaseIVAffineS "
         << backBaseIVAffineS->getStreamName() << ".\n"
@@ -1393,39 +1393,95 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
   auto &dynRegion =
       se->regionController->getDynRegion(args.region.region(), args.seqNum);
 
-  /**
-   * Check that LoopBound's streams all offloaded.
-   */
   auto &dynBound = dynRegion.loopBound;
   auto &staticBound = dynRegion.staticRegion->loopBound;
+  if (!staticBound.boundFunc) {
+    return;
+  }
+
+  /**
+   * Check that LoopBound is dependent on one MemStream and maybe UsedAffineIVS.
+   */
+  std::vector<DynStream *> boundBaseMemStreams;
+  std::vector<DynStream *> boundBaseIVAffineStreams;
   for (auto S : staticBound.baseStreams) {
-    if (!args.floatedMap.count(S)) {
-      StreamFloatPolicy::logS(S->getDynStream(args.seqNum))
-          << "[Not Float] LoopBound base stream not floated.\n"
-          << std::flush;
-      S_DPRINTF(S, "LoopBound base stream not floated.\n");
+    auto &dynS = S->getDynStream(args.seqNum);
+    if (S->isPointerChaseIndVar()) {
+      StreamFloatPolicy::logS(dynS) << "[Not Float] LoopBound: BasePtrChaseS.\n"
+                                    << std::flush;
       return;
+    }
+    if (S->isReduction()) {
+      StreamFloatPolicy::logS(dynS) << "[Not Float] LoopBound: BaseReduceS.\n"
+                                    << std::flush;
+      return;
+    }
+    if (S->isMemStream()) {
+      if (!args.floatedMap.count(S)) {
+        StreamFloatPolicy::logS(dynS)
+            << "[Not Float] LoopBound: Unfloated BaseMemS.\n"
+            << std::flush;
+        return;
+      }
+      boundBaseMemStreams.push_back(&dynS);
+    } else {
+      boundBaseIVAffineStreams.push_back(&dynS);
     }
   }
 
   // For now, let's just support single BaseStream.
-  if (staticBound.baseStreams.size() != 1) {
-    SE_DPRINTF("Multiple (%lu) LoopBound base streams.\n",
-               staticBound.baseStreams.size());
+  StreamFloatPolicy::getLog() << "[LoopBound] BaseMemS: ";
+  for (auto dynS : boundBaseMemStreams) {
+    StreamFloatPolicy::logS(*dynS) << ' ';
+  }
+  StreamFloatPolicy::getLog() << '\n' << std::flush;
+  StreamFloatPolicy::getLog() << "[LoopBound] BaseIVAffineS: ";
+  for (auto dynS : boundBaseIVAffineStreams) {
+    StreamFloatPolicy::logS(*dynS) << ' ';
+  }
+  StreamFloatPolicy::getLog() << '\n' << std::flush;
+
+  if (boundBaseMemStreams.size() != 1) {
+    StreamFloatPolicy::getLog()
+        << "[Not Float] LoopBound: Not Single BaseMemS.\n"
+        << std::flush;
     return;
   }
 
-  auto baseS = *staticBound.baseStreams.begin();
-  auto &baseDynS = baseS->getDynStream(args.seqNum);
+  auto &baseDynS = *boundBaseMemStreams.front();
+  auto baseS = baseDynS.stream;
+
+  // Enforce that BaseIVAffineS is from the same loop.
+  for (auto baseIVAffineDynS : boundBaseIVAffineStreams) {
+    auto baseIVAffineS = baseIVAffineDynS->stream;
+    if (baseIVAffineS->getLoopLevel() != baseS->getLoopLevel() ||
+        baseIVAffineS->getConfigLoopLevel() != baseS->getConfigLoopLevel()) {
+      StreamFloatPolicy::logS(baseDynS)
+          << "[Not Float] LoopBound: Illegal BaseIVAffineS "
+          << baseIVAffineDynS->dynStreamId << "\n"
+          << std::flush;
+      return;
+    }
+  }
+
   auto &baseConfig = args.floatedMap.at(baseS);
   baseConfig->loopBoundFormalParams = dynBound.formalParams;
   baseConfig->loopBoundCallback = dynBound.boundFunc;
   baseConfig->loopBoundRet = staticBound.boundRet;
 
+  // Add the BaseAffineIVS as special edge and simple reuse/skip.
+  for (auto baseIVAffineDynS : boundBaseIVAffineStreams) {
+    int reuse = 1;
+    int skip = 0;
+    this->addUsedAffineIVWithReuseSkip(baseConfig, &baseDynS,
+                                       baseIVAffineDynS->stream, reuse, skip);
+  }
+
   // Remember that this bound is offloaded.
   dynBound.offloaded = true;
-  StreamFloatPolicy::logS(baseDynS) << "[LoopBound] Offloaded LoopBound.\n"
-                                    << std::flush;
+  StreamFloatPolicy::logS(baseDynS)
+      << "[Float] LoopBound for " << args.region.region() << ".\n"
+      << std::flush;
   SE_DPRINTF("[LoopBound] Offloaded LoopBound for %s.\n", args.region.region());
 }
 
@@ -1443,10 +1499,10 @@ void StreamFloatController::decideMLCBufferNumSlices(const Args &args) {
     /**
      * We observe that allowing too many credits for streams with indirect
      * streams is bad for performance. Here we limit that if it contains
-     * more than 2 indirect streams.
+     * more than 1 indirect streams, e.g. bfs_push, bfs_pull.
      */
     auto numChildren = this->getFloatChainChildrenSize(*config);
-    if (numChildren > 2) {
+    if (numChildren > 1) {
       config->mlcBufferNumSlices =
           this->se->myParams->mlc_ind_stream_buffer_init_num_entries;
     }
@@ -1623,13 +1679,20 @@ bool StreamFloatController::trySendMidwayFloat(SeqNumToPktMapIter iter) {
   return readyToFloat;
 }
 
-void StreamFloatController::allocateAddUsedAffineIV(
-    CacheStreamConfigureDataPtr &config, DynStream *dynS, Stream *affineIVS) {
+void StreamFloatController::addUsedAffineIV(CacheStreamConfigureDataPtr &config,
+                                            DynStream *dynS,
+                                            Stream *affineIVS) {
 
-  auto affineIVConfig =
-      affineIVS->allocateCacheConfigureDataForAffineIV(dynS->configSeqNum);
   auto reuse = dynS->getBaseElemReuseCount(affineIVS);
   auto skip = dynS->getBaseElemSkipCount(affineIVS);
+  this->addUsedAffineIVWithReuseSkip(config, dynS, affineIVS, reuse, skip);
+}
+
+void StreamFloatController::addUsedAffineIVWithReuseSkip(
+    CacheStreamConfigureDataPtr &config, DynStream *dynS, Stream *affineIVS,
+    int reuse, int skip) {
+  auto affineIVConfig =
+      affineIVS->allocateCacheConfigureDataForAffineIV(dynS->configSeqNum);
   DYN_S_DPRINTF(dynS->dynStreamId, "Add AffineIV %s R/S %d/%d.\n",
                 affineIVS->streamName, reuse, skip);
   config->addBaseAffineIV(affineIVConfig, reuse, skip);

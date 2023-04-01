@@ -154,10 +154,13 @@ private:
   bool isMidwayFloatReady(CacheStreamConfigureDataPtr &config);
 
   /**
-   * Allocate and add AffineIV Config.
+   * Add AffineIV Config.
    */
-  void allocateAddUsedAffineIV(CacheStreamConfigureDataPtr &config,
-                               DynStream *dynS, Stream *affineIVS);
+  void addUsedAffineIV(CacheStreamConfigureDataPtr &config, DynStream *dynS,
+                       Stream *affineIVS);
+  void addUsedAffineIVWithReuseSkip(CacheStreamConfigureDataPtr &config,
+                                    DynStream *dynS, Stream *affineIVS,
+                                    int reuse, int skip);
 };
 
 } // namespace gem5

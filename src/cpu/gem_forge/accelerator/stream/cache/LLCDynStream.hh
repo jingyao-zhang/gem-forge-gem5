@@ -149,6 +149,7 @@ public:
   bool isInnerLastElem(uint64_t elemIdx) const;
   bool isLastElem(uint64_t elemIdx) const;
   void setTotalTripCount(int64_t totalTripCount);
+  void breakOutLoop(int64_t totalTripCount);
 
 private:
   /**
@@ -235,14 +236,15 @@ public:
   bool isTerminated() const { return this->state == State::TERMINATED; }
   bool isRemoteConfigured() const { return this->state != State::INITIALIZED; }
 
-  void remoteConfigured(ruby::AbstractStreamAwareController *llcController);
-  void migratingStart();
-  void migratingDone(ruby::AbstractStreamAwareController *llcController);
+  void remoteConfigured(ruby::AbstractStreamAwareController *llcCtrl);
+  void migratingStart(ruby::AbstractStreamAwareController *nextLLCCtrl);
+  void migratingDone(ruby::AbstractStreamAwareController *llcCtrl);
 
   ruby::AbstractStreamAwareController *getLLCController() const {
     return this->llcController;
   }
   void setLLCController(ruby::AbstractStreamAwareController *llcController);
+  ruby::AbstractStreamAwareController *curOrNextRemoteCtrl() const;
 
   void terminate();
 
@@ -282,7 +284,7 @@ public:
   void tryComputeNextDirectReduceElem(LLCStreamEngine *se,
                                       const LLCStreamElementPtr &elem);
   void tryComputeNextIndirectReduceElem(LLCStreamEngine *se);
-  void completeFinalReduce(LLCStreamEngine *se);
+  void completeFinalReduce(LLCStreamEngine *se, uint64_t elemIdx);
   void completeIndReduceElem(LLCStreamEngine *se,
                              const LLCStreamElementPtr &elem);
 
@@ -313,6 +315,7 @@ private:
   State state = INITIALIZED;
   ruby::AbstractStreamAwareController *mlcController;
   ruby::AbstractStreamAwareController *llcController;
+  ruby::AbstractStreamAwareController *nextLLCController;
 
   int maxInflyRequests;
 
@@ -366,7 +369,7 @@ public:
   // Remember the last reduction element, avoid auto releasing.
   LLCStreamElementPtr lastReductionElement = nullptr;
   // Remember the last really computed indirect reduction element.
-  uint64_t lastComputedReduceElemIdx = 0;
+  uint64_t lastReducedElemIdx = 0;
 
   std::vector<CacheStreamConfigureData::DepEdge> sendToEdges;
   std::vector<CacheStreamConfigureData::DepEdge> sendToPUMEdges;
@@ -504,6 +507,7 @@ public:
 
 private:
   std::deque<LLCStreamSlicePtr> slices;
+  DynStreamSliceId lastAllocSliceId;
 
   /************************************************************************
    * State related to StreamCommit.
@@ -576,14 +580,11 @@ public:
   bool shouldIssueBeforeCommit() const;
   bool shouldIssueAfterCommit() const;
 
-  void evaluateLoopBound(LLCStreamEngine *se);
+  void evaluateLoopBound(LLCStreamEngine *se, uint64_t elemIdx);
   bool hasLoopBound() const {
     return this->configData->loopBoundCallback != nullptr;
   }
   bool isLoopBoundBrokenOut() const { return this->loopBoundBrokenOut; }
-  uint64_t getNextLoopBoundElemIdx() const {
-    return this->nextLoopBoundElementIdx;
-  }
   /**
    * Check that our LoopBound has been evaluted for this sliceId.
    * @return true if the slice is no longer needed for LoopBound.
@@ -591,9 +592,7 @@ public:
   bool isSliceDoneForLoopBound(const DynStreamSliceId &sliceId) const;
 
 private:
-  uint64_t nextLoopBoundElementIdx = 0;
   bool loopBoundBrokenOut = false;
-  Addr loopBoundBrokenPAddr = 0;
 
 public:
   /**

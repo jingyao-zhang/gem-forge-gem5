@@ -28,6 +28,7 @@
 #include "debug/LLCRubyStreamReduce.hh"
 #include "debug/LLCRubyStreamStore.hh"
 #include "debug/LLCStreamEngineWake.hh"
+#include "debug/LLCStreamLoopBound.hh"
 #include "debug/LLCStreamPUM.hh"
 #include "debug/LLCStreamPredicate.hh"
 #include "debug/LLCStreamSample.hh"
@@ -543,12 +544,11 @@ void LLCStreamEngine::receiveStreamData(
     }
   }
 
-  // Evaluate LoopBound.
-  dynS->evaluateLoopBound(this);
-
-  // Evaluate Predicate.
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
+    // Evaluate Predicate.
     dynS->evaluatePredication(this, idx);
+    // Evaluate LoopBound.
+    dynS->evaluateLoopBound(this, idx);
   }
 
   if (!dynS->getIndStreams().empty()) {
@@ -760,7 +760,7 @@ bool LLCStreamEngine::canMigrateStream(LLCDynStream *dynS) const {
   if (this->isNextElemHandledHere(dynS)) {
     return false;
   }
-  if (dynS->hasLoopBound() && dynS->isLoopBoundBrokenOut()) {
+  if (dynS->isLoopBoundBrokenOut()) {
     return false;
   }
   /**
@@ -789,15 +789,20 @@ bool LLCStreamEngine::canMigrateStream(LLCDynStream *dynS) const {
     if (dynS->hasLoopBound()) {
       /**
        * We need to check that all loop bound has been evaluated here.
+       * For now -- we check all elems before nextAllocElemIdx has been
+       * evaluated for LoopBound.
        */
       const auto &nextAllocSliceId = dynS->peekNextAllocSliceId();
-      auto nextLoopBoundElemIdx = dynS->getNextLoopBoundElemIdx();
-      if (nextLoopBoundElemIdx < nextAllocSliceId.getStartIdx()) {
-        LLC_S_DPRINTF(
-            dynS->getDynStrandId(),
-            "[Delay Migrate] NextLoopBoundElemIdx %lu NextAllocSliceId %s.\n",
-            nextLoopBoundElemIdx, nextAllocSliceId);
-        return false;
+      auto nextAllocElemIdx = nextAllocSliceId.getStartIdx();
+      for (const auto &idxElem : dynS->idxToElementMap) {
+        const auto &elemIdx = idxElem.first;
+        const auto &elem = idxElem.second;
+        if (elemIdx < nextAllocElemIdx && !elem->isLoopBoundDone()) {
+          LLC_SE_ELEM_DPRINTF_(LLCStreamLoopBound, elem,
+                               "[Delay Migrate] NextAllocSliceId %s.\n",
+                               nextAllocSliceId);
+          return false;
+        }
       }
     }
     if (dynS->hasDepIndElemReadyToIssue()) {
@@ -2870,14 +2875,11 @@ bool LLCStreamEngine::tryFinishPUMPrefetchStream(
   return false;
 }
 
-void LLCStreamEngine::sendOffloadedLoopBoundRetToMLC(LLCDynStreamPtr stream,
-                                                     uint64_t totalTripCount,
-                                                     Addr brokenPAddr) {
+void LLCStreamEngine::sendLoopBoundRetToMLC(LLCDynStreamPtr stream,
+                                            uint64_t elemIdx, bool broken) {
   auto mlcSE = stream->getMLCController()->getMLCStreamEngine();
   assert(mlcSE && "Missing MLC SE.");
-  mlcSE->receiveStreamTotalTripCount(
-      stream->getDynStrandId(), totalTripCount, brokenPAddr,
-      this->controller->getMachineID().getType());
+  mlcSE->receiveStreamLoopBound(stream->getDynStrandId(), elemIdx, broken);
 }
 
 void LLCStreamEngine::findMigratingStreams() {
@@ -2970,7 +2972,9 @@ void LLCStreamEngine::migrateStream(LLCDynStream *stream) {
 
   this->removeStreamFromMulticastTable(stream);
 
-  stream->migratingStart();
+  auto addrCtrl =
+      ruby::AbstractStreamAwareController::getController(addrMachineId);
+  stream->migratingStart(addrCtrl);
 }
 
 void LLCStreamEngine::migrateStreamCommit(LLCDynStream *stream, Addr paddr,
@@ -3396,11 +3400,11 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
   if (!IS->idxToElementMap.count(indElemIdx)) {
 
     if (IS->getStaticS()->isReduction() &&
-        IS->lastComputedReduceElemIdx >= indElemIdx) {
+        IS->lastReducedElemIdx >= indElemIdx) {
       LLC_S_DPRINTF(
           IS->getDynStrandId(),
           "[TriggerInd] Skip ReduceS LastComputedElemIdx %lu > %lu.\n",
-          IS->lastComputedReduceElemIdx, indElemIdx);
+          IS->lastReducedElemIdx, indElemIdx);
       return;
     }
 
@@ -3725,8 +3729,9 @@ LLCStreamEngine::releaseSlice(SliceList::iterator sliceIter) {
          * not seen all the slices and may falsely return true for
          * areSlicesReleased().
          * TODO: Handle this multi-line elements more elegantly.
+         * TODO: I don't think this applies to IndS.
          */
-        if (dynS->idxToElementMap.size() > 2 ||
+        if (dynS->isIndirect() || dynS->idxToElementMap.size() > 2 ||
             (dynS->hasTotalTripCount() &&
              elem->idx + 2 >= dynS->getTotalTripCount())) {
           dynS->eraseElem(elemIter);
@@ -3799,16 +3804,16 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
    */
   if (!dynS->isSliceDoneForLoopBound(sliceId)) {
     // We still need this. Check if we should try to evaluate LoopBound.
-    auto nextLoopBoundElemIdx = dynS->getNextLoopBoundElemIdx();
-    if (nextLoopBoundElemIdx >= sliceId.getStartIdx() &&
-        nextLoopBoundElemIdx < sliceId.getEndIdx()) {
-      auto element = dynS->getElemPanic(nextLoopBoundElemIdx,
-                                        "Check element for LoopBound.");
+    for (auto elemIdx = sliceId.getStartIdx(); elemIdx < sliceId.getEndIdx();
+         ++elemIdx) {
+      auto elem = dynS->getElemPanic(elemIdx, "Check elem for LoopBound.");
+      if (elem->isLoopBoundDone()) {
+        continue;
+      }
       // This slice contains the last element byte.
-      assert(element->isReady() && "Element should be ready for LoopBound.");
-      dynS->evaluateLoopBound(this);
-      assert(dynS->getNextLoopBoundElemIdx() == nextLoopBoundElemIdx + 1 &&
-             "LoopBound should make progress.");
+      assert(elem->isReady() && "Elem should be ready for LoopBound.");
+      dynS->evaluateLoopBound(this, elemIdx);
+      assert(elem->isLoopBoundDone() && "LoopBound should make progress.");
     }
     return ++sliceIter;
   }

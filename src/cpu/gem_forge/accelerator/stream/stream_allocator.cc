@@ -29,7 +29,7 @@ bool StreamRegionController::canSkipAllocatingDynS(StaticRegion &staticRegion,
   const auto &dynRegion =
       this->getDynRegion("CanSkipAllocatingDynS", stepRootDynS.configSeqNum);
   if (dynRegion.canSkipToEnd && !stepRootDynS.hasTotalTripCount()) {
-    auto firstFloatElemIdx = stepRootDynS.getFirstFloatElemIdx();
+    auto firstFloatElemIdx = stepRootDynS.getFirstFloatElemIdxOfStepGroup();
     auto nextElemIdx = stepRootDynS.FIFOIdx.entryIdx;
     if (nextElemIdx > firstFloatElemIdx) {
       DYN_S_DPRINTF(stepRootDynS.dynStreamId,
@@ -314,7 +314,8 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
          * 2. If FirstFloatElemIdx > 0, this is MidwayFloat. Do not
          * allocate FirstFloatElemIdx + 1.
          */
-        auto firstFloatElemIdx = allocatingStepRootDynS->getFirstFloatElemIdx();
+        auto firstFloatElemIdx =
+            allocatingStepRootDynS->getFirstFloatElemIdxOfStepGroup();
         auto allocUntilElemIdx =
             (firstFloatElemIdx == 0) ? 0 : (firstFloatElemIdx + 1);
         auto nextElemIdx = allocatingStepRootDynS->FIFOIdx.entryIdx;

@@ -110,6 +110,13 @@ void DynStream::commitStreamEnd() {
   auto &statistic = this->stream->statistic;
   statistic.numCycle += endCycle - this->configCycle;
 
+  if (this->hasTotalTripCount()) {
+    statistic.numTotalTripCount += this->getTotalTripCount();
+  } else if (this->FIFOIdx.entryIdx > 0) {
+    // We have allocated something.
+    statistic.numTotalTripCount += this->FIFOIdx.entryIdx - 1;
+  }
+
   // Update float stats.
   if (this->isFloatedToCache()) {
     statistic.numFloated++;
@@ -1012,6 +1019,18 @@ bool DynStream::shouldRangeSync() const {
     return true;
   }
   return false;
+}
+
+uint64_t DynStream::getFirstFloatElemIdxOfStepGroup() const {
+  if (this->isFloatedToCache()) {
+    return this->getFirstFloatElemIdx();
+  }
+  for (const auto &stepDynS : this->stepDynStreams) {
+    if (stepDynS->isFloatedToCache()) {
+      return stepDynS->getFirstFloatElemIdx();
+    }
+  }
+  DYN_S_PANIC(this->dynStreamId, "StepGroup not Floated.");
 }
 
 StreamElement *DynStream::getElemByIdx(uint64_t elementIdx) const {

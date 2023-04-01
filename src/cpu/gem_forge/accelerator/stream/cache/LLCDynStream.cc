@@ -75,7 +75,6 @@ LLCDynStream::LLCDynStream(ruby::AbstractStreamAwareController *_mlcController,
     this->nextInitStrandElemIdx = firstFloatElemIdx;
     this->nextAllocElemIdx = firstFloatElemIdx;
     this->nextIssueElemIdx = firstFloatElemIdx;
-    this->nextLoopBoundElementIdx = firstFloatElemIdx;
   }
 
   // Extract predicated stream information.
@@ -125,9 +124,10 @@ LLCDynStream::LLCDynStream(ruby::AbstractStreamAwareController *_mlcController,
    */
   this->totalTripCount = this->slicedStream.getTotalTripCount();
   this->innerTripCount = this->slicedStream.getInnerTripCount();
-  LLC_S_DPRINTF(this->getDynStrandId(),
-                "Created with TotalTripCount %ld InnerTripCount %ld.\n",
-                this->totalTripCount, this->innerTripCount);
+  LLC_S_DPRINTF(
+      this->getDynStrandId(),
+      "Created with TotalTripCount %ld InnerTripCount %ld RangeSync %d.\n",
+      this->totalTripCount, this->innerTripCount, this->shouldRangeSync());
 
   assert(GlobalLLCDynStreamMap.emplace(this->getDynStrandId(), this).second);
   this->sanityCheckStreamLife();
@@ -195,6 +195,23 @@ void LLCDynStream::setTotalTripCount(int64_t totalTripCount) {
   }
 }
 
+void LLCDynStream::breakOutLoop(int64_t totalTripCount) {
+  LLC_S_DPRINTF_(LLCStreamLoopBound, this->getDynStrandId(),
+                 "[LoopBound] Break out at %ld.\n", totalTripCount);
+  this->loopBoundBrokenOut = true;
+  this->setTotalTripCount(totalTripCount);
+
+  // Handle final value for reduction.
+  for (auto dynIS : this->allIndirectStreams) {
+    if (dynIS->getStaticS()->isReduction()) {
+      if (dynIS->lastReducedElemIdx >= totalTripCount) {
+        auto se = this->getLLCController()->getLLCStreamEngine();
+        dynIS->completeFinalReduce(se, totalTripCount);
+      }
+    }
+  }
+}
+
 ruby::MachineType
 LLCDynStream::getFloatMachineTypeAtElem(uint64_t elementIdx) const {
   if (this->isOneIterationBehind()) {
@@ -245,28 +262,34 @@ void LLCDynStream::addCredit(uint64_t n) {
   if (!this->isIndirect()) {
     auto sliceIdx = this->nextAllocSliceIdx;
     auto sliceIter = this->slices.begin();
+    auto tailElemIdx = 0;
     while (sliceIdx + 1 < this->creditedSliceIdx &&
            sliceIter != this->slices.end()) {
+      if (sliceIdx + 1 == this->creditedSliceIdx) {
+        tailElemIdx = (*sliceIter)->getSliceId().getEndIdx();
+        break;
+      }
       ++sliceIter;
       ++sliceIdx;
     }
     if (sliceIter == this->slices.end()) {
       LLC_S_PANIC(this->getDynStrandId(),
-                  "Missing Slice for RangeBuilder. Credited %llu.",
-                  this->creditedSliceIdx);
+                  "Missing Slice for RangeBuilder. Credited %lu Alloc %lu "
+                  "NewCredit %lu.",
+                  this->creditedSliceIdx, this->nextAllocSliceIdx, n);
     }
-    auto &tailSlice = *sliceIter;
-    auto tailElementIdx = tailSlice->getSliceId().getEndIdx();
-    this->addNextRangeTailElementIdx(tailElementIdx);
+    LLC_S_DPRINTF(this->getDynStrandId(),
+                  "[RangeSync] Add RangeTailElem %lu.\n", tailElemIdx);
+    this->addNextRangeTailElementIdx(tailElemIdx);
   }
 }
 
 void LLCDynStream::addNextRangeTailElementIdx(uint64_t rangeTailElementIdx) {
   if (this->shouldRangeSync()) {
     this->rangeBuilder->pushNextRangeTailElementIdx(rangeTailElementIdx);
-  }
-  for (auto dynIS : this->getIndStreams()) {
-    dynIS->rangeBuilder->pushNextRangeTailElementIdx(rangeTailElementIdx);
+    for (auto dynIS : this->getIndStreams()) {
+      dynIS->rangeBuilder->pushNextRangeTailElementIdx(rangeTailElementIdx);
+    }
   }
 }
 
@@ -422,19 +445,19 @@ LLCStreamSlicePtr LLCDynStream::allocNextSlice(LLCStreamEngine *se) {
     const auto &sliceId = slice->getSliceId();
     // Add the addr to the RangeBuilder if we have vaddr here.
     if (this->shouldRangeSync()) {
-      for (auto elementIdx = sliceId.getStartIdx();
-           elementIdx < sliceId.getEndIdx(); ++elementIdx) {
-        auto element = this->getElemPanic(elementIdx, "AllocNextSlice.");
-        if (element->vaddr != 0) {
+      for (auto elemIdx = sliceId.getStartIdx(); elemIdx < sliceId.getEndIdx();
+           ++elemIdx) {
+        auto elem = this->getElemPanic(elemIdx, "AllocNextSlice.");
+        if (elem->vaddr != 0) {
           Addr paddr = 0;
-          if (!this->translateToPAddr(element->vaddr, paddr)) {
+          if (!this->translateToPAddr(elem->vaddr, paddr)) {
             LLC_S_PANIC(this->getDynStrandId(),
-                        "Translation fault on element %llu.", elementIdx);
+                        "Translation fault on element %llu.", elemIdx);
           }
-          if (!element->hasRangeBuilt()) {
-            this->rangeBuilder->addElementAddress(elementIdx, element->vaddr,
-                                                  paddr, element->size);
-            element->setRangeBuilt();
+          if (!elem->hasRangeBuilt()) {
+            this->rangeBuilder->addElementAddress(elemIdx, elem->vaddr, paddr,
+                                                  elem->size);
+            elem->setRangeBuilt();
           }
         }
       }
@@ -443,6 +466,7 @@ LLCStreamSlicePtr LLCDynStream::allocNextSlice(LLCStreamEngine *se) {
                       this->nextAllocSliceIdx, slice->getSliceId().vaddr);
     this->invokeSliceAllocCallbacks(this->nextAllocSliceIdx);
     this->nextAllocSliceIdx++;
+    this->lastAllocSliceId = sliceId;
     // Slices allocated are now handled by LLCStreamEngine.
     this->slices.pop_front();
 
@@ -501,11 +525,10 @@ void LLCDynStream::initDirectStreamSlicesUntil(uint64_t lastSliceIdx) {
     }
 
     // Remember the mapping from elements to slices.
-    for (auto elementIdx = sliceId.getStartIdx(),
-              endElementIdx = sliceId.getEndIdx();
-         elementIdx < endElementIdx; ++elementIdx) {
-      auto element = this->getElemPanic(elementIdx, "InitDirectSlice");
-      element->addSlice(slice);
+    for (auto elemIdx = sliceId.getStartIdx(); elemIdx < sliceId.getEndIdx();
+         ++elemIdx) {
+      auto elem = this->getElemPanic(elemIdx, "InitDirectSlice");
+      elem->addSlice(slice);
     }
 
     // Push into our queue.
@@ -739,7 +762,7 @@ void LLCDynStream::initNextElem(Addr vaddr) {
           firstStreamElemIdx, 0, size, false /* isNDCElement */);
       this->lastReductionElement->setValue(
           this->configData->reductionInitValue);
-      this->lastComputedReduceElemIdx = firstStreamElemIdx;
+      this->lastReducedElemIdx = firstStreamElemIdx;
 
       // Also add the first element to the map.
       this->idxToElementMap.emplace(firstStreamElemIdx,
@@ -884,6 +907,22 @@ void LLCDynStream::eraseElem(IdxToElementMapT::iterator elemIter) {
                       this->idxToElementMap.size() - 1,
                       LLCStreamElement::getAliveElems());
   this->getStaticS()->incrementOffloadedStepped();
+  if (this->hasLoopBound() && !elem->isLoopBoundDone()) {
+    /**
+     * We erased an element without LoopBound evaluated.
+     * The only case should be that we are over the TotalTripCount after some
+     * previous element breaks out the loop.
+     */
+    if (!this->hasTotalTripCount()) {
+      LLC_SE_ELEM_PANIC(
+          elem, "[LoopBound] Erased wo. LoopBoundDone. No TotalTripCount.");
+    }
+    if (elem->idx < this->getTotalTripCount()) {
+      LLC_SE_ELEM_PANIC(
+          elem, "[LoopBound] Erased wo. LoopBoundDone < TotalTripCount %lu.",
+          this->getTotalTripCount());
+    }
+  }
   /**
    * Right now each Element has a shared_ptr to the base element. However,
    * this forms a long chain of ReduceElem, and consumes crazy amount of
@@ -1073,11 +1112,14 @@ void LLCDynStream::remoteConfigured(
   }
 }
 
-void LLCDynStream::migratingStart() {
+void LLCDynStream::migratingStart(
+    ruby::AbstractStreamAwareController *nextLLCCtrl) {
   this->setState(State::MIGRATING);
+  this->nextLLCController = nextLLCCtrl;
   // Recursively set for all IndS.
   for (auto IS : this->getAllIndStreams()) {
     IS->setState(State::MIGRATING);
+    IS->nextLLCController = nextLLCCtrl;
   }
   this->prevMigratedCycle = this->curCycle();
   this->traceEvent(::LLVM::TDG::StreamFloatEvent::MIGRATE_OUT);
@@ -1364,6 +1406,16 @@ const char *LLCDynStream::curRemoteMachineType() const {
   return "XXX";
 }
 
+ruby::AbstractStreamAwareController *LLCDynStream::curOrNextRemoteCtrl() const {
+  if (this->state == State::MIGRATING) {
+    assert(this->nextLLCController);
+    return this->nextLLCController;
+  } else {
+    assert(this->llcController);
+    return this->llcController;
+  }
+}
+
 bool LLCDynStream::hasComputation() const {
   auto S = this->getStaticS();
   return S->isReduction() || S->isPointerChaseIndVar() ||
@@ -1555,22 +1607,20 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
       /**
        * If this is DirectReduceS, check and schedule the next element.
        */
-      if (this->lastComputedReduceElemIdx + 1 != elem->idx) {
+      if (this->lastReducedElemIdx + 1 != elem->idx) {
         LLC_S_PANIC(this->getDynStrandId(),
                     "[DirectReduce] Reduction not in order.\n");
       }
-      this->lastComputedReduceElemIdx++;
+      this->lastReducedElemIdx++;
 
       // Trigger indirect elements.
       se->triggerIndElems(this, elem);
-    }
 
-    /**
-     * If the last reduction element is ready, we send this back to the core.
-     */
-    if (this->isInnerLastElem(this->lastComputedReduceElemIdx) ||
-        this->isLastElem(this->lastComputedReduceElemIdx)) {
-      this->completeFinalReduce(se);
+      // If the last reduction element is ready, we send this back to the core.
+      if (this->isInnerLastElem(this->lastReducedElemIdx) ||
+          this->isLastElem(this->lastReducedElemIdx)) {
+        this->completeFinalReduce(se, this->lastReducedElemIdx);
+      }
     }
 
     /**
@@ -1650,47 +1700,58 @@ void LLCDynStream::tryComputeNextIndirectReduceElem(LLCStreamEngine *se) {
    */
   LLC_S_DPRINTF_(
       LLCRubyStreamReduce, this->getDynStrandId(),
-      "[IndReduce] Start real computation from LastComputedElem %llu.\n",
-      this->lastComputedReduceElemIdx);
-  assert(this->hasTotalTripCount() && "Missing TotalTripCount for IndReduce.");
-  while (this->lastComputedReduceElemIdx < this->getTotalTripCount()) {
-    auto nextComputingElemIdx = this->lastComputedReduceElemIdx + 1;
-    auto nextComputingElem = this->getElem(nextComputingElemIdx);
-    if (!nextComputingElem) {
-      LLC_S_DPRINTF_(LLCRubyStreamReduce, this->getDynStrandId(),
-                     "[IndReduce] Missing NextComputingElem %llu. Break.\n",
-                     nextComputingElemIdx);
+      "[IndReduce] Start real computation from LastReducedElem %llu.\n",
+      this->lastReducedElemIdx);
+  while (true) {
+    auto reduceElemIdx = this->lastReducedElemIdx + 1;
+    if (this->hasTotalTripCount() &&
+        reduceElemIdx > this->getTotalTripCount()) {
+      LLC_S_DPRINTF_(
+          LLCRubyStreamReduce, this->getDynStrandId(),
+          "[IndReduce] NextReduceElem %llu > TripCount %ld. Break.\n",
+          reduceElemIdx, this->getTotalTripCount());
       break;
     }
-    if (!nextComputingElem->isComputationDone()) {
+    auto reduceElem = this->getElem(reduceElemIdx);
+    if (!reduceElem) {
       LLC_S_DPRINTF_(LLCRubyStreamReduce, this->getDynStrandId(),
-                     "[IndReduce] NextComputingElem %llu not done. Break.\n",
-                     nextComputingElemIdx);
+                     "[IndReduce] Missing NextReduceElem %llu. Break.\n",
+                     reduceElemIdx);
+      break;
+    }
+    if (!reduceElem->isComputationDone()) {
+      LLC_S_DPRINTF_(LLCRubyStreamReduce, this->getDynStrandId(),
+                     "[IndReduce] NextReduceElem %llu not done. Break.\n",
+                     reduceElemIdx);
       break;
     }
     // Really do the computation.
     LLC_S_DPRINTF_(LLCRubyStreamReduce, this->getDynStrandId(),
-                   "[IndReduce] Really computed NextComputingElem %llu.\n",
-                   nextComputingElemIdx);
-    auto result = this->computeElemValue(nextComputingElem);
-    nextComputingElem->setValue(result);
-    this->lastComputedReduceElemIdx++;
+                   "[IndReduce] Really computed %llu.\n", reduceElemIdx);
+    auto result = this->computeElemValue(reduceElem);
+    reduceElem->setValue(result);
+    this->lastReducedElemIdx++;
+
+    // Try to send back the final reduced value.
+    if (this->isLastElem(reduceElemIdx)) {
+      this->completeFinalReduce(se, reduceElemIdx);
+    }
   }
 }
 
-void LLCDynStream::completeFinalReduce(LLCStreamEngine *se) {
+void LLCDynStream::completeFinalReduce(LLCStreamEngine *se, uint64_t elemIdx) {
 
   // This is the last reduction of one inner loop.
   auto S = this->getStaticS();
-  auto finalReduceElem = this->getElemPanic(this->lastComputedReduceElemIdx,
-                                            "Return FinalReductionValue.");
+  auto finalReduceElem =
+      this->getElemPanic(elemIdx, "Return FinalReductionValue.");
 
   DynStreamSliceId sliceId;
   sliceId.vaddr = 0;
   sliceId.size = finalReduceElem->size;
   sliceId.getDynStrandId() = this->getDynStrandId();
-  sliceId.getStartIdx() = this->lastComputedReduceElemIdx;
-  sliceId.getEndIdx() = this->lastComputedReduceElemIdx + 1;
+  sliceId.getStartIdx() = elemIdx;
+  sliceId.getEndIdx() = elemIdx + 1;
   auto finalReductionValue = finalReduceElem->getValueByStreamId(S->staticId);
 
   Addr paddrLine = 0;
@@ -1987,34 +2048,34 @@ void LLCDynStream::evaluatePredication(LLCStreamEngine *se, uint64_t elemIdx) {
   elem->setPredValue(predRet);
 }
 
-void LLCDynStream::evaluateLoopBound(LLCStreamEngine *se) {
+void LLCDynStream::evaluateLoopBound(LLCStreamEngine *se, uint64_t elemIdx) {
   if (!this->hasLoopBound()) {
     return;
   }
-  if (this->loopBoundBrokenOut) {
-    return;
-  }
 
-  auto elem = this->getElem(this->nextLoopBoundElementIdx);
+  auto elem = this->getElem(elemIdx);
   if (!elem) {
-    if (this->isElemReleased(this->nextLoopBoundElementIdx)) {
-      LLC_S_PANIC(this->getDynStrandId(),
-                  "[LLCLoopBound] NextLoopBoundElement %llu released.",
-                  this->nextLoopBoundElementIdx);
+    if (this->isElemReleased(elemIdx)) {
+      LLC_S_PANIC(this->getDynStrandId(), "[LLCLoopBound] Elem %llu released.",
+                  elemIdx);
     } else {
       // Not allocated yet.
       return;
     }
   }
+  if (elem->isLoopBoundDone()) {
+    LLC_SE_ELEM_DPRINTF_(LLCStreamLoopBound, elem,
+                         "[LLCLoopBound] Already done.\n");
+    return;
+  }
   if (!elem->isReady()) {
-    LLC_S_DPRINTF_(LLCStreamLoopBound, this->getDynStrandId(),
-                   "[LLCLoopBound] NextLoopBoundElement %llu not ready.\n",
-                   this->nextLoopBoundElementIdx);
+    LLC_SE_ELEM_DPRINTF_(LLCStreamLoopBound, elem,
+                         "[LLCLoopBound] not ready.\n");
     return;
   }
 
   auto getStreamValue = [&elem](uint64_t streamId) -> StreamValue {
-    return elem->getValueByStreamId(streamId);
+    return elem->getBaseOrMyStreamValue(streamId);
   };
   auto loopBoundActualParams = convertFormalParamToParam(
       this->configData->loopBoundFormalParams, getStreamValue);
@@ -2022,38 +2083,26 @@ void LLCDynStream::evaluateLoopBound(LLCStreamEngine *se) {
       this->configData->loopBoundCallback->invoke(loopBoundActualParams)
           .front();
 
-  this->nextLoopBoundElementIdx++;
+  elem->doneLoopBound();
+
   if (loopBoundRet == this->configData->loopBoundRet) {
     /**
      * We should break.
      * So far we just magically set TotalTripCount for Core/MLC/LLC.
      * TODO: Handle this in a more realistic way.
      */
-    LLC_S_DPRINTF_(LLCStreamLoopBound, this->getDynStrandId(),
-                   "[LLCLoopBound] Break (%d == %d) TripCount %llu.\n",
-                   loopBoundRet, this->configData->loopBoundRet,
-                   this->nextLoopBoundElementIdx);
+    auto tripCount = elemIdx;
+    LLC_SE_ELEM_DPRINTF_(LLCStreamLoopBound, elem,
+                         "[LLCLoopBound] Break (%d == %d) TripCount %llu.\n",
+                         loopBoundRet, this->configData->loopBoundRet,
+                         tripCount);
 
-    Addr loopBoundBrokenPAddr;
-    if (!this->translateToPAddr(elem->vaddr, loopBoundBrokenPAddr)) {
-      LLC_S_PANIC(this->getDynStrandId(),
-                  "[LLCLoopBound] BrokenOut Element VAddr %#x Faulted.",
-                  elem->vaddr);
+    se->sendLoopBoundRetToMLC(this, elemIdx, true /* broken */);
+    if (this->rootStream) {
+      this->loopBoundBrokenOut = true;
+    } else {
+      this->loopBoundBrokenOut = true;
     }
-
-    this->setTotalTripCount(this->nextLoopBoundElementIdx);
-
-    // Also set the MLCStream.
-    se->sendOffloadedLoopBoundRetToMLC(this, this->nextLoopBoundElementIdx,
-                                       loopBoundBrokenPAddr);
-
-    // Also set the core.
-    this->getStaticS()->getSE()->receiveOffloadedLoopBoundRet(
-        this->getDynStreamId(), this->nextLoopBoundElementIdx,
-        true /* BrokenOut */);
-
-    this->loopBoundBrokenOut = true;
-    this->loopBoundBrokenPAddr = loopBoundBrokenPAddr;
 
   } else {
     /**
@@ -2064,13 +2113,10 @@ void LLCDynStream::evaluateLoopBound(LLCStreamEngine *se) {
      * after we determine the TotalTripCount, here we also notify
      * the core SE that you can step this "fake" element.
      */
-    LLC_S_DPRINTF_(LLCStreamLoopBound, this->getDynStrandId(),
-                   "[LLCLoopBound] Continue (%d != %d) Element %llu.\n",
-                   loopBoundRet, this->configData->loopBoundRet,
-                   this->nextLoopBoundElementIdx);
-    this->getStaticS()->getSE()->receiveOffloadedLoopBoundRet(
-        this->getDynStreamId(), this->nextLoopBoundElementIdx,
-        false /* BrokenOut */);
+    LLC_SE_ELEM_DPRINTF_(LLCStreamLoopBound, elem,
+                         "[LLCLoopBound] Continue (%d != %d).\n", loopBoundRet,
+                         this->configData->loopBoundRet);
+    se->sendLoopBoundRetToMLC(this, elemIdx, false /* broken */);
   }
 }
 
@@ -2085,27 +2131,19 @@ bool LLCDynStream::isSliceDoneForLoopBound(
     return true;
   }
 
-  auto nextLoopBoundElemIdx = this->getNextLoopBoundElemIdx();
-  if (nextLoopBoundElemIdx < sliceId.getStartIdx()) {
-    // We are still waiting for some previous slice, not done.
-    return false;
-  }
-  if (nextLoopBoundElemIdx < sliceId.getEndIdx()) {
+  for (auto elemIdx = sliceId.getStartIdx(); elemIdx < sliceId.getEndIdx();
+       ++elemIdx) {
     /**
      * It is possible that we need to evaluate LoopBound for this slice.
      * Due to multi-line elements, we check that this slice completes the
      * element, i.e. it contains the last byte of this element.
      * In such case, we evalute the LoopBound and not release the slice.
      */
-    auto element = this->getElemPanic(nextLoopBoundElemIdx,
-                                      "Check element for LoopBound.");
-    int sliceOffset;
-    int elementOffset;
-    int overlapSize = element->computeOverlap(sliceId.vaddr, sliceId.getSize(),
-                                              sliceOffset, elementOffset);
-    assert(overlapSize > 0 && "Empty overlap.");
-    if (elementOffset + overlapSize == element->size) {
-      // This slice contains the last element byte.
+    auto elem = this->getElemPanic(elemIdx, "Check element for LoopBound.");
+    if (elem->isLoopBoundDone()) {
+      continue;
+    }
+    if (!elem->isLastSlice(sliceId)) {
       return false;
     }
   }

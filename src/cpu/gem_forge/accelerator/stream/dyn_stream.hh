@@ -80,6 +80,7 @@ struct DynStream {
   uint64_t getFirstFloatElemIdx() const {
     return this->floatPlan.getFirstFloatElementIdx();
   }
+  uint64_t getFirstFloatElemIdxOfStepGroup() const;
   uint64_t getAdjustedFirstFloatElemIdx() const {
     auto firstFloatElemIdx = this->getFirstFloatElemIdx();
     return this->floatedOneIterBehind ? (firstFloatElemIdx + 1)
