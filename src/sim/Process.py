@@ -80,6 +80,8 @@ class Process(SimObject):
         "end when encounter this mark")
     enableMemStream = Param.Bool(False, "Enable Mem Stream.")
     enableStreamNUCA = Param.Bool(False, "Enable Stream NUCA.")
+    forceStreamNUCADistributeArray = Param.Bool(False,
+        "Force Stream NUCA to evenly distribute array.")
     streamNUCADirectRegionFitPolicy = Param.String('crop',
         "What to do when direct regions overflow LLC.")
     streamNUCAIndRemapBoxBytes = Param.Int64(0,

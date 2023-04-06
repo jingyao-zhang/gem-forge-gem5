@@ -206,7 +206,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     void receiveStreamMigrate(LLCDynStreamPtr, bool);
     void receiveStreamFlow(DynStreamSliceId);
     void receiveStreamDataVec(Cycles, Addr, DynStreamSliceIdVec, DataBlock, DataBlock);
-    void receiveStreamIndirectRequest(RequestMsg);
+    void receiveStreamIndirectReq(RequestMsg);
     void receiveStreamFwdReq(RequestMsg);
     void receiveStreamCommit(DynStreamSliceId);
     void receiveStreamNDCRequest(PacketPtr);
@@ -594,7 +594,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
           // No matter the cache line status, 
           // simply enqueue the request to L1Request message buffer.
-          se.receiveStreamIndirectRequest(in_msg);
+          se.receiveStreamIndirectReq(in_msg);
         }
 
         // Dequeue from the indirect message buffer.

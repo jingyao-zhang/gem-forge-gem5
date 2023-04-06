@@ -31,11 +31,19 @@ void StreamRegionController::initializeStreamLoopBound(
   staticBound.boundFunc = boundFunc;
   staticBound.boundRet = boundRet;
 
+  auto loopLevel = staticRegion.getConfigLoopLevel();
   for (const auto &arg : region.loop_bound_func().args()) {
     if (arg.is_stream()) {
       // This is a stream input. Remember this in the base stream.
       auto S = this->se->getStream(arg.stream_id());
       staticBound.baseStreams.insert(S);
+      if (S->getLoopLevel() > loopLevel) {
+        SE_DPRINTF("[LoopBound]   Add InnerLoopBaseS %s.\n",
+                   S->getStreamName());
+        S->innerLoopDepEdges.emplace_back(
+            DynStreamDepEdge::TypeE::Bound, arg.stream_id(),
+            DynStreamId::InvalidStaticStreamId, nullptr);
+      }
     }
   }
 }
@@ -46,9 +54,22 @@ void StreamRegionController::dispatchStreamConfigForLoopBound(
   if (!staticRegion.region.is_loop_bound()) {
     return;
   }
-  dynRegion.loopBound.boundFunc = staticRegion.loopBound.boundFunc;
+  const auto &staticBound = staticRegion.loopBound;
+  auto &dynBound = dynRegion.loopBound;
+  dynBound.boundFunc = staticBound.boundFunc;
   SE_DPRINTF("[LoopBound] Dispatch DynLoopBound for region %s.\n",
              staticRegion.region.region());
+
+  // Register any InnerLoopDep.
+  auto loopLevel = staticRegion.getConfigLoopLevel();
+  for (auto baseS : staticBound.baseStreams) {
+    if (baseS->getLoopLevel() > loopLevel) {
+      SE_DPRINTF("[LoopBound] Get InnerLoopBaseS %s.\n",
+                 baseS->getStreamName());
+      dynBound.innerLoopDepTracker.trackAsInnerLoopBase(
+          baseS->staticId, DynStreamDepEdge::TypeE::Bound);
+    }
+  }
 }
 
 void StreamRegionController::executeStreamConfigForLoopBound(
@@ -101,8 +122,22 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
   }
 
   auto nextElemIdx = dynBound.nextElemIdx;
+
+  FIFOEntryIdx nextFIFOIdx(dynBound.innerLoopDepTracker.dynId, nextElemIdx);
+
+  if (!dynBound.innerLoopDepTracker.areInnerLoopBaseElemsValueReady(
+          nextFIFOIdx)) {
+    S_FIFO_ENTRY_DPRINTF(nextFIFOIdx,
+                         "[LoopBound] InnerLoopBaseElem not value ready.\n");
+    return;
+  }
+
   std::unordered_set<StreamElement *> baseElements;
   for (auto baseS : staticBound.baseStreams) {
+    if (dynBound.innerLoopDepTracker.isTrackedAsInnerLoopBase(
+            baseS->staticId)) {
+      continue;
+    }
     auto &baseDynS = baseS->getDynStream(dynRegion.seqNum);
     auto baseElement = baseDynS.getElemByIdx(nextElemIdx);
     if (!baseElement) {
@@ -122,6 +157,20 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
       return;
     }
     baseElements.insert(baseElement);
+  }
+
+  // Add InnerLoopBaseElems.
+  {
+    StreamInnerLoopDepTracker::BaseStreamElemVec innerLoopBaseElems;
+    dynBound.innerLoopDepTracker.getInnerLoopBaseElems(nextFIFOIdx,
+                                                       innerLoopBaseElems);
+    for (const auto &entry : innerLoopBaseElems) {
+      auto type = entry.first;
+      auto baseElem = entry.second;
+      assert(type == DynStreamDepEdge::TypeE::Bound);
+      assert(baseElem->isValueReady);
+      baseElements.insert(baseElem);
+    }
   }
 
   // All base elements are value ready.
@@ -149,6 +198,9 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
                     "[LoopBound] Break (%d == %d) TotalTripCount %llu.\n", ret,
                     staticBound.boundRet, dynBound.nextElemIdx + 1);
     }
+
+    // Release dependence on future InnerLoopS.
+    dynBound.innerLoopDepTracker.releaseAllInnerLoopBase();
 
   } else {
     // Keep going.

@@ -280,7 +280,7 @@ public:
    * edges between two streams. e.g. b[i] = a[i] + a[i - 1].
    */
   struct StreamDepEdge {
-    using TypeE = DynStream::StreamDepEdge::TypeE;
+    using TypeE = DynStreamDepEdge::TypeE;
     const TypeE type;
     const StaticId fromStaticId = DynStreamId::InvalidStaticStreamId;
     const StaticId toStaticId = DynStreamId::InvalidStaticStreamId;
@@ -461,6 +461,7 @@ public:
   DynStream &getDynStream(InstSeqNum seqNum);
   DynStream &getDynStreamByEndSeqNum(InstSeqNum seqNum);
   DynStream &getDynStreamByInstance(InstanceId instance);
+  DynStream *tryGetDynStreamByInstance(InstanceId instance);
   DynStream &getDynStreamBefore(InstSeqNum seqNum);
   DynStream *getDynStream(const DynStreamId &dynId);
   DynStream &getLastDynStream() {

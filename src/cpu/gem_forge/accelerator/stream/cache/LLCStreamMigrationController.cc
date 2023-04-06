@@ -11,8 +11,8 @@ namespace gem5 {
 const int LLCStreamMigrationController::MaxNeighbors;
 
 LLCStreamMigrationController::LLCStreamMigrationController(
-    ruby::AbstractStreamAwareController *_controller, int _neighborStreamsThreshold,
-    Cycles _delay)
+    ruby::AbstractStreamAwareController *_controller,
+    int _neighborStreamsThreshold, Cycles _delay)
     : controller(_controller),
       neighborStreamsThreshold(_neighborStreamsThreshold), delay(_delay) {
   for (auto &c : this->lastMigratedCycle) {
@@ -109,7 +109,19 @@ int LLCStreamMigrationController::getLLCNeighborIndex(
     ruby::MachineID machineId) const {
   auto myBank = this->curRemoteBank();
   auto bank = machineId.getNum();
-  if (this->controller->isMyNeighbor(machineId)) {
+  /**
+   * We allow a special torus link for the migration load information.
+   * This is because affine streams migrating to the nest row is
+   * suffering concentration at row head.
+   * Actually: We can change the numbering of banks to avoid migrating
+   * around.
+   * NOTE: Disable this feature for now.
+   */
+  // auto totalBanks =
+  //     this->controller->getNumCols() * this->controller->getNumRows();
+  // bool isTorusNeighbor = bank == (myBank + 1) % totalBanks;
+  bool isTorusNeighbor = false;
+  if (this->controller->isMyNeighbor(machineId) || isTorusNeighbor) {
     if (bank + 1 < myBank) {
       return 0;
     } else if (bank + 1 == myBank) {
@@ -148,7 +160,8 @@ int LLCStreamMigrationController::getMCCNeighborIndex(
   }
 }
 
-int LLCStreamMigrationController::getNeighborIndex(ruby::MachineID machineId) const {
+int LLCStreamMigrationController::getNeighborIndex(
+    ruby::MachineID machineId) const {
   auto myMachineId = this->controller->getMachineID();
   if (myMachineId.getType() != machineId.getType()) {
     return -1;
@@ -178,8 +191,9 @@ int LLCStreamMigrationController::getNeighborIndex(ruby::MachineID machineId) co
 
 int LLCStreamMigrationController::countStreamsWithSameStaticId(
     LLCDynStreamPtr dynS, ruby::MachineID machineId) const {
-  auto neighborSE = ruby::AbstractStreamAwareController::getController(machineId)
-                        ->getLLCStreamEngine();
+  auto neighborSE =
+      ruby::AbstractStreamAwareController::getController(machineId)
+          ->getLLCStreamEngine();
   auto neighborStreams =
       neighborSE->getNumNonOverflownDirectStreamsWithStaticId(
           dynS->getDynStreamId());
@@ -192,5 +206,5 @@ int LLCStreamMigrationController::countStreamsWithSameStaticId(
     }
   }
   return neighborStreams;
-}} // namespace gem5
-
+}
+} // namespace gem5

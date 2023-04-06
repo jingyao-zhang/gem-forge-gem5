@@ -160,6 +160,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 enable_stream_idea_ack=options.gem_forge_stream_engine_enable_float_idea_ack,
                 enable_stream_idea_end=options.gem_forge_stream_engine_enable_float_idea_end,
                 enable_stream_idea_flow=options.gem_forge_stream_engine_enable_float_idea_flow,
+                enable_stream_idea_ind_req=options.gem_forge_stream_engine_enable_float_idea_ind_req,
                 enable_stream_multicast=\
                     options.gem_forge_stream_engine_enable_float_multicast,
                 stream_multicast_group_size=\
@@ -248,6 +249,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 enable_mlc_stream_idea_pop_check_llc_progress=\
                     options.gem_forge_stream_engine_enable_float_idea_mlc_pop_check,
                 enable_stream_idea_flow=options.gem_forge_stream_engine_enable_float_idea_flow,
+                enable_stream_idea_ind_req=options.gem_forge_stream_engine_enable_float_idea_ind_req,
                 enable_stream_multicast=\
                     options.gem_forge_stream_engine_enable_float_multicast,
                 enable_mlc_prefetch_stream=\
@@ -368,6 +370,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 enable_stream_idea_ack=options.gem_forge_stream_engine_enable_float_idea_ack,
                 enable_stream_idea_end=options.gem_forge_stream_engine_enable_float_idea_end,
                 enable_stream_idea_flow=options.gem_forge_stream_engine_enable_float_idea_flow,
+                enable_stream_idea_ind_req=options.gem_forge_stream_engine_enable_float_idea_ind_req,
                 enable_stream_idea_forward=\
                     options.gem_forge_stream_engine_enable_float_idea_fwd,
                 enable_stream_idea_store=\
@@ -516,6 +519,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.enable_stream_idea_ack = options.gem_forge_stream_engine_enable_float_idea_ack
         dir_cntrl.enable_stream_idea_end = options.gem_forge_stream_engine_enable_float_idea_end
         dir_cntrl.enable_stream_idea_flow = options.gem_forge_stream_engine_enable_float_idea_flow
+        dir_cntrl.enable_stream_idea_ind_req = options.gem_forge_stream_engine_enable_float_idea_ind_req
         dir_cntrl.enable_stream_idea_store = options.gem_forge_stream_engine_enable_float_idea_store
         dir_cntrl.enable_stream_compact_store = options.gem_forge_stream_engine_enable_float_compact_store
         dir_cntrl.enable_stream_advance_migrate = options.gem_forge_stream_engine_enable_float_advance_migrate

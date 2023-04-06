@@ -166,6 +166,7 @@ private:
   const bool enablePUMTiling;
   const std::string forcePUMTilingDim;
   const std::vector<int64_t> forcePUMTilingSize;
+  const bool forceDistributeArray;
   enum DirectRegionFitPolicy {
     CROP,
     DROP,

@@ -175,6 +175,9 @@ parser.add_argument("--gem-forge-stream-engine-enable-float-partial-config", act
 parser.add_argument("--gem-forge-stream-engine-enable-float-idea-flow", action="store",
                   default=0, type=int,
                   help="Enable idea (instant, no NoC) StreamFlow in stream float.")
+parser.add_argument("--gem-forge-stream-engine-enable-float-idea-ind-req", action="store",
+                  default=0, type=int,
+                  help="Enable idea (instant, no NoC) IndStreamReq in stream float.")
 parser.add_argument("--gem-forge-stream-engine-enable-float-idea-mlc-pop-check", action="store_true",
                   default=True,
                   help="When MLCStream pops, check LLCStream progress ideally.")
@@ -288,6 +291,9 @@ parser.add_argument("--gem-forge-enable-mlc-prefetch-stream", type=int,
 parser.add_argument("--gem-forge-enable-stream-nuca", type=int,
                   action="store", default="0",
                   help="Enable stream nuca.")
+parser.add_argument("--gem-forge-stream-nuca-force-distribute-array", type=int,
+                  action="store", default="0",
+                  help="Force NUCA distribute the array.")
 parser.add_argument("--gem-forge-enable-stream-strand", type=int,
                   action="store", default="0",
                   help="Enable stream strand auto parallelization.")

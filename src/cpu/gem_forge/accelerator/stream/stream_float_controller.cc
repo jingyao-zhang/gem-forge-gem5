@@ -346,7 +346,7 @@ void StreamFloatController::floatDirectLoadStreams(const Args &args) {
     auto S = dynS->stream;
     auto config = floatedMap.at(S);
     for (const auto &baseEdge : dynS->baseEdges) {
-      if (baseEdge.type != DynStream::StreamDepEdge::TypeE::Value) {
+      if (baseEdge.type != DynStreamDepEdge::TypeE::Value) {
         continue;
       }
       auto baseS = this->se->getStream(baseEdge.baseStaticId);
@@ -1401,10 +1401,18 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
 
   /**
    * Check that LoopBound is dependent on one MemStream and maybe UsedAffineIVS.
+   * So far we don't float InnerLoopDep.
    */
+  auto loopLevel = dynRegion.staticRegion->getConfigLoopLevel();
   std::vector<DynStream *> boundBaseMemStreams;
   std::vector<DynStream *> boundBaseIVAffineStreams;
   for (auto S : staticBound.baseStreams) {
+    if (S->getLoopLevel() > loopLevel) {
+      StreamFloatPolicy::getLog() << "[Not Float] LoopBound: InnerLoopBaseS "
+                                  << S->getStreamName() << "\n"
+                                  << std::flush;
+      return;
+    }
     auto &dynS = S->getDynStream(args.seqNum);
     if (S->isPointerChaseIndVar()) {
       StreamFloatPolicy::logS(dynS) << "[Not Float] LoopBound: BasePtrChaseS.\n"
@@ -1502,7 +1510,7 @@ void StreamFloatController::decideMLCBufferNumSlices(const Args &args) {
      * more than 1 indirect streams, e.g. bfs_push, bfs_pull.
      */
     auto numChildren = this->getFloatChainChildrenSize(*config);
-    if (numChildren > 1) {
+    if (numChildren > 1 && !S->isPointerChaseLoadStream()) {
       config->mlcBufferNumSlices =
           this->se->myParams->mlc_ind_stream_buffer_init_num_entries;
     }

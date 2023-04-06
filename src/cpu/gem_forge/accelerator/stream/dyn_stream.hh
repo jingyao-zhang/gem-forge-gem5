@@ -5,6 +5,7 @@
 #include "cache/DynStreamAddressRange.hh"
 #include "cache/StreamFloatPlan.hh"
 #include "fifo_entry_idx.hh"
+#include "stream_inner_loop_dep.hh"
 
 #include <array>
 #include <memory>
@@ -242,42 +243,8 @@ public:
    */
   int32_t getBytesPerMemElement() const;
 
-  /**
-   * This remembers the dynamic dependence between streams.
-   * Similar to the static StreamDepEdge, but with more information
-   * to correctly align dependences.
-   * Additional information:
-   * 1. FromInstanceId to get the correct dynamic stream.
-   * 2. Alignment to the base element index.
-   * 3. Reuse count of the base element.
-   */
-  struct StreamDepEdge {
-    enum TypeE { Addr, Value, Back, Pred };
-    static const char *typeToString(const TypeE &type);
-    const TypeE type = Addr;
-    Stream *const baseS = nullptr;
-    const StaticId baseStaticId = DynStreamId::InvalidStaticStreamId;
-    const InstanceId baseInstanceId = DynStreamId::InvalidInstanceId;
-    const StaticId depStaticId = DynStreamId::InvalidStaticStreamId;
-    const uint64_t alignBaseElement = 0;
-    uint64_t baseElemReuseCnt = 1; // When the BaseS is from OuterLoop.
-    uint64_t baseElemSkipCnt = 0;  // When the BaseS is from InnerLoop.
-    StreamDepEdge(TypeE _type, Stream *_baseS, StaticId _baseStaticId,
-                  InstanceId _baseInstanceId, StaticId _depStaticId,
-                  uint64_t _alignBaseElement, uint64_t _reuseBaseElement)
-        : type(_type), baseS(_baseS), baseStaticId(_baseStaticId),
-          baseInstanceId(_baseInstanceId), depStaticId(_depStaticId),
-          alignBaseElement(_alignBaseElement),
-          baseElemReuseCnt(_reuseBaseElement) {}
-    bool isAddrEdge() const { return this->type == TypeE::Addr; }
-    bool isValueEdge() const { return this->type == TypeE::Value; }
-    bool isBackEdge() const { return this->type == TypeE::Back; }
-    bool isPredEdge() const { return this->type == TypeE::Pred; }
-    uint64_t getBaseElemIdx(uint64_t elemIdx) const;
-  };
-  using StreamEdges = std::vector<StreamDepEdge>;
-  StreamEdges baseEdges;
-  StreamEdges backDepEdges;
+  DynStreamEdges baseEdges;
+  DynStreamEdges backDepEdges;
   void addBaseDynStreams();
   void addOuterDepDynStreams(StreamEngine *outerSE, InstSeqNum outerSeqNum);
 
@@ -295,14 +262,7 @@ public:
    * Unlike normal StreamDepEdge, here each OuterLoopStream element depends on
    * one INSTANCE of InnerLoopStream.
    */
-  using InnerLoopBaseDynStreamMapT = std::map<StaticId, StreamEdges>;
-  InnerLoopBaseDynStreamMapT innerLoopBaseEdges;
-  StreamEdges &getInnerLoopBaseEdges(StaticId baseStaticId);
-  const StreamEdges &getInnerLoopBaseEdges(StaticId baseStaticId) const;
-  void pushInnerLoopBaseDynStream(StreamDepEdge::TypeE type, Stream *baseS,
-                                  StaticId baseStaticId,
-                                  InstanceId baseInstanceId,
-                                  StaticId depStaticId);
+  StreamInnerLoopDepTracker innerLoopDepTracker;
 
   /**
    * Compute reuse of the base stream element.
@@ -311,20 +271,20 @@ public:
    * 2. Base streams from outer loops.
    */
   void configureBaseDynStreamReuse();
-  void configureBaseDynStreamReuseSameLoop(StreamDepEdge &edge,
+  void configureBaseDynStreamReuseSameLoop(DynStreamDepEdge &edge,
                                            DynStream &baseDynS);
-  void configureBaseDynStreamReuseOuterLoop(StreamDepEdge &edge,
+  void configureBaseDynStreamReuseOuterLoop(DynStreamDepEdge &edge,
                                             DynStream &baseDynS);
-  void configureBaseDynStreamSkipInnerLoop(StreamDepEdge &edge,
+  void configureBaseDynStreamSkipInnerLoop(DynStreamDepEdge &edge,
                                            DynStream &baseDynS);
 
   /**
    * Check if base elements of the next allocating element is ready.
    */
   bool areNextBaseElementsAllocated() const;
-  bool isNextAddrBaseElementAllocated(const StreamDepEdge &edge) const;
-  bool isNextValueBaseElementAllocated(const StreamDepEdge &edge) const;
-  bool isNextBackBaseElementAllocated(const StreamDepEdge &edge) const;
+  bool isNextAddrBaseElementAllocated(const DynStreamDepEdge &edge) const;
+  bool isNextValueBaseElementAllocated(const DynStreamDepEdge &edge) const;
+  bool isNextBackBaseElementAllocated(const DynStreamDepEdge &edge) const;
   bool areNextBackDepElementsReady(StreamElement *element) const;
 
   /**
@@ -335,14 +295,13 @@ public:
    */
   void addBaseElements(StreamElement *newElement);
   void addAddrBaseElementEdge(StreamElement *newElement,
-                              const StreamDepEdge &edge);
+                              const DynStreamDepEdge &edge);
   void addValueBaseElementEdge(StreamElement *newElement,
-                               const StreamDepEdge &edge);
+                               const DynStreamDepEdge &edge);
   void addBackBaseElementEdge(StreamElement *newElement,
-                              const StreamDepEdge &edge);
+                              const DynStreamDepEdge &edge);
 
   void tryAddInnerLoopBaseElements(StreamElement *elem);
-  bool areInnerLoopBaseElementsAllocated(StreamElement *elem) const;
   void addInnerLoopBaseElements(StreamElement *elem);
 
   /**
@@ -515,41 +474,22 @@ private:
   std::list<DynStreamAddressRangePtr> receivedRanges;
   DynStreamAddressRangePtr currentWorkingRange = nullptr;
 
-  /**
-   * InnerLoopDep streams to this stream.
-   */
-  struct InnerLoopDepDynId {
-    StreamEngine *se;
-    Stream *S;
-    DynStreamId dynId;
-    InnerLoopDepDynId(StreamEngine *_se, Stream *_S, const DynStreamId &_dynId)
-        : se(_se), S(_S), dynId(_dynId) {}
-  };
-  using InnerLoopDepDynIdVec = std::vector<InnerLoopDepDynId>;
-  InnerLoopDepDynIdVec innerLoopDepDynIds;
-
 public:
   /**
-   * Accessor to the NumInnerLoopDepS. Used to track that InnerLoopDepS
-   * has correctly got the value we can be released.
+   * Accessor to the NumInnerLoopDepS. Redirect to InnerLoopDepTracker.
    */
-  int getNumInnerLoopDepS() const { return this->innerLoopDepDynIds.size(); }
-  const InnerLoopDepDynIdVec &getInnerLoopDepS() const {
-    return this->innerLoopDepDynIds;
+  using InnerLoopDepDynIdVec = StreamInnerLoopDepTracker::InnerLoopDepDynIdVec;
+  int getNumInnerLoopDepS() const {
+    return this->innerLoopDepTracker.getNumInnerLoopDepS();
   }
-  void pushInnerLoopDepS(StreamEngine *se, Stream *S,
-                         const DynStreamId &dynId) {
-    this->innerLoopDepDynIds.emplace_back(se, S, dynId);
+  const InnerLoopDepDynIdVec &getInnerLoopDepS() const {
+    return this->innerLoopDepTracker.getInnerLoopDepS();
   }
   void popInnerLoopDepS(const DynStreamId &dynId) {
-    for (auto iter = this->innerLoopDepDynIds.begin();
-         iter != this->innerLoopDepDynIds.end(); ++iter) {
-      if (iter->dynId == dynId) {
-        this->innerLoopDepDynIds.erase(iter);
-        return;
-      }
-    }
-    assert(false && "No InnerLoopDepS");
+    this->innerLoopDepTracker.popInnerLoopDepS(dynId);
+  }
+  void tryPopInnerLoopDepS(const DynStreamId &dynId) {
+    this->innerLoopDepTracker.tryPopInnerLoopDepS(dynId);
   }
 
 private:
@@ -558,10 +498,6 @@ private:
   void tryCancelFloat();
   void cancelFloat();
 };
-
-std::ostream &operator<<(std::ostream &os,
-                         const DynStream::StreamDepEdge::TypeE &type);
-std::string to_string(const DynStream::StreamDepEdge::TypeE &type);
 
 } // namespace gem5
 

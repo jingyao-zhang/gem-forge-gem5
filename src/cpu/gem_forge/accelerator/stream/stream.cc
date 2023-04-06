@@ -421,12 +421,19 @@ void Stream::recordAggregateHistory(const DynStream &dynS) {
 }
 
 DynStream &Stream::getDynStreamByInstance(InstanceId instance) {
-  for (auto &dynStream : this->dynamicStreams) {
-    if (dynStream.dynStreamId.streamInstance == instance) {
-      return dynStream;
-    }
+  if (auto dynS = this->tryGetDynStreamByInstance(instance)) {
+    return *dynS;
   }
   S_PANIC(this, "Failed to find DynStream by Instance %llu.\n", instance);
+}
+
+DynStream *Stream::tryGetDynStreamByInstance(InstanceId instance) {
+  for (auto &dynStream : this->dynamicStreams) {
+    if (dynStream.dynStreamId.streamInstance == instance) {
+      return &dynStream;
+    }
+  }
+  return nullptr;
 }
 
 DynStream &Stream::getDynStream(uint64_t seqNum) {

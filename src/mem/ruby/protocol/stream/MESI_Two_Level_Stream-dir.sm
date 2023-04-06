@@ -150,7 +150,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
     void receiveStreamMigrate(LLCDynStreamPtr, bool);
     void receiveStreamFlow(DynStreamSliceId);
     void receiveStreamDataVec(Cycles, Addr, DynStreamSliceIdVec, DataBlock, DataBlock);
-    void receiveStreamIndirectRequest(RequestMsg);
+    void receiveStreamIndirectReq(RequestMsg);
     void receiveStreamForwardRequest(RequestMsg);
     void receiveStreamCommit(DynStreamSliceId);
     void receiveStreamNDCRequest(PacketPtr);
@@ -378,7 +378,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
         // simply enqueue the request to L1Request message buffer.
 
         // Can we do this?
-        se.receiveStreamIndirectRequest(in_msg);
+        se.receiveStreamIndirectReq(in_msg);
 
         // Dequeue from the indirect message buffer.
         incrementLLCIndReqQueueStats();

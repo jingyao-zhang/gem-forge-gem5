@@ -86,6 +86,8 @@ def get_processes(args):
             args.gem_forge_stream_pum_force_tiling_dim
         process.forceStreamPUMTilingSize = \
             args.gem_forge_stream_pum_force_tiling_size
+        process.forceStreamNUCADistributeArray = \
+            args.gem_forge_stream_nuca_force_distribute_array
 
         multiprocesses.append(process)
         idx += 1

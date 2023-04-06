@@ -12,6 +12,7 @@ public:
   ~StreamRegionController();
 
   void initializeRegion(const ::LLVM::TDG::StreamRegion &region);
+  void postNestInitializeRegion(const ::LLVM::TDG::StreamRegion &region);
 
   using ConfigArgs = StreamEngine::StreamConfigArgs;
   void dispatchStreamConfig(const ConfigArgs &args);
@@ -61,8 +62,7 @@ public:
       this->endSeqNum = 0;
     }
 
-    DynRegion(StaticRegion *_staticRegion, uint64_t _seqNum)
-        : staticRegion(_staticRegion), seqNum(_seqNum) {}
+    DynRegion(StaticRegion *_staticRegion, uint64_t _seqNum);
 
     /**
      * NestStream states.
@@ -114,12 +114,17 @@ public:
     struct DynLoopBound {
       ExecFuncPtr boundFunc = nullptr;
       DynStreamFormalParamV formalParams;
+      // Need to track InnerLoopDep.
+      StreamInnerLoopDepTracker innerLoopDepTracker;
+      // Next iteration to evaluate LoopBound.
       uint64_t nextElemIdx = 0;
       // We have reached the end of the loop.
       bool brokenOut = false;
       // We have offloaded the LoopBound.
       bool offloaded = false;
       uint64_t offloadedFirstElementIdx = 0;
+      DynLoopBound(const DynStreamId &_loopBoundDynId)
+          : innerLoopDepTracker(_loopBoundDynId) {}
     };
     DynLoopBound loopBound;
 
@@ -161,10 +166,22 @@ public:
     const ::LLVM::TDG::StreamRegion &region;
     StreamVec streams;
     std::list<DynRegion> dynRegions;
+    // RegionInstance.
+    using InstanceId = DynStreamId::InstanceId;
+    InstanceId instanceId = DynStreamId::InvalidInstanceId;
     // Remember if all loops or some loops is eliminated.
     bool allStreamsLoopEliminated = false;
     bool someStreamsLoopEliminated = false;
-    StaticRegion(const ::LLVM::TDG::StreamRegion &_region) : region(_region) {}
+    StaticRegion(const ::LLVM::TDG::StreamRegion &_region)
+        : region(_region), loopBoundStreamName(_region.region() + ".bound") {}
+
+    /**
+     * Get the ConfigLoopLevel of this region.
+     */
+    int getConfigLoopLevel() const {
+      assert(!this->streams.empty());
+      return this->streams.front()->getConfigLoopLevel();
+    }
 
     /**
      * NestStream config (for this nested region).
@@ -186,6 +203,9 @@ public:
       StreamSet baseStreams;
     };
     StaticLoopBound loopBound;
+    // Fake StreamName for LoopBound.
+    std::string loopBoundStreamName;
+    DynStreamId getLoopBoundDynId() const;
 
     /**
      * StreamStepper states for LoopEliminated region.

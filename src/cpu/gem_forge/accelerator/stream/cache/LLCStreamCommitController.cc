@@ -192,7 +192,7 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
         LLC_S_DPRINTF(dynS->getDynStrandId(),
                       "[Commit] Issue AfterCommit for DynIS %s %llu.\n",
                       dynIS->getDynStrandId(), nextCommitIndirectElementIdx);
-        this->se->generateIndirectStreamRequest(dynIS, nextCommitElement);
+        this->se->generateIndirectStreamReq(dynIS, nextCommitElement);
       }
     }
   }

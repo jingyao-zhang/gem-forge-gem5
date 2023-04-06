@@ -243,12 +243,17 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
                         "[StreamEnd] NoCommit as Unseen InnerDepElem %d.\n",
                         dynS.getNumInnerLoopDepS());
       for (const auto &innerLoopDepId : dynS.getInnerLoopDepS()) {
-        auto depSE = innerLoopDepId.se;
-        auto innerLoopDepS = innerLoopDepId.S;
-        assert(innerLoopDepS);
-        auto &innerLoopDepDynS = innerLoopDepS->getDynStreamByInstance(
-            innerLoopDepId.dynId.streamInstance);
-        depSE->addIssuingDynS(&innerLoopDepDynS);
+        if (auto innerLoopDepS = innerLoopDepId.S) {
+          auto depSE = innerLoopDepId.se;
+          auto &innerLoopDepDynS = innerLoopDepS->getDynStreamByInstance(
+              innerLoopDepId.dynId.streamInstance);
+          depSE->addIssuingDynS(&innerLoopDepDynS);
+        } else {
+          /**
+           * Non-Stream OuterLoopDep. So far this is only LoopBound. Since it's
+           * checked every cycle, no need to wake it.
+           */
+        }
       }
       return false;
     }

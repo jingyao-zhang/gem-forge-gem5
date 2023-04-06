@@ -899,7 +899,7 @@ void LLCStreamEngine::wakeup() {
     if (!req.translationDone) {
       break;
     }
-    this->issueStreamRequestToRemoteBank(req);
+    this->issueStreamReqToRemoteBank(req);
     this->requestQueue.pop_front();
   }
 
@@ -1904,7 +1904,7 @@ void LLCStreamEngine::issueStreamIndirect(LLCDynStream *dynIS) {
   }
   auto elemIdx = elem->idx;
   if (dynIS->shouldIssueBeforeCommit()) {
-    this->generateIndirectStreamRequest(dynIS, elem);
+    this->generateIndirectStreamReq(dynIS, elem);
   } else {
     // We delay issuing this after committed.
     LLC_S_DPRINTF(dynIS->getDynStrandId(),
@@ -1914,8 +1914,8 @@ void LLCStreamEngine::issueStreamIndirect(LLCDynStream *dynIS) {
   dynIS->markElemIssued(elemIdx);
 }
 
-void LLCStreamEngine::generateIndirectStreamRequest(
-    LLCDynStream *dynIS, LLCStreamElementPtr element) {
+void LLCStreamEngine::generateIndirectStreamReq(LLCDynStream *dynIS,
+                                                LLCStreamElementPtr elem) {
 
   auto IS = dynIS->getStaticS();
   if (IS->isReduction() || IS->isPointerChaseIndVar()) {
@@ -1925,16 +1925,16 @@ void LLCStreamEngine::generateIndirectStreamRequest(
   }
 
   if (IS->isStoreComputeStream() || IS->isAtomicComputeStream()) {
-    this->issueIndirectStoreOrAtomicRequest(dynIS, element);
+    this->issueIndirectStoreOrAtomicReq(dynIS, elem);
   } else {
     // Finally normal indirect load stream.
-    this->issueIndirectLoadRequest(dynIS, element);
+    this->issueIndirectLoadReq(dynIS, elem);
   }
   return;
 }
 
-void LLCStreamEngine::issueIndirectLoadRequest(LLCDynStream *dynIS,
-                                               LLCStreamElementPtr elem) {
+void LLCStreamEngine::issueIndirectLoadReq(LLCDynStream *dynIS,
+                                           LLCStreamElementPtr elem) {
   /**
    * This function handles the most basic case: IndirectLoadStream.
    */
@@ -2007,8 +2007,8 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynStream *dynIS,
   }
 }
 
-void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
-    LLCDynStream *dynIS, LLCStreamElementPtr elem) {
+void LLCStreamEngine::issueIndirectStoreOrAtomicReq(LLCDynStream *dynIS,
+                                                    LLCStreamElementPtr elem) {
 
   auto elemIdx = elem->idx;
   DynStreamSliceId sliceId;
@@ -2221,8 +2221,7 @@ void LLCStreamEngine::translationCallback(PacketPtr pkt, ThreadContext *tc,
   delete pkt;
 }
 
-void LLCStreamEngine::issueStreamRequestToRemoteBank(
-    const LLCStreamRequest &req) {
+void LLCStreamEngine::issueStreamReqToRemoteBank(const LLCStreamRequest &req) {
   const auto &sliceId = req.sliceId;
   const auto paddrLine = req.paddrLine;
   auto selfMachineId = this->controller->getMachineID();
@@ -2390,6 +2389,22 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
         return;
       }
     }
+
+    /**
+     * Check for Idea StreamReq: STREAM_STORE, GETU, GETH.
+     */
+    if (req.requestType == ruby::CoherenceRequestType_STREAM_STORE ||
+        req.requestType == ruby::CoherenceRequestType_GETH ||
+        req.requestType == ruby::CoherenceRequestType_GETU) {
+      if (this->controller->myParams->enable_stream_idea_ind_req) {
+        auto recvCtrl = ruby::AbstractStreamAwareController::getController(
+            msg->getDestination().singleElement());
+        auto recvSE = recvCtrl->getLLCStreamEngine();
+        recvSE->receiveStreamIndirectReqImpl(*msg);
+        return;
+      }
+    }
+
     this->indReqBuffer->pushRequest(msg);
   }
 }
@@ -2909,26 +2924,38 @@ void LLCStreamEngine::migrateStreams() {
    */
   while (streamIter != streamEnd && migrated < this->migrateWidth &&
          this->streamMigrateMsgBuffer->getSize(curTick()) < 2) {
-    auto stream = *streamIter;
-    assert(this->canMigrateStream(stream) && "Can't migrate stream.");
+    auto dynS = *streamIter;
+
+    /**
+     * The only special case is if the stream is broken out.
+     * So far we don't migrate it, and add it back to StreamList
+     * so that it can be correctly terminated by StreamEnd.
+     */
+    if (dynS->isLoopBoundBrokenOut()) {
+      streamIter = this->migratingStreams.erase(streamIter);
+      this->streams.push_back(dynS);
+      continue;
+    }
+
+    assert(this->canMigrateStream(dynS) && "Can't migrate.");
     /**
      * Check the migrate controller.
      */
-    auto nextVAddrAndMachineType = stream->peekNextAllocVAddrAndMachineType();
+    auto nextVAddrAndMachineType = dynS->peekNextAllocVAddrAndMachineType();
     auto nextVAddr = nextVAddrAndMachineType.first;
     auto nextMachineType = nextVAddrAndMachineType.second;
     Addr nextPAddr;
-    if (!stream->translateToPAddr(nextVAddr, nextPAddr)) {
-      LLC_S_PANIC(stream->getDynStrandId(), "Fault on migrating stream.");
+    if (!dynS->translateToPAddr(nextVAddr, nextPAddr)) {
+      LLC_S_PANIC(dynS->getDynStrandId(), "Fault on migrating dynS.");
     }
     auto nextMachineId = this->controller->mapAddressToLLCOrMem(
         ruby::makeLineAddress(nextPAddr), nextMachineType);
-    if (!this->migrateController->canMigrateTo(stream, nextMachineId)) {
+    if (!this->migrateController->canMigrateTo(dynS, nextMachineId)) {
       ++streamIter;
       continue;
     }
-    this->migrateStream(stream);
-    this->migrateController->startMigrateTo(stream, nextMachineId);
+    this->migrateStream(dynS);
+    this->migrateController->startMigrateTo(dynS, nextMachineId);
     streamIter = this->migratingStreams.erase(streamIter);
     migrated++;
   }
@@ -3023,8 +3050,7 @@ bool LLCStreamEngine::isPAddrHandledByMe(Addr paddr,
 
 void LLCStreamEngine::print(std::ostream &out) const {}
 
-void LLCStreamEngine::receiveStreamIndirectRequest(
-    const ruby::RequestMsg &req) {
+void LLCStreamEngine::receiveStreamIndirectReq(const ruby::RequestMsg &req) {
 
   /**
    * After supporting broadcast strands, it's possible that even the first req
@@ -3032,14 +3058,14 @@ void LLCStreamEngine::receiveStreamIndirectRequest(
    */
   if (req.getType() == ruby::CoherenceRequestType_STREAM_FORWARD) {
     if (this->isPAddrHandledByMe(req.getaddr(), this->myMachineType())) {
-      this->receiveStreamIndirectRequestImpl(req);
+      this->receiveStreamIndirectReqImpl(req);
     }
   } else {
-    this->receiveStreamIndirectRequestImpl(req);
+    this->receiveStreamIndirectReqImpl(req);
   }
 
   /**
-   * Unchain each indirect requests and call receiveStreamIndirectRequestImpl().
+   * Unchain each indirect requests and call receiveStreamIndirectReqImpl().
    */
   auto chainMsg = req.getChainMsg();
   while (chainMsg) {
@@ -3057,7 +3083,7 @@ void LLCStreamEngine::receiveStreamIndirectRequest(
     auto chainReqDest = chainReqNetDest.singleElement();
     if (chainReqDest == this->controller->getMachineID()) {
       /**
-       * This is for us. We recursively call receiveStreamIndirectRequest.
+       * This is for us. We recursively call receiveStreamIndirectReq.
        */
       LLC_SLICE_DPRINTF_(
           LLCRubyStreamMulticast, chainSliceId,
@@ -3071,7 +3097,7 @@ void LLCStreamEngine::receiveStreamIndirectRequest(
         statistic.numRemoteMulticastSlice++;
       }
 
-      this->receiveStreamIndirectRequestImpl(*chainReq);
+      this->receiveStreamIndirectReqImpl(*chainReq);
     } else {
       /**
        * Skip this ChainReq and go to the next one.
@@ -3085,7 +3111,7 @@ void LLCStreamEngine::receiveStreamIndirectRequest(
   }
 }
 
-void LLCStreamEngine::receiveStreamIndirectRequestImpl(
+void LLCStreamEngine::receiveStreamIndirectReqImpl(
     const ruby::RequestMsg &req) {
 
   this->initializeTranslationBuffer();
@@ -4122,7 +4148,7 @@ void LLCStreamEngine::processIndirectAtomicSlice(
                                  "Check IndirectAtomicElement second request.");
   if (elem->hasFirstIndirectAtomicReqSeen()) {
     // This is the second time, should already be handled in
-    // receiveStreamIndirectRequest().
+    // receiveStreamIndirectReq().
     LLC_SLICE_PANIC(sliceId, "[Commit] Atomic should be release when "
                              "receiving the second request.");
   }

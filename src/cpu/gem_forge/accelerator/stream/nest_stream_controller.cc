@@ -35,6 +35,14 @@ bool StreamRegionController::shouldRemoteConfigureNestRegion(
     if (S->isInnerFinalValueUsedByCore()) {
       return false;
     }
+    /**
+     * Hash join can not remote configure. This can be done by checking that
+     * NestOuterStream has no indirect stream. So far we hack this.
+     * TODO: Disable remote config if OuterStream has IndirectS.
+     */
+    if (S->getStreamName().find("gfm.hash_join") != std::string::npos) {
+      return false;
+    }
   }
   return true;
 }
@@ -231,6 +239,13 @@ void StreamRegionController::configureNestStream(
   std::unordered_set<StreamElement *> baseElems;
   for (auto baseS : dynNestConfig.baseStreams) {
     auto &baseDynS = baseS->getDynStream(dynRegion.seqNum);
+    if (baseDynS.hasTotalTripCount() &&
+        nextElemIdx >= baseDynS.getTotalTripCount()) {
+      DYN_S_DPRINTF(baseDynS.dynStreamId,
+                    "[Nest] Overflow Next %lu TripCount %lu.\n", nextElemIdx,
+                    baseDynS.getTotalTripCount());
+      return;
+    }
     auto baseE = baseDynS.getElemByIdx(nextElemIdx);
     if (!baseE) {
       if (baseDynS.FIFOIdx.entryIdx > nextElemIdx) {

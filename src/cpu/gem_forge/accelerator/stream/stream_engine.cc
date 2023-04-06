@@ -1589,8 +1589,9 @@ void StreamEngine::initializeStreams(
 
   /**
    * After all nest streams are initialized, we try to initialize any inner-loop
-   * dependence.
+   * dependence for streams and LoopBound.
    */
+  this->regionController->postNestInitializeRegion(streamRegion);
   for (auto newStream : createdStreams) {
     newStream->fixInnerLoopBaseStreams();
   }

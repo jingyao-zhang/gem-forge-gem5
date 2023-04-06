@@ -35,7 +35,7 @@ void StreamNDCController::offloadStreams(
       bool canOffload = true;
       DynStreamList valueBaseDynStreams;
       for (auto baseEdge : dynS->baseEdges) {
-        if (baseEdge.type != DynStream::StreamDepEdge::TypeE::Value) {
+        if (baseEdge.type != DynStreamDepEdge::TypeE::Value) {
           continue;
         }
         auto valueBaseS = se->getStream(baseEdge.baseStaticId);

@@ -37,6 +37,7 @@ StreamNUCAManager::StreamNUCAManager(Process *_process,
       enablePUMTiling(_params->enableStreamPUMTiling),
       forcePUMTilingDim(_params->forceStreamPUMTilingDim),
       forcePUMTilingSize(_params->forceStreamPUMTilingSize),
+      forceDistributeArray(_params->forceStreamNUCADistributeArray),
       indirectRemapBoxBytes(_params->streamNUCAIndRemapBoxBytes),
       indirectRebalanceThreshold(_params->streamNUCAIndRebalanceThreshold),
       enableCSRReorder(_params->streamNUCAEnableCSRReorder) {
@@ -60,6 +61,7 @@ StreamNUCAManager::StreamNUCAManager(const StreamNUCAManager &other)
       enabledNUCA(other.enabledNUCA), enablePUM(other.enablePUM),
       enablePUMTiling(other.enablePUMTiling),
       forcePUMTilingSize(other.forcePUMTilingSize),
+      forceDistributeArray(other.forceDistributeArray),
       directRegionFitPolicy(other.directRegionFitPolicy),
       indirectRemapBoxBytes(other.indirectRemapBoxBytes),
       enableCSRReorder(other.enableCSRReorder) {
@@ -207,6 +209,14 @@ void StreamNUCAManager::defineAlign(Addr A, Addr B, int64_t elemOffset) {
   DPRINTF(StreamNUCAManager, "[StreamNUCA] Define Align %#x %#x Offset %ld.\n",
           A, B, elemOffset);
   auto &regionA = this->getRegionFromStartVAddr(A);
+  if (elemOffset < 0) {
+    if (this->indirectRemapBoxBytes == 0) {
+      // Indirect remap is disabled. Ignore it.
+      DPRINTF(StreamNUCAManager, "[StreamNUCA] Ignore IrregAlign on %s.\n",
+              regionA.name);
+      return;
+    }
+  }
   regionA.aligns.emplace_back(A, B, elemOffset);
   if (elemOffset < 0) {
     regionA.isIrregular = true;
@@ -1592,14 +1602,10 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
   uint64_t interleave = defaultInterleave;
 
   /**
-   * If the region has user-defined interleave, use it.
-   * Check that there are no alignment defined.
+   * If the region has user-defined interleave or previous determined
+   * interleave.
    */
   if (region.properties.count(RegionProperty::INTERLEAVE)) {
-    if (!region.aligns.empty()) {
-      panic("Range %s has both aligns and user-defined interleave.",
-            region.name);
-    }
     return region.properties.at(RegionProperty::INTERLEAVE);
   }
 
@@ -1607,8 +1613,24 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
   auto numCols = StreamNUCAMap::getNumCols();
   auto numBanks = numRows * numCols;
 
-  auto defaultWrapAroundBytes = defaultInterleave * numBanks;
-  auto defaultColWrapAroundBytes = defaultInterleave * numCols;
+  if (this->forceDistributeArray) {
+    // Change default interleaving to evenly distribute the array.
+    auto totalBytes = region.elementSize * region.numElement;
+    auto bytesPerBank = (totalBytes + numBanks - 1) / numBanks;
+    // Round up to defaultInterleave.
+    interleave = ((bytesPerBank + defaultInterleave - 1) / defaultInterleave) *
+                 defaultInterleave;
+    // Round up to power of 2.
+    // interleave = 1 << ceilLog2(bytesPerBank);
+    DPRINTF(StreamNUCAManager,
+            "Range %s %#x Elems %lu Bytes %lu ForceDistribute Bytes/Bank %lu "
+            "Interleave %lu.\n",
+            region.name, region.vaddr, region.elementSize, totalBytes,
+            bytesPerBank, interleave);
+  }
+
+  auto defaultWrapAroundBytes = interleave * numBanks;
+  auto defaultColWrapAroundBytes = interleave * numCols;
 
   for (const auto &align : region.aligns) {
     const auto &alignToRegion = this->getRegionFromStartVAddr(align.vaddrB);

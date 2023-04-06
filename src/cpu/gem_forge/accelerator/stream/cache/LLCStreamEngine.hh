@@ -51,8 +51,8 @@ public:
                             const DynStreamSliceIdVec &sliceIds,
                             const ruby::DataBlock &dataBlock,
                             const ruby::DataBlock &storeValueBlock);
-  void receiveStreamIndirectRequest(const ruby::RequestMsg &req);
-  void receiveStreamIndirectRequestImpl(const ruby::RequestMsg &req);
+  void receiveStreamIndirectReq(const ruby::RequestMsg &req);
+  void receiveStreamIndirectReqImpl(const ruby::RequestMsg &req);
   void receiveStreamFwdReq(const ruby::RequestMsg &req);
   void notifyStreamRequestMiss(const DynStreamSliceIdVec &sliceIds);
   void wakeup() override;
@@ -283,26 +283,24 @@ private:
   /**
    * Generate indirect stream request.
    */
-  void generateIndirectStreamRequest(LLCDynStream *dynIS,
-                                     LLCStreamElementPtr element);
+  void generateIndirectStreamReq(LLCDynStream *dynIS, LLCStreamElementPtr elem);
 
   /**
    * Issue indirect load stream request.
    */
-  void issueIndirectLoadRequest(LLCDynStream *dynIS,
-                                LLCStreamElementPtr element);
+  void issueIndirectLoadReq(LLCDynStream *dynIS, LLCStreamElementPtr elem);
 
   /**
    * Issue indirect store/atomic request.
    */
-  void issueIndirectStoreOrAtomicRequest(LLCDynStream *dynIS,
-                                         LLCStreamElementPtr element);
+  void issueIndirectStoreOrAtomicReq(LLCDynStream *dynIS,
+                                     LLCStreamElementPtr elem);
 
   /**
    * Issue indirect atomic unlock request.
    */
   void issueIndirectAtomicUnlockRequest(LLCDynStream *dynIS,
-                                        LLCStreamElementPtr element);
+                                        LLCStreamElementPtr elem);
 
   /**
    * Helper function to enqueue a request and start address translation.
@@ -317,7 +315,7 @@ private:
   /**
    * Helper function to issue stream request to the remote bank.
    */
-  void issueStreamRequestToRemoteBank(const LLCStreamRequest &req);
+  void issueStreamReqToRemoteBank(const LLCStreamRequest &req);
 
   using ResponseMsgPtr = std::shared_ptr<ruby::ResponseMsg>;
   /**

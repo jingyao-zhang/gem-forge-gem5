@@ -15,6 +15,20 @@
 
 namespace gem5 {
 
+StreamRegionController::DynRegion::DynRegion(StaticRegion *_staticRegion,
+                                             uint64_t _seqNum)
+    : staticRegion(_staticRegion), seqNum(_seqNum),
+      loopBound(_staticRegion->getLoopBoundDynId()) {}
+
+DynStreamId StreamRegionController::StaticRegion::getLoopBoundDynId() const {
+  assert(!this->streams.empty());
+  auto coreId = this->streams.front()->getCPUId();
+  DynStreamId loopBoundDynId(coreId, DynStreamId::InvalidStaticStreamId,
+                             this->instanceId,
+                             this->loopBoundStreamName.c_str());
+  return loopBoundDynId;
+}
+
 StreamRegionController::StreamRegionController(StreamEngine *_se)
     : se(_se), isaHandler(_se->getCPUDelegator()) {}
 
@@ -64,8 +78,17 @@ void StreamRegionController::initializeRegion(
   }
 
   this->initializeNestStreams(region, staticRegion);
-  this->initializeStreamLoopBound(region, staticRegion);
   this->initializeStep(region, staticRegion);
+}
+
+void StreamRegionController::postNestInitializeRegion(
+    const ::LLVM::TDG::StreamRegion &region) {
+
+  /**
+   * LoopBound is initialized PostNest as it may have InnerLoopDep.
+   */
+  auto &staticRegion = this->staticRegionMap.at(region.region());
+  this->initializeStreamLoopBound(region, staticRegion);
 }
 
 void StreamRegionController::dispatchStreamConfig(const ConfigArgs &args) {
@@ -205,6 +228,10 @@ StreamRegionController::pushDynRegion(StaticRegion &staticRegion,
              seqNum, staticRegion.region.region(),
              staticRegion.dynRegions.size(), this->activeDynRegionMap.size());
 
+  /**
+   * Create a fake DynStreamId for the LoopBound to track InnerLoopDep.
+   */
+  staticRegion.instanceId++;
   staticRegion.dynRegions.emplace_back(&staticRegion, seqNum);
   auto &dynRegion = staticRegion.dynRegions.back();
   assert(this->activeDynRegionMap
