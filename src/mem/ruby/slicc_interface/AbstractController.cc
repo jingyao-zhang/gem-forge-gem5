@@ -119,6 +119,7 @@ AbstractController::init()
 void
 AbstractController::resetStats()
 {
+    ClockedObject::resetStats();
     stats.delayHistogram.reset();
     uint32_t size = Network::getNumberOfVirtualNetworks();
     for (uint32_t i = 0; i < size; i++) {
