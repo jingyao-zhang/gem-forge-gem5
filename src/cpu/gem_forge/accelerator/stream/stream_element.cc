@@ -977,6 +977,16 @@ bool StreamElement::isValueFaulted(Addr vaddr, int size) const {
   return false;
 }
 
+bool StreamElement::isAnyValueFaulted() const {
+  for (int i = 0; i < this->cacheBlocks; ++i) {
+    const auto &block = this->cacheBlockBreakdownAccesses[i];
+    if (block.state == CacheBlockBreakdownAccess::Faulted) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void StreamElement::updateFirstValueCheckCycle(bool checkedByCore) const {
   if (this->firstValueCheckCycle == 0 ||
       (this->firstValueCheckByCoreCycle == 0 && checkedByCore)) {

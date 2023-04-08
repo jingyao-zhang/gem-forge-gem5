@@ -267,6 +267,7 @@ struct StreamElement {
   }
   StreamValue getValueBaseByStreamId(StaticId id);
   bool isValueFaulted(Addr vaddr, int size) const;
+  bool isAnyValueFaulted() const;
 
   /**
    * Check if value is ready, will set FirstCheckCycle.

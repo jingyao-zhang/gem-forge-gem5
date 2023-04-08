@@ -265,7 +265,11 @@ void StreamRegionController::configureNestStream(
       }
     }
     if (!baseE->isValueReady) {
-      S_ELEMENT_DPRINTF(baseE, "[Nest] Value not ready for NestConfig.\n");
+      S_ELEMENT_DPRINTF(baseE, "[Nest] Value not ready.\n");
+      return;
+    }
+    if (baseE->isAnyValueFaulted()) {
+      S_ELEMENT_DPRINTF(baseE, "[Nest] Value Faulted.\n");
       return;
     }
     baseElems.insert(baseE);
