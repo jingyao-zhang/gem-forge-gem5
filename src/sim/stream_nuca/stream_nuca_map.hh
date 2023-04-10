@@ -123,9 +123,10 @@ public:
     /**
      * StreamNUCA mapping.
      */
-    uint64_t interleave;
-    int startBank;
-    int startSet;
+    std::vector<uint64_t> interleaves;
+    uint64_t totalInterleave = 0;
+    int startBank = -1;
+    int startSet = -1;
     /**
      * StreamPUM mapping.
      */
@@ -136,10 +137,17 @@ public:
     int startWordline;
     int vBitlines;
 
-    RangeMap(Addr _startPAddr, Addr _endPAddr, uint64_t _interleave,
-             int _startBank, int _startSet)
+    RangeMap(Addr _startPAddr, Addr _endPAddr,
+             const std::vector<uint64_t> &_interleaves, int _startBank,
+             int _startSet)
         : startPAddr(_startPAddr), endPAddr(_endPAddr), isStreamPUM(false),
-          interleave(_interleave), startBank(_startBank), startSet(_startSet) {}
+          interleaves(_interleaves), startBank(_startBank),
+          startSet(_startSet) {
+      this->totalInterleave = 0;
+      for (auto intrlv : this->interleaves) {
+        this->totalInterleave += intrlv;
+      }
+    }
 
     RangeMap(Addr _startPAddr, Addr _endPAddr, const AffinePattern &_pumTile,
              int _elementBits, int _startWordline, int _vBitlines)
@@ -152,7 +160,8 @@ public:
   // Default (no remap).
   static void addRangeMap(Addr startPAddr, Addr endPAddr);
   // Remap a region with customized interleave.
-  static void addRangeMap(Addr startPAddr, Addr endPAddr, uint64_t interleave,
+  static void addRangeMap(Addr startPAddr, Addr endPAddr,
+                          const std::vector<uint64_t> &interleaves,
                           int startBank, int startSet);
   // Remap a region with PUM
   static void addRangeMap(Addr startPAddr, Addr endPAddr,

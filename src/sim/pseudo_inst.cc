@@ -703,7 +703,7 @@ void stream_nuca_set_property(ThreadContext *tc,
     DPRINTF(PseudoInst, "PseudoInst::stream_nuca_set_value(%p, %lu, %lu).\n",
         A, property, value);
     tc->getProcessPtr()->streamNUCAManager->setProperty(
-        A, property, value);
+        tc, A, property, value);
 }
 
 uint64_t stream_nuca_get_property(ThreadContext *tc,

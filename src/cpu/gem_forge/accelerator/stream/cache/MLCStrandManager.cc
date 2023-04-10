@@ -633,9 +633,10 @@ bool MLCStrandManager::chooseSplitDimIntrlv(StrandSplitContext &context,
 
   assert(config->initPAddrValid && "InitPAddr is not valid.");
   auto region = StreamNUCAMap::getRangeMapContaining(config->initPAddr);
-  if (region && region->interleave != 0) {
+  if (region && region->interleaves.size() == 1 &&
+      region->interleaves.front() != 0) {
     if (!region->isStreamPUM) {
-      const auto llcBankIntrlv = region->interleave;
+      const auto llcBankIntrlv = region->interleaves.front();
       this->tryAvoidStartStrandsAtSameBank(
           config, llcBankIntrlv, splitDimStride, splitDimTripPerStrand);
     } else {

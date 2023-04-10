@@ -104,17 +104,18 @@ void StreamNUCAMap::checkOverlapRange(Addr startPAddr, Addr endPAddr) {
 }
 
 void StreamNUCAMap::addRangeMap(Addr startPAddr, Addr endPAddr) {
-  addRangeMap(startPAddr, endPAddr, 0, -1, -1);
+  std::vector<uint64_t> defaultIntrlv(1, 0);
+  addRangeMap(startPAddr, endPAddr, defaultIntrlv, -1, -1);
 }
 
 void StreamNUCAMap::addRangeMap(Addr startPAddr, Addr endPAddr,
-                                uint64_t interleave, int startBank,
-                                int startSet) {
+                                const std::vector<uint64_t> &interleaves,
+                                int startBank, int startSet) {
   checkOverlapRange(startPAddr, endPAddr);
   DPRINTF(StreamNUCAMap, "Add PAddrRangeMap [%#x, %#x) %% %lu + %d.\n",
-          startPAddr, endPAddr, interleave, startBank);
+          startPAddr, endPAddr, startBank);
   rangeMaps.emplace(std::piecewise_construct, std::forward_as_tuple(startPAddr),
-                    std::forward_as_tuple(startPAddr, endPAddr, interleave,
+                    std::forward_as_tuple(startPAddr, endPAddr, interleaves,
                                           startBank, startSet));
 }
 
@@ -166,18 +167,28 @@ StreamNUCAMap::RangeMap *StreamNUCAMap::getRangeMapContaining(Addr paddr) {
 int StreamNUCAMap::getNUCABank(Addr paddr, const RangeMap &range) {
   assert(!range.isStreamPUM);
   assert(range.startBank != -1);
-  auto interleave = range.interleave;
   auto startPAddr = range.startPAddr;
   auto endPAddr = range.endPAddr;
   auto startBank = range.startBank;
   auto diffPAddr = paddr - startPAddr;
-  auto bank = startBank + diffPAddr / interleave;
+  auto roundIdx = diffPAddr / range.totalInterleave;
+  auto roundOffset = diffPAddr % range.totalInterleave;
+  auto bankIdx = 0;
+  auto numBanksPerRound = range.interleaves.size();
+  while (bankIdx < range.interleaves.size()) {
+    if (roundOffset < range.interleaves.at(bankIdx)) {
+      break;
+    }
+    bankIdx++;
+  }
+  assert(bankIdx < range.interleaves.size());
+  auto bank = startBank + roundIdx * numBanksPerRound + bankIdx;
   bank = bank % (getNumRows() * getNumCols());
   DPRINTF(StreamNUCAMap,
-          "Map PAddr %#x in [%#x, %#x) %% %lu + StartBank(%d) to Bank %d of "
-          "%dx%d.\n",
-          paddr, startPAddr, endPAddr, interleave, startBank, bank,
-          getNumRows(), getNumCols());
+          "Map PAddr %#x in [%#x, %#x) Round %dx%d + %d + StartBank(%d) to "
+          "Bank %d of %dx%d.\n",
+          paddr, startPAddr, endPAddr, roundIdx, numBanksPerRound, bankIdx,
+          startBank, bank, getNumRows(), getNumCols());
   return bank;
 }
 
@@ -251,28 +262,46 @@ int StreamNUCAMap::getNUCASet(Addr paddr, const RangeMap &range) {
   assert(!range.isStreamPUM);
   assert(range.startBank != -1);
 
-  auto interleave = range.interleave;
+  auto totalBanks = getNumCols() * getNumRows();
+  auto banksPerRound = range.interleaves.size();
+  if (!(totalBanks >= banksPerRound && totalBanks % banksPerRound == 0)) {
+    panic("Range %#x Illegal Interleaves %lu Banks %d.", range.startPAddr,
+          banksPerRound, totalBanks);
+  }
+
   auto startPAddr = range.startPAddr;
   auto endPAddr = range.endPAddr;
   auto startSet = range.startSet;
   auto diffPAddr = paddr - startPAddr;
-  auto globalBankInterleave = interleave * getNumCols() * getNumRows();
+
+  auto globalBankInterleave =
+      range.totalInterleave * totalBanks / banksPerRound;
   /**
    * Skip the line bits and bank bits.
    */
-  auto localBankOffset = diffPAddr % interleave;
-  auto globalBankOffset = diffPAddr / globalBankInterleave;
+  auto roundOffset = diffPAddr % range.totalInterleave;
+  auto bankIdx = 0;
+  while (bankIdx < range.interleaves.size()) {
+    if (roundOffset < range.interleaves.at(bankIdx)) {
+      break;
+    }
+    bankIdx++;
+  }
 
-  auto setNum = (globalBankOffset * (interleave / getCacheBlockSize())) +
-                localBankOffset / getCacheBlockSize();
+  assert(bankIdx < range.interleaves.size());
+  auto prevIntrlv = bankIdx > 0 ? range.interleaves.at(bankIdx - 1) : 0;
+  auto localIntrlv = range.interleaves.at(bankIdx) - prevIntrlv;
+  auto localBankOffset = roundOffset - prevIntrlv;
+  auto globalRoundIdx = diffPAddr / globalBankInterleave;
+
+  auto setNum =
+      (globalRoundIdx * localIntrlv + localBankOffset) / getCacheBlockSize();
 
   auto finalSetNum = (setNum + startSet) % getCacheNumSet();
 
   DPRINTF(StreamNUCAMap,
-          "Map PAddr %#x in [%#x, %#x) %% %lu + StartSet(%d) "
-          "to Set %d of %d.\n",
-          paddr, startPAddr, endPAddr, interleave, startSet, finalSetNum,
-          getCacheNumSet());
+          "Map PAddr %#x in [%#x, %#x) + StartSet(%d) to Set %d of %d.\n",
+          paddr, startPAddr, endPAddr, startSet, finalSetNum, getCacheNumSet());
 
   return finalSetNum;
 }

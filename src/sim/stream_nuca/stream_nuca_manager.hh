@@ -46,7 +46,8 @@ public:
     START_VADDR,
     END_VADDR
   };
-  void setProperty(Addr start, uint64_t property, uint64_t value);
+  void setProperty(ThreadContext *tc, Addr start, uint64_t property,
+                   uint64_t value);
   uint64_t getProperty(Addr vaddr, RegionProperty property);
 
   /**
@@ -108,6 +109,7 @@ public:
         : vaddrA(_vaddrA), vaddrB(_vaddrB), elemOffset(_elementOffset) {}
   };
 
+  using InterleaveVecT = std::vector<Addr>;
   struct StreamRegion {
     std::string name;
     Addr vaddr;
@@ -121,6 +123,7 @@ public:
      */
     using UserDefinedPropertyMap = std::map<RegionProperty, uint64_t>;
     UserDefinedPropertyMap properties;
+    InterleaveVecT nonUniformInterleaves;
     StreamRegion(const std::string &_name, Addr _vaddr, uint64_t _elementSize,
                  int64_t _numElement, const std::vector<int64_t> &_arraySizes)
         : name(_name), vaddr(_vaddr), elementSize(_elementSize),
@@ -199,7 +202,9 @@ private:
   int64_t getVirtualBitlinesForPUM(const StreamRegion &region);
   void remapDirectRegionPUM(const StreamRegion &region, int64_t vBitlines);
   void remapDirectRegionNUCA(StreamRegion &region);
-  uint64_t determineInterleave(const StreamRegion &region);
+  void setNonUniformInterleave(ThreadContext *tc, StreamRegion &region,
+                               Addr intrlvVAddr);
+  InterleaveVecT determineInterleave(const StreamRegion &region);
   int determineStartBank(const StreamRegion &region, uint64_t interleave);
 
   void computeCachedElements();

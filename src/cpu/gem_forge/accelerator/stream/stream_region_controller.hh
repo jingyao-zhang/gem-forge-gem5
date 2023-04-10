@@ -191,6 +191,7 @@ public:
       ExecFuncPtr predFunc = nullptr;
       bool predRet;
       StreamIdSet baseStreamIds;
+      std::string outerRegion;
     };
     StaticNestConfig nestConfig;
 

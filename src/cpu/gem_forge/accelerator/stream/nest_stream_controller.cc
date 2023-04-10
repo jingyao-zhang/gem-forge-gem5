@@ -72,16 +72,23 @@ void StreamRegionController::initializeNestStreams(
   staticNestConfig.predFunc = nestPredFunc;
   staticNestConfig.predRet = nestPredRet;
 
+  bool hasBaseLoadS = false;
   for (const auto &arg : region.nest_config_func().args()) {
     if (arg.is_stream()) {
       // This is a stream input. Remember this in the base stream.
       staticNestConfig.baseStreamIds.insert(arg.stream_id());
-      if (auto S = this->se->tryGetStream(arg.stream_id())) {
-        // It's possible that we don't have the outer S due to RemoteConfig.
-        S->setDepNestRegion();
+      auto baseS = this->se->getStream(arg.stream_id());
+      // It's possible that we don't have the outer S due to RemoteConfig.
+      baseS->setDepNestRegion();
+      if (baseS->isLoadStream()) {
+        hasBaseLoadS = true;
       }
+      const auto &outerRegion = this->getStaticRegion(baseS);
+      staticNestConfig.outerRegion = outerRegion.region.region();
     }
   }
+
+  assert(staticNestConfig.outerRegion != "");
 
   if (staticNestConfig.predFunc) {
     for (const auto &arg : region.nest_pred_func().args()) {
@@ -91,7 +98,30 @@ void StreamRegionController::initializeNestStreams(
         if (auto S = this->se->tryGetStream(arg.stream_id())) {
           // It's possible that we don't have the outer S due to RemoteConfig.
           S->setDepNestRegion();
+          if (S->isLoadStream()) {
+            hasBaseLoadS = true;
+          }
         }
+      }
+    }
+  }
+
+  if (!hasBaseLoadS && this->shouldRemoteConfigureNestRegion(staticRegion)) {
+    /**
+     * We need a load stream for remote config.
+     * So far I just try to find one from the outer loop.
+     */
+    assert(!staticNestConfig.baseStreamIds.empty());
+    const auto &baseId = *staticNestConfig.baseStreamIds.begin();
+    auto baseS = this->se->getStream(baseId);
+    const auto &outerRegion = this->getStaticRegion(baseS);
+    for (auto outerS : outerRegion.streams) {
+      if (outerS->isLoadStream()) {
+        S_DPRINTF(outerS,
+                  "[Nest] ! Add Fake NestRegionDep to Enable Remote Config.\n");
+        outerS->setDepNestRegion();
+        staticNestConfig.baseStreamIds.insert(outerS->staticId);
+        break;
       }
     }
   }
@@ -111,6 +141,7 @@ void StreamRegionController::dispatchStreamConfigForNestStreams(
 
     // Initialize a DynNestConfig.
     auto &staticNestConfig = staticNestRegion.nestConfig;
+    assert(staticNestConfig.outerRegion == staticRegion.region.region());
 
     dynRegion.nestConfigs.emplace_back(&staticNestRegion);
     auto &dynNestConfig = dynRegion.nestConfigs.back();
@@ -126,6 +157,8 @@ void StreamRegionController::dispatchStreamConfigForNestStreams(
 
     for (auto baseStreamId : staticNestConfig.baseStreamIds) {
       auto S = this->se->getStream(baseStreamId);
+      S_DPRINTF(S, "[Nest] Add as BaseS for NestRegion %s.\n",
+                staticNestRegion.region.region());
       dynNestConfig.baseStreams.insert(S);
       S->setDepNestRegion();
       auto &dynS = S->getDynStream(args.seqNum);
@@ -338,12 +371,18 @@ void StreamRegionController::configureNestStream(
             S_ELEMENT_PANIC(baseE, "[Nest] Mismatch in RemoteBank.");
           }
         } else {
-          S_ELEMENT_DPRINTF(baseE, "[Nest] Miss RemoteBank.");
+          S_ELEMENT_DPRINTF(baseE, "[Nest] Miss RemoteBank.\n");
           return;
         }
+      } else {
+        S_ELEMENT_DPRINTF(baseE,
+                          "[Nest] NoRemoteBank IsFloatElem %d IsLoadS %d.\n",
+                          baseE->isFloatElem(), baseE->stream->isLoadStream());
       }
     }
-    assert(remoteBank != -1);
+    if (remoteBank == -1) {
+      SE_PANIC("No RemoteBank for %s.", staticNestRegion.region.region());
+    }
     auto numSEs = StreamEngine::GlobalStreamEngines.size();
     assert(numSEs > 0);
     assert(remoteBank < numSEs && "[Nest] Overflow RemoteBank.");
@@ -439,7 +478,21 @@ void StreamRegionController::configureNestStream(
   auto &isaSE = isaHandler.getISAStreamEngine();
   isaSE.reset();
   isaSE.setOuterSE(this->se, dynRegion.seqNum);
-  nestSE->tryInitializeStreams(dynRegion.staticRegion->region);
+  // Initialize all outer loop.
+  std::vector<StaticRegion *> outerRegions;
+  auto curRegion = dynRegion.staticRegion;
+  while (true) {
+    outerRegions.push_back(curRegion);
+    if (!curRegion->nestConfig.configFunc) {
+      break;
+    }
+    assert(curRegion->nestConfig.outerRegion != "");
+    curRegion = &this->getStaticRegion(curRegion->nestConfig.outerRegion);
+  }
+  for (auto i = 0; i < outerRegions.size(); ++i) {
+    nestSE->tryInitializeStreams(
+        outerRegions.at(outerRegions.size() - i - 1)->region);
+  }
   auto configFuncStartSeqNum = dynNestConfig.getConfigSeqNum(
       nestSE, dynNestConfig.nextConfigElemIdx, dynRegion.seqNum);
   dynNestConfig.configFunc->invoke(actualParams, &isaHandler,

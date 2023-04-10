@@ -145,11 +145,65 @@ void StreamNUCAManager::defineRegion(const std::string &regionName, Addr start,
                             arraySizes));
 }
 
-void StreamNUCAManager::setProperty(Addr start, uint64_t property,
-                                    uint64_t value) {
+void StreamNUCAManager::setNonUniformInterleave(ThreadContext *tc,
+                                                StreamRegion &region,
+                                                Addr intrlvVAddr) {
+  auto &virtProxy = tc->getVirtProxy();
+  auto numInterleavs = 0;
+  auto elemSize = region.elementSize;
+  auto numElem = region.numElement;
+
+  const auto llcBlockSize = StreamNUCAMap::getCacheBlockSize();
+
+  Addr prevIntrlv = 0;
+
+  DPRINTF(StreamNUCAManager, "[StreamNUCA] Set NonUniformIntrlv for %s.\n",
+          region.name);
+
+  while (true) {
+
+    uint32_t intrlv;
+    virtProxy.readBlob(intrlvVAddr, &intrlv, sizeof(intrlv));
+
+    // Round up interleave to cache line size.
+    Addr lineIntrlv =
+        ((intrlv + llcBlockSize - 1) / llcBlockSize) * llcBlockSize;
+    auto partBytes = lineIntrlv - prevIntrlv;
+    auto partElems = partBytes / elemSize;
+    auto accElems = intrlv / elemSize;
+
+    DPRINTF(StreamNUCAManager,
+            "[StreamNUCA]  %d Intrlv %lu LineIntrlv %lu PartElems %d AccElems "
+            "%d TotalElems %d.\n",
+            numInterleavs, intrlv, lineIntrlv, partElems, accElems, numElem);
+    region.nonUniformInterleaves.push_back(lineIntrlv);
+    if (accElems >= numElem) {
+      break;
+    }
+
+    numInterleavs++;
+    prevIntrlv = lineIntrlv;
+    intrlvVAddr += sizeof(intrlv);
+    if (numInterleavs >= 128) {
+      panic("Too many non-uniform interleaves %d.", numInterleavs);
+    }
+  }
+}
+
+void StreamNUCAManager::setProperty(ThreadContext *tc, Addr start,
+                                    uint64_t property, uint64_t value) {
   DPRINTF(StreamNUCAManager, "[StreamNUCA] Set Property %#x %lu Value %lu.\n",
           start, property, value);
   auto &region = this->getRegionFromStartVAddr(start);
+
+  if (property == RegionProperty::INTERLEAVE) {
+    int64_t x = value;
+    if (x < 0) {
+      this->setNonUniformInterleave(tc, region, -x);
+      return;
+    }
+  }
+
   switch (property) {
   default: {
     panic("[StreamNUCA] Invalid property %lu.", property);
@@ -521,22 +575,45 @@ void StreamNUCAManager::remapDirectRegionNUCA(StreamRegion &region) {
 
   auto endPAddr = startPAddr + region.elementSize * region.numElement;
 
-  uint64_t interleave = this->determineInterleave(region);
-  int startBank = this->determineStartBank(region, interleave);
+  auto interleave = this->determineInterleave(region);
+  int startBank = this->determineStartBank(region, interleave.front());
   int startSet = 0;
 
   // Remember the interleave and start bank.
-  region.properties.emplace(RegionProperty::INTERLEAVE, interleave);
   region.properties.emplace(RegionProperty::START_BANK, startBank);
 
   StreamNUCAMap::addRangeMap(startPAddr, endPAddr, interleave, startBank,
                              startSet);
-  DPRINTF(StreamNUCAManager,
-          "[StreamNUCA] Map Region %s %#x PAddr %#x Interleave %lu Bank %d.\n",
-          region.name, startVAddr, startPAddr, interleave, startBank);
-  ccprintf(*log->stream(),
-           "[StreamNUCA] Map Region %s %#x PAddr %#x Interleave %lu Bank %d.\n",
-           region.name, startVAddr, startPAddr, interleave, startBank);
+  if (interleave.size() == 1) {
+    // Uniform interleave.
+    region.properties.emplace(RegionProperty::INTERLEAVE, interleave.front());
+    DPRINTF(
+        StreamNUCAManager,
+        "[StreamNUCA] Map Region %s %#x PAddr %#x Interleave %lu Bank %d.\n",
+        region.name, startVAddr, startPAddr, interleave.front(), startBank);
+    ccprintf(
+        *log->stream(),
+        "[StreamNUCA] Map Region %s %#x PAddr %#x Interleave %lu Bank %d.\n",
+        region.name, startVAddr, startPAddr, interleave.front(), startBank);
+  } else {
+    DPRINTF(
+        StreamNUCAManager,
+        "[StreamNUCA] Map Region %s %#x PAddr %#x Bank %d with NonUniIntrlv.\n",
+        region.name, startVAddr, startPAddr, startBank);
+    ccprintf(
+        *log->stream(),
+        "[StreamNUCA] Map Region %s %#x PAddr %#x Bank %d with NonUniIntrlv.\n",
+        region.name, startVAddr, startPAddr, startBank);
+    auto prevIntrlv = 0;
+    for (int i = 0; i < interleave.size(); i++) {
+      auto intrlv = interleave.at(i);
+      DPRINTF(StreamNUCAManager, "[StreamNUCA]  Intrlv %d %lu %lu.\n", i,
+              intrlv, intrlv - prevIntrlv);
+      ccprintf(*log->stream(), "[StreamNUCA]  Intrlv %d %lu %lu.\n", i, intrlv,
+               intrlv - prevIntrlv);
+      prevIntrlv = intrlv;
+    }
+  }
 }
 
 void StreamNUCAManager::remapPtrChaseRegion(ThreadContext *tc,
@@ -553,11 +630,11 @@ void StreamNUCAManager::remapPtrChaseRegion(ThreadContext *tc,
   auto alignInfo = decodeIrregularAlign(align.elemOffset);
   assert(alignInfo.type == IrregularAlignField::TypeE::PtrChase);
 
-  DPRINTF(
-      StreamNUCAManager,
-      "[StreamNUCA] Remap PtrCahse %s Head %s Offset %d Size %d ElemSize %d.\n",
-      region.name, alignToRegion.name, alignInfo.ptrOffset, alignInfo.ptrSize,
-      region.elementSize);
+  DPRINTF(StreamNUCAManager,
+          "[StreamNUCA] Remap PtrCahse %s Head %s Offset %d Size %d ElemSize "
+          "%d.\n",
+          region.name, alignToRegion.name, alignInfo.ptrOffset,
+          alignInfo.ptrSize, region.elementSize);
 
   const auto llcBlockSize = StreamNUCAMap::getCacheBlockSize();
   const auto nodeSize = region.elementSize;
@@ -1597,16 +1674,27 @@ Addr StreamNUCAManager::translate(Addr vaddr) {
   return paddr;
 }
 
-uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
+StreamNUCAManager::InterleaveVecT
+StreamNUCAManager::determineInterleave(const StreamRegion &region) {
   const uint64_t defaultInterleave = 1024;
   uint64_t interleave = defaultInterleave;
+
+  /**
+   * If the region has non-uniform interleave. Override it.
+   */
+  if (!region.nonUniformInterleaves.empty()) {
+    return region.nonUniformInterleaves;
+  }
 
   /**
    * If the region has user-defined interleave or previous determined
    * interleave.
    */
   if (region.properties.count(RegionProperty::INTERLEAVE)) {
-    return region.properties.at(RegionProperty::INTERLEAVE);
+    auto intrlv = region.properties.at(RegionProperty::INTERLEAVE);
+    DPRINTF(StreamNUCAManager, "Range %s %#x Elems %lu Use Interleave %lu.\n",
+            region.name, region.vaddr, region.elementSize, intrlv);
+    return InterleaveVecT(1, intrlv);
   }
 
   auto numRows = StreamNUCAMap::getNumRows();
@@ -1690,21 +1778,36 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
     } else {
       // Other alignment.
       auto otherInterleave = this->determineInterleave(alignToRegion);
-      DPRINTF(
-          StreamNUCAManager,
-          "Range %s %#x Align to Range %#x Intrlv = %lu / %lu * %lu /? %ld.\n",
-          region.name, region.vaddr, alignToRegion.vaddr, otherInterleave,
-          alignToRegion.elementSize, region.elementSize, elemOffset);
-      interleave =
-          otherInterleave / alignToRegion.elementSize * region.elementSize;
-      if (elemOffset > 0) {
-        assert(interleave % elemOffset == 0 && "Invalid ElemOffset.");
-        interleave /= elemOffset;
+      DPRINTF(StreamNUCAManager,
+              "Range %s %#x Align to Range %#x IntrlvRatio = %lu / %lu.\n",
+              region.name, region.vaddr, alignToRegion.vaddr,
+              alignToRegion.elementSize, region.elementSize);
+      for (int i = 0; i < otherInterleave.size(); ++i) {
+        auto oldIntrlv = otherInterleave.at(i);
+        auto newIntrlv =
+            oldIntrlv / alignToRegion.elementSize * region.elementSize;
+        if (elemOffset > 0) {
+          newIntrlv = (newIntrlv + elemOffset - 1) / elemOffset;
+        }
+        // Round up to cache line.
+        newIntrlv = roundUp(newIntrlv, StreamNUCAMap::getCacheBlockSize());
+        DPRINTF(StreamNUCAManager,
+                "  Adjust %d Intrlv %lu = %lu / %lu * %lu /? %ld.\n", i,
+                newIntrlv, oldIntrlv, alignToRegion.elementSize,
+                region.elementSize, elemOffset);
+        otherInterleave.at(i) = newIntrlv;
+      }
+      if (otherInterleave.size() > 1) {
+        // This is non-uniform interleave.
+        return otherInterleave;
+      } else {
+        // This is old uniform interleave.
+        interleave = otherInterleave.front();
       }
     }
   }
 
-  return interleave;
+  return InterleaveVecT(1, interleave);
 }
 
 int StreamNUCAManager::determineStartBank(const StreamRegion &region,
@@ -1853,15 +1956,15 @@ bool StreamNUCAManager::canRemapDirectRegionPUM(const StreamRegion &region) {
 
   auto bitlines = pumHWConfig.array_cols;
   if (region.numElement < bitlines || region.numElement % bitlines != 0) {
-    DPRINTF(
-        StreamNUCAManager,
-        "[StreamPUM] Region %s NumElem %llu not compatible with Bitlines %ld.",
-        region.name, region.numElement, bitlines);
+    DPRINTF(StreamNUCAManager,
+            "[StreamPUM] Region %s NumElem %llu not compatible with Bitlines "
+            "%ld.",
+            region.name, region.numElement, bitlines);
     return false;
   }
   /**
-   * A heuristic to avoid mapping some arrays since they should never be mapped
-   * to PUM.
+   * A heuristic to avoid mapping some arrays since they should never be
+   * mapped to PUM.
    * TODO: Add pseudo-instructions to pass in this information.
    */
   if (region.properties.count(RegionProperty::USE_PUM) &&
@@ -1893,9 +1996,10 @@ StreamNUCAManager::getVirtualBitlinesForPUM(const StreamRegion &region) {
    * bitlines, we just map to the number of physical bitlines.
    *
    * However, when the total elements in the region is more than available
-   * bitlines, we introduce the concept of virtual bitlines, and we may increase
-   * the virtual bitlines beyond the actual physical bitlines, so that we make
-   * sure that the number of tiles is within the number of SRAM arrays.
+   * bitlines, we introduce the concept of virtual bitlines, and we may
+   * increase the virtual bitlines beyond the actual physical bitlines, so
+   * that we make sure that the number of tiles is within the number of SRAM
+   * arrays.
    *
    * When virtual bitlines is more than physical bitlines, it means that the
    * tile will be wrap around, and in PUMEngine, we charge multiple latency to
@@ -2084,8 +2188,8 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
         tileSizeChosen = true;
       }
     } else {
-      // Tiling is not enabled, however, we tile to handle the case when dim0 <
-      // bitlines.
+      // Tiling is not enabled, however, we tile to handle the case when dim0
+      // < bitlines.
       auto &x = tileSizes.at(0);
       auto &y = tileSizes.at(1);
       x = vBitlines;
@@ -2159,8 +2263,8 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
         // }
       }
     } else {
-      // Tiling is not enabled, however, we tile to handle the case when dim0 <
-      // bitlines.
+      // Tiling is not enabled, however, we tile to handle the case when dim0
+      // < bitlines.
       auto &x = tileSizes.at(0);
       auto &y = tileSizes.at(1);
       auto &z = tileSizes.at(2);

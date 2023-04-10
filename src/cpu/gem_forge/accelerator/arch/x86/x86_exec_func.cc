@@ -168,7 +168,7 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
   // Check if I am pure integer type.
   this->isPureInteger = true;
   for (const auto &arg : this->func.args()) {
-    if (arg.type() != DataType::INTEGER) {
+    if (arg.type() != DataType::INTEGER && arg.type() != DataType::INT1) {
       this->isPureInteger = false;
     }
     if (arg.type() == DataType::VECTOR_128 ||
@@ -179,7 +179,8 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
       }
     }
   }
-  if (this->func.type() != DataType::INTEGER) {
+  if (this->func.type() != DataType::INTEGER &&
+      this->func.type() != DataType::INT1) {
     this->isPureInteger = false;
   }
   if (this->func.type() == DataType::VECTOR_128 ||
@@ -217,7 +218,7 @@ int ExecFunc::translateToNumRegs(const DataType &type) {
 }
 
 std::string ExecFunc::RegisterValue::print(const DataType &type) const {
-  if (type == DataType::INTEGER) {
+  if (type == DataType::INTEGER || type == DataType::INT1) {
     return csprintf("%#x", this->front());
   } else if (type == DataType::FLOAT) {
     return csprintf("%f", static_cast<float>(this->front()));
@@ -259,7 +260,8 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
   for (auto idx = 0; idx < params.size(); ++idx) {
     auto param = params.at(idx);
     auto type = this->func.args(idx).type();
-    if (type == ::LLVM::TDG::DataType::INTEGER) {
+    if (type == ::LLVM::TDG::DataType::INTEGER ||
+        type == ::LLVM::TDG::DataType::INT1) {
       if (intParamIdx < 6) {
         const auto &reg = intRegParams[intParamIdx];
         execFuncXC.setRegOperand(reg, param.front());
@@ -346,6 +348,11 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
     // We expect the int result in rax.
     auto rax = int_reg::Rax;
     retValue.front() = execFuncXC.getRegOperand(rax);
+  } else if (retType == ::LLVM::TDG::DataType::INT1) {
+    // We expect the int result in rax.
+    auto rax = int_reg::Rax;
+    retValue.front() = execFuncXC.getRegOperand(rax);
+    retValue.front() &= 0x1;
   } else {
     // We expect the float result in xmm0.
     auto numRegs = this->translateToNumRegs(retType);
@@ -380,7 +387,8 @@ ExecFunc::invoke_imvals(const std::vector<RegisterValue> &params,
   for (auto idx = 0; idx < params.size(); ++idx) {
     auto param = params.at(idx);
     auto type = this->func.args(idx).type();
-    if (type == ::LLVM::TDG::DataType::INTEGER) {
+    if (type == ::LLVM::TDG::DataType::INTEGER ||
+        type == ::LLVM::TDG::DataType::INT1) {
       if (intParamIdx == 6) {
         panic("Too many IntArgs on ExecFunc %s.", this->func.name());
       }
@@ -494,6 +502,11 @@ ExecFunc::invoke_imvals(const std::vector<RegisterValue> &params,
     // We expect the int result in rax.
     auto rax = int_reg::Rax;
     retValue.front() = execFuncXC.getRegOperand(rax);
+  } else if (retType == ::LLVM::TDG::DataType::INT1) {
+    // We expect the int result in rax.
+    auto rax = int_reg::Rax;
+    retValue.front() = execFuncXC.getRegOperand(rax);
+    retValue.front() &= 0x1;
   } else {
     // We expect the float result in xmm0.
     auto numRegs = this->translateToNumRegs(retType);

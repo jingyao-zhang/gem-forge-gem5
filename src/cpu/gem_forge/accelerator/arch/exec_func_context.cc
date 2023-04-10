@@ -17,7 +17,8 @@ void ExecFuncContext::setRegOperand(const StaticInst *si, int idx,
 
   auto &reg_file = regFiles[reg.classValue()];
 
-  DPRINTF(ExecFunc, "Set Reg %s reg.index() %d.\n", regId, reg.index());
+  DPRINTF(ExecFunc, "Set Reg %s reg.index() %d Val %#x.\n", regId, reg.index(),
+          *reinterpret_cast<const uint64_t *>(val));
 
   reg_file->set(reg.index(), val);
 }

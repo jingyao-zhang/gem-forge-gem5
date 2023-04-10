@@ -71,7 +71,8 @@ uint64_t ExecFunc::invoke(const std::vector<uint64_t> &params) {
   auto argIdx = a0RegIdx;
   for (auto idx = 0; idx < params.size(); ++idx) {
     auto param = params.at(idx);
-    assert(this->func.args(idx).type() == ::LLVM::TDG::DataType::INTEGER &&
+    assert((this->func.args(idx).type() == ::LLVM::TDG::DataType::INTEGER ||
+            this->func.args(idx).type() == ::LLVM::TDG::DataType::INT1) &&
            "Does not know how to handle float param yet.");
     RegId reg(RegClass::IntRegClass, argIdx);
     execFuncXC.setIntRegOperand(reg, param);
@@ -84,7 +85,8 @@ uint64_t ExecFunc::invoke(const std::vector<uint64_t> &params) {
   }
 
   // The result value should be in a0 = x10.
-  assert(this->func.type() == ::LLVM::TDG::DataType::INTEGER &&
+  assert((this->func.type() == ::LLVM::TDG::DataType::INTEGER ||
+          this->func.type() == ::LLVM::TDG::DataType::INT1) &&
          "Do not support float return value yet.");
   RegId a0Reg(RegClass::IntRegClass, a0RegIdx);
   auto retAddr = execFuncXC.readIntRegOperand(a0Reg);
@@ -92,4 +94,3 @@ uint64_t ExecFunc::invoke(const std::vector<uint64_t> &params) {
   return retAddr;
 }
 } // namespace RiscvISA} // namespace gem5
-
