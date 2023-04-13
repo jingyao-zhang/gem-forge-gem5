@@ -124,22 +124,20 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
     assert(staticInst && "Failed to decode inst.");
 
     // We assume there is no branch.
-    EXEC_FUNC_DPRINTF("Decode MacroInst %s.\n",
-                      staticInst->disassemble(pc.pc()).c_str());
+    EXEC_FUNC_DPRINTF("Decode MacroInst %#x %s.\n", pc.pc(),
+                      staticInst->disassemble(pc.pc()));
 
     auto macroop = dynamic_cast<MacroopBase *>(staticInst.get());
     if (staticInst->getName() == "ret") {
       break;
     }
 
-    assert(!staticInst->isControl() &&
-           "No control instruction allowed in address function.");
     auto numMicroops = macroop->getNumMicroops();
     for (auto upc = 0; upc < numMicroops; ++upc) {
       auto microop = staticInst->fetchMicroop(upc);
       EXEC_FUNC_DPRINTF("  Decode MicroInst %s %s.\n",
                         enums::OpClassStrings[microop->opClass()],
-                        microop->disassemble(pc.pc()).c_str());
+                        microop->disassemble(pc.pc()));
       this->instructions.push_back(microop);
       this->pcs.push_back(pc);
     }
@@ -311,9 +309,9 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
   // Support a simple stack. This is used for complex NestStreamConfigureFunc.
   std::vector<RegVal> stack;
 
-  for (auto idx = 0; idx < this->instructions.size(); ++idx) {
+  for (auto idx = 0; idx < this->instructions.size();) {
     auto &staticInst = this->instructions.at(idx);
-    auto &pc = this->pcs.at(idx);
+    const auto &pc = this->pcs.at(idx);
     EXEC_FUNC_DPRINTF("Set PCState %s: %s.\n", pc,
                       staticInst->disassemble(pc.pc()));
     execFuncXC.pcState(pc);
@@ -339,6 +337,42 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
       isaHandler->execute(dynInfo, execFuncXC);
       assert(isaHandler->canCommit(dynInfo) && "Cannot commit.");
       isaHandler->commit(dynInfo);
+    }
+
+    if (staticInst->isControl()) {
+      const auto &newPC =
+          dynamic_cast<const X86ISA::PCState &>(execFuncXC.pcState());
+      EXEC_FUNC_DPRINTF("Ctrl Inst set PCState %s.\n", newPC);
+
+      if (newPC.npc() != pc.npc()) {
+        /**
+         * We branched. Search for the target inst.
+         */
+        auto nextIdx = -1;
+        for (int i = 0; i < this->instructions.size(); ++i) {
+          auto nextPC = this->pcs.at(i);
+          if (nextPC.pc() == newPC.npc()) {
+            // Found it.
+            nextIdx = i;
+            break;
+          }
+        }
+
+        if (nextIdx == -1) {
+          EXEC_FUNC_PANIC("Failed to find JumpTarget %s.", newPC);
+        }
+
+        if (nextIdx <= idx) {
+          EXEC_FUNC_PANIC("Backward Jump not supported.");
+        }
+
+        EXEC_FUNC_DPRINTF("Ctrl Inst Jump to Idx %d %s.\n", nextIdx, newPC);
+        idx = nextIdx;
+      } else {
+        ++idx;
+      }
+    } else {
+      ++idx;
     }
   }
 
