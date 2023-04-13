@@ -267,8 +267,18 @@ void StreamRegionController::configureNestStream(
     }
   }
 
-  // Check the base elements are value ready.
+  // Wait for the LoopBound.
   auto nextElemIdx = dynNestConfig.nextConfigElemIdx;
+  const auto &dynBound = dynRegion.loopBound;
+  if (staticRegion.region.is_loop_bound()) {
+    if (nextElemIdx > dynBound.nextElemIdx) {
+      SE_DPRINTF("[Nest] Wait For LoopBound: %llu >= %llu %s.\n", nextElemIdx,
+                 dynBound.nextElemIdx, staticNestRegion.region.region());
+      return;
+    }
+  }
+
+  // Check the base elements are value ready.
   std::unordered_set<StreamElement *> baseElems;
   for (auto baseS : dynNestConfig.baseStreams) {
     auto &baseDynS = baseS->getDynStream(dynRegion.seqNum);
