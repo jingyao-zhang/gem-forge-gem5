@@ -1140,9 +1140,6 @@ ISAStreamEngine::collectStreamInfoInRegion(
       streams.push_back(&streamInfo);
     }
 
-    assert(curRegion.nest_region_relative_paths_size() <= 1 &&
-           "Multiple nest regions is not supported.");
-
     for (const auto &nestConfigRelativePath :
          curRegion.nest_region_relative_paths()) {
       const auto &nestRegion = this->getStreamRegion(nestConfigRelativePath);

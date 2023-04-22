@@ -709,7 +709,14 @@ void MLCDynDirectStream::sendCreditToLLC(const LLCSegmentPosition &segment) {
 
   Cycles latency(1); // Just use 1 cycle latency here.
 
-  if (this->controller->isStreamIdeaFlowEnabled()) {
+  /**
+   * The first credit should be actually sent along with the Config.
+   * Here I model it as ideal message.
+   */
+  bool isFirstCredit =
+      startElemIdx == this->config->floatPlan.getFirstFloatElementIdx();
+
+  if (this->controller->isStreamIdeaFlowEnabled() || isFirstCredit) {
     auto remoteController = this->controller->getController(remoteBank);
     auto remoteSE = remoteController->getLLCStreamEngine();
     remoteSE->receiveStreamFlow(sliceId);

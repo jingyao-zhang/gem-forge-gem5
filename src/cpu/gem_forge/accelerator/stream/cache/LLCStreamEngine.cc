@@ -173,42 +173,84 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 }
 
 void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
-  auto endStrandId = *(pkt->getPtr<DynStrandId *>());
-  LLC_S_DPRINTF_(LLCRubyStreamLife, *endStrandId, "Recv StreamEnd at %s.\n",
+  auto endStrandIdPtr = *(pkt->getPtr<DynStrandId *>());
+  const auto &endStrandId = *endStrandIdPtr;
+  LLC_S_DPRINTF_(LLCRubyStreamLife, endStrandId, "Recv StreamEnd at %s.\n",
                  this->controller->getMachineID());
+  auto endS = LLCDynStream::getLLCStreamPanic(endStrandId, "Recv StreamEnd.");
   // Search for this stream.
-  for (auto streamIter = this->streams.begin(), streamEnd = this->streams.end();
-       streamIter != streamEnd; ++streamIter) {
-    auto &S = *streamIter;
-    if (S->getDynStrandId() == (*endStrandId)) {
+  for (auto iter = this->streams.begin(); iter != this->streams.end(); ++iter) {
+    auto &S = *iter;
+    if (S == endS) {
       // Found it.
       // ? Can we just sliently release it?
       this->tryRemoveIssuingDirDynS(S);
       this->removeStreamFromMulticastTable(S);
       S->terminate();
-      this->streams.erase(streamIter);
+      this->streams.erase(iter);
       // Don't forgot to release the memory.
-      delete endStrandId;
+      delete endStrandIdPtr;
       delete pkt;
       return;
     }
   }
   /**
-   * ? No need to search in migratingStreams?
+   * No need to search in migratingStreams?
    * For migrating streams, the end message should be sent to the
    * destination llcBank.
+   *
+   * However: there is a problem with terminated PtrChaseS.
+   * Somehow it does not migrate to the bank of the EndMsg.
+   * So far I try to magically terminate it.
+   * TODO: Fix this for bfs_pull_adj_uno_aff.
    */
+  if (endS->isPointerChase()) {
+    /**
+     * We directly search in our migrating stream.
+     */
+    for (auto iter = this->migratingStreams.begin();
+         iter != this->migratingStreams.end(); ++iter) {
+      auto S = *iter;
+      if (S == endS) {
+        LLC_S_DPRINTF_(LLCRubyStreamLife, endStrandId,
+                       "End Migrating PtrChaseS at %s.\n",
+                       this->controller->getMachineID());
+        this->migratingStreams.erase(iter);
+        this->removeStreamFromMulticastTable(S);
+        S->terminate();
+        delete endStrandIdPtr;
+        delete pkt;
+        return;
+      }
+    }
+
+    /**
+     * Magically put StreamEnd at where the PtrCaseS is.
+     */
+    auto endCtrl = endS->curOrNextRemoteCtrl();
+    auto endSE = endCtrl->getLLCStreamEngine();
+    if (endSE != this) {
+      LLC_S_DPRINTF_(LLCRubyStreamLife, endStrandId,
+                     "Move PtrChaseS End to %s.\n", endCtrl->getMachineID());
+      endSE->receiveStreamEnd(pkt);
+      return;
+    } else {
+      // It's coming here.
+      assert(endS->getState() == LLCDynStream::State::MIGRATING);
+    }
+  }
 
   /**
    * If not found, it is similar case as stream flow control message.
    * We are waiting for the stream to migrate here.
    * Add the message to the pending
    */
-  this->pendingEndStrandIds.insert(*endStrandId);
+  this->pendingEndStrandIds.insert(endStrandId);
 
   // Don't forgot to release the memory.
-  delete endStrandId;
+  delete endStrandIdPtr;
   delete pkt;
+  return;
 }
 
 void LLCStreamEngine::receiveStreamMigrate(LLCDynStreamPtr dynS,

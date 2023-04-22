@@ -1400,11 +1400,12 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
   }
 
   /**
-   * Check that LoopBound is dependent on one MemStream and maybe UsedAffineIVS.
-   * So far we don't float InnerLoopDep.
+   * Check that LoopBound is dependent on one BaseStream with Max
+   * FloatChainDepth and maybe UsedAffineIVS. So far we don't float
+   * InnerLoopDep.
    */
   auto loopLevel = dynRegion.staticRegion->getConfigLoopLevel();
-  std::vector<DynStream *> boundBaseMemStreams;
+  std::vector<DynStream *> boundBaseStreams;
   std::vector<DynStream *> boundBaseIVAffineStreams;
   for (auto S : staticBound.baseStreams) {
     if (S->getLoopLevel() > loopLevel) {
@@ -1415,9 +1416,14 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
     }
     auto &dynS = S->getDynStream(args.seqNum);
     if (S->isPointerChaseIndVar()) {
-      StreamFloatPolicy::logS(dynS) << "[Not Float] LoopBound: BasePtrChaseS.\n"
-                                    << std::flush;
-      return;
+      if (!args.floatedMap.count(S)) {
+        StreamFloatPolicy::logS(dynS)
+            << "[Not Float] LoopBound: Unfloated BasePtrChaseS.\n"
+            << std::flush;
+        return;
+      }
+      boundBaseStreams.push_back(&dynS);
+      continue;
     }
     if (S->isReduction()) {
       StreamFloatPolicy::logS(dynS) << "[Not Float] LoopBound: BaseReduceS.\n"
@@ -1431,15 +1437,14 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
             << std::flush;
         return;
       }
-      boundBaseMemStreams.push_back(&dynS);
+      boundBaseStreams.push_back(&dynS);
     } else {
       boundBaseIVAffineStreams.push_back(&dynS);
     }
   }
 
-  // For now, let's just support single BaseStream.
-  StreamFloatPolicy::getLog() << "[LoopBound] BaseMemS: ";
-  for (auto dynS : boundBaseMemStreams) {
+  StreamFloatPolicy::getLog() << "[LoopBound] BaseS: ";
+  for (auto dynS : boundBaseStreams) {
     StreamFloatPolicy::logS(*dynS) << ' ';
   }
   StreamFloatPolicy::getLog() << '\n' << std::flush;
@@ -1449,15 +1454,38 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
   }
   StreamFloatPolicy::getLog() << '\n' << std::flush;
 
-  if (boundBaseMemStreams.size() != 1) {
-    StreamFloatPolicy::getLog()
-        << "[Not Float] LoopBound: Not Single BaseMemS.\n"
-        << std::flush;
+  // For now, let's just support single BaseStream.
+  if (boundBaseStreams.empty()) {
+    StreamFloatPolicy::getLog() << "[Not Float] LoopBound: No BaseMemS.\n"
+                                << std::flush;
     return;
   }
 
-  auto &baseDynS = *boundBaseMemStreams.front();
+  /**
+   * Sort by FloatChainDepth
+   */
+  std::sort(boundBaseStreams.begin(), boundBaseStreams.end(),
+            [this, &args](DynStream *SA, DynStream *SB) -> bool {
+              return this->getFloatChainDepth(*args.floatedMap.at(SA->stream)) >
+                     this->getFloatChainDepth(*args.floatedMap.at(SB->stream));
+            });
+
+  auto &baseDynS = *boundBaseStreams.front();
   auto baseS = baseDynS.stream;
+  auto &baseConfig = args.floatedMap.at(baseS);
+
+  // They should from the same float chain.
+  for (int i = 1; i < boundBaseStreams.size(); ++i) {
+    auto dynS = boundBaseStreams.at(i);
+    auto &config = args.floatedMap.at(dynS->stream);
+    if (!this->isOnFloatChain(baseConfig, config)) {
+      StreamFloatPolicy::logS(baseDynS)
+          << "[Not Float] LoopBound: Not on Chain: " << dynS->dynStreamId
+          << "\n"
+          << std::flush;
+      return;
+    }
+  }
 
   // Enforce that BaseIVAffineS is from the same loop.
   for (auto baseIVAffineDynS : boundBaseIVAffineStreams) {
@@ -1472,10 +1500,21 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
     }
   }
 
-  auto &baseConfig = args.floatedMap.at(baseS);
   baseConfig->loopBoundFormalParams = dynBound.formalParams;
   baseConfig->loopBoundCallback = dynBound.boundFunc;
   baseConfig->loopBoundRet = staticBound.boundRet;
+
+  // Add BaseOn Edge to previous streams on the chain.
+  for (auto i = 1; i < boundBaseStreams.size(); ++i) {
+    auto dynS = boundBaseStreams.at(i);
+    auto &config = args.floatedMap.at(dynS->stream);
+    StreamFloatPolicy::logS(baseDynS)
+        << "[Float] LoopBound: Add BaseOn to " << dynS->dynStreamId << "\n"
+        << std::flush;
+    auto reuse = baseDynS.getBaseElemReuseCount(dynS->stream);
+    auto skip = baseDynS.getBaseElemSkipCount(dynS->stream);
+    baseConfig->addBaseOn(config, reuse, skip);
+  }
 
   // Add the BaseAffineIVS as special edge and simple reuse/skip.
   for (auto baseIVAffineDynS : boundBaseIVAffineStreams) {

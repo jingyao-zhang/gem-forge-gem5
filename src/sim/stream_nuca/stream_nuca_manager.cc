@@ -162,7 +162,7 @@ void StreamNUCAManager::setNonUniformInterleave(ThreadContext *tc,
 
   while (true) {
 
-    uint32_t intrlv;
+    uint64_t intrlv;
     virtProxy.readBlob(intrlvVAddr, &intrlv, sizeof(intrlv));
 
     // Round up interleave to cache line size.
@@ -587,23 +587,24 @@ void StreamNUCAManager::remapDirectRegionNUCA(StreamRegion &region) {
   if (interleave.size() == 1) {
     // Uniform interleave.
     region.properties.emplace(RegionProperty::INTERLEAVE, interleave.front());
-    DPRINTF(
-        StreamNUCAManager,
-        "[StreamNUCA] Map Region %s %#x PAddr %#x Interleave %lu Bank %d.\n",
-        region.name, startVAddr, startPAddr, interleave.front(), startBank);
-    ccprintf(
-        *log->stream(),
-        "[StreamNUCA] Map Region %s %#x PAddr %#x Interleave %lu Bank %d.\n",
-        region.name, startVAddr, startPAddr, interleave.front(), startBank);
+    DPRINTF(StreamNUCAManager,
+            "[StreamNUCA] Map %s %#x %lux%lu PAddr %#x Intrlv %lu Bank %d.\n",
+            region.name, startVAddr, region.elementSize, region.numElement,
+            startPAddr, interleave.front(), startBank);
+    ccprintf(*log->stream(),
+             "[StreamNUCA] Map %s %#x %lux%lu PAddr %#x Intrlv %lu Bank %d.\n",
+             region.name, startVAddr, region.elementSize, region.numElement,
+             startPAddr, interleave.front(), startBank);
   } else {
-    DPRINTF(
-        StreamNUCAManager,
-        "[StreamNUCA] Map Region %s %#x PAddr %#x Bank %d with NonUniIntrlv.\n",
-        region.name, startVAddr, startPAddr, startBank);
+    DPRINTF(StreamNUCAManager,
+            "[StreamNUCA] Map %s %#x %lux%lu PAddr %#x Bank %d NonUniIntrlv.\n",
+            region.name, startVAddr, region.elementSize, region.numElement,
+            startPAddr, startBank);
     ccprintf(
         *log->stream(),
-        "[StreamNUCA] Map Region %s %#x PAddr %#x Bank %d with NonUniIntrlv.\n",
-        region.name, startVAddr, startPAddr, startBank);
+        "[StreamNUCA] Map %s %#x %lux%lu PAddr %#x Bank %d NonUniIntrlv.\n",
+        region.name, startVAddr, region.elementSize, region.numElement,
+        startPAddr, startBank);
     auto prevIntrlv = 0;
     for (int i = 0; i < interleave.size(); i++) {
       auto intrlv = interleave.at(i);

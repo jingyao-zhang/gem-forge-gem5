@@ -764,6 +764,11 @@ void LLCDynStream::initNextElem(Addr vaddr) {
           this->configData->reductionInitValue);
       this->lastReducedElemIdx = firstStreamElemIdx;
 
+      // If we have LoopBound. the first elem is considered done.
+      if (this->hasLoopBound()) {
+        this->lastReductionElement->doneLoopBound();
+      }
+
       // Also add the first element to the map.
       this->idxToElementMap.emplace(firstStreamElemIdx,
                                     this->lastReductionElement);
@@ -906,7 +911,8 @@ void LLCDynStream::eraseElem(IdxToElementMapT::iterator elemIter) {
   LLC_ELEMENT_DPRINTF(elem, "Erased elem. Remaining %lu. TotalAlive %lu.\n",
                       this->idxToElementMap.size() - 1,
                       LLCStreamElement::getAliveElems());
-  this->getStaticS()->incrementOffloadedStepped();
+  auto S = this->getStaticS();
+  S->incrementOffloadedStepped();
   if (this->hasLoopBound() && !elem->isLoopBoundDone()) {
     /**
      * We erased an element without LoopBound evaluated.
@@ -1612,6 +1618,8 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
                     "[DirectReduce] Reduction not in order.\n");
       }
       this->lastReducedElemIdx++;
+      // Evaluate the loop bound.
+      this->evaluateLoopBound(se, this->lastReducedElemIdx);
 
       // Trigger indirect elements.
       se->triggerIndElems(this, elem);
@@ -2074,8 +2082,24 @@ void LLCDynStream::evaluateLoopBound(LLCStreamEngine *se, uint64_t elemIdx) {
     return;
   }
 
-  auto getStreamValue = [&elem](uint64_t streamId) -> StreamValue {
-    return elem->getBaseOrMyStreamValue(streamId);
+  /**
+   * If the LoopBound is associated with ReduceS, need to evaluate with
+   * nextElem's baseElem.
+   */
+  auto S = this->getStaticS();
+  bool isReduceOrPtrChaseIndVar = S->isReduction() || S->isPointerChaseIndVar();
+  auto tripCount = elemIdx;
+  if (isReduceOrPtrChaseIndVar) {
+    assert(elemIdx > 0);
+    tripCount = elemIdx - 1;
+  }
+  auto getStreamValue =
+      [&elem, isReduceOrPtrChaseIndVar](uint64_t streamId) -> StreamValue {
+    if (isReduceOrPtrChaseIndVar) {
+      return elem->getBaseStreamValue(streamId);
+    } else {
+      return elem->getBaseOrMyStreamValue(streamId);
+    }
   };
   auto loopBoundActualParams = convertFormalParamToParam(
       this->configData->loopBoundFormalParams, getStreamValue);
@@ -2091,13 +2115,12 @@ void LLCDynStream::evaluateLoopBound(LLCStreamEngine *se, uint64_t elemIdx) {
      * So far we just magically set TotalTripCount for Core/MLC/LLC.
      * TODO: Handle this in a more realistic way.
      */
-    auto tripCount = elemIdx;
     LLC_SE_ELEM_DPRINTF_(LLCStreamLoopBound, elem,
                          "[LLCLoopBound] Break (%d == %d) TripCount %llu.\n",
                          loopBoundRet, this->configData->loopBoundRet,
                          tripCount);
 
-    se->sendLoopBoundRetToMLC(this, elemIdx, true /* broken */);
+    se->sendLoopBoundRetToMLC(this, tripCount, true /* broken */);
     if (this->rootStream) {
       this->loopBoundBrokenOut = true;
     } else {
@@ -2116,7 +2139,7 @@ void LLCDynStream::evaluateLoopBound(LLCStreamEngine *se, uint64_t elemIdx) {
     LLC_SE_ELEM_DPRINTF_(LLCStreamLoopBound, elem,
                          "[LLCLoopBound] Continue (%d != %d).\n", loopBoundRet,
                          this->configData->loopBoundRet);
-    se->sendLoopBoundRetToMLC(this, elemIdx, false /* broken */);
+    se->sendLoopBoundRetToMLC(this, tripCount, false /* broken */);
   }
 }
 

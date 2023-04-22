@@ -174,11 +174,6 @@ void StreamRegionController::executeStreamConfigForNestStreams(
     return;
   }
 
-  assert(dynRegion.nestConfigs.size() == 1 &&
-         "Multiple Nesting is not supported.");
-
-  auto &dynNestConfig = dynRegion.nestConfigs.front();
-
   assert(args.inputMap && "Missing InputMap.");
   assert(args.inputMap->count(::LLVM::TDG::ReservedStreamRegionId::
                                   NestConfigureFuncInputRegionId) &&
@@ -188,18 +183,21 @@ void StreamRegionController::executeStreamConfigForNestStreams(
 
   int inputIdx = 0;
 
-  // Construct the NestConfigFunc formal params.
-  {
-    auto &formalParams = dynNestConfig.formalParams;
-    const auto &configFuncInfo = dynNestConfig.configFunc->getFuncInfo();
-    this->buildFormalParams(inputVec, inputIdx, configFuncInfo, formalParams);
-  }
+  for (auto &dynNestConfig : dynRegion.nestConfigs) {
 
-  // Construct the NestPredFunc formal params.
-  if (dynNestConfig.predFunc) {
-    auto &formalParams = dynNestConfig.predFormalParams;
-    const auto &predFuncInfo = dynNestConfig.predFunc->getFuncInfo();
-    this->buildFormalParams(inputVec, inputIdx, predFuncInfo, formalParams);
+    // Construct the NestConfigFunc formal params.
+    {
+      auto &formalParams = dynNestConfig.formalParams;
+      const auto &configFuncInfo = dynNestConfig.configFunc->getFuncInfo();
+      this->buildFormalParams(inputVec, inputIdx, configFuncInfo, formalParams);
+    }
+
+    // Construct the NestPredFunc formal params.
+    if (dynNestConfig.predFunc) {
+      auto &formalParams = dynNestConfig.predFormalParams;
+      const auto &predFuncInfo = dynNestConfig.predFunc->getFuncInfo();
+      this->buildFormalParams(inputVec, inputIdx, predFuncInfo, formalParams);
+    }
   }
 
   SE_DPRINTF("[Nest] Execute Config: %s.\n",
