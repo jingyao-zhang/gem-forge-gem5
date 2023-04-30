@@ -28,6 +28,7 @@ public:
   ~AbstractStreamAwareController();
 
   void init() override;
+  void resetStats() override;
   void regStats() override;
 
   /**

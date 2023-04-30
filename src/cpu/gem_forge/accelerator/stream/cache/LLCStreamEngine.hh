@@ -47,16 +47,18 @@ public:
   void receiveStreamMigrate(LLCDynStreamPtr stream, bool isCommit);
   void receiveStreamFlow(const DynStreamSliceId &sliceId);
   void receiveStreamCommit(const DynStreamSliceId &sliceId);
-  void receiveStreamDataVec(Cycles delayCycles, Addr paddrLine,
-                            const DynStreamSliceIdVec &sliceIds,
-                            const ruby::DataBlock &dataBlock,
-                            const ruby::DataBlock &storeValueBlock);
+  void receiveStreamDataVecFromCache(Cycles delayCycles, Addr paddrLine,
+                                     const DynStreamSliceIdVec &sliceIds,
+                                     const ruby::DataBlock &dataBlock,
+                                     const ruby::DataBlock &storeValueBlock);
   void receiveStreamIndirectReq(const ruby::RequestMsg &req);
   void receiveStreamIndirectReqImpl(const ruby::RequestMsg &req);
   void receiveStreamFwdReq(const ruby::RequestMsg &req);
   void notifyStreamRequestMiss(const DynStreamSliceIdVec &sliceIds);
   void wakeup() override;
   void print(std::ostream &out) const override;
+
+  void resetStats();
 
   int getNumDirectStreams() const;
   int getNumNonOverflownDirectStreamsWithStaticId(
@@ -170,6 +172,20 @@ private:
                                     const DynStreamSliceId &sliceId,
                                     const ruby::DataBlock &dataBlock,
                                     const ruby::DataBlock &storeValueBlock);
+
+  void receiveStreamDataVec(Cycles delayCycles, Addr paddrLine,
+                            const DynStreamSliceIdVec &sliceIds,
+                            const ruby::DataBlock &dataBlock,
+                            const ruby::DataBlock &storeValueBlock);
+
+  void receiveStreamDataVecFromReuse(Cycles delayCycles, Addr paddrLine,
+                                     const DynStreamSliceIdVec &sliceIds,
+                                     const ruby::DataBlock &dataBlock,
+                                     const ruby::DataBlock &storeValueBlock) {
+    this->receiveStreamDataVec(delayCycles, paddrLine, sliceIds, dataBlock,
+                               storeValueBlock);
+  }
+
   void drainIncomingStreamDataMsg();
   void receiveStreamData(Addr paddrLine, const DynStreamSliceId &sliceId,
                          const ruby::DataBlock &dataBlock,
@@ -580,6 +596,11 @@ private:
   void sampleLLCStreams();
   static Cycles lastSampleCycle;
   static int totalSamples;
+
+  StreamFloatTracer seTracer;
+  void traceEvent(Cycles cycle,
+                  ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType event);
+  void traceEvent(::LLVM::TDG::StreamFloatEvent::StreamFloatEventType event);
 };
 
 } // namespace gem5

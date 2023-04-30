@@ -205,7 +205,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     void receiveStreamEnd(PacketPtr);
     void receiveStreamMigrate(LLCDynStreamPtr, bool);
     void receiveStreamFlow(DynStreamSliceId);
-    void receiveStreamDataVec(Cycles, Addr, DynStreamSliceIdVec, DataBlock, DataBlock);
+    void receiveStreamDataVecFromCache(Cycles, Addr, DynStreamSliceIdVec, DataBlock, DataBlock);
     void receiveStreamIndirectReq(RequestMsg);
     void receiveStreamFwdReq(RequestMsg);
     void receiveStreamCommit(DynStreamSliceId);
@@ -1190,7 +1190,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     if (cache_entry.sliceIds.isValid()) {
       // This should never be used for StreamStore.
       Cycles lat := adjustResponseLat(l2_response_latency, address);
-      se.receiveStreamDataVec(lat, address, cache_entry.sliceIds, cache_entry.DataBlk, cache_entry.DataBlk);
+      se.receiveStreamDataVecFromCache(lat, address, cache_entry.sliceIds, cache_entry.DataBlk, cache_entry.DataBlk);
       // Clear the sliceId.
       cache_entry.sliceIds.clear();
     }
@@ -1198,7 +1198,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   action(net_notifyStreamEngineFromTBE, "net", desc="notify the stream engine from TBE") {
     assert(is_valid(tbe));
     if (tbe.sliceIds.isValid()) {
-      se.receiveStreamDataVec(l2_response_latency, address, tbe.sliceIds, tbe.DataBlk, tbe.streamStoreBlk);
+      se.receiveStreamDataVecFromCache(l2_response_latency, address, tbe.sliceIds, tbe.DataBlk, tbe.streamStoreBlk);
     }
   }
   action(ner_notifyStreamEngineFromL1Req, "ner", desc="notify the stream engine from L1 request") {
@@ -1206,7 +1206,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       assert(is_valid(cache_entry));
       if (in_msg.sliceIds.isValid()) {
         Cycles lat := adjustResponseLat(l2_response_latency, address);
-        se.receiveStreamDataVec(lat, address, in_msg.sliceIds, cache_entry.DataBlk, in_msg.streamStoreBlk);
+        se.receiveStreamDataVecFromCache(lat, address, in_msg.sliceIds, cache_entry.DataBlk, in_msg.streamStoreBlk);
       }
     }
   }
@@ -1214,7 +1214,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     peek(L1RequestL2Network_in, RequestMsg) {
       assert(is_valid(tbe));
       if (in_msg.sliceIds.isValid()) {
-        se.receiveStreamDataVec(l2_response_latency, address, in_msg.sliceIds, tbe.DataBlk, in_msg.streamStoreBlk);
+        se.receiveStreamDataVecFromCache(l2_response_latency, address, in_msg.sliceIds, tbe.DataBlk, in_msg.streamStoreBlk);
       }
     }
   }

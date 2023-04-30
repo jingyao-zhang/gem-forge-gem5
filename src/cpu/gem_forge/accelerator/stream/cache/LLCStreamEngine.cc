@@ -55,7 +55,9 @@ LLCStreamEngine::LLCStreamEngine(
       streamResponseMsgBuffer(_streamResponseMsgBuffer),
       issueWidth(_controller->getLLCStreamEngineIssueWidth()),
       migrateWidth(_controller->getLLCStreamEngineMigrateWidth()),
-      maxInflyRequests(8), maxInqueueRequests(2), translationBuffer(nullptr) {
+      maxInflyRequests(8), maxInqueueRequests(2), translationBuffer(nullptr),
+      seTracer(_controller->getMachineID().getNum(),
+               std::string(_controller->getMachineTypeString()) + "_SE") {
   this->controller->registerLLCStreamEngine(this);
   this->commitController = std::make_unique<LLCStreamCommitController>(this);
   this->atomicLockManager = std::make_unique<LLCStreamAtomicLockManager>(this);
@@ -191,6 +193,9 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
       // Don't forgot to release the memory.
       delete endStrandIdPtr;
       delete pkt;
+      if (this->streams.empty()) {
+        this->seTracer.write();
+      }
       return;
     }
   }
@@ -220,6 +225,9 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
         S->terminate();
         delete endStrandIdPtr;
         delete pkt;
+        if (this->streams.empty()) {
+          this->seTracer.write();
+        }
         return;
       }
     }
@@ -304,6 +312,10 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynStreamPtr dynS,
   // Check for if the stream is already ended.
   if (this->pendingEndStrandIds.count(dynS->getDynStrandId())) {
     dynS->terminate();
+    // Try to write trace if we have no streams left.
+    if (this->streams.empty()) {
+      this->seTracer.write();
+    }
     return;
   }
 
@@ -331,6 +343,17 @@ void LLCStreamEngine::receiveStreamCommit(const DynStreamSliceId &sliceId) {
     return;
   }
   dynS->addCommitMessage(sliceId);
+}
+
+void LLCStreamEngine::receiveStreamDataVecFromCache(
+    Cycles delayCycle, Addr paddrLine, const DynStreamSliceIdVec &sliceIds,
+    const ruby::DataBlock &dataBlock, const ruby::DataBlock &storeValueBlock) {
+  auto readyCycle = this->controller->curCycle() + delayCycle;
+
+  this->traceEvent(readyCycle, ::LLVM::TDG::StreamFloatEvent::LOCAL_REQ_DONE);
+
+  this->receiveStreamDataVec(delayCycle, paddrLine, sliceIds, dataBlock,
+                             storeValueBlock);
 }
 
 void LLCStreamEngine::receiveStreamDataVec(
@@ -2307,8 +2330,9 @@ void LLCStreamEngine::issueStreamReqToRemoteBank(const LLCStreamRequest &req) {
         DynStreamSliceIdVec sliceIds;
         sliceIds.add(sliceId);
         ruby::DataBlock fakeStoreValueBlock;
-        this->receiveStreamDataVec(reuseDelayCycles, paddrLine, sliceIds,
-                                   reuseDataBlock, fakeStoreValueBlock);
+        this->receiveStreamDataVecFromReuse(reuseDelayCycles, paddrLine,
+                                            sliceIds, reuseDataBlock,
+                                            fakeStoreValueBlock);
 
         return;
       }
@@ -2417,6 +2441,7 @@ void LLCStreamEngine::issueStreamReqToRemoteBank(const LLCStreamRequest &req) {
     this->streamIssueMsgBuffer->enqueue(
         msg, this->controller->clockEdge(),
         this->controller->cyclesToTicks(latency));
+    this->traceEvent(::LLVM::TDG::StreamFloatEvent::LOCAL_REQ_START);
   } else {
     /**
      * Issue to StreamRequestBuffer to enforce
@@ -3001,6 +3026,9 @@ void LLCStreamEngine::migrateStreams() {
     streamIter = this->migratingStreams.erase(streamIter);
     migrated++;
   }
+  if (this->streams.empty() && this->migratingStreams.empty()) {
+    this->seTracer.write();
+  }
 }
 
 void LLCStreamEngine::migrateStream(LLCDynStream *stream) {
@@ -3091,6 +3119,8 @@ bool LLCStreamEngine::isPAddrHandledByMe(Addr paddr,
 }
 
 void LLCStreamEngine::print(std::ostream &out) const {}
+
+void LLCStreamEngine::resetStats() { this->seTracer.reset(); }
 
 void LLCStreamEngine::receiveStreamIndirectReq(const ruby::RequestMsg &req) {
 
@@ -3192,6 +3222,7 @@ void LLCStreamEngine::receiveStreamIndirectReqImpl(
   Cycles latency(1);
   this->streamIssueMsgBuffer->enqueue(msg, this->controller->clockEdge(),
                                       this->controller->cyclesToTicks(latency));
+  this->traceEvent(::LLVM::TDG::StreamFloatEvent::LOCAL_REQ_START);
 }
 
 void LLCStreamEngine::receivePUMConfigure(const ruby::RequestMsg &req) {
@@ -4684,6 +4715,8 @@ void LLCStreamEngine::pushInflyComputation(LLCStreamElementPtr &elem,
     statistic.numLLCComputationWaitLatency +=
         this->curCycle() - elem->getComputationScheduledCycle();
 
+    this->traceEvent(::LLVM::TDG::StreamFloatEvent::CMP_START);
+
     this->numInflyRealCmps++;
   }
 
@@ -4843,6 +4876,8 @@ void LLCStreamEngine::completeComputation() {
     }
     if (!elem->isComputationVectorized()) {
       // This is not a fake Computation.
+      this->traceEvent(::LLVM::TDG::StreamFloatEvent::CMP_DONE);
+
       this->numInflyRealCmps--;
     }
     this->inflyComputations.pop_front();
@@ -4873,5 +4908,15 @@ void LLCStreamEngine::sampleLLCStreams() {
   LLC_SE_DPRINTF_(LLCStreamSample, "[Sample] %d at Cycle %lu.\n",
                   LLCStreamEngine::totalSamples,
                   LLCStreamEngine::lastSampleCycle);
+}
+
+void LLCStreamEngine::traceEvent(
+    Cycles cycle, ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType event) {
+  this->seTracer.traceEvent(cycle, this->controller->getMachineID(), event);
+}
+
+void LLCStreamEngine::traceEvent(
+    ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType event) {
+  this->traceEvent(this->curCycle(), event);
 }
 } // namespace gem5

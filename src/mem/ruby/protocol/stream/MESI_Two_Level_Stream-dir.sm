@@ -149,7 +149,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
     void receiveStreamEnd(PacketPtr);
     void receiveStreamMigrate(LLCDynStreamPtr, bool);
     void receiveStreamFlow(DynStreamSliceId);
-    void receiveStreamDataVec(Cycles, Addr, DynStreamSliceIdVec, DataBlock, DataBlock);
+    void receiveStreamDataVecFromCache(Cycles, Addr, DynStreamSliceIdVec, DataBlock, DataBlock);
     void receiveStreamIndirectReq(RequestMsg);
     void receiveStreamForwardRequest(RequestMsg);
     void receiveStreamCommit(DynStreamSliceId);
@@ -665,7 +665,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
   action(net_notifyStreamEngineFromTBE, "net", desc="notify the stream engine from TBE") {
     assert(is_valid(tbe));
     if (tbe.sliceIds.isValid()) {
-      se.receiveStreamDataVec(response_latency, address, tbe.sliceIds, tbe.DataBlk, tbe.streamStoreBlk);
+      se.receiveStreamDataVecFromCache(response_latency, address, tbe.sliceIds, tbe.DataBlk, tbe.streamStoreBlk);
     }
   }
 

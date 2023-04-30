@@ -1,5 +1,7 @@
 #include "AbstractStreamAwareController.hh"
 
+#include "cpu/gem_forge/accelerator/stream/cache/LLCStreamEngine.hh"
+#include "cpu/gem_forge/accelerator/stream/cache/MLCStreamEngine.hh"
 #include "cpu/gem_forge/accelerator/stream/cache/pum/PUMTransposeUnit.hh"
 #include "mem/ruby/network/garnet/GarnetNetwork.hh"
 #include "sim/stream_nuca/stream_nuca_map.hh"
@@ -65,6 +67,12 @@ void AbstractStreamAwareController::init() {
   StreamNUCAMap::addNonUniformNode(myParams->router_id, this->m_machineID,
                                    myParams->addr_ranges.front(),
                                    myParams->numa_banks);
+}
+
+void AbstractStreamAwareController::resetStats() {
+  if (this->llcSE) {
+    this->llcSE->resetStats();
+  }
 }
 
 void AbstractStreamAwareController::regStats() {

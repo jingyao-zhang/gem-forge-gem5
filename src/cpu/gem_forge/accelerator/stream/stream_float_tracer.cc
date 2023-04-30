@@ -1,7 +1,5 @@
 #include "stream_float_tracer.hh"
 
-#include "stream.hh"
-
 #include "base/output.hh"
 
 #include <sstream>
@@ -40,17 +38,20 @@ void StreamFloatTracer::traceEvent(
   this->used++;
 }
 
+void StreamFloatTracer::openProtobufStream() const {
+  // Try to create the stream_float_trace folder.
+  auto directory = simout.findOrCreateSubdirectory("stream_float_trace");
+  std::stringstream ss;
+  ss << this->cpuId << '-' << this->name << ".data";
+  auto fileName = directory->resolve(ss.str());
+  this->protoStream = std::make_unique<ProtoOutputStream>(fileName);
+}
+
 void StreamFloatTracer::initialize() const {
   this->buffer.resize(StreamFloatTracer::DUMP_THRESHOLD);
   this->used = 0;
   // Try to create the stream_float_trace folder.
-  auto directory = simout.findOrCreateSubdirectory("stream_float_trace");
-  const auto &streamName = this->S->getStreamName();
-  auto cpuId = this->S->getCPUId();
-  std::stringstream ss;
-  ss << cpuId << '-' << streamName << ".data";
-  auto fileName = directory->resolve(ss.str());
-  this->protoStream = std::make_unique<ProtoOutputStream>(fileName);
+  this->openProtobufStream();
 }
 
 void StreamFloatTracer::write() const {
@@ -58,5 +59,16 @@ void StreamFloatTracer::write() const {
     this->protoStream->write(this->buffer.at(i));
   }
   this->used = 0;
-}} // namespace gem5
+}
 
+void StreamFloatTracer::reset() const {
+  if (this->buffer.empty()) {
+    // Not initialized yet.
+    return;
+  }
+  this->used = 0;
+  // Reopen the protobuf stream will clear previous content.
+  this->protoStream = nullptr;
+  this->openProtobufStream();
+}
+} // namespace gem5
