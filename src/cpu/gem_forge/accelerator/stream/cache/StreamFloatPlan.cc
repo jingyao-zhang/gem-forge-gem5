@@ -91,15 +91,16 @@ StreamFloatPlan::ElementIdx StreamFloatPlan::getFirstFloatElementIdx() const {
       return point.first;
     }
   }
-  assert(false && "Query FistFloatElementIdx on NotFloated FloatPlan.");
+  panic("Query FistFloatElementIdx on NotFloated FloatPlan.");
 }
 
-ruby::MachineType StreamFloatPlan::getMachineTypeAtElem(ElementIdx elementIdx) const {
+ruby::MachineType
+StreamFloatPlan::getMachineTypeAtElem(ElementIdx elementIdx) const {
   auto iter = this->changePoints.upper_bound(elementIdx);
   if (iter == this->changePoints.begin()) {
     panic("Somehow this element is not covered in FloatPlan.");
   }
   iter--;
   return iter->second.floatMachineType;
-}} // namespace gem5
-
+}
+} // namespace gem5

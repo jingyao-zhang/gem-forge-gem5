@@ -300,7 +300,8 @@ AbstractStreamAwareController::getController(MachineID machineId) {
                                    std::forward_as_tuple(machineId.getType()),
                                    std::forward_as_tuple())
                           .first->second;
-      assert(nodeMap.emplace(machineId.getNum(), controller).second);
+      panic_if(!nodeMap.emplace(machineId.getNum(), controller).second,
+               "Failed to emplace.");
     }
   }
 

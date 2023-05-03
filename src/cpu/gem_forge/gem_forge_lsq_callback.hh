@@ -2,6 +2,7 @@
 #define __GEM_FORGE_LSQ_CALLBACK_HH
 
 #include "base/types.hh"
+#include "base/logging.hh"
 
 #include <array>
 #include <iomanip>
@@ -36,13 +37,15 @@ public:
   Addr getAddr() const {
     Addr addr;
     uint32_t size;
-    assert(this->getAddrSize(addr, size));
+    [[maybe_unused]] bool ok = this->getAddrSize(addr, size);
+    assert(ok);
     return addr;
   }
   uint32_t getSize() const {
     Addr addr;
     uint32_t size;
-    assert(this->getAddrSize(addr, size));
+    [[maybe_unused]] bool ok = this->getAddrSize(addr, size);
+    assert(ok);
     return size;
   }
 
@@ -64,7 +67,7 @@ public:
    * Get a pointer to the value.
    */
   virtual const uint8_t *getValue() const {
-    assert(false && "GetValue not impelmented.");
+    panic("GetValue not implemented.");
   }
 
   virtual void RAWMisspeculate() = 0;

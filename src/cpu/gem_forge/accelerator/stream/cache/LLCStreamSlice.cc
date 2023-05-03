@@ -80,7 +80,7 @@ const char *LLCStreamSlice::stateToString(State state) {
     Case(RELEASED);
 #undef Case
   default:
-    assert(false && "Invalid LLCStreamSlice::State.");
+    panic("Invalid LLCStreamSlice::State.");
   }
 }
 } // namespace gem5

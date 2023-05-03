@@ -58,7 +58,7 @@ void StreamThrottler::throttleStream(StreamElement *elem) {
 
   // We have reached the threshold to allow the stream to run further
   // ahead.
-  auto oldRunAheadSize = S->maxSize;
+  [[maybe_unused]] auto oldRunAheadSize = S->maxSize;
   /**
    * Get the step root stream.
    * Sometimes, it is possible that stepRootStream is nullptr,
@@ -329,7 +329,7 @@ bool StreamThrottler::tryGlobalThrottle(Stream *S) {
     return false;
   }
 
-  auto oldMaxSize = S->maxSize;
+  [[maybe_unused]] auto oldMaxSize = S->maxSize;
   for (auto stepS : streamList) {
     // Increase the run ahead length by 2.
     stepS->maxSize += incrementStep;

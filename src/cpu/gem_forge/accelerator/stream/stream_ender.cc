@@ -467,21 +467,22 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
             break;
           }
         }
-        assert(erasedFromNestParent);
+        panic_if(!erasedFromNestParent, "Not erased from parent.");
       }
 
       staticRegion.dynRegions.erase(iter);
       break;
     }
   }
-  assert(erasedDynRegion && "Failed to erase DynRegion.");
+  panic_if(!erasedDynRegion, "Failed to erase DynRegion.");
 }
 
 void StreamRegionController::recordEndRegionSeqNum(uint64_t instEndSeqNum,
                                                    uint64_t regionEndSeqNum) {
-  assert(this->instToRegionEndSeqNumMap.emplace(instEndSeqNum, regionEndSeqNum)
-             .second &&
-         "Already Inserted InstEndSeqNum.");
+  [[maybe_unused]] bool emplaced =
+      this->instToRegionEndSeqNumMap.emplace(instEndSeqNum, regionEndSeqNum)
+          .second;
+  assert(emplaced && "Already Inserted InstEndSeqNum.");
 }
 
 void StreamRegionController::eraseEndRegionSeqNum(uint64_t instEndSeqNum) {

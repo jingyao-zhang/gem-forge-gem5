@@ -186,13 +186,13 @@ void GemForgeLoadStoreQueue::checkLoadStoreAlias(LoadQueueEntry &loadEntry,
                                                  StoreQueueEntry &storeEntry) {
   Addr loadAddr;
   uint32_t loadSize;
-  assert(loadEntry.isAddressReady && "LoadEntry should be address ready.");
-  assert(loadEntry.callback->getAddrSize(loadAddr, loadSize) &&
-         "Failed to get the address for load entry.");
+  panic_if(!loadEntry.isAddressReady, "LoadEntry should be address ready.");
+  panic_if(!loadEntry.callback->getAddrSize(loadAddr, loadSize),
+           "Failed to get the address for load entry.");
   Addr storeAddr;
   uint32_t storeSize;
-  assert(storeEntry.callback->getAddrSize(storeAddr, storeSize) &&
-         "Failed to get the address for store entry.");
+  panic_if(!storeEntry.callback->getAddrSize(storeAddr, storeSize),
+           "Failed to get the address for store entry.");
   auto aliased = GemForgeLoadStoreQueue::isAliased(loadAddr, loadSize,
                                                    storeAddr, storeSize);
   if (!aliased) {
@@ -226,10 +226,10 @@ void GemForgeLoadStoreQueue::checkStoreStoreAlias(
          "Cannot check alias for the same store queue entry.");
   Addr storeAddr1, storeAddr2;
   uint32_t storeSize1, storeSize2;
-  assert(storeEntry1.callback->getAddrSize(storeAddr1, storeSize1) &&
-         "Failed to get the address for first store entry.");
-  assert(storeEntry2.callback->getAddrSize(storeAddr2, storeSize2) &&
-         "Failed to get the address for second store entry.");
+  panic_if(!storeEntry1.callback->getAddrSize(storeAddr1, storeSize1),
+           "Failed to get the address for first store entry.");
+  panic_if(!storeEntry2.callback->getAddrSize(storeAddr2, storeSize2),
+           "Failed to get the address for second store entry.");
   auto aliased = GemForgeLoadStoreQueue::isAliased(storeAddr1, storeSize1,
                                                    storeAddr2, storeSize2);
   if (!aliased) {
@@ -248,5 +248,5 @@ void GemForgeLoadStoreQueue::checkStoreStoreAlias(
 bool GemForgeLoadStoreQueue::isAliased(Addr addr1, uint32_t size1, Addr addr2,
                                        uint32_t size2) {
   return !((addr1 + size1 <= addr2) || (addr2 + size2 <= addr1));
-}} // namespace gem5
-
+}
+} // namespace gem5

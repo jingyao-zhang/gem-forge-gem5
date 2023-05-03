@@ -134,7 +134,8 @@ void SimpleCPUDelegator::commit(StaticInstPtr staticInst, ExecContext &xc) {
     Addr paddr = pimpl->curInstRunTimeInfo.paddr;
     if (isStream) {
       auto vaddr = pimpl->curInstRunTimeInfo.callback->getAddr();
-      assert(this->translateVAddrOracle(vaddr, paddr));
+      panic_if(!this->translateVAddrOracle(vaddr, paddr),
+               "Failed to translate vaddr.");
     }
     pimpl->minDataMachine.commit(staticInst, pc, paddr, isStream);
     pimpl->minDataMachineFix.commit(staticInst, pc, paddr, isStream);
@@ -204,4 +205,4 @@ void SimpleCPUDelegator::recordStatsForFakeExecutedInst(
   // So far we do nothing.
 }
 
-}
+} // namespace gem5

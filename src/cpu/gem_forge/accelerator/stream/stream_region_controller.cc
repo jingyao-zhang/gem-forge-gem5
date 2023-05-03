@@ -234,11 +234,12 @@ StreamRegionController::pushDynRegion(StaticRegion &staticRegion,
   staticRegion.instanceId++;
   staticRegion.dynRegions.emplace_back(&staticRegion, seqNum);
   auto &dynRegion = staticRegion.dynRegions.back();
-  assert(this->activeDynRegionMap
-             .emplace(std::piecewise_construct, std::forward_as_tuple(seqNum),
-                      std::forward_as_tuple(&dynRegion))
-             .second &&
-         "Multiple nesting is not supported.");
+  [[maybe_unused]] auto emplaced =
+      this->activeDynRegionMap
+          .emplace(std::piecewise_construct, std::forward_as_tuple(seqNum),
+                   std::forward_as_tuple(&dynRegion))
+          .second;
+  assert(emplaced && "Multiple nesting is not supported.");
   return dynRegion;
 }
 

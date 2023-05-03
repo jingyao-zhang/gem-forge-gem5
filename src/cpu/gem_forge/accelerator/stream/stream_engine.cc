@@ -1133,11 +1133,12 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
   for (auto &element : this->userElementMap.at(seqNum)) {
     assert(element && "Out-of-loop use after StreamEnd cannot be handled in "
                       "execution-based simulation.");
-    auto inserted = streamToElementMap
-                        .emplace(std::piecewise_construct,
-                                 std::forward_as_tuple(element->stream),
-                                 std::forward_as_tuple(element))
-                        .second;
+    [[maybe_unused]] auto inserted =
+        streamToElementMap
+            .emplace(std::piecewise_construct,
+                     std::forward_as_tuple(element->stream),
+                     std::forward_as_tuple(element))
+            .second;
     assert(inserted && "Using two elements from the same stream.");
   }
   for (auto streamId : args.usedStreamIds) {
@@ -1249,7 +1250,7 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
     }
 
     auto &userSet = this->elementUserMap.at(element);
-    assert(userSet.erase(seqNum) && "Not found in userSet.");
+    panic_if(!userSet.erase(seqNum), "Not found in userSet.");
   }
   // Remove the entry in the userElementMap.
   this->userElementMap.erase(seqNum);
@@ -1275,7 +1276,7 @@ void StreamEngine::rewindStreamUser(const StreamUserArgs &args) {
     }
     // Remove the entry from the elementUserMap.
     auto &userSet = this->elementUserMap.at(element);
-    assert(userSet.erase(seqNum) && "Not found in userSet.");
+    panic_if(!userSet.erase(seqNum), "Not found in userSet.");
   }
   // Remove the entry in the userElementMap.
   this->userElementMap.erase(seqNum);
@@ -1613,7 +1614,7 @@ void StreamEngine::generateCoalescedStreamIdMap(
   for (const auto &streamInfo : streamRegion.streams()) {
     const auto &coalesceInfo = streamInfo.coalesce_info();
     auto coalesceGroup = coalesceInfo.base_stream();
-    constexpr uint64_t InvalidCoalesceGroup = 0;
+    [[maybe_unused]] constexpr uint64_t InvalidCoalesceGroup = 0;
     assert(coalesceGroup != InvalidCoalesceGroup && "Invalid CoalesceGroup.");
     // Search for the group. This is O(N^2).
     bool found = false;
@@ -2369,12 +2370,14 @@ void StreamEngine::fetchedCacheBlock(Addr cacheBlockVAddr,
   }
   auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVAddr);
   cacheBlockInfo.status = CacheBlockInfo::Status::FETCHED;
-  // Notify all the pending streams.
+// Notify all the pending streams.
+#ifndef NDEBUG
   for (auto &pendingMemAccess : cacheBlockInfo.pendingAccesses) {
     assert(pendingMemAccess != memAccess &&
            "pendingMemAccess should not be fetching access.");
     assert(false && "Merge data for streams is removed.");
   }
+#endif
   // Remember to clear the pendingAccesses, as they are now released.
   cacheBlockInfo.pendingAccesses.clear();
 }
@@ -2726,11 +2729,10 @@ void StreamEngine::prefetchElement(StreamElement *elem) {
 void StreamEngine::writebackElement(StreamElement *elem) {
 
   auto S = elem->stream;
-  auto dynS = elem->dynS;
   S_ELEMENT_DPRINTF(elem, "Writeback.\n");
 
   assert(elem->isAddrReady() && "Address should be ready to writeback.");
-  assert(dynS->isLoopElimInCoreStoreCmpS() &&
+  assert(elem->dynS->isLoopElimInCoreStoreCmpS() &&
          "So far only writeback for InCoreStoreCmpS.");
   assert(elem->shouldIssue() && "Should not writeback this element.");
   assert(!elem->isElemFloatedToCache() &&

@@ -18,7 +18,7 @@ void TimingSimpleCPUDelegator::sendRequest(PacketPtr pkt) {
              cpu->dcachePort.get()) &&
          "GemForgeCPUDelegator::sendRequest called when the DcachePort is not "
          "a GemForge port.");
-  auto succeed = cpu->dcachePort->sendTimingReqVirtual(pkt);
+  [[maybe_unused]] auto succeed = cpu->dcachePort->sendTimingReqVirtual(pkt);
   assert(succeed && "GemForgePort should always succeed on sending TimingReq.");
 }
 

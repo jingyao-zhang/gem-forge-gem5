@@ -16,8 +16,8 @@ DynamicInstructionStreamDispatcher::DynamicInstructionStreamDispatcher(
   this->input = new ProtoInputStream(this->fn);
 
   // Parse the static information.
-  bool successReadStaticInfo = this->input->read(this->staticInfo);
-  assert(successReadStaticInfo && "Failed to readin the static info.");
+  panic_if(!this->input->read(this->staticInfo),
+           "Failed to readin the static info.");
 
   // Create the region table.
   this->regionTable = new RegionTable(this->staticInfo);
@@ -225,5 +225,5 @@ void DynamicInstructionStreamDispatcher::dispatchADFA(Packet *packet) {
   }
   // Otherwise, normally push into the current buffer.
   this->currentBuffer->alloc_back();
-}} // namespace gem5
-
+}
+} // namespace gem5

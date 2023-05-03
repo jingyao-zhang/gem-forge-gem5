@@ -22,8 +22,9 @@ void SEPageWalker::clearReadyStates(Cycles curCycle) {
   for (auto iter = this->inflyState.begin(), end = this->inflyState.end();
        iter != end;) {
     if (iter->readyCycle < curCycle) {
-      assert(this->pageVAddrToStateMap.erase(iter->pageVAddr) &&
-             "Failed to find the state in PageVAddrToStateMap.");
+      [[maybe_unused]] auto erased =
+          this->pageVAddrToStateMap.erase(iter->pageVAddr);
+      assert(erased && "Failed to find the state in PageVAddrToStateMap.");
       iter = this->inflyState.erase(iter);
     } else {
       // This state is not ready yet.

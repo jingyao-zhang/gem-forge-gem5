@@ -1237,7 +1237,7 @@ void Sequencer::issuePrefetch() {
             }
         }
         if (pkt) {
-            Addr pf_addr = makeLineAddress(pkt->getAddr());
+            [[maybe_unused]] Addr pf_addr = makeLineAddress(pkt->getAddr());
             assert(!m_RequestTable.count(pf_addr));
             assert(!inCache(pf_addr, pkt->isSecure()));
             // We try to issue this.

@@ -544,8 +544,7 @@ void PUMEngine::tick() {
 
 void PUMEngine::synced() {
   assert(this->nextCmdIdx < this->commands.size());
-  const auto &c = this->commands[this->nextCmdIdx];
-  assert(c.type == "sync");
+  assert(this->commands[this->nextCmdIdx].type == "sync");
   assert(this->acked);
   this->acked = false;
   this->nextCmdIdx++;

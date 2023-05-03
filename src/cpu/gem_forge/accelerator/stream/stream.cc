@@ -1181,9 +1181,9 @@ Stream::setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
     }
   }
   // Push the final atomic operand as a dummy 0.
-  const auto &formalAtomicParam = formalParams.back();
-  assert(!formalAtomicParam.isInvariant && "AtomicOperand should be a stream.");
-  assert(formalAtomicParam.baseStreamId == this->staticId &&
+  assert(!formalParams.back().isInvariant &&
+         "AtomicOperand should be a stream.");
+  assert(formalParams.back().baseStreamId == this->staticId &&
          "AtomicOperand should be myself.");
   params.emplace_back();
   auto atomicOp =
@@ -1236,28 +1236,26 @@ void Stream::handleMergedPredicate(const DynStream &dynS,
   // }
 }
 
-void Stream::performStore(const DynStream &dynS, StreamElement *element,
+void Stream::performStore(const DynStream &dynS, StreamElement *elem,
                           uint64_t storeValue) {
   /**
    * * Perform const store here.
    * We can not do that in the Ruby because it uses BackingStore, which
    * would cause the core to read the updated value.
    */
-  auto elementVAddr = element->addr;
-  auto elementSize = element->size;
-  auto blockSize = this->getCPUDelegator()->cacheLineSize();
-  auto elementLineOffset = elementVAddr % blockSize;
-  assert(elementLineOffset + elementSize <= blockSize &&
+  auto elemVAddr = elem->addr;
+  auto elemSize = elem->size;
+  [[maybe_unused]] auto blockSize = this->getCPUDelegator()->cacheLineSize();
+  assert((elemVAddr % blockSize) + elemSize <=
+             this->getCPUDelegator()->cacheLineSize() &&
          "Cannot support multi-line element with const update yet.");
-  assert(elementSize <= sizeof(uint64_t) && "At most 8 byte element size.");
-  Addr elementPAddr;
-  assert(this->getCPUDelegator()->translateVAddrOracle(elementVAddr,
-                                                       elementPAddr) &&
-         "Failed to translate address for const update.");
+  assert(elemSize <= sizeof(uint64_t) && "At most 8 byte element size.");
+  Addr elemPAddr;
+  panic_if(!this->getCPUDelegator()->translateVAddrOracle(elemVAddr, elemPAddr),
+           "Failed to translate address for const update.");
   // ! Hack: Just do a functional write.
   this->getCPUDelegator()->writeToMem(
-      elementVAddr, elementSize,
-      reinterpret_cast<const uint8_t *>(&storeValue));
+      elemVAddr, elemSize, reinterpret_cast<const uint8_t *>(&storeValue));
 }
 
 void Stream::sampleStatistic() {

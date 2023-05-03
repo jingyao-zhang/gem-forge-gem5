@@ -735,7 +735,7 @@ public:
           if (pf->getInqueuePfRequests() < pf->getPfQueueSize()) {
             // if (pf->getInqueuePfRequests() + pf->getInflyRequests() < 4) {
             //   // Put an upper limit on number of requests.
-            int ok =
+            [[maybe_unused]] int ok =
                 pf->prefetchLine(0, base_addr, pf_address, pattern[pf_offset]);
             assert(ok == 1);
             pf_issued += 1;

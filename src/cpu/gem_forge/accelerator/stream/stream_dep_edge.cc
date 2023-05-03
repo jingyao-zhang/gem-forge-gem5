@@ -1,5 +1,7 @@
 #include "stream_dep_edge.hh"
 
+#include "base/logging.hh"
+
 #include <cassert>
 
 namespace gem5 {
@@ -16,7 +18,7 @@ const char *DynStreamDepEdge::typeToString(const TypeE &type) {
     Case(Bound);
 #undef Case
   default:
-    assert(false && "Invalid StreamDepEdgeType.");
+    panic("Invalid StreamDepEdgeType.");
   }
 }
 

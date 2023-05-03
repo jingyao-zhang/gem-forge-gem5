@@ -40,7 +40,8 @@ void IdealSequencer::pushRequest(RubyReqPtr req) {
    */
   this->globalQueue.emplace(this, req, this->seq->clockEdge(Cycles(1)));
   if (req->m_pkt->req->isLockedRMW() && req->m_pkt->isRead()) {
-    auto locked = globalLockedMap.emplace(paddrLine, this).second;
+    [[maybe_unused]] auto locked =
+        globalLockedMap.emplace(paddrLine, this).second;
     assert(locked && "This line is already locked.");
     // Try to initialize the blocked queue (there may already be some blocked
     // requests).

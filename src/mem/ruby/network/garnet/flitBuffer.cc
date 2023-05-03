@@ -59,12 +59,13 @@ flitBuffer::isEmpty()
 bool
 flitBuffer::isReady(Tick curTime)
 {
-    if (m_buffer.size() != 0 ) {
-        flit *t_flit = peekTopFlit();
-        if (t_flit->get_time() <= curTime)
-            return true;
-    }
-    return false;
+    return next_flit_tick <= curTime;
+    // if (m_buffer.size() != 0 ) {
+    //     flit *t_flit = peekTopFlit();
+    //     if (t_flit->get_time() <= curTime)
+    //         return true;
+    // }
+    // return false;
 }
 
 void

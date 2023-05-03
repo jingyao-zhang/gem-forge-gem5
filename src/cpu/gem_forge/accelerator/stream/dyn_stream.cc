@@ -923,7 +923,7 @@ StreamElement *DynStream::getPrevElement(StreamElement *element) {
       return prevElement;
     }
   }
-  assert(false && "Failed to find the previous element.");
+  panic("Failed to find the previous element.");
 }
 
 StreamElement *DynStream::getFirstElem() { return this->tail->next; }

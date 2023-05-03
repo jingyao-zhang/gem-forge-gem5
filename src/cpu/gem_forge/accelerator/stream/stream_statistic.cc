@@ -1,5 +1,7 @@
 #include "stream_statistic.hh"
 
+#include "base/logging.hh"
+
 #include <cassert>
 #include <iomanip>
 
@@ -309,7 +311,7 @@ StreamStatistic::llcSEIssueReasonToString(LLCStreamEngineIssueReason reason) {
     Case(NumLLCStreamEngineIssueReason);
 #undef Case
   default:
-    assert(false && "Invalid LLCStreamEngineIssueReason.");
+    panic("Invalid LLCStreamEngineIssueReason.");
   }
 }
 

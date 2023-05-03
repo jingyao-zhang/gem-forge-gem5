@@ -259,7 +259,7 @@ private:
             operand = newNode;
           }
         }
-        assert(replaced);
+        panic_if(!replaced, "Not replaced.");
         newNode->users.push_back(user);
       }
     }

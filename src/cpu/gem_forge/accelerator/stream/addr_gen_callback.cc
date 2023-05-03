@@ -7,7 +7,7 @@
 namespace gem5 {
 
 StreamValue getStreamValueFail(uint64_t streamId) {
-  assert(false && "Failed to get stream value.");
+  panic("Failed to get stream value.");
 }
 
 std::ostream &operator<<(std::ostream &os,
@@ -220,9 +220,6 @@ bool LinearAddrGenCallback::estimateReuse(const DynStreamFormalParamV &params,
                                           uint64_t &reuseFootprint,
                                           uint64_t &reuseCount) {
   assert(params.size() >= 2);
-  for (const auto &param : params) {
-    assert(param.isInvariant && "Variant param for LinearAddrGenCallback.");
-  }
   auto hasTotalTripCount = params.size() % 2 == 1;
   // We search for 0 stride.
   auto strideEnd = hasTotalTripCount ? params.size() - 2 : params.size() - 1;
@@ -231,7 +228,9 @@ bool LinearAddrGenCallback::estimateReuse(const DynStreamFormalParamV &params,
   // StartAddr.
   int reuseStrideIdx = -1;
   for (int strideIdx = 0; strideIdx < strideEnd; ++strideIdx) {
-    auto stride = params.at(strideIdx).invariant.uint64();
+    const auto &param = params.at(strideIdx);
+    assert(param.isInvariant && "Variant param for LinearAddrGenCallback.");
+    auto stride = param.invariant.uint64();
     if (stride == 0) {
       // We found 0 stride -- we are back to StartVAddr, so reuse happens.
       reuseStrideIdx = strideIdx;
@@ -271,7 +270,7 @@ bool LinearAddrGenCallback::estimateReuse(const DynStreamFormalParamV &params,
 uint64_t
 LinearAddrGenCallback::getNestTripCount(const DynStreamFormalParamV &params,
                                         int nestLevel) {
-  auto knownLevels = (params.size() - 1) / 2;
+  [[maybe_unused]] auto knownLevels = (params.size() - 1) / 2;
   assert(knownLevels >= nestLevel);
   assert(nestLevel > 0);
   uint64_t nestTripCount =
@@ -280,4 +279,3 @@ LinearAddrGenCallback::getNestTripCount(const DynStreamFormalParamV &params,
 }
 
 } // namespace gem5
-

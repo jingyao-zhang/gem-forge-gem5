@@ -4,6 +4,8 @@
 
 #include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
 
+#include "mem/packet_access.hh"
+
 #include "debug/LLVMTraceCPU.hh"
 
 namespace gem5 {

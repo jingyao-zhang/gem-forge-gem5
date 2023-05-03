@@ -95,7 +95,7 @@ void ISAStreamEngine::dispatchStreamConfig(
   // Initialize an empty InputVector for each configured stream.
   for (const auto &streamInfo : info.streams()) {
     auto streamId = streamInfo.id();
-    auto inserted =
+    [[maybe_unused]] auto inserted =
         this->curStreamRegionInfo->inputMap
             .emplace(std::piecewise_construct, std::forward_as_tuple(streamId),
                      std::forward_as_tuple())
@@ -376,8 +376,7 @@ void ISAStreamEngine::dispatchStreamReady(
   const auto &infoRelativePath = this->curStreamRegionInfo->infoRelativePath;
   StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath,
                                       nullptr /* InputVec */, dynInfo.tc,
-                                      this->outerSE,
-                                      this->outerSeqNum);
+                                      this->outerSE, this->outerSeqNum);
   auto se = this->getStreamEngine();
   se->dispatchStreamConfig(args);
 
@@ -588,8 +587,7 @@ bool ISAStreamEngine::canCommitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
 
 void ISAStreamEngine::commitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
 
-  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
-  assert(!instInfo.mustBeMisspeculated &&
+  assert(!this->getDynStreamInstInfo(dynInfo.seqNum).mustBeMisspeculated &&
          "Try to commit a MustBeMisspeculated inst.");
 
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);

@@ -65,6 +65,11 @@ class flitBuffer
     {
         flit *f = m_buffer.front();
         m_buffer.pop_front();
+        if (m_buffer.empty()) {
+            next_flit_tick = MaxTick;
+        } else {
+            next_flit_tick = peekTopFlit()->get_time();
+        }
         return f;
     }
 
@@ -77,6 +82,9 @@ class flitBuffer
     void
     insert(flit *flt)
     {
+        if (m_buffer.empty()) {
+            next_flit_tick = flt->get_time();
+        }
         m_buffer.push_back(flt);
     }
 
@@ -86,6 +94,7 @@ class flitBuffer
   private:
     std::deque<flit *> m_buffer;
     int max_size;
+    Tick next_flit_tick = MaxTick;
 };
 
 inline std::ostream&

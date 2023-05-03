@@ -195,8 +195,8 @@ void SlicedDynStream::allocateOneElement() const {
      * This stream should soon be rewinded. Here I just make two new slices,
      * and do not bother coalescing with previous slices.
      */
-    auto wrappedSize = lhs + this->elemSize;
-    auto straightSize = this->elemSize - wrappedSize;
+    [[maybe_unused]] auto wrappedSize = lhs + this->elemSize;
+    [[maybe_unused]] auto straightSize = this->elemSize - wrappedSize;
     assert(wrappedSize <= ruby::RubySystem::getBlockSizeBytes() &&
            "WrappedSize larger than a line.");
     assert(straightSize <= ruby::RubySystem::getBlockSizeBytes() &&
@@ -253,6 +253,7 @@ void SlicedDynStream::allocateOneElement() const {
       this->tailElemIdx == this->prevTailElemIdx + 1 &&
       !this->hasOverflowed(this->tailElemIdx)) {
     if (lhsBlock < prevLHSBlock && !prevWrappedAround) {
+#ifndef NDEBUG
       /**
        * Special case to handle decreasing address.
        * If there is a bump back to lower address, we make sure that it has no
@@ -261,6 +262,7 @@ void SlicedDynStream::allocateOneElement() const {
       for (auto &slice : this->slices) {
         assert(rhsBlock < slice.vaddr && "Overlapped decreasing element.");
       }
+#endif
       // Set sliceHeadElementIdx so that slicing branch below will ignore
       // previous slices and restart.
       this->sliceHeadElemIdx = this->tailElemIdx;
@@ -317,4 +319,3 @@ void SlicedDynStream::allocateOneElement() const {
   this->stepTailElemIdx();
 }
 } // namespace gem5
-

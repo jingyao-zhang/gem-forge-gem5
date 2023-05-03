@@ -58,10 +58,10 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
     panic("Failed to resovle symbol: %s.", this->func.name());
   }
 
-  auto dsEffBase = tc->readMiscRegNoEffect(misc_reg::DsEffBase);
-  auto csEffBase = tc->readMiscRegNoEffect(misc_reg::CsEffBase);
-  assert(dsEffBase == 0 && "We cannot handle this DS.\n");
-  assert(csEffBase == 0 && "We cannot handle this CS.\n");
+  assert(tc->readMiscRegNoEffect(misc_reg::DsEffBase) == 0 &&
+         "We cannot handle this DS.\n");
+  assert(tc->readMiscRegNoEffect(misc_reg::CsEffBase) == 0 &&
+         "We cannot handle this CS.\n");
 
   EXEC_FUNC_DPRINTF("======= Start decoding %s from %#x.\n", this->func.name(),
                     funcStartVAddr);
@@ -79,8 +79,8 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
   auto fetchPC = funcStartVAddr;
   // Feed in the first line.
   MachInst &machInst = *static_cast<MachInst *>(decoder.moreBytesPtr());
-  assert(prox.tryReadBlob(fetchPC, &machInst, sizeof(MachInst)) &&
-         "Failed to read in next machine inst.");
+  panic_if(!prox.tryReadBlob(fetchPC, &machInst, sizeof(MachInst)),
+           "Failed to read in next machine inst.");
 
   while (true) {
     /**
@@ -96,8 +96,8 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
     // Read in the next machInst.
     if (decoder.needMoreBytes()) {
       fetchPC += sizeof(machInst);
-      assert(prox.tryReadBlob(fetchPC, &machInst, sizeof(MachInst)) &&
-             "Failed to read in next machine inst.");
+      panic_if(!prox.tryReadBlob(fetchPC, &machInst, sizeof(MachInst)),
+               "Failed to read in next machine inst.");
     }
     if (!decoder.instReady()) {
       EXEC_FUNC_DPRINTF("Feed in %#x %#x %#x %#x %#x %#x %#x %#x %#x.\n",
@@ -108,8 +108,8 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
       decoder.moreBytes(pc, fetchPC);
       if (!decoder.instReady()) {
         fetchPC += sizeof(machInst);
-        assert(prox.tryReadBlob(fetchPC, &machInst, sizeof(machInst)) &&
-               "Failed to read in next machine inst.");
+        panic_if(!prox.tryReadBlob(fetchPC, &machInst, sizeof(machInst)),
+                 "Failed to read in next machine inst.");
         EXEC_FUNC_DPRINTF("Feed in %#x %#x %#x %#x %#x %#x %#x %#x %#x.\n",
                           fetchPC, (machInst >> 0) & 0xff,
                           (machInst >> 8) & 0xff, (machInst >> 16) & 0xff,
@@ -148,8 +148,8 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
     if (pc.pc() >= fetchPC + sizeof(machInst)) {
       // Somehow we just happen to consumed all of machInst.
       fetchPC += sizeof(machInst);
-      assert(prox.tryReadBlob(fetchPC, &machInst, sizeof(machInst)) &&
-             "Failed to read in next machine inst.");
+      panic_if(!prox.tryReadBlob(fetchPC, &machInst, sizeof(machInst)),
+               "Failed to read in next machine inst.");
     }
   }
   EXEC_FUNC_DPRINTF("Decode done. Final PC %s.\n", pc);

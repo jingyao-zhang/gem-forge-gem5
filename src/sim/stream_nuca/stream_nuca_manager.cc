@@ -637,7 +637,7 @@ void StreamNUCAManager::remapPtrChaseRegion(ThreadContext *tc,
           region.name, alignToRegion.name, alignInfo.ptrOffset,
           alignInfo.ptrSize, region.elementSize);
 
-  const auto llcBlockSize = StreamNUCAMap::getCacheBlockSize();
+  [[maybe_unused]] const auto llcBlockSize = StreamNUCAMap::getCacheBlockSize();
   const auto nodeSize = region.elementSize;
 
   assert(nodeSize % llcBlockSize == 0);
@@ -664,7 +664,8 @@ void StreamNUCAManager::remapPtrChaseRegion(ThreadContext *tc,
     while (headVAddr != 0) {
 
       // Assume one node will not span across multiple pages.
-      assert(tc->getProcessPtr()->pTable->translate(headVAddr, headPAddr));
+      panic_if(!tc->getProcessPtr()->pTable->translate(headVAddr, headPAddr),
+               "Failed address translation.");
       for (Addr paddr = headPAddr; paddr < headPAddr + nodeSize; ++paddr) {
         paddrLineToBankMap.emplace(paddr, currentBank);
       }
@@ -688,7 +689,8 @@ void StreamNUCAManager::remapPtrChaseRegion(ThreadContext *tc,
           totalNodes);
 
   Addr startPAddr;
-  assert(tc->getProcessPtr()->pTable->translate(region.vaddr, startPAddr));
+  panic_if(!tc->getProcessPtr()->pTable->translate(region.vaddr, startPAddr),
+           "Failed address translation.");
 
   // For now add the default mapping.
   StreamNUCAMap::addRangeMap(startPAddr, startPAddr + region.numElement *
@@ -716,7 +718,8 @@ void StreamNUCAManager::remapIndirectRegion(ThreadContext *tc,
 
   // Register a default region.
   Addr startPAddr;
-  assert(tc->getProcessPtr()->pTable->translate(region.vaddr, startPAddr));
+  panic_if(!tc->getProcessPtr()->pTable->translate(region.vaddr, startPAddr),
+           "Failed address translation.");
   StreamNUCAMap::addRangeMap(startPAddr, startPAddr + region.numElement *
                                                           region.elementSize);
 
@@ -1154,7 +1157,8 @@ void StreamNUCAManager::estimateCSRMigration(ThreadContext *tc,
       this->getRegionFromStartVAddr(csrIndexAlign.vaddrB);
 
   auto regionLhsVAddr = region.vaddr;
-  auto regionRhsVAddr = region.vaddr + region.numElement * region.elementSize;
+  [[maybe_unused]] auto regionRhsVAddr =
+      region.vaddr + region.numElement * region.elementSize;
 
   assert(csrIndexRegion.elementSize == 8 && "Invalid Ptr.");
   auto pTable = tc->getProcessPtr()->pTable;
@@ -1182,7 +1186,8 @@ void StreamNUCAManager::estimateCSRMigration(ThreadContext *tc,
         auto thisEdgeVAddr = edgeLhs + j * region.elementSize;
         auto thisEdgeVAddrLine = ruby::makeLineAddress(thisEdgeVAddr);
         Addr thisEdgePAddrLine;
-        assert(pTable->translate(thisEdgeVAddrLine, thisEdgePAddrLine));
+        panic_if(!pTable->translate(thisEdgeVAddrLine, thisEdgePAddrLine),
+                 "Failed address translation.");
         auto thisEdgeBank = StreamNUCAMap::getBank(thisEdgePAddrLine);
         if (thisEdgeBank == -1) {
           panic("Invalid EdgeBank %d %d %ld.", i, j,
@@ -1285,7 +1290,8 @@ void StreamNUCAManager::estimateCSRMigration(ThreadContext *tc,
             Addr paddr;
             auto vaddr =
                 fullLineLhsVAddr + k * StreamNUCAMap::getCacheBlockSize();
-            assert(pTable->translate(vaddr, paddr));
+            panic_if(!pTable->translate(vaddr, paddr),
+                     "Failed address translation.");
             DPRINTF(StreamNUCAManager, "%d %d\n",
                     *reinterpret_cast<int *>(
                         buffer + k * StreamNUCAMap::getCacheBlockSize()),
@@ -2090,12 +2096,12 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region,
       assert(vBitlines % alignDimTileSize == 0);
       auto ratio = vBitlines / alignDimTileSize;
       if (alignDim + 1 < dimensions) {
-        auto s = arraySizes.at(alignDim + 1);
+        [[maybe_unused]] auto s = arraySizes.at(alignDim + 1);
         assert(s >= ratio);
         assert(s % ratio == 0);
         tileSizes.at(alignDim + 1) = ratio;
       } else if (alignDim > 0) {
-        auto s = arraySizes.at(alignDim - 1);
+        [[maybe_unused]] auto s = arraySizes.at(alignDim - 1);
         assert(s >= ratio);
         assert(s % ratio == 0);
         tileSizes.at(alignDim - 1) = ratio;

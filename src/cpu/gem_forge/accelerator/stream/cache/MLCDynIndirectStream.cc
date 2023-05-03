@@ -75,8 +75,7 @@ void MLCDynIndirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
   assert(this->strandId == sliceId.getDynStrandId() &&
          "Unmatched dynamic stream id.");
 
-  auto numElements = sliceId.getNumElements();
-  assert(numElements == 1 && "Can not merge indirect elements.");
+  assert(sliceId.getNumElements() == 1 && "Can not merge indirect elements.");
 
   /**
    * It is possible when the core stream engine runs ahead than

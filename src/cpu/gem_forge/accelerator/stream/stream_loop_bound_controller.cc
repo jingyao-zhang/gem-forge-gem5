@@ -165,9 +165,8 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
     dynBound.innerLoopDepTracker.getInnerLoopBaseElems(nextFIFOIdx,
                                                        innerLoopBaseElems);
     for (const auto &entry : innerLoopBaseElems) {
-      auto type = entry.first;
       auto baseElem = entry.second;
-      assert(type == DynStreamDepEdge::TypeE::Bound);
+      assert(entry.first == DynStreamDepEdge::TypeE::Bound);
       assert(baseElem->isValueReady);
       baseElements.insert(baseElem);
     }

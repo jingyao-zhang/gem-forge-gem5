@@ -223,15 +223,14 @@ class InputUnit : public Consumer
         }
         void setVCForFrontMsg(int vc) {
             assert(this->isReady());
-            auto frontFlitType = this->flits.front()->get_type();
+            [[maybe_unused]] auto frontFlitType = this->flits.front()->get_type();
             assert(frontFlitType == HEAD_ || frontFlitType == HEAD_TAIL_);
             assert(this->readyFlits >= this->flits.front()->get_size());
             int i = 0;
             int n = this->flits.front()->get_size();
             auto iter = this->flits.begin();
-            auto end = this->flits.end();
             while (i < n) {
-                assert(iter != end);
+                assert(iter != this->flits.end());
                 (*iter)->set_vc(vc);
                 ++i;
                 ++iter;

@@ -129,7 +129,9 @@ LLCDynStream::LLCDynStream(ruby::AbstractStreamAwareController *_mlcController,
       "Created with TotalTripCount %ld InnerTripCount %ld RangeSync %d.\n",
       this->totalTripCount, this->innerTripCount, this->shouldRangeSync());
 
-  assert(GlobalLLCDynStreamMap.emplace(this->getDynStrandId(), this).second);
+  [[maybe_unused]] auto emplaced =
+      GlobalLLCDynStreamMap.emplace(this->getDynStrandId(), this).second;
+  assert(emplaced && "Duplicated LLC Strand.");
   this->sanityCheckStreamLife();
 }
 
@@ -1019,7 +1021,7 @@ void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
     }
   }
 
-  assert(found && "Failed to Find SendConfig");
+  panic_if(!found, "Failed to Find SendConfig");
 
   auto S = this->getStaticS();
   if (!this->idxToElementMap.count(recvStrandElemIdx)) {
@@ -1573,8 +1575,8 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
     auto elemVAddr = elem->vaddr;
 
     Addr elemPAddr;
-    assert(this->translateToPAddr(elemVAddr, elemPAddr) &&
-           "Fault on vaddr of UpdateStream.");
+    panic_if(!this->translateToPAddr(elemVAddr, elemPAddr),
+             "Fault on vaddr of UpdateStream.");
     const auto lineSize = ruby::RubySystem::getBlockSizeBytes();
 
     assert(elemMemSize <= sizeof(value) && "UpdateStream size overflow.");
@@ -1672,8 +1674,8 @@ void LLCDynStream::tryComputeNextDirectReduceElem(
         auto vaddr = baseElement->vaddr;
         if (vaddr != 0) {
           Addr paddr;
-          assert(this->baseStream->translateToPAddr(vaddr, paddr) &&
-                 "Failed to translate for NextReductionBaseElement.");
+          panic_if(!this->baseStream->translateToPAddr(vaddr, paddr),
+                   "Failed to translate for NextReductionBaseElement.");
           auto llcMachineID = this->mlcController->mapAddressToLLCOrMem(
               paddr, seMachineID.getType());
           nextComputeSE =

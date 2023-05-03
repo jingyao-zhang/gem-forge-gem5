@@ -265,8 +265,8 @@ DynStreamFormalParamV CacheStreamConfigureData::splitAffinePatternByElem(
   }
 
   auto stride = params.at(0).invariant.int64();
-  auto trip = params.at(1).invariant.uint64();
   auto start = params.back().invariant.uint64();
+  [[maybe_unused]] auto trip = params.at(1).invariant.uint64();
 
   assert(endElem <= trip);
   assert(startElem < endElem);
@@ -482,4 +482,3 @@ uint64_t CacheStreamConfigureData::getStreamElemIdxFromStrandElemIdx(
   return this->strandSplit.mapStrandToStream(elemSplit);
 }
 } // namespace gem5
-

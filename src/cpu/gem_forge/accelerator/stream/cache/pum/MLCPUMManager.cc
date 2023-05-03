@@ -317,8 +317,9 @@ void MLCPUMManager::findPUMComputeStreamGroups(PUMContext &context) {
       for (const auto &usedConfig : group->usedConfigs) {
         if (auto usedGroup = getGroup(usedConfig)) {
           stack.push_back(usedGroup);
-          assert(state.emplace(usedGroup, 0).first->second != 1 &&
-                 "Found Loop");
+          [[maybe_unused]] auto curState =
+              state.emplace(usedGroup, 0).first->second;
+          assert(curState != 1 && "Found Loop");
         }
       }
       state.at(group) = 1;
@@ -576,6 +577,7 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
     this->decoalesceAndDevectorizePattern(config, patInfo);
   }
 
+#ifndef NDEBUG
   // All regions should have the same tile mapping.
   const auto &computeTile = group.patternInfo.at(computeConfig->stream).pumTile;
   for (const auto &baseConfig : group.usedPUMConfigs) {
@@ -583,6 +585,7 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
     assert(this->isPUMTileCompatibleTo(tile, computeTile) &&
            "PUMTile should be compatible.");
   }
+#endif
 
   // Before asking DataMoveCompiler, we need some preprocessing on the stream
   // patterns to at least try to make it suitable for PUM.
@@ -2174,7 +2177,7 @@ void MLCPUMManager::mergePUMDataGraphMoveNode(PUMContext &context) {
           break;
         }
       }
-      assert(erasedValueB);
+      panic_if(!erasedValueB, "ValueB not Erased.");
       delete valueB;
     }
 
@@ -2187,7 +2190,7 @@ void MLCPUMManager::mergePUMDataGraphMoveNode(PUMContext &context) {
         break;
       }
     }
-    assert(erasedMoveB);
+    panic_if(!erasedMoveB, "MoveB not Erased.");
     delete moveB;
   };
 
@@ -3125,7 +3128,7 @@ void MLCPUMManager::erasePUMConfigs(PUMContext &context,
         break;
       }
     }
-    assert(erased && "Failed to remove FowardEdge.");
+    panic_if(!erased, "Failed to remove FowardEdge.");
     if (deps.empty()) {
       MLC_S_DPRINTF(sendConfig->dynamicId,
                     "[PUMErased] Erase Empty ForwardStream.\n");
@@ -3338,7 +3341,7 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
         break;
       }
     }
-    assert(replacedBaseEdge && "Failed to replace BaseEdge.");
+    panic_if(!replacedBaseEdge, "Failed to replace BaseEdge.");
   }
 
   // Copy the new ReduceStream.
@@ -3369,7 +3372,7 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
       break;
     }
   }
-  assert(erasedPurePUMId);
+  panic_if(!erasedPurePUMId, "PurePUMId not erased.");
 }
 
 void MLCPUMManager::addPUMLoadStream(PUMContext &context,
@@ -3528,7 +3531,7 @@ void MLCPUMManager::addPUMLoadStream(PUMContext &context,
       break;
     }
   }
-  assert(erasedPurePUMId);
+  panic_if(!erasedPurePUMId, "PurePUMId not Erased.");
 }
 
 void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
@@ -4223,9 +4226,8 @@ MLCPUMManager::addReuseToOuterPattern(const ConfigPtr &outerConfig,
                                       const ConfigPtr &innerConfig,
                                       const AffinePattern &pattern) const {
 
-  auto outerS = outerConfig->stream;
-  auto innerS = innerConfig->stream;
-  assert(outerS->getLoopLevel() < innerS->getLoopLevel() &&
+  assert(outerConfig->stream->getLoopLevel() <
+             innerConfig->stream->getLoopLevel() &&
          "Outer should be outside.");
 
   assert(outerConfig->hasTotalTripCount());
@@ -4417,10 +4419,12 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
       const auto &patInfo = group.patternInfo.at(S);
       assert(patInfo.splitOuterDims.size() >= 1);
       outerTripCount = patInfo.splitOuterDims.front().getTotalTrip();
+#ifndef NDEBUG
       for (const auto &split : patInfo.splitOuterDims) {
         assert(split.getTotalTrip() == outerTripCount &&
                "Mismatch in Outer TotalTripCount.");
       }
+#endif
     }
 
     if (S->isStoreComputeStream() || S->isAtomicComputeStream() ||
@@ -4475,7 +4479,7 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
     return;
   }
 
-  assert(!someGroupsDone && "Cannot support partially PUM done ><.");
+  panic_if(someGroupsDone, "Cannot support partially PUM done ><.");
 
   this->tryKickNextComputeRound(context);
 }
@@ -4502,7 +4506,7 @@ bool MLCPUMManager::checkPUMReduceDepAcked(
 
     for (const auto &dep : pumReduceConfig->depEdges) {
       const auto &depId = dep.data->dynamicId;
-      auto depS = dep.data->stream;
+      [[maybe_unused]] auto depS = dep.data->stream;
       assert(depS->isStoreComputeStream() || depS->isUpdateStream());
 
       if (!this->mlcSE->strandManager->isStreamElemAcked(depId, ackedElemIdx,

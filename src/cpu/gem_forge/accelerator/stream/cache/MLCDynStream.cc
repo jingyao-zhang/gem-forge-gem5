@@ -590,7 +590,7 @@ MLCDynStream::MLCStreamSlice::convertCoreStatusToString(CoreStatusE status) {
     Case(FAULTED);
 #undef Case
   default:
-    assert(false && "Invalid MLCStreamSlice::CoreStatus.");
+    panic("Invalid MLCStreamSlice::CoreStatus.");
   }
 }
 
@@ -626,7 +626,8 @@ void MLCDynStream::receiveStreamLoopBoundResult(uint64_t elemIdx,
   MLC_S_DPRINTF_(MLCStreamLoopBound, this->getDynStrandId(),
                  "[MLCLoopBound] Recv %lu Broken %d.\n", elemIdx, brokenOut);
 
-  auto added = this->loopBoundResults.emplace(elemIdx, brokenOut).second;
+  [[maybe_unused]] auto added =
+      this->loopBoundResults.emplace(elemIdx, brokenOut).second;
   assert(added && "Duplicated LoopBoundResult.");
 
   this->advanceStreamLoopBound();

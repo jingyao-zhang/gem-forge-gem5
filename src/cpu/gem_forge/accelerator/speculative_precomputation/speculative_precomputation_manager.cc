@@ -10,8 +10,8 @@ SpeculativePrecomputationThread::SpeculativePrecomputationThread(
     : LLVMTraceThreadContext(_contextId, _traceFileName,
                              true /* This is ideal thread. */),
       criticalPC(_criticalPC), tokens(0), numTriggeredSlices(0), numSlices(0) {
-  const auto &staticInfo = this->getStaticInfo();
-  assert(staticInfo.module() == "specpre" && "Unmatched module name.");
+  assert(this->getStaticInfo().module() == "specpre" &&
+         "Unmatched module name.");
 }
 
 bool SpeculativePrecomputationThread::canFetch() const {

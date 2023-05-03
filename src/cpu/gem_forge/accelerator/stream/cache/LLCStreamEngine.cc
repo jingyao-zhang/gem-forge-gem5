@@ -286,11 +286,11 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynStreamPtr dynS,
   // Sanity check.
   auto vaddrAndMachineType = dynS->peekNextAllocVAddrAndMachineType();
   auto vaddr = vaddrAndMachineType.first;
-  auto machineType = vaddrAndMachineType.second;
   Addr paddr;
-  assert(dynS->translateToPAddr(vaddr, paddr) &&
-         "Paddr should always be valid to migrate a stream.");
-  Addr paddrLine = ruby::makeLineAddress(paddr);
+  panic_if(!dynS->translateToPAddr(vaddr, paddr),
+           "Paddr should always be valid to migrate a stream.");
+  [[maybe_unused]] Addr paddrLine = ruby::makeLineAddress(paddr);
+  [[maybe_unused]] auto machineType = vaddrAndMachineType.second;
   assert(this->isPAddrHandledByMe(paddrLine, machineType) &&
          "Stream migrated to wrong remote bank.\n");
 
@@ -516,8 +516,8 @@ void LLCStreamEngine::receiveStreamData(
         auto elem = dynS->getElemPanic(elemIdx, "setElementRemoteBank");
         int sliceOffset;
         int elemOffset;
-        int overlapSize = elem->computeOverlap(sliceId.vaddr, sliceId.getSize(),
-                                               sliceOffset, elemOffset);
+        [[maybe_unused]] int overlapSize = elem->computeOverlap(
+            sliceId.vaddr, sliceId.getSize(), sliceOffset, elemOffset);
         assert(overlapSize > 0);
         if (elemOffset == 0) {
           // Avoid setting the RemoteBank for the element twice?
@@ -1129,7 +1129,7 @@ void LLCStreamEngine::removeStreamFromMulticastTable(LLCDynStreamPtr dynS) {
       break;
     }
   }
-  assert(erased && "Failed to erase from MulticastGroup.");
+  panic_if(!erased, "Failed to erase from MulticastGroup.");
   // Clear the multicast leader for dynS.
   dynS->setMulticastGroupLeader(nullptr);
   if (mapIter->first == dynS) {
@@ -1145,8 +1145,8 @@ void LLCStreamEngine::removeStreamFromMulticastTable(LLCDynStreamPtr dynS) {
       this->multicastStreamMap.emplace(newLeader, group);
     }
     // We can remove the group from the table now.
-    assert(this->multicastStreamMap.erase(dynS) == 1 &&
-           "Failed to remove the group");
+    [[maybe_unused]] auto erased = this->multicastStreamMap.erase(dynS);
+    assert(erased == 1 && "Failed to remove the group");
   }
 }
 
@@ -1199,7 +1199,7 @@ bool LLCStreamEngine::canIssueByMulticastPolicy(LLCDynStreamPtr dynS) const {
       return S == dynS;
     }
     // Should never happen.
-    assert(false && "DynS not found in MulticastGroup.");
+    panic("DynS not found in MulticastGroup.");
   case ruby::AbstractStreamAwareController::MulticastIssuePolicy::First:
     return group.front() == dynS;
   default:
@@ -1672,10 +1672,10 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
          */
         if (elem->idx >= nextSliceId.getEndIdx()) {
           Addr paddr;
-          assert(dynS->translateToPAddr(elem->vaddr, paddr) &&
-                 "Failed to translate for DirectStoreComputeStream.");
-          auto elementMachineType = dynS->getFloatMachineTypeAtElem(elem->idx);
-          if (!this->isPAddrHandledByMe(paddr, elementMachineType)) {
+          panic_if(!dynS->translateToPAddr(elem->vaddr, paddr),
+                   "Failed to translate for DirectStoreComputeStream.");
+          auto elemMachineType = dynS->getFloatMachineTypeAtElem(elem->idx);
+          if (!this->isPAddrHandledByMe(paddr, elemMachineType)) {
             // This element is not handled here.
             break;
           }
@@ -2086,7 +2086,8 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicReq(LLCDynStream *dynIS,
   LLC_SLICE_DPRINTF(sliceId, "Issue IndStore/Atomic VAddr %#x At %s.\n",
                     elemVAddr, elemMachineType);
 
-  const auto blockBytes = ruby::RubySystem::getBlockSizeBytes();
+  [[maybe_unused]] const auto blockBytes =
+      ruby::RubySystem::getBlockSizeBytes();
 
   auto IS = dynIS->getStaticS();
   const auto &indirectConfig = dynIS->configData;
@@ -2098,8 +2099,7 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicReq(LLCDynStream *dynIS,
            "Try to store beyond TotalTripCount.");
   }
 
-  int lineOffset = elemVAddr % blockBytes;
-  assert(lineOffset + elemSize <= blockBytes &&
+  assert((elemVAddr % blockBytes) + elemSize <= blockBytes &&
          "Multi-line merged store stream.");
 
   sliceId.vaddr = elemVAddr;
@@ -2191,21 +2191,22 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicReq(LLCDynStream *dynIS,
 }
 
 void LLCStreamEngine::issueIndirectAtomicUnlockRequest(
-    LLCDynStream *dynIS, LLCStreamElementPtr element) {
+    LLCDynStream *dynIS, LLCStreamElementPtr elem) {
 
-  auto elementIdx = element->idx;
+  auto elemIdx = elem->idx;
   DynStreamSliceId sliceId;
   sliceId.getDynStrandId() = dynIS->getDynStrandId();
-  sliceId.getStartIdx() = elementIdx;
-  sliceId.getEndIdx() = elementIdx + 1;
-  auto elementSize = dynIS->getMemElementSize();
-  Addr elementVAddr = element->vaddr;
-  auto elementMachineType = dynIS->getFloatMachineTypeAtElem(elementIdx);
+  sliceId.getStartIdx() = elemIdx;
+  sliceId.getEndIdx() = elemIdx + 1;
+  auto elemSize = dynIS->getMemElementSize();
+  Addr elemVAddr = elem->vaddr;
+  auto elemMachineType = dynIS->getFloatMachineTypeAtElem(elemIdx);
   LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
-                     "Issue IndirectStore/Atomic VAddr %#x At %s.\n",
-                     elementVAddr, elementMachineType);
+                     "Issue IndirectStore/Atomic VAddr %#x At %s.\n", elemVAddr,
+                     elemMachineType);
 
-  const auto blockBytes = ruby::RubySystem::getBlockSizeBytes();
+  [[maybe_unused]] const auto blockBytes =
+      ruby::RubySystem::getBlockSizeBytes();
 
   auto IS = dynIS->getStaticS();
 
@@ -2214,23 +2215,22 @@ void LLCStreamEngine::issueIndirectAtomicUnlockRequest(
     LLC_SLICE_PANIC(sliceId, "[IndirectUnlock] Not Requiring Unlock.");
   }
 
-  assert(elementSize <= sizeof(uint64_t) && "Oversized merged store stream.");
+  assert(elemSize <= sizeof(uint64_t) && "Oversized merged store stream.");
   if (dynIS->hasTotalTripCount()) {
-    assert(elementIdx < dynIS->getTotalTripCount() &&
+    assert(elemIdx < dynIS->getTotalTripCount() &&
            "Try to store beyond TotalTripCount.");
   }
 
-  int lineOffset = elementVAddr % blockBytes;
-  assert(lineOffset + elementSize <= blockBytes &&
+  assert((elemVAddr % blockBytes) + elemSize <= blockBytes &&
          "Multi-line merged store stream.");
 
-  sliceId.vaddr = elementVAddr;
-  sliceId.size = elementSize;
-  Addr elementPAddr;
-  if (dynIS->translateToPAddr(elementVAddr, elementPAddr)) {
+  sliceId.vaddr = elemVAddr;
+  sliceId.size = elemSize;
+  Addr elemPAddr;
+  if (dynIS->translateToPAddr(elemVAddr, elemPAddr)) {
     this->incrementIssueSlice(IS->statistic);
-    auto vaddrLine = ruby::makeLineAddress(elementVAddr);
-    auto paddrLine = ruby::makeLineAddress(elementPAddr);
+    auto vaddrLine = ruby::makeLineAddress(elemVAddr);
+    auto paddrLine = ruby::makeLineAddress(elemPAddr);
 
     LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
                        "StreamUnlock -> RequestQueue.\n");
@@ -2240,7 +2240,7 @@ void LLCStreamEngine::issueIndirectAtomicUnlockRequest(
      * Push to the request queue.
      */
     auto reqType = ruby::CoherenceRequestType_STREAM_UNLOCK;
-    this->enqueueRequest(IS, sliceId, vaddrLine, paddrLine, elementMachineType,
+    this->enqueueRequest(IS, sliceId, vaddrLine, paddrLine, elemMachineType,
                          reqType);
     dynIS->inflyRequests++;
 
@@ -2690,9 +2690,9 @@ void LLCStreamEngine::issueStreamDataToLLC(
       auto recvStreamElemIdx = convertSendStrandElemIdxToRecvStreamElemIdx(
           sendConfig, sendStrandElemIdx);
 
-      auto newRecvStrandId =
-          recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
-      assert(newRecvStrandId == recvStrandId && "Forward to MultiStrand.");
+      assert(recvStrandId ==
+                 recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx) &&
+             "Forward to MultiStrand.");
 
       auto vaddr = getRecvElemVAddr(recvStreamElemIdx);
       auto vaddrEnd = vaddr + recvConfig->elementSize;
@@ -2912,8 +2912,8 @@ void LLCStreamEngine::issuePUMPrefetchStreamDataToLLC(
 
   auto vaddr = sliceId.vaddr;
   Addr paddr;
-  assert(stream->translateToPAddr(vaddr, paddr) &&
-         "Failed to Translate PUMPrefetchStream.");
+  panic_if(!stream->translateToPAddr(vaddr, paddr),
+           "Failed to Translate PUMPrefetchStream.");
 
   auto paddrLine = ruby::makeLineAddress(paddr);
   auto destLLCBank = this->controller->mapAddressToLLCOrMem(
@@ -3038,8 +3038,8 @@ void LLCStreamEngine::migrateStream(LLCDynStream *stream) {
   Addr vaddr = vaddrAndMachineType.first;
   auto machineType = vaddrAndMachineType.second;
   Addr paddr;
-  assert(stream->translateToPAddr(vaddr, paddr) &&
-         "Migrating streams should have valid paddr.");
+  panic_if(!stream->translateToPAddr(vaddr, paddr),
+           "Migrating streams should have valid paddr.");
   Addr paddrLine = ruby::makeLineAddress(paddr);
   auto selfMachineId = this->controller->getMachineID();
   auto addrMachineId =
@@ -3308,7 +3308,8 @@ void LLCStreamEngine::processStreamFwdReq(const ruby::RequestMsg &req) {
       // We need to reconstruct the PAddrLine from SliceId.Vaddr.
       auto vaddrLine = ruby::makeLineAddress(sliceId.vaddr);
       Addr paddrLine;
-      assert(dynS->translateToPAddr(vaddrLine, paddrLine));
+      panic_if(!dynS->translateToPAddr(vaddrLine, paddrLine),
+               "Failed translating addr.");
 
       this->receiveStreamData(paddrLine, sliceId, req.m_DataBlk,
                               req.m_streamStoreBlk);
@@ -3358,11 +3359,11 @@ bool LLCStreamEngine::tryToProcessIndirectAtomicUnlockReq(
         dynS->shouldIssueBeforeCommit() && dynS->shouldIssueAfterCommit())) {
     LLC_SLICE_PANIC(sliceId, "[Commit] Not IndirectAtomicStream with Unlock.");
   }
-  auto elementIdx = sliceId.getStartIdx();
+  auto elemIdx = sliceId.getStartIdx();
   assert(sliceId.getNumElements() == 1 &&
          "Multi-Element slice for IndirectAtomicStream.");
-  auto element = dynS->getElemPanic(elementIdx, "IndirectAtomicUnlock");
-  if (!element->hasFirstIndirectAtomicReqSeen()) {
+  auto elem = dynS->getElemPanic(elemIdx, "IndirectAtomicUnlock");
+  if (!elem->hasFirstIndirectAtomicReqSeen()) {
     LLC_SLICE_PANIC(sliceId, "[Commit] Has not seen FirstIndirectAtomicReq.");
   }
   // Update inflyRequests.
@@ -3374,21 +3375,21 @@ bool LLCStreamEngine::tryToProcessIndirectAtomicUnlockReq(
   LLC_SLICE_DPRINTF_(StreamRangeSync, sliceId,
                      "[Commit] Atomic released. Remaining Elements %llu.\n",
                      dynS->idxToElementMap.size());
-  Addr elementPAddr;
-  assert(dynS->translateToPAddr(element->vaddr, elementPAddr) &&
-         "Fault on vaddr of LLCStore/Atomic/UpdateStream.");
-  auto elementMemSize = dynS->getMemElementSize();
+  Addr elemPAddr;
+  panic_if(!dynS->translateToPAddr(elem->vaddr, elemPAddr),
+           "Fault on vaddr of LLCStore/Atomic/UpdateStream.");
+  auto elemMemSize = dynS->getMemElementSize();
   if (this->controller->isStreamAtomicLockEnabled()) {
     /**
      * For now we just delay the Ack until the line is unlocked.
      */
-    this->atomicLockManager->commit(elementPAddr, elementMemSize, element,
+    this->atomicLockManager->commit(elemPAddr, elemMemSize, elem,
                                     true /* shouldAckAfterUnlock */, sliceId);
   } else {
     /**
      * Ideal case: Immediately send back Ack.
      */
-    this->atomicLockManager->commit(elementPAddr, elementMemSize, element,
+    this->atomicLockManager->commit(elemPAddr, elemMemSize, elem,
                                     false /* shouldAckAfterUnlock */, sliceId);
     this->issueStreamAckToMLC(sliceId);
   }
@@ -3397,7 +3398,7 @@ bool LLCStreamEngine::tryToProcessIndirectAtomicUnlockReq(
    * No matter what, we should release elements that are
    * unlocked.
    */
-  element->setSecondIndirectAtomicReqSeen();
+  elem->setSecondIndirectAtomicReqSeen();
   while (!dynS->idxToElementMap.empty()) {
     auto elemIter = dynS->idxToElementMap.begin();
     const auto &elem = elemIter->second;
@@ -3634,8 +3635,8 @@ void LLCStreamEngine::triggerUpdate(LLCDynStreamPtr dynS,
   auto elemVAddr = elem->vaddr;
 
   Addr elemPAddr;
-  assert(dynS->translateToPAddr(elemVAddr, elemPAddr) &&
-         "Fault on vaddr of UpdateStream.");
+  panic_if(!dynS->translateToPAddr(elemVAddr, elemPAddr),
+           "Fault on vaddr of UpdateStream.");
   const auto lineSize = ruby::RubySystem::getBlockSizeBytes();
 
   /**
@@ -3721,8 +3722,8 @@ void LLCStreamEngine::triggerAtomic(LLCDynStreamPtr dynS,
   elemSliceId.getEndIdx() = elem->idx + 1;
 
   Addr elemPAddr;
-  assert(dynS->translateToPAddr(elemVAddr, elemPAddr) &&
-         "Fault on vaddr of LLCStore/Atomic/UpdateStream.");
+  panic_if(!dynS->translateToPAddr(elemVAddr, elemPAddr),
+           "Fault on vaddr of LLCStore/Atomic/UpdateStream.");
   auto lineOffset = elemVAddr % ruby::RubySystem::getBlockSizeBytes();
   if (lineOffset + elemMemSize > ruby::RubySystem::getBlockSizeBytes()) {
     LLC_ELEMENT_PANIC(elem, "Multi-Line AtomicElement.");
@@ -4055,7 +4056,8 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
 
   auto sliceVAddrLine = ruby::makeLineAddress(sliceId.vaddr);
   Addr paddrLine;
-  assert(dynS->translateToPAddr(sliceVAddrLine, paddrLine));
+  panic_if(!dynS->translateToPAddr(sliceVAddrLine, paddrLine),
+           "Failed to translate SliceVAddrLine.");
   ruby::DataBlock loadValueBlock;
   int payloadSize = 0;
   for (auto elemIdx = sliceId.getStartIdx(); elemIdx < sliceId.getEndIdx();
@@ -4209,8 +4211,8 @@ void LLCStreamEngine::processIndirectAtomicSlice(
    * Also we do not handle elements in-order, as we want the message
    * sent back to MLC is correctly sliced.
    */
-  auto S = dynS->getStaticS();
-  assert(S->isAtomicComputeStream() && !S->isDirectMemStream() &&
+  assert(dynS->getStaticS()->isAtomicComputeStream() &&
+         !dynS->getStaticS()->isDirectMemStream() &&
          "Not IndirectAtomicComputeStream.");
   /**
    * Speical case for the second request for IndirectAtomicStream
@@ -4307,8 +4309,8 @@ void LLCStreamEngine::processIndirectUpdateSlice(
    * Also we do not handle elements in-order, as we want the message
    * sent back to MLC is correctly sliced.
    */
-  auto S = dynS->getStaticS();
-  assert(S->isUpdateStream() && !S->isDirectMemStream() &&
+  assert(dynS->getStaticS()->isUpdateStream() &&
+         !dynS->getStaticS()->isDirectMemStream() &&
          "Not IndirectUpdateStream.");
   bool coreNeedValue = false;
   auto dynCoreS = dynS->getCoreDynS();
@@ -4694,9 +4696,10 @@ void LLCStreamEngine::skipComputation(LLCStreamElementPtr &elem) {
 void LLCStreamEngine::pushInflyComputation(LLCStreamElementPtr &elem,
                                            const StreamValue &result,
                                            Cycles &latency) {
-  const int maxInflyCmp =
-      this->controller->myParams->llc_stream_engine_max_infly_computation;
-  assert(this->numInflyRealCmps < maxInflyCmp && "Too many infly results.");
+  assert(
+      this->numInflyRealCmps <
+          this->controller->myParams->llc_stream_engine_max_infly_computation &&
+      "Too many infly results.");
   assert(latency < 1024 && "Latency too long.");
 
   if (!elem->isComputationVectorized()) {

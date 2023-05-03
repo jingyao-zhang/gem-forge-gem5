@@ -265,7 +265,8 @@ bool MLCStrandManager::canSplitIntoStrandsByElem(
             .uint64();
     auto vaddrLine = ruby::makeLineAddress(vaddr);
     Addr paddrLine;
-    assert(cpuDelegator->translateVAddrOracle(vaddrLine, paddrLine));
+    panic_if(!cpuDelegator->translateVAddrOracle(vaddrLine, paddrLine),
+             "Failed to translate.");
     auto bank = StreamNUCAMap::getBank(paddrLine);
     assert(bank != -1);
     return bank;
@@ -1011,7 +1012,7 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
           break;
         }
       }
-      assert(foundUsedByEdge && "Miss BaseUsedByEdge.");
+      panic_if(!foundUsedByEdge, "Miss BaseUsedByEdge.");
     }
     bool isDirect = false;
     auto depStrands =

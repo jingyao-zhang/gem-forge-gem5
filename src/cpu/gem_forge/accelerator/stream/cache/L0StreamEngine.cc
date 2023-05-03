@@ -65,8 +65,7 @@ void L0StreamEngine::receiveStreamEnd(PacketPtr pkt) {
   for (const auto &endId : *endIds) {
     L0_STREAM_DPRINTF_(L0RubyStreamLife, endId, "Received StreamEnd.\n");
 
-    auto rootStreamIter = this->offloadedStreams.find(endId);
-    assert(rootStreamIter != this->offloadedStreams.end() &&
+    assert(this->offloadedStreams.count(endId) &&
            "Failed to find the ending root stream.");
 
     // End all streams with the correct root stream id (indirect streams).

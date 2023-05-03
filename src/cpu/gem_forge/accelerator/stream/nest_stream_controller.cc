@@ -391,9 +391,9 @@ void StreamRegionController::configureNestStream(
     if (remoteBank == -1) {
       SE_PANIC("No RemoteBank for %s.", staticNestRegion.region.region());
     }
-    auto numSEs = StreamEngine::GlobalStreamEngines.size();
-    assert(numSEs > 0);
-    assert(remoteBank < numSEs && "[Nest] Overflow RemoteBank.");
+    assert(remoteBank >= 0);
+    assert(remoteBank < StreamEngine::GlobalStreamEngines.size() &&
+           "[Nest] Overflow RemoteBank.");
     // auto selected = rand() % numSEs;
     // auto selected = 1;
     auto selected = remoteBank;

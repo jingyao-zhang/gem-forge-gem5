@@ -242,8 +242,8 @@ Fault MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
   Addr vaddr;
   uint32_t size;
   // TODO: Delay inserting into the LSQ when the address is not ready.
-  assert(callback->getAddrSize(vaddr, size) &&
-         "The addr/size is not ready yet.");
+  panic_if(!callback->getAddrSize(vaddr, size),
+           "The addr/size is not ready yet.");
 
   INST_DPRINTF(dynInstPtr, "Insert into LSQ (%#x, %u).\n", vaddr, size);
 
@@ -518,8 +518,8 @@ void MinorCPUDelegator::storeTo(InstSeqNum seqNum, Addr vaddr, int size) {
     }
     Addr ldVaddr;
     uint32_t ldSize;
-    assert(callback->getAddrSize(ldVaddr, ldSize) &&
-           "Issued LQCallback should have Addr/Size.");
+    panic_if(!callback->getAddrSize(ldVaddr, ldSize),
+             "Issued LQCallback should have Addr/Size.");
     if (vaddr >= ldVaddr + ldSize || vaddr + size <= ldVaddr) {
       // No overlap.
       return;
@@ -619,7 +619,8 @@ void MinorCPUDelegator::sendRequest(PacketPtr pkt) {
   // e.g. StreamConfig/End packet.
   if (pkt->cmd != MemCmd::ReadReq) {
     auto &lsq = pimpl->cpu->pipeline->execute.getLSQ();
-    assert(lsq.dcachePort->sendTimingReqVirtual(pkt, false /* isCore */));
+    panic_if(!lsq.dcachePort->sendTimingReqVirtual(pkt, false /* isCore */),
+             "Failed to send request.");
     return;
   }
   auto lineBytes = this->cacheLineSize();

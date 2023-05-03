@@ -75,7 +75,7 @@ struct MachineID
                 return MachineID(currType, rawNodeID - currBaseId);
             }
         }
-        assert(false && "Failed to convert RawNodeID to MachineID.");
+        panic("Failed to convert RawNodeID to MachineID.");
     }
     NodeID getRawNodeID() const {
         return MachineType_base_number(this->type) + this->num;

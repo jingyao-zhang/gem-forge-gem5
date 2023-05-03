@@ -183,9 +183,9 @@ void StreamSQDeprecatedCallback::writebacked() {
   // Remember to change the status of the stream store to committed.
   auto cpu = this->element->se->cpu;
   auto storeInstId = this->storeInst->getId();
-  auto status = cpu->getInflyInstStatus(storeInstId);
-  assert(status == LLVMTraceCPU::InstStatus::COMMITTING &&
+  assert(cpu->getInflyInstStatus(storeInstId) ==
+             LLVMTraceCPU::InstStatus::COMMITTING &&
          "Writebacked instructions should be committing.");
   cpu->updateInflyInstStatus(storeInstId, LLVMTraceCPU::InstStatus::COMMITTED);
-}} // namespace gem5
-
+}
+} // namespace gem5

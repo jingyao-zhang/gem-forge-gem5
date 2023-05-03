@@ -475,8 +475,7 @@ namespace gem5
         void AVXOpBase::doFusedSingleBinaryOp(ExecContext *xc, BinaryOp op1,
                                               BinaryOp op2) const
         {
-            auto vRegs = destVL / sizeof(uint64_t);
-            assert(vRegs == 1 && "Multi VRegs for Single Op.");
+            assert(destVL / sizeof(uint64_t) == 1 && "Multi VRegs for Single Op.");
             FloatInt src1;
             FloatInt src2;
             FloatInt src3;
@@ -917,7 +916,7 @@ namespace gem5
                 case 3:
                     return src2.ui.i2;
                 default:
-                    assert(false);
+                    panic("Invalid select imm.");
                 }
             };
 

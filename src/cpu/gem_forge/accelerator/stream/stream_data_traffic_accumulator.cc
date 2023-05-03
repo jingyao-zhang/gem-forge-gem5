@@ -31,14 +31,14 @@ void StreamDataTrafficAccumulator::commit(
 }
 
 void StreamDataTrafficAccumulator::computeTrafficFix(
-    const StreamElement *element) {
+    const StreamElement *elem) {
   /**
    * Fix is simple, just charge the traffic for all LoadStream
    * and StoreComputeStream, AtomicComputeStream.
    * Non-binding Store/AtomicStream will be charged in core, and are
    * not considered as stream traffic.
    */
-  auto S = element->stream;
+  auto S = elem->stream;
   //   auto hasCoreUser = S->hasCoreUser();
   //   auto coreUsed = element->isFirstUserDispatched();
 
@@ -49,7 +49,7 @@ void StreamDataTrafficAccumulator::computeTrafficFix(
   }
 
   auto size = S->getMemElementSize();
-  auto dataBank = this->getElementDataBank(element);
+  auto dataBank = this->getElementDataBank(elem);
   if (dataBank == -1) {
     return;
   }
@@ -60,9 +60,10 @@ void StreamDataTrafficAccumulator::computeTrafficFix(
 
   auto &ideaCache = this->se->getCPUDelegator()->ideaCache;
   assert(ideaCache && "Missing idea cache.");
-  auto vaddr = element->addr;
+  auto vaddr = elem->addr;
   Addr paddr;
-  assert(this->se->getCPUDelegator()->translateVAddrOracle(vaddr, paddr));
+  panic_if(!this->se->getCPUDelegator()->translateVAddrOracle(vaddr, paddr),
+           "Failed to translate");
   auto missFlits = ideaCache->access(paddr, size);
 
   auto totalHops = flits * distance;

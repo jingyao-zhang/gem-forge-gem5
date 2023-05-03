@@ -224,7 +224,8 @@ void O3CPUDelegator::sendRequest(PacketPtr pkt) {
           pkt->getSize());
   }
   auto &lsq = pimpl->cpu->getIEW()->ldstQueue;
-  assert(lsq.getDataPortPtr()->sendTimingReqVirtual(pkt, false /* isCore */));
+  panic_if(!lsq.getDataPortPtr()->sendTimingReqVirtual(pkt, false /* isCore */),
+           "Failed to send request.");
 }
 
 bool O3CPUDelegator::canDispatch(DynInstPtr &dynInstPtr) {
@@ -450,8 +451,8 @@ void O3CPUDelegator::storeTo(InstSeqNum seqNum, Addr vaddr, int size) {
     }
     Addr ldVaddr;
     uint32_t ldSize;
-    assert(callback->getAddrSize(ldVaddr, ldSize) &&
-           "Issued LSQCallback should have Addr/Size.");
+    panic_if(!callback->getAddrSize(ldVaddr, ldSize),
+             "Issued LSQCallback should have Addr/Size.");
     if (vaddr >= ldVaddr + ldSize || vaddr + size <= ldVaddr) {
       // No overlap.
       return;
@@ -499,8 +500,8 @@ void O3CPUDelegator::storeTo(InstSeqNum seqNum, Addr vaddr, int size) {
         if (callback && callback->isIssued() && !callback->bypassAliasCheck()) {
           Addr ldVaddr;
           uint32_t ldSize;
-          assert(callback->getAddrSize(ldVaddr, ldSize) &&
-                 "Issued LSQCallback should have Addr/Size.");
+          panic_if(!callback->getAddrSize(ldVaddr, ldSize),
+                   "Issued LSQCallback should have Addr/Size.");
           bool aliased =
               !(vaddr >= ldVaddr + ldSize || vaddr + size <= ldVaddr);
           if (!aliased && !misspeculatedHasNonCoreDep) {
@@ -591,8 +592,8 @@ Fault O3CPUDelegator::initiateGemForgeLoadOrAtomic(
 
   Addr vaddr;
   uint32_t size;
-  assert(callbacks.front()->getAddrSize(vaddr, size) &&
-         "GemForgeLQCallback should be addr/size ready.");
+  panic_if(!callbacks.front()->getAddrSize(vaddr, size),
+           "GemForgeLQCallback should be addr/size ready.");
   std::vector<bool> byteEnable(size, true);
 
   return pimpl->cpu->pushRequest(dynInstPtr, dynInstPtr->isLoad() /* isLoad */,
@@ -618,8 +619,8 @@ Fault O3CPUDelegator::initiateGemForgeStore(const DynInstPtr &dynInstPtr) {
 
   Addr vaddr;
   uint32_t size;
-  assert(callbacks.front()->getAddrSize(vaddr, size) &&
-         "GemForgeSQCallback should be addr/size ready.");
+  panic_if(!callbacks.front()->getAddrSize(vaddr, size),
+           "GemForgeSQCallback should be addr/size ready.");
   assert(callbacks.front()->isValueReady() &&
          "GemForgeSQCallback should be value ready.");
 
@@ -658,10 +659,10 @@ O3CPUDelegator::allocateGemForgeLoadRequest(LSQUnit *lsq,
                  *callbacks.front());
     auto req =
         new GFLoadReq(lsq, dynInstPtr, this, std::move(callbacks.front()));
-    auto ret =
+    [[maybe_unused]] auto emplaced =
         inLSQ.emplace(std::piecewise_construct, std::forward_as_tuple(seqNum),
                       std::forward_as_tuple(req));
-    assert(ret.second && "Already inLSQ.");
+    assert(emplaced.second && "Already inLSQ.");
 
     // Release the preLSQ.
     preLSQ.erase(iter);
