@@ -53,7 +53,9 @@ class flitBuffer
     flitBuffer();
     flitBuffer(int maximum_size);
 
-    bool isReady(Tick curTime);
+    bool isReady(Tick curTime) {
+        return next_flit_tick <= curTime;
+    }
     bool isEmpty();
     void print(std::ostream& out) const;
     bool isFull();
