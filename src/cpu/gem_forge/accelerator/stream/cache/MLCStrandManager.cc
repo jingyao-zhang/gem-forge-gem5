@@ -977,7 +977,8 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
       if (base.isUsedAffineIV) {
         strand->addBaseAffineIV(baseConfig, base.reuse, base.skip);
       } else if (base.isPredBy) {
-        strand->addPredBy(baseConfig, base.reuse, base.skip, base.predValue);
+        strand->addPredBy(baseConfig, base.reuse, base.skip, base.predId,
+                          base.predValue);
       } else {
         strand->addBaseOn(baseConfig, base.reuse, base.skip);
       }
@@ -999,6 +1000,7 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
     }
     // Properly handle the PredBy info.
     bool isPredBy = false;
+    int predId = 0;
     bool predValue = false;
     {
       bool foundUsedByEdge = false;
@@ -1008,6 +1010,7 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
           assert(baseEdge.dynStreamId == config->dynamicId &&
                  "Mismatch UsedBy Edge.");
           isPredBy = baseEdge.isPredBy;
+          predId = baseEdge.predId;
           predValue = baseEdge.predValue;
           break;
         }
@@ -1021,7 +1024,7 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
     for (int strandIdx = 0; strandIdx < depStrands.size(); ++strandIdx) {
       auto strand = strands.at(strandIdx);
       auto depStrand = depStrands.at(strandIdx);
-      strand->addUsedBy(depStrand, dep.reuse, isPredBy, predValue);
+      strand->addUsedBy(depStrand, dep.reuse, isPredBy, predId, predValue);
       depStrand->totalTripCount = strand->getTotalTripCount() * dep.reuse;
     }
   }

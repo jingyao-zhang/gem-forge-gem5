@@ -216,15 +216,26 @@ int ExecFunc::translateToNumRegs(const DataType &type) {
 }
 
 std::string ExecFunc::RegisterValue::print(const DataType &type) const {
-  if (type == DataType::INTEGER || type == DataType::INT1) {
+  switch (type) {
+  case DataType::INTEGER:
+  case DataType::INT1: {
     return csprintf("%#x", this->front());
-  } else if (type == DataType::FLOAT) {
+  }
+  case DataType::INT32_INT1: {
+    auto v32 = this->front() & 0xFFFFFFFF;
+    auto v1 = this->front() >> 32;
+    return csprintf("{%#x, %#x}", v32, v1);
+  }
+  case DataType::FLOAT: {
     return csprintf("%f", static_cast<float>(this->front()));
-  } else if (type == DataType::DOUBLE) {
-    return csprintf("%f", static_cast<double>(this->front()));
-  } else {
+  }
+  case DataType::DOUBLE: {
+    return csprintf("%lf", static_cast<double>(this->front()));
+  }
+  default: {
     auto numRegs = ExecFunc::translateToNumRegs(type);
     return GemForgeUtils::dataToString(this->uint8Ptr(), numRegs * 8);
+  }
   }
 }
 
@@ -255,21 +266,55 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
    */
   std::vector<RegVal> stackArgs;
 
+  auto pushIntArg = [this, &intParamIdx, &stackArgs](uint64_t value) -> bool {
+    bool pushedToStack = false;
+    if (intParamIdx < 6) {
+      const auto &reg = intRegParams[intParamIdx];
+      execFuncXC.setRegOperand(reg, value);
+    } else {
+      stackArgs.push_back(value);
+      pushedToStack = true;
+    }
+    intParamIdx++;
+    return pushedToStack;
+  };
+
   for (auto idx = 0; idx < params.size(); ++idx) {
     auto param = params.at(idx);
     auto type = this->func.args(idx).type();
-    if (type == ::LLVM::TDG::DataType::INTEGER ||
-        type == ::LLVM::TDG::DataType::INT1) {
-      if (intParamIdx < 6) {
-        const auto &reg = intRegParams[intParamIdx];
-        execFuncXC.setRegOperand(reg, param.front());
-        EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
-      } else {
-        stackArgs.push_back(param.front());
+    switch (type) {
+    case ::LLVM::TDG::DataType::INT1:
+    case ::LLVM::TDG::DataType::INTEGER: {
+      if (pushIntArg(param.front())) {
         EXEC_FUNC_DPRINTF("Arg %d Stack %s.\n", idx, param.print(type));
+      } else {
+        EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx,
+                          intRegParams[intParamIdx - 1], param.print(type));
       }
-      intParamIdx++;
-    } else {
+      break;
+    }
+    case ::LLVM::TDG::DataType::INT32_INT1: {
+      auto v32 = param.front() & 0xFFFFFFFF;
+      auto v1 = param.front() >> 32;
+      if (pushIntArg(v32)) {
+        EXEC_FUNC_DPRINTF("Arg %d-int32 Stack %#x.\n", idx, v32);
+      } else {
+        EXEC_FUNC_DPRINTF("Arg %d-int32 Reg %s %#x.\n", idx,
+                          intRegParams[intParamIdx - 1], v32);
+      }
+      if (pushIntArg(v1)) {
+        EXEC_FUNC_DPRINTF("Arg %d-int1 Stack %#x.\n", idx, v1);
+      } else {
+        EXEC_FUNC_DPRINTF("Arg %d-int1 Reg %s %#x.\n", idx,
+                          intRegParams[intParamIdx - 1], v1);
+      }
+      break;
+    }
+    case ::LLVM::TDG::DataType::FLOAT:
+    case ::LLVM::TDG::DataType::DOUBLE:
+    case ::LLVM::TDG::DataType::VECTOR_128:
+    case ::LLVM::TDG::DataType::VECTOR_256:
+    case ::LLVM::TDG::DataType::VECTOR_512: {
       auto numRegs = this->translateToNumRegs(type);
       if (floatParamIdx < 8) {
         const auto &baseReg = floatRegParams[floatParamIdx];
@@ -285,6 +330,11 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
         }
       }
       floatParamIdx++;
+      break;
+    }
+    default:
+      panic("Illegal ArgType %s for ExecFunc %s.",
+            ::LLVM::TDG::DataType_Name(type), this->func.name());
     }
   }
 
@@ -378,22 +428,47 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
 
   auto retType = this->func.type();
   RegisterValue retValue;
-  if (retType == ::LLVM::TDG::DataType::INTEGER) {
+  switch (retType) {
+  case ::LLVM::TDG::DataType::INTEGER: {
     // We expect the int result in rax.
     auto rax = int_reg::Rax;
     retValue.front() = execFuncXC.getRegOperand(rax);
-  } else if (retType == ::LLVM::TDG::DataType::INT1) {
-    // We expect the int result in rax.
+    break;
+  }
+  case ::LLVM::TDG::DataType::INT1: {
+    // We expect the int result in rax but only take 1 bit.
     auto rax = int_reg::Rax;
     retValue.front() = execFuncXC.getRegOperand(rax);
     retValue.front() &= 0x1;
-  } else {
+    break;
+  }
+  case ::LLVM::TDG::DataType::INT32_INT1: {
+    // EAX, EDX.
+    auto rax = execFuncXC.getRegOperand(int_reg::Rax);
+    auto rdx = execFuncXC.getRegOperand(int_reg::Rdx);
+    auto ret = ((rdx & 0x1) << 32) | (rax & 0xFFFFFFFF);
+    retValue.front() = ret;
+    break;
+  }
+  case ::LLVM::TDG::DataType::FLOAT:
+  case ::LLVM::TDG::DataType::DOUBLE:
+  case ::LLVM::TDG::DataType::VECTOR_128:
+  case ::LLVM::TDG::DataType::VECTOR_256:
+  case ::LLVM::TDG::DataType::VECTOR_512: {
     // We expect the float result in xmm0.
     auto numRegs = this->translateToNumRegs(retType);
     for (int i = 0; i < numRegs; ++i) {
       auto reg = float_reg::xmmIdx(0, i);
       retValue.at(i) = execFuncXC.getRegOperand(reg);
     }
+    break;
+  }
+  case ::LLVM::TDG::DataType::VOID: {
+    break;
+  }
+  default:
+    panic("Illegal RetType %s for ExecFunc %s.",
+          ::LLVM::TDG::DataType_Name(retType), this->func.name());
   }
   EXEC_FUNC_DPRINTF("Ret Type %s %s.\n", ::LLVM::TDG::DataType_Name(retType),
                     retValue.print(retType));

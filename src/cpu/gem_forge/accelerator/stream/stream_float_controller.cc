@@ -653,6 +653,7 @@ bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
   Stream *floatBaseS = nullptr;
   int floatBaseChainDepth = -1;
   bool floatBasePredBy = false;
+  Stream::PredFuncId floatBasePredFuncId = 0;
   bool floatBasePredValue = false;
   for (auto baseS : addrBaseMemStreams) {
     const auto &config = *floatedMap.at(baseS);
@@ -669,6 +670,7 @@ bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
       floatBaseChainDepth = depth;
       floatBaseS = baseS;
       floatBasePredBy = true;
+      floatBasePredFuncId = baseS->getPredFuncId(S->staticId);
       floatBasePredValue = baseS->getPredValue(S->staticId);
     }
   }
@@ -694,7 +696,7 @@ bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
       S->allocateCacheConfigureData(dynS->configSeqNum, true /* isIndirect */);
   auto floatBaseReuse = dynS->getBaseElemReuseCount(floatBaseS);
   floatBaseConfig->addUsedBy(config, floatBaseReuse, floatBasePredBy,
-                             floatBasePredValue);
+                             floatBasePredFuncId, floatBasePredValue);
 
   // Get the FloatRootConfig.
   auto floatRootConfig = this->getFloatRootConfig(floatBaseConfig);
@@ -723,8 +725,13 @@ bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
     auto reuse = dynS->getBaseElemReuseCount(baseS);
     auto skip = dynS->getBaseElemSkipCount(baseS);
     if (isPredBy) {
+      auto predFuncId = baseS->getPredFuncId(S->staticId);
       auto predValue = baseS->getPredValue(S->staticId);
-      config->addPredBy(baseConfig, reuse, skip, predValue);
+      StreamFloatPolicy::logS(*dynS)
+          << "[Pred] By Id " << predFuncId << " = " << predValue << " Base "
+          << baseConfig->dynamicId << ".\n"
+          << std::flush;
+      config->addPredBy(baseConfig, reuse, skip, predFuncId, predValue);
     } else {
       config->addBaseOn(baseConfig, reuse, skip);
     }
@@ -831,7 +838,7 @@ void StreamFloatController::fixMultiPredication(const Args &args) {
      *
      */
     auto predBaseEndConfig = predBaseConfigs.back();
-    assert(predBaseEndConfig->predCallback);
+    assert(!predBaseEndConfig->predCallbacks.empty());
 
     finalPredBaseStreams.insert(predBaseEndConfig->stream);
 
@@ -846,16 +853,24 @@ void StreamFloatController::fixMultiPredication(const Args &args) {
                     "[Multi-Pred] By different float chain: %s and %s.",
                     predBaseEndConfig->dynamicId, baseConfig->dynamicId);
       }
-      if (!baseConfig->predCallback) {
+      if (baseConfig->predCallbacks.empty()) {
         DYN_S_PANIC(baseConfig->dynamicId, "Missing PredCallback. Stream? %d.",
                     baseConfig->stream->getDynStream(baseConfig->dynamicId)
-                        ->predCallback);
+                        ->predCallbacks.size());
       }
-      if (predBaseEndConfig->predCallback->getFuncInfo().name() !=
-          baseConfig->predCallback->getFuncInfo().name()) {
+      if (predBaseEndConfig->predCallbacks.size() !=
+          baseConfig->predCallbacks.size()) {
         DYN_S_PANIC(config->dynamicId,
-                    "[Multi-Pred] By different callback: %s and %s.",
+                    "[Multi-Pred] By different #of callback: %s and %s.",
                     predBaseEndConfig->dynamicId, baseConfig->dynamicId);
+      }
+      for (int i = 0; i < baseConfig->predCallbacks.size(); ++i) {
+        if (predBaseEndConfig->predCallbacks.at(i).func->getFuncInfo().name() !=
+            baseConfig->predCallbacks.at(i).func->getFuncInfo().name()) {
+          DYN_S_PANIC(config->dynamicId,
+                      "[Multi-Pred] By different callback: %s and %s.",
+                      predBaseEndConfig->dynamicId, baseConfig->dynamicId);
+        }
       }
     }
 
@@ -883,10 +898,10 @@ void StreamFloatController::fixMultiPredication(const Args &args) {
   for (const auto &entry : floatedMap) {
     auto config = entry.second;
 
-    if (config->predCallback && !finalPredBaseStreams.count(config->stream)) {
+    if (!config->predCallbacks.empty() &&
+        !finalPredBaseStreams.count(config->stream)) {
       // Clear the PredCallback.
-      config->predCallback = nullptr;
-      config->predFormalParams.clear();
+      config->predCallbacks.clear();
       StreamFloatPolicy::logS(config->dynamicId)
           << "[Multi-Pred] Clear PredCallback " << config->dynamicId << ".\n"
           << std::flush;

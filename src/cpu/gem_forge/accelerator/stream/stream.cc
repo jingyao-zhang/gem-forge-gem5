@@ -170,19 +170,34 @@ void Stream::addBaseStream(StreamDepEdge::TypeE type, bool isInnerLoop,
   }
 }
 
-void Stream::addPredBaseStream(bool predValue, bool isInnerLoop,
-                               StaticId baseId, StaticId depId, Stream *baseS) {
+void Stream::addPredBaseStream(PredFuncId predId, bool predValue,
+                               bool isInnerLoop, StaticId baseId,
+                               StaticId depId, Stream *baseS) {
   const auto type = StreamDepEdge::TypeE::Pred;
   if (isInnerLoop) {
-    this->innerLoopBaseEdges.emplace_back(type, depId, baseId, baseS,
+    this->innerLoopBaseEdges.emplace_back(type, depId, baseId, baseS, predId,
                                           predValue);
-    baseS->innerLoopDepEdges.emplace_back(type, baseId, depId, this, predValue);
+    baseS->innerLoopDepEdges.emplace_back(type, baseId, depId, this, predId,
+                                          predValue);
   } else {
-    this->baseEdges.emplace_back(type, depId, baseId, baseS, predValue);
-    baseS->depEdges.emplace_back(type, baseId, depId, this, predValue);
+    this->baseEdges.emplace_back(type, depId, baseId, baseS, predId, predValue);
+    baseS->depEdges.emplace_back(type, baseId, depId, this, predId, predValue);
   }
   this->predBaseStreams.insert(baseS);
   baseS->predDepStreams.insert(this);
+}
+
+Stream::PredFuncId Stream::getPredFuncId(StaticId depId) {
+  for (const auto &edge : this->depEdges) {
+    if (edge.type != StreamDepEdge::TypeE::Pred) {
+      continue;
+    }
+    if (edge.toStaticId != depId) {
+      continue;
+    }
+    return edge.predFuncId;
+  }
+  STREAM_PANIC("Miss PredId for DepS %d.", depId);
 }
 
 bool Stream::getPredValue(StaticId depId) {
@@ -661,18 +676,25 @@ void Stream::extractExtraInputValues(DynStream &dynS,
   int inputIdx = 0;
 
   if (predicatedStreams.size() > 0) {
-    const auto &predFuncInfo = this->getPredicateFuncInfo();
-    if (!this->predCallback) {
-      this->predCallback =
-          std::make_shared<TheISA::ExecFunc>(dynS.tc, predFuncInfo);
+    // Initialize the PredCallbacks.
+    if (this->predCallbacks.empty()) {
+      for (auto *predFuncInfo : this->predFuncInfos) {
+        this->predCallbacks.push_back(
+            std::make_shared<TheISA::ExecFunc>(dynS.tc, *predFuncInfo));
+      }
     }
-    dynS.predCallback = this->predCallback;
-    auto &predFormalParams = dynS.predFormalParams;
-    auto usedInputs =
-        this->setupFormalParams(inputVec, predFuncInfo, predFormalParams);
-    // Consume these inputs.
-    inputVec->erase(inputVec->begin(), inputVec->begin() + usedInputs);
-    inputIdx += usedInputs;
+    // Extract all input values and set up DynS.
+    for (auto &predCallback : this->predCallbacks) {
+      dynS.predCallbacks.emplace_back();
+      auto &dynPred = dynS.predCallbacks.back();
+      dynPred.func = predCallback;
+      auto &predFormalParams = dynPred.formalParams;
+      auto usedInputs = this->setupFormalParams(
+          inputVec, predCallback->getFuncInfo(), predFormalParams);
+      // Consume these inputs.
+      inputVec->erase(inputVec->begin(), inputVec->begin() + usedInputs);
+      inputIdx += usedInputs;
+    }
   }
   /**
    * Handle StoreFunc.
@@ -790,8 +812,7 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
   configData->innerTripCount = dynStream.getInnerTripCount();
 
   // Set the predication function.
-  configData->predFormalParams = dynStream.predFormalParams;
-  configData->predCallback = dynStream.predCallback;
+  configData->predCallbacks = dynStream.predCallbacks;
 
   // Set the store and load func.
   configData->storeFormalParams = dynStream.storeFormalParams;

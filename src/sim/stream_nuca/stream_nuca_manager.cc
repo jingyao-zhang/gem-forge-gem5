@@ -164,6 +164,8 @@ void StreamNUCAManager::setNonUniformInterleave(ThreadContext *tc,
 
     uint64_t intrlv;
     virtProxy.readBlob(intrlvVAddr, &intrlv, sizeof(intrlv));
+    // For Non-Uniform Interleave, it is in the unit of element.
+    intrlv *= elemSize;
 
     // Round up interleave to cache line size.
     Addr lineIntrlv =

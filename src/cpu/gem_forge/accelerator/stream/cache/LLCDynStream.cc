@@ -80,10 +80,12 @@ LLCDynStream::LLCDynStream(ruby::AbstractStreamAwareController *_mlcController,
   // Extract predicated stream information.
   for (const auto &edge : _configData->baseEdges) {
     LLC_S_DPRINTF_(LLCStreamPredicate, this->getDynStrandId(),
-                   "[LLCPred] Pred? %d %s.\n", edge.isPredBy, edge.dynStreamId);
+                   "[LLCPred] Pred? %d %d = %d %s.\n", edge.isPredBy,
+                   edge.predId, edge.predValue, edge.dynStreamId);
     if (edge.isPredBy) {
       assert(!this->isPredBy && "Multi PredBy.");
       this->isPredBy = true;
+      this->predId = edge.predId;
       this->predValue = edge.predValue;
       this->predBaseStreamId = edge.dynStreamId;
     }
@@ -599,6 +601,10 @@ void LLCDynStream::initNextElem(Addr vaddr) {
   }
 
   auto size = this->getMemElementSize();
+  // AtomicComputeS will have CoreElemSize.
+  if (this->getStaticS()->isAtomicComputeStream()) {
+    size = this->getCoreElementSize();
+  }
   auto elem = std::make_shared<LLCStreamElement>(
       this->getStaticS(), this->mlcController, this->getDynStrandId(),
       strandElemIdx, vaddr, size, false /* isNDCElement */);
@@ -2048,14 +2054,17 @@ void LLCDynStream::evaluatePredication(LLCStreamEngine *se, uint64_t elemIdx) {
   auto getStreamValue = [&elem](uint64_t streamId) -> StreamValue {
     return elem->getBaseOrMyStreamValue(streamId);
   };
-  auto predActualParams = convertFormalParamToParam(
-      this->configData->predFormalParams, getStreamValue);
-  auto predRet =
-      this->configData->predCallback->invoke(predActualParams).front();
+  const auto &preds = this->configData->predCallbacks;
+  for (int predId = 0; predId < preds.size(); ++predId) {
+    const auto &pred = preds.at(predId);
+    auto params = convertFormalParamToParam(pred.formalParams, getStreamValue);
+    auto predRet = pred.func->invoke(params).front();
 
-  LLC_ELEMENT_DPRINTF_(LLCStreamPredicate, elem, "[LLCPred] Pred %d.\n",
-                       predRet);
-  elem->setPredValue(predRet);
+    LLC_ELEMENT_DPRINTF_(LLCStreamPredicate, elem, "[LLCPred] Pred %d = %d.\n",
+                         predId, predRet);
+    elem->setPredValue(predId, predRet);
+  }
+  elem->markPredValueReady();
 }
 
 void LLCDynStream::evaluateLoopBound(LLCStreamEngine *se, uint64_t elemIdx) {

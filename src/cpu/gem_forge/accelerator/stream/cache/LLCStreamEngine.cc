@@ -3539,10 +3539,11 @@ void LLCStreamEngine::triggerIndElem(LLCDynStreamPtr IS, uint64_t indElemIdx) {
         LLC_ELEMENT_PANIC(indElem, "[LLCPred] PredValue not ready: %s%lu.",
                           baseElem->strandId, baseElem->idx);
       }
+      auto predValue = baseElem->getPredValue(IS->getPredId());
       LLC_SE_ELEM_DPRINTF_(LLCStreamPredicate, indElem,
-                           "[LLCPred] Got %d Expected %d.\n",
-                           baseElem->getPredValue(), IS->getPredValue());
-      predOn = (baseElem->getPredValue() == IS->getPredValue());
+                           "[LLCPred] Got Id %d = Value %d Expected %d.\n",
+                           IS->getPredId(), predValue, IS->getPredValue());
+      predOn = (predValue == IS->getPredValue());
       break;
     }
     if (!predOn) {
@@ -3703,7 +3704,7 @@ void LLCStreamEngine::triggerUpdate(LLCDynStreamPtr dynS,
 void LLCStreamEngine::triggerAtomic(LLCDynStreamPtr dynS,
                                     LLCStreamElementPtr elem,
                                     const DynStreamSliceId &sliceId,
-                                    ruby::DataBlock &loadValueBlock,
+                                    ruby::DataBlock *loadValueBlock,
                                     uint32_t &payloadSize) {
 
   auto S = dynS->getStaticS();
@@ -3711,8 +3712,6 @@ void LLCStreamEngine::triggerAtomic(LLCDynStreamPtr dynS,
   // Perform the operation.
   auto elemMemSize = S->getMemElementSize();
   auto elemCoreSize = S->getCoreElementSize();
-  assert(elemCoreSize <= elemMemSize &&
-         "CoreElemSize should not exceed MemElemSize.");
   auto elemVAddr = elem->vaddr;
 
   // Create a single slice for this element.
@@ -3723,10 +3722,10 @@ void LLCStreamEngine::triggerAtomic(LLCDynStreamPtr dynS,
 
   Addr elemPAddr;
   panic_if(!dynS->translateToPAddr(elemVAddr, elemPAddr),
-           "Fault on vaddr of LLCStore/Atomic/UpdateStream.");
+           "Fault on vaddr of AtomicS.");
   auto lineOffset = elemVAddr % ruby::RubySystem::getBlockSizeBytes();
   if (lineOffset + elemMemSize > ruby::RubySystem::getBlockSizeBytes()) {
-    LLC_ELEMENT_PANIC(elem, "Multi-Line AtomicElement.");
+    LLC_ELEMENT_PANIC(elem, "Multi-Line AtomicElem.");
   }
 
   // Very limited AtomicRMW support.
@@ -3735,9 +3734,16 @@ void LLCStreamEngine::triggerAtomic(LLCDynStreamPtr dynS,
   auto loadedValue = atomicRet.first;
   bool memoryModified = atomicRet.second;
   LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
-                     "Perform StreamAtomic, RetValue %llu.\n", loadedValue);
-  loadValueBlock.setData(reinterpret_cast<uint8_t *>(&loadedValue), lineOffset,
-                         elemCoreSize);
+                     "Perform StreamAtomic, RetVal %llu.\n", loadedValue);
+  if (loadValueBlock) {
+    // Currently we do not support return AtomicVal to core if it spans across
+    // multiple line. This can be relaxed in the future.
+    if (lineOffset + elemCoreSize > ruby::RubySystem::getBlockSizeBytes()) {
+      LLC_ELEMENT_PANIC(elem, "Multi-Line AtomicElem for Core.");
+    }
+    loadValueBlock->setData(reinterpret_cast<uint8_t *>(&loadedValue),
+                            lineOffset, elemCoreSize);
+  }
   payloadSize = elemCoreSize;
 
   /**
@@ -3746,8 +3752,7 @@ void LLCStreamEngine::triggerAtomic(LLCDynStreamPtr dynS,
    * 2. Evaluate predication.
    * 3. Trigger indirect elements.
    */
-  elem->extractElementDataFromSlice(dynS->getStaticS()->getCPUDelegator(),
-                                    sliceId, loadValueBlock);
+  elem->setValue(loadedValue);
   dynS->evaluatePredication(this, elem->idx);
   this->triggerIndElems(dynS, elem);
 
@@ -4143,33 +4148,31 @@ void LLCStreamEngine::processDirectAtomicSlice(
   auto S = dynS->getStaticS();
   assert(S->isAtomicComputeStream() && S->isDirectMemStream() &&
          "Not DirectAtomicComputeStream.");
-  bool coreNeedValue = false;
-  auto dynCoreS = dynS->getCoreDynS();
-  if (dynCoreS && dynCoreS->shouldCoreSEIssue()) {
-    coreNeedValue = true;
-  }
+  bool coreNeedValue = dynS->shouldSendValueToCore();
 
   auto numMicroOps = S->getComputationNumMicroOps();
 
   // The final value return to the core.
-  ruby::DataBlock loadValueBlock;
+  ruby::DataBlock *loadValueBlock = nullptr;
+  if (coreNeedValue) {
+    loadValueBlock = new ruby::DataBlock();
+  }
   uint32_t totalPayloadSize = 0;
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-    auto element = dynS->getElemPanic(idx, "Process slice of AtomicS");
+    auto elem = dynS->getElemPanic(idx, "Process slice of AtomicS");
     LLC_SLICE_DPRINTF(sliceId, "TriggerAtomic for elem %llu vaddr %#x.\n",
-                      element->idx, element->vaddr);
-    if (!element->isReady()) {
+                      elem->idx, elem->vaddr);
+    if (!elem->isReady()) {
       // Not ready yet. Break.
-      LLC_SLICE_PANIC(
-          sliceId, "Elem %llu not ready while we are triggering update.", idx);
+      LLC_SLICE_PANIC(sliceId, "Elem %llu not ready when updating.", idx);
     }
-    if (!element->areBaseElemsReady()) {
+    if (!elem->areBaseElemsReady()) {
       // We are still waiting for base elements.
-      LLC_SLICE_PANIC(
-          sliceId, "Elem %llu has base element not ready when updating.", idx);
+      LLC_SLICE_PANIC(sliceId, "Elem %llu has unready base elem when updating.",
+                      idx);
     }
     uint32_t payloadSize = 0;
-    this->triggerAtomic(dynS, element, sliceId, loadValueBlock, payloadSize);
+    this->triggerAtomic(dynS, elem, sliceId, loadValueBlock, payloadSize);
     totalPayloadSize += payloadSize;
 
     /**
@@ -4191,13 +4194,14 @@ void LLCStreamEngine::processDirectAtomicSlice(
     auto paddrLine = ruby::makeLineAddress(paddr);
     this->issueStreamDataToMLC(
         sliceId, paddrLine,
-        loadValueBlock.getData(0, ruby::RubySystem::getBlockSizeBytes()),
+        loadValueBlock->getData(0, ruby::RubySystem::getBlockSizeBytes()),
         ruby::RubySystem::getBlockSizeBytes(),
         std::min(totalPayloadSize, ruby::RubySystem::getBlockSizeBytes()),
         0 /* Line offset */);
     LLC_SLICE_DPRINTF(sliceId,
                       "Send StreamData to MLC: PAddrLine %#x Data %s.\n",
-                      paddrLine, loadValueBlock);
+                      paddrLine, *loadValueBlock);
+    delete loadValueBlock;
   } else {
     this->issueStreamAckToMLC(sliceId);
   }
@@ -4256,14 +4260,18 @@ void LLCStreamEngine::postProcessIndirectAtomicSlice(
   assert(sliceId.isValid() && "Invalid IndirectAtomic slice id.");
 
   // The final value return to the core.
-  ruby::DataBlock loadValueBlock;
+  bool coreNeedValue = dynS->shouldSendValueToCore();
+
+  ruby::DataBlock *loadValueBlock = nullptr;
+  if (coreNeedValue) {
+    loadValueBlock = new ruby::DataBlock();
+  }
+
   uint32_t totalPayloadSize = 0;
 
   uint32_t payloadSize = 0;
   this->triggerAtomic(dynS, elem, sliceId, loadValueBlock, payloadSize);
   totalPayloadSize += payloadSize;
-
-  bool coreNeedValue = dynS->shouldSendValueToCore();
 
   // This is to make sure traffic to MLC is correctly sliced.
   if (coreNeedValue) {
@@ -4272,13 +4280,14 @@ void LLCStreamEngine::postProcessIndirectAtomicSlice(
     auto paddrLine = ruby::makeLineAddress(paddr);
     this->issueStreamDataToMLC(
         sliceId, paddrLine,
-        loadValueBlock.getData(0, ruby::RubySystem::getBlockSizeBytes()),
+        loadValueBlock->getData(0, ruby::RubySystem::getBlockSizeBytes()),
         ruby::RubySystem::getBlockSizeBytes(),
         std::min(totalPayloadSize, ruby::RubySystem::getBlockSizeBytes()),
         0 /* Line offset */);
-    LLC_SLICE_DPRINTF(
-        sliceId, "[IndirectAtomic] Send Data to MLC: PAddrLine %#x Data %s.\n",
-        paddrLine, loadValueBlock);
+    LLC_SLICE_DPRINTF(sliceId,
+                      "[IndAtomic] Send Data to MLC: PAddrLine %#x Data %s.\n",
+                      paddrLine, *loadValueBlock);
+    delete loadValueBlock;
   } else {
     this->issueStreamAckToMLC(sliceId);
   }

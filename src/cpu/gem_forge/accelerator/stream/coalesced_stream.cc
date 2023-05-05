@@ -62,8 +62,11 @@ void Stream::finalize() {
   // Merge predicated info.
   for (auto LS : this->logicals) {
     if (!LS->getPredicatedStreams().empty()) {
-      assert(this->predicateFuncInfo.name() == "" && "MultiPredCallback");
-      this->predicateFuncInfo = LS->getPredicateFuncInfo();
+      assert(this->predFuncInfos.empty() && "MultiPredCallback");
+      const auto &LSInfo = LS->info.static_info();
+      for (auto i = 0; i < LSInfo.pred_func_info_size(); ++i) {
+        this->predFuncInfos.push_back(&LSInfo.pred_func_info(i));
+      }
       for (const auto &predicatedStreamId : LS->getPredicatedStreams()) {
         this->predicatedStreamIds.push_back(predicatedStreamId);
       }
@@ -329,8 +332,9 @@ void Stream::initializeBaseStreams() {
       const auto &predInfo = info.static_info().predicated_streams(i);
       auto predS = this->se->tryGetStream(predInfo.id().id());
       if (predS) {
-        predS->addPredBaseStream(predInfo.pred_true(), false /* isInnerLoop */,
-                                 info.id(), predInfo.id().id(), this);
+        predS->addPredBaseStream(predInfo.pred_dg_id(), predInfo.pred_true(),
+                                 false /* isInnerLoop */, info.id(),
+                                 predInfo.id().id(), this);
       }
     }
 

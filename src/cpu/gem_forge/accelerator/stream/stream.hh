@@ -102,9 +102,6 @@ public:
   const PredicatedStreamIdList &getMergedPredicatedStreams() const {
     return this->info.static_info().merged_predicated_streams();
   }
-  const ExecFuncInfo &getPredicateFuncInfo() const {
-    return this->info.static_info().pred_func_info();
-  }
   bool isMergedPredicated() const {
     return this->info.static_info().is_merged_predicated_stream();
   }
@@ -279,6 +276,7 @@ public:
    * Represent stream dependence. Due to coalescing, there maybe multiple
    * edges between two streams. e.g. b[i] = a[i] + a[i - 1].
    */
+  using PredFuncId = int;
   struct StreamDepEdge {
     using TypeE = DynStreamDepEdge::TypeE;
     const TypeE type;
@@ -286,17 +284,20 @@ public:
     const StaticId toStaticId = DynStreamId::InvalidStaticStreamId;
     Stream *const toStream = nullptr;
     // Only used for PredEdge.
+    const PredFuncId predFuncId = 0;
     const bool predValue = false;
     StreamDepEdge(TypeE _type, StaticId _fromId, StaticId _toId,
-                  Stream *_toStream, bool _predValue = false)
+                  Stream *_toStream, PredFuncId _predFuncId = 0,
+                  bool _predValue = false)
         : type(_type), fromStaticId(_fromId), toStaticId(_toId),
-          toStream(_toStream), predValue(_predValue) {}
+          toStream(_toStream), predFuncId(_predFuncId), predValue(_predValue) {}
   };
   using StreamEdges = std::vector<StreamDepEdge>;
   void addBaseStream(StreamDepEdge::TypeE type, bool isInnerLoop,
                      StaticId baseId, StaticId depId, Stream *baseS);
-  void addPredBaseStream(bool predValue, bool isInnerLoop, StaticId baseId,
-                         StaticId depId, Stream *baseS);
+  void addPredBaseStream(PredFuncId predId, bool predValue, bool isInnerLoop,
+                         StaticId baseId, StaticId depId, Stream *baseS);
+  PredFuncId getPredFuncId(StaticId depId);
   bool getPredValue(StaticId depId);
 
   StreamEdges baseEdges;
@@ -547,7 +548,7 @@ protected:
   StreamSet depStepStreams;
 
   AddrGenCallbackPtr addrGenCallback;
-  ExecFuncPtr predCallback;
+  ExecFuncVec predCallbacks;
   ExecFuncPtr storeCallback;
   ExecFuncPtr loadCallback;
 
@@ -775,9 +776,11 @@ public:
   getPredicatedStreams() const {
     return predicatedStreamIds;
   }
-  ExecFuncInfo predicateFuncInfo;
-  const ExecFuncInfo &getPredicateFuncInfo() const {
-    return this->predicateFuncInfo;
+
+  using PredFuncInfoVec = std::vector<const ExecFuncInfo *>;
+  PredFuncInfoVec predFuncInfos;
+  const ExecFuncInfo &getPredicateFuncInfo(PredFuncId predFuncId) const {
+    return *this->predFuncInfos.at(predFuncId);
   }
 };
 

@@ -490,7 +490,7 @@ private:
                      ruby::DataBlock &loadValueBlock, uint32_t &payloadSize);
   void triggerAtomic(LLCDynStreamPtr dynS, LLCStreamElementPtr elem,
                      const DynStreamSliceId &sliceId,
-                     ruby::DataBlock &loadValueBlock, uint32_t &payloadSize);
+                     ruby::DataBlock *loadValueBlock, uint32_t &payloadSize);
   /**
    * Helper function to handle predicated-off element.
    */

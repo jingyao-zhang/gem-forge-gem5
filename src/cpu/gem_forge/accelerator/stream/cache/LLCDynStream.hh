@@ -88,6 +88,9 @@ public:
   const DynStrandId &getDynStrandId() const { return this->strandId; }
 
   int32_t getMemElementSize() const { return this->configData->elementSize; }
+  int32_t getCoreElementSize() const {
+    return this->getStaticS()->getCoreElementSize();
+  }
   bool isPointerChase() const { return this->configData->isPointerChase; }
   bool isPseudoOffload() const { return this->configData->isPseudoOffload; }
   bool isOneIterationBehind() const {
@@ -107,6 +110,7 @@ public:
 private:
   bool isPredBase = false;
   bool isPredBy = false;
+  int predId = 0;
   bool predValue = false;
   DynStreamId predBaseStreamId;
 
@@ -116,13 +120,17 @@ public:
     assert(this->isPredicated());
     return this->predValue;
   }
+  bool getPredId() const {
+    assert(this->isPredicated());
+    return this->predId;
+  }
   const DynStreamId &getPredBaseStreamId() const {
     assert(this->isPredicated());
     return this->predBaseStreamId;
   }
   void evaluatePredication(LLCStreamEngine *se, uint64_t elemIdx);
   bool hasPredication() const {
-    return this->configData->predCallback != nullptr;
+    return !this->configData->predCallbacks.empty();
   }
 
   /**

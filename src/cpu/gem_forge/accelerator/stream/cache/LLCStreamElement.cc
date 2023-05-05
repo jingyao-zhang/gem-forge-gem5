@@ -139,7 +139,10 @@ StreamValue LLCStreamElement::getValueByStreamId(uint64_t streamId) const {
   }
   int32_t offset = 0;
   int size = this->size;
-  this->S->getCoalescedOffsetAndSize(streamId, offset, size);
+  // AtomicComputeS is never coalesced, and should use CoreElemSize.
+  if (!this->S->isAtomicComputeStream()) {
+    this->S->getCoalescedOffsetAndSize(streamId, offset, size);
+  }
   return this->getValue(offset, size);
 }
 
@@ -161,9 +164,19 @@ void LLCStreamElement::setValue(const StreamValue &value) {
   }
   memcpy(this->getUInt8Ptr(), value.uint8Ptr(), this->size);
   this->addReadyBytes(this->size);
-  if (this->isReady()) {
-    this->valueReadyCycle = this->mlcController->curCycle();
+  assert(this->isReady());
+  this->valueReadyCycle = this->mlcController->curCycle();
+}
+
+void LLCStreamElement::setValue(uint64_t value) {
+  assert(this->readyBytes == 0 && "Already ready.");
+  if (this->size > sizeof(value)) {
+    panic("Try to set UINT64 for LLCStreamElement of size %d.", this->size);
   }
+  memcpy(this->getUInt8Ptr(), reinterpret_cast<uint8_t *>(&value), this->size);
+  this->addReadyBytes(this->size);
+  assert(this->isReady());
+  this->valueReadyCycle = this->mlcController->curCycle();
 }
 
 void LLCStreamElement::setComputedValue(const StreamValue &value) {

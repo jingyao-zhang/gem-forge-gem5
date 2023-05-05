@@ -137,6 +137,7 @@ public:
   uint64_t getUInt64ByStreamId(uint64_t streamId) const;
 
   void setValue(const StreamValue &value);
+  void setValue(uint64_t value);
 
   void extractElementDataFromSlice(GemForgeCPUDelegator *cpuDelegator,
                                    const DynStreamSliceId &sliceId,
@@ -306,17 +307,22 @@ private:
   LLCStreamElementPtr prevReduceElem = nullptr;
 
 public:
-  bool predValue = false;
+  // Support multiple predication.
+  constexpr static int MaxPredications = 4;
+  std::array<bool, MaxPredications> predValues;
   bool predValueReady = false;
   bool isPredValueReady() const { return this->predValueReady; }
-  bool getPredValue() const {
+  bool getPredValue(int predId) const {
     assert(this->isPredValueReady());
-    return this->predValue;
+    return this->predValues.at(predId);
   }
-  void setPredValue(bool predValue) {
+  void setPredValue(int predId, bool predValue) {
+    assert(!this->isPredValueReady());
+    this->predValues.at(predId) = predValue;
+  }
+  void markPredValueReady() {
     assert(!this->isPredValueReady());
     this->predValueReady = true;
-    this->predValue = predValue;
   }
 
 public:

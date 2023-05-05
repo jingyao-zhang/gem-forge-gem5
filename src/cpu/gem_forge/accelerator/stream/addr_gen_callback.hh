@@ -14,6 +14,7 @@ using StreamValue = TheISA::ExecFunc::RegisterValue;
 using DynStreamParamV = std::vector<StreamValue>;
 using GetStreamValueFunc = std::function<StreamValue(uint64_t)>;
 using ExecFuncPtr = std::shared_ptr<TheISA::ExecFunc>;
+using ExecFuncVec = std::vector<ExecFuncPtr>;
 
 struct DynStreamFormalParam {
   StreamValue invariant;
@@ -21,6 +22,12 @@ struct DynStreamFormalParam {
   bool isInvariant;
 };
 using DynStreamFormalParamV = std::vector<DynStreamFormalParam>;
+
+struct ExecFuncWithFormalParam {
+  ExecFuncPtr func;
+  DynStreamFormalParamV formalParams;
+};
+using ExecFuncWithFormalParamV = std::vector<ExecFuncWithFormalParam>;
 
 /**
  * Use if you expect no base stream.

@@ -88,8 +88,7 @@ public:
 
   DynStreamFormalParamV addrGenFormalParams;
   AddrGenCallbackPtr addrGenCallback;
-  DynStreamFormalParamV predFormalParams;
-  ExecFuncPtr predCallback;
+  ExecFuncWithFormalParamV predCallbacks;
 
   /**
    * TotalTripCount for offloaded streams.
@@ -252,6 +251,7 @@ public:
      * Whether this is a PredBaseS. If so, what is the PredValue.
      */
     bool isPredBy = false;
+    int predId = 0;
     bool predValue = false;
 
     BaseEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse,
@@ -271,9 +271,10 @@ public:
      * Used to construct a PredBy edge.
      */
     BaseEdge(const CacheStreamConfigureDataPtr &_data, int _reuse, int _skip,
-             bool _predValue)
+             bool _predValue, int _predFuncId)
         : type(Type::BaseOn), dynStreamId(_data->dynamicId), data(_data),
-          reuse(_reuse), skip(_skip), isPredBy(true), predValue(_predValue) {}
+          reuse(_reuse), skip(_skip), isPredBy(true), predId(_predFuncId),
+          predValue(_predValue) {}
   };
   std::vector<DepEdge> depEdges;
   std::vector<BaseEdge> baseEdges;
@@ -283,7 +284,7 @@ public:
   }
   CacheStreamConfigureDataPtr getUsedByBaseConfig();
   void addUsedBy(CacheStreamConfigureDataPtr &data, int reuse = 1,
-                 bool predBy = false, bool predValue = false);
+                 bool predBy = false, int predId = 0, bool predValue = false);
   void addSendTo(CacheStreamConfigureDataPtr &data, int reuse, int skip);
   void addPUMSendTo(const CacheStreamConfigureDataPtr &data,
                     const AffinePattern &broadcastPat,
@@ -292,7 +293,7 @@ public:
   void addBaseOn(CacheStreamConfigureDataPtr &data, int reuse, int skip);
   void addBaseAffineIV(CacheStreamConfigureDataPtr &data, int reuse, int skip);
   void addPredBy(CacheStreamConfigureDataPtr &data, int reuse, int skip,
-                 bool predValue);
+                 int predFuncId, bool predValue);
   static uint64_t convertBaseToDepElemIdx(uint64_t baseElemIdx, int reuse,
                                           int skip);
   static uint64_t convertDepToBaseElemIdx(uint64_t depElemIdx, int reuse,

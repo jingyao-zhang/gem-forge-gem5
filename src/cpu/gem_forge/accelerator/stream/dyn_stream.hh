@@ -176,8 +176,7 @@ public:
   AddrGenCallbackPtr addrGenCallback;
 
   // Predication compute.
-  DynStreamFormalParamV predFormalParams;
-  ExecFuncPtr predCallback;
+  ExecFuncWithFormalParamV predCallbacks;
 
   // Store value compute.
   DynStreamFormalParamV storeFormalParams;
