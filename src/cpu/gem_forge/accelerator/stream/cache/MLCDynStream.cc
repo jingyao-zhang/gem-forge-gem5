@@ -467,7 +467,7 @@ void MLCDynStream::makeResponse(MLCStreamSlice &slice) {
 
 void MLCDynStream::makeAck(MLCStreamSlice &slice) {
   assert(slice.coreStatus == MLCStreamSlice::CoreStatusE::WAIT_ACK &&
-         "Element core status should be WAIT_ACK to make ack.");
+         "Elem core status should be WAIT_ACK to make ack.");
   slice.coreStatus = MLCStreamSlice::CoreStatusE::ACK_READY;
   MLC_SLICE_DPRINTF(slice.sliceId, "AckReady. Header %s HeaderCoreStatus %s.\n",
                     this->slices.front().sliceId,
@@ -485,20 +485,6 @@ void MLCDynStream::makeAck(MLCStreamSlice &slice) {
     const auto &ackSliceId = ackSlice.sliceId;
     // Set the core status to DONE.
     ackSlice.coreStatus = MLCStreamSlice::CoreStatusE::DONE;
-    if (!dynS) {
-      /**
-       * Make ack when the CoreDynS is already released:
-       * 1. The second Ack for RangeSync AtomicStream.
-       * 2. LoopBound cut the stream early.
-       */
-      if (this->shouldRangeSync() && this->stream->isAtomicComputeStream()) {
-        continue;
-      }
-      if (this->loopBoundBrokenOut) {
-        continue;
-      }
-      MLC_SLICE_PANIC(ackSliceId, "MakeAck when dynS has been released.");
-    }
     for (auto strandElemIdx = ackSliceId.getStartIdx();
          strandElemIdx < ackSliceId.getEndIdx(); ++strandElemIdx) {
       if (std::dynamic_pointer_cast<LinearAddrGenCallback>(
@@ -518,6 +504,20 @@ void MLCDynStream::makeAck(MLCStreamSlice &slice) {
                             ackSliceId.vaddr, ackSliceId.getSize());
           continue;
         }
+      }
+      if (!dynS) {
+        /**
+         * Make ack when the CoreDynS is already released:
+         * 1. The second Ack for RangeSync AtomicStream.
+         * 2. LoopBound cut the stream early.
+         */
+        if (this->shouldRangeSync() && this->stream->isAtomicComputeStream()) {
+          continue;
+        }
+        if (this->loopBoundBrokenOut) {
+          continue;
+        }
+        MLC_SLICE_PANIC(ackSliceId, "MakeAck when dynS has been released.");
       }
       auto streamElemIdx =
           this->config->getStreamElemIdxFromStrandElemIdx(strandElemIdx);

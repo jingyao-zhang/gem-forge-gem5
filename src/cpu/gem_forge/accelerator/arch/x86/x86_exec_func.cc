@@ -191,52 +191,11 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
 }
 
 int ExecFunc::translateToNumRegs(const DataType &type) {
-  auto numRegs = 1;
-  switch (type) {
-  case DataType::FLOAT:
-  case DataType::DOUBLE:
-    numRegs = 1;
-    break;
-  case DataType::VECTOR_128:
-    numRegs = 2;
-    break;
-  case DataType::VECTOR_256:
-    numRegs = 4;
-    break;
-  case DataType::VECTOR_512:
-    numRegs = 8;
-    break;
-  case DataType::VOID:
-    numRegs = 0;
-    break;
-  default:
-    panic("Invalid data type.");
-  }
-  return numRegs;
+  return GemForgeUtils::translateToNumRegs(type);
 }
 
 std::string ExecFunc::RegisterValue::print(const DataType &type) const {
-  switch (type) {
-  case DataType::INTEGER:
-  case DataType::INT1: {
-    return csprintf("%#x", this->front());
-  }
-  case DataType::INT32_INT1: {
-    auto v32 = this->front() & 0xFFFFFFFF;
-    auto v1 = this->front() >> 32;
-    return csprintf("{%#x, %#x}", v32, v1);
-  }
-  case DataType::FLOAT: {
-    return csprintf("%f", static_cast<float>(this->front()));
-  }
-  case DataType::DOUBLE: {
-    return csprintf("%lf", static_cast<double>(this->front()));
-  }
-  default: {
-    auto numRegs = ExecFunc::translateToNumRegs(type);
-    return GemForgeUtils::dataToString(this->uint8Ptr(), numRegs * 8);
-  }
-  }
+  return GemForgeUtils::printTypedData(type, this->data());
 }
 
 std::string ExecFunc::RegisterValue::print() const {

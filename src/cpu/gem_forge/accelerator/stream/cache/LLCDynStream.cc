@@ -1552,6 +1552,9 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
    */
   if (S->isLoadComputeStream() || S->isUpdateStream()) {
     elem->setComputedValue(value);
+    this->evaluatePredication(se, elem->idx);
+    this->evaluateLoopBound(se, elem->idx);
+    se->triggerIndElems(this, elem);
   } else if (S->isAtomicComputeStream()) {
 
   } else if (!this->isIndirectReduction()) {
@@ -1838,6 +1841,14 @@ bool LLCDynStream::isNextIdeaAck() const {
                this->mlcController->myParams
                    ->mlc_stream_slices_runahead_inverse_ratio /
                this->mlcController->getMLCStreamBufferToSegmentRatio());
+
+    // Be conservative that last slice is never ideally acked.
+    auto nextNonIdeaAckSegment =
+        (this->streamAckedSlices + slicesPerSegment - 1) / slicesPerSegment;
+    if (nextNonIdeaAckSegment * slicesPerSegment >= this->nextInitSliceIdx) {
+      return false;
+    }
+
     if ((this->streamAckedSlices % slicesPerSegment) != 0) {
       return true;
     }
@@ -2041,7 +2052,7 @@ void LLCDynStream::evaluatePredication(LLCStreamEngine *se, uint64_t elemIdx) {
   if (!elem) {
     LLC_S_PANIC(this->getDynStrandId(), "[LLCPred] No Elem %llu.", elemIdx);
   }
-  if (!elem->isReady()) {
+  if (!elem->isUsedValueReady()) {
     LLC_ELEMENT_DPRINTF_(LLCStreamPredicate, elem, "[LLCPred] Not ready.\n");
     return;
   }
@@ -2052,7 +2063,7 @@ void LLCDynStream::evaluatePredication(LLCStreamEngine *se, uint64_t elemIdx) {
   }
 
   auto getStreamValue = [&elem](uint64_t streamId) -> StreamValue {
-    return elem->getBaseOrMyStreamValue(streamId);
+    return elem->getUsedBaseOrMyStreamValue(streamId);
   };
   const auto &preds = this->configData->predCallbacks;
   for (int predId = 0; predId < preds.size(); ++predId) {
@@ -2087,7 +2098,7 @@ void LLCDynStream::evaluateLoopBound(LLCStreamEngine *se, uint64_t elemIdx) {
                          "[LLCLoopBound] Already done.\n");
     return;
   }
-  if (!elem->isReady()) {
+  if (!elem->isUsedValueReady()) {
     LLC_SE_ELEM_DPRINTF_(LLCStreamLoopBound, elem,
                          "[LLCLoopBound] not ready.\n");
     return;
@@ -2109,7 +2120,7 @@ void LLCDynStream::evaluateLoopBound(LLCStreamEngine *se, uint64_t elemIdx) {
     if (isReduceOrPtrChaseIndVar) {
       return elem->getBaseStreamValue(streamId);
     } else {
-      return elem->getBaseOrMyStreamValue(streamId);
+      return elem->getUsedBaseOrMyStreamValue(streamId);
     }
   };
   auto loopBoundActualParams = convertFormalParamToParam(

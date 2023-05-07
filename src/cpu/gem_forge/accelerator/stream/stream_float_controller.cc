@@ -578,8 +578,10 @@ bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
    * 2. All other AddrBaseS are IndVar streams with AffinePattern.
    *
    * To float:
-   * 1. Float with the AddrBaseMemS with the max FloatChainDepth.
-   * 2. Other AddrBaseMemS sends to our FloatRootS.
+   * 1. Float with the AddrBaseMemS/PredBaseS/ValueBaseS with the max
+   * FloatChainDepth. For the ValueBaseS, it must be on the same chain as the
+   * AddrBaseMemS.
+   * 2. Other BaseS not on the FloatChain sends to our FloatRootS.
    * 3. UsedAffineIVS is recorded as special BaseEdge.
    *
    */
@@ -681,6 +683,23 @@ bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
     return false;
   }
 
+  /**
+   * If we have a deeper ValueBaseS on the FloatChain, float with that.
+   */
+  for (auto baseS : S->valueBaseStreams) {
+    auto config = floatedMap.at(baseS);
+    auto floatBaseConfig = floatedMap.at(floatBaseS);
+    if (baseS != floatBaseS && this->isOnFloatChain(config, floatBaseConfig)) {
+      floatBaseS = baseS;
+      floatBaseChainDepth = this->getFloatChainDepth(*config);
+      assert(!S->predBaseStreams.count(baseS) &&
+             "Deeper ValueBaseS should not be a PredBaseS.");
+      floatBasePredBy = false;
+      floatBasePredFuncId = 0;
+      floatBasePredValue = false;
+    }
+  }
+
   if (floatBaseChainDepth >= 1) {
     if (!this->se->myParams->enableFloatMultiLevelIndirectStoreCompute) {
       StreamFloatPolicy::logS(*dynS)
@@ -742,7 +761,7 @@ bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
     }
 
     /**
-     * ValueBaseS will send to my AddrBaseS.
+     * ValueBaseS will send to my AddrRootS.
      * See the comment in CacheStreamConfigureData for the reuse/skip here.
      */
     auto sendReuse = reuse;

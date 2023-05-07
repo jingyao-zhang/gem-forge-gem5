@@ -635,12 +635,12 @@ bool MLCDynDirectStream::checkWaitForLLCRecvS(
           waitForRecvStrandId = recvStrandId;
           waitForRecvStrandElemIdx = recvStrandElemIdx;
 
-          MLC_S_DPRINTF(this->getDynStrandId(),
-                        "TailElem %lu(%lu) IndTailEllem %lu(%lu) WaitForRecv "
-                        "%s%lu(%lu).\n",
-                        tailStrandElemIdx, tailStreamElemIdx,
-                        indStrandElemIdxRhs, indStreamElemIdxRhs, recvStrandId,
-                        recvStrandElemIdx, recvStreamElemIdx);
+          MLC_S_DPRINTF(
+              this->getDynStrandId(),
+              "TailElem %lu(%lu) IndS %s%lu(%lu) WaitForRecv %s%lu(%lu).\n",
+              tailStrandElemIdx, tailStreamElemIdx, dynIS->getDynStrandId(),
+              indStrandElemIdxRhs, indStreamElemIdxRhs, recvStrandId,
+              recvStrandElemIdx, recvStreamElemIdx);
 
           return true;
         }

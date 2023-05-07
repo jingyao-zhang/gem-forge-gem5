@@ -3843,6 +3843,10 @@ LLCStreamEngine::releaseSlice(SliceList::iterator sliceIter) {
           continue;
         }
       }
+      if (elem->isPredicatedOff()) {
+        dynS->eraseElem(elemIter);
+        continue;
+      }
       break;
     }
   }

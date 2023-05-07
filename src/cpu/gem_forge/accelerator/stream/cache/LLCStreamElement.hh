@@ -54,8 +54,11 @@ public:
   std::vector<LLCStreamElementPtr> baseElements;
   bool areBaseElemsReady() const {
     bool allReady = true;
-    for (const auto &baseElement : this->baseElements) {
-      if (!baseElement->checkIsValueReady()) {
+    for (const auto &baseE : this->baseElements) {
+      if (!baseE->checkIsValueReady()) {
+        allReady = false;
+      }
+      if (baseE->S->isLoadComputeStream() && !baseE->isComputedValueReady()) {
         allReady = false;
       }
     }
@@ -88,12 +91,30 @@ public:
   }
 
   StreamValue getBaseStreamValue(uint64_t baseStreamId);
+  /**
+   * The only difference between get() and getUsed() is that
+   * get() returns the value for myself, while getUsed()
+   * returns the computedValue if I am LoadComputeS.
+   * 
+   * For LoadCompute/Update, use get().
+   * For Predication/LoopBound, use getUsed().
+   */
   StreamValue getBaseOrMyStreamValue(uint64_t streamId);
+  StreamValue getUsedBaseOrMyStreamValue(uint64_t streamId);
 
   /*************************************************
    * Accessors to the data.
    *************************************************/
   bool isReady() const { return this->readyBytes == this->size; }
+  bool isUsedValueReady() const {
+    if (!this->isReady()) {
+      return false;
+    }
+    if (this->S->isLoadComputeStream()) {
+      return this->isComputedValueReady();
+    }
+    return true;
+  }
   void addReadyBytes(int bytes) { this->readyBytes += bytes; }
   bool isComputationScheduled() const { return this->computationScheduled; }
   Cycles getComputationScheduledCycle() const {
@@ -134,6 +155,7 @@ public:
     return this->value.front();
   }
   StreamValue getValueByStreamId(uint64_t streamId) const;
+  StreamValue getUsedValueByStreamId(uint64_t streamId) const;
   uint64_t getUInt64ByStreamId(uint64_t streamId) const;
 
   void setValue(const StreamValue &value);

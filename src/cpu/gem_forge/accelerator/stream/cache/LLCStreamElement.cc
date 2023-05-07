@@ -91,11 +91,9 @@ const char *LLCStreamElement::curRemoteMachineType() const {
 
 StreamValue LLCStreamElement::getValue(int offset, int size) const {
   if (this->size < offset + size) {
-    LLC_ELEMENT_PANIC(
-        this,
-        "Try to get StreamValue (offset %d size %d) for LLCStreamElement of "
-        "size %d.",
-        offset, size, this->size);
+    LLC_ELEMENT_PANIC(this,
+                      "Try to get Value (offset %d size %d) for Elem size %d.",
+                      offset, size, this->size);
   }
   StreamValue v;
   memcpy(v.uint8Ptr(), this->getUInt8Ptr(offset), size);
@@ -106,11 +104,21 @@ StreamValue LLCStreamElement::getBaseStreamValue(uint64_t baseStreamId) {
   for (const auto &baseE : this->baseElements) {
     if (baseE->S->isCoalescedHere(baseStreamId)) {
       // Found it.
-      return baseE->getValueByStreamId(baseStreamId);
+      return baseE->getUsedValueByStreamId(baseStreamId);
     }
   }
-  LLC_ELEMENT_PANIC(this, "Invalid baseStreamId %llu.", baseStreamId);
+  LLC_ELEMENT_PANIC(this, "Invalid BaseStreamId %llu.", baseStreamId);
   return StreamValue();
+}
+
+StreamValue LLCStreamElement::getUsedBaseOrMyStreamValue(uint64_t streamId) {
+  if (this->S->isCoalescedHere(streamId)) {
+    // This is from myself.
+    return this->getUsedValueByStreamId(streamId);
+  } else {
+    // This is from a value base stream.
+    return this->getBaseStreamValue(streamId);
+  }
 }
 
 StreamValue LLCStreamElement::getBaseOrMyStreamValue(uint64_t streamId) {
@@ -131,6 +139,22 @@ uint8_t *LLCStreamElement::getUInt8Ptr(int offset) {
 const uint8_t *LLCStreamElement::getUInt8Ptr(int offset) const {
   assert(offset < this->size);
   return reinterpret_cast<const uint8_t *>(this->value.data()) + offset;
+}
+
+StreamValue LLCStreamElement::getUsedValueByStreamId(uint64_t streamId) const {
+
+  if (this->S->isLoadComputeStream()) {
+    // This is the ComputedValue.
+    assert(this->isComputedValueReady() && "ComputedValue not Ready.");
+    int32_t offset = 0;
+    int size = this->size;
+    this->S->getCoalescedOffsetAndSize(streamId, offset, size);
+    assert(offset == 0);
+    assert(size == this->size);
+    return this->computedValue;
+  }
+
+  return this->getValueByStreamId(streamId);
 }
 
 StreamValue LLCStreamElement::getValueByStreamId(uint64_t streamId) const {
@@ -283,11 +307,8 @@ void LLCStreamElement::extractElementDataFromSlice(
       overlapLHS % ruby::RubySystem::getBlockSizeBytes(), overlapSize);
   memcpy(this->getUInt8Ptr(elemOffset), data, overlapSize);
   if (Debug::LLCRubyStreamBase) {
-    std::stringstream ss;
-    for (int i = 0; i < overlapSize; ++i) {
-      ss << std::hex << static_cast<int>(data[i]) << ' ';
-    }
-    LLC_SLICE_DPRINTF(sliceId, "Extract elem data %s.\n", ss.str());
+    LLC_SLICE_DPRINTF(sliceId, "Extract elem data %dB %s.\n", overlapSize,
+                      GemForgeUtils::dataToString(data, overlapSize));
   }
 
   // Mark these bytes ready.

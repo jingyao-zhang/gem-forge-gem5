@@ -62,7 +62,9 @@ void Stream::finalize() {
   // Merge predicated info.
   for (auto LS : this->logicals) {
     if (!LS->getPredicatedStreams().empty()) {
-      assert(this->predFuncInfos.empty() && "MultiPredCallback");
+      if (!this->predFuncInfos.empty()) {
+        panic("MultiPredCallback on LS: %s.", LS->info.name());
+      }
       const auto &LSInfo = LS->info.static_info();
       for (auto i = 0; i < LSInfo.pred_func_info_size(); ++i) {
         this->predFuncInfos.push_back(&LSInfo.pred_func_info(i));
