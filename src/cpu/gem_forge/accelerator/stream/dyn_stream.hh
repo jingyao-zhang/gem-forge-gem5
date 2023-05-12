@@ -253,7 +253,8 @@ public:
   int getBaseElemReuseCount(Stream *baseS) const;
   int getBaseElemSkipCount(Stream *baseS) const;
 
-  std::list<DynStream *> stepDynStreams;
+  bool allStepMemStreamsOffloaded = false;
+  std::vector<DynStream *> stepDynStreams;
   void addStepStreams();
 
   /**

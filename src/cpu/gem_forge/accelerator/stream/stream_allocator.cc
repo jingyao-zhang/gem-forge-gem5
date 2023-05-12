@@ -81,23 +81,13 @@ bool StreamRegionController::canSkipAllocatingDynS(StaticRegion &staticRegion,
    * So that we can work on multiple DynStreams at the same time.
    */
   if (staticRegion.region.loop_eliminated() && staticRegion.region.is_nest()) {
-    if (stepRootDynS.allocSize >= 8) {
-      bool allStepMemStreamsOffloaded = true;
-      for (auto stepDynS : stepDynStreams) {
-        if (stepDynS->stream->isMemStream()) {
-          if (!stepDynS->isFloatedToCache()) {
-            allStepMemStreamsOffloaded = false;
-            break;
-          }
-        }
-      }
-      if (allStepMemStreamsOffloaded) {
-        DYN_S_DPRINTF(stepRootDynS.dynStreamId,
-                      "[StreamAlloc] BoundedElimNested Floated AllocSize "
-                      "%d TailElemIdx %llu.\n ",
-                      stepRootDynS.allocSize, stepRootDynS.FIFOIdx.entryIdx);
-        maxTailElemIdx = stepRootDynS.FIFOIdx.entryIdx;
-      }
+    if (stepRootDynS.allocSize >= 8 &&
+        stepRootDynS.allStepMemStreamsOffloaded) {
+      DYN_S_DPRINTF(stepRootDynS.dynStreamId,
+                    "[StreamAlloc] BoundedElimNested Floated AllocSize "
+                    "%d TailElemIdx %llu.\n ",
+                    stepRootDynS.allocSize, stepRootDynS.FIFOIdx.entryIdx);
+      maxTailElemIdx = stepRootDynS.FIFOIdx.entryIdx;
     }
   }
 

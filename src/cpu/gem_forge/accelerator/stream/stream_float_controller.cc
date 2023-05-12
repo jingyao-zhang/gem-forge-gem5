@@ -168,6 +168,24 @@ void StreamFloatController::floatStreams(
     }
     this->se->cpuDelegator->sendRequest(pkt);
   }
+
+  // Remember some meta-data.
+  for (auto &dynS : dynStreams) {
+    auto S = dynS->stream;
+    if (S->stepRootStream == S) {
+      // This is a StepRoot.
+      bool allStepMemStreamsOffloaded = true;
+      for (auto stepDynS : dynS->stepDynStreams) {
+        if (stepDynS->stream->isMemStream()) {
+          if (!stepDynS->isFloatedToCache()) {
+            allStepMemStreamsOffloaded = false;
+            break;
+          }
+        }
+      }
+      dynS->allStepMemStreamsOffloaded = allStepMemStreamsOffloaded;
+    }
+  }
 }
 
 void StreamFloatController::commitFloatStreams(const StreamConfigArgs &args,
