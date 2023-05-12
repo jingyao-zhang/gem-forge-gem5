@@ -117,13 +117,19 @@ class InputUnit : public Consumer
     inline flit*
     getTopFlit(int vc)
     {
-        return virtualChannels[vc].getTopFlit();
+        return virtualChannels[vc].getTopSAFlit();
     }
 
     inline bool
     need_stage(int vc, flit_stage stage, Tick time)
     {
         return virtualChannels[vc].need_stage(stage, time);
+    }
+
+    inline bool
+    needSAStage(int vc, Tick time)
+    {
+        return virtualChannels[vc].needSAStage(time);
     }
 
     inline bool
@@ -256,7 +262,7 @@ class InputUnit : public Consumer
         const std::vector<MachineID> &destMachineIDs);
     flit *selectFlit();
     void allocateMulticastBuffer(flit *f);
-    void duplicateMulitcastFlit(flit *f);
+    void duplicateMulticastFlit(flit *f);
     int calculateVCForMulticastDuplicateFlit(int vnet);
     void duplicateMulticastMsgToNetworkInterface(
         MulticastDuplicateBuffer &buffer);

@@ -118,7 +118,7 @@ SwitchAllocator::arbitrate_inports()
         for (int invc_iter = 0; invc_iter < m_num_vcs; invc_iter++) {
             auto input_unit = m_router->getInputUnit(inport);
 
-            if (input_unit->need_stage(invc, SA_, curTick())) {
+            if (input_unit->needSAStage(invc, curTick())) {
                 // This flit is in SA stage
 
                 int outport = input_unit->get_outport(invc);
@@ -352,7 +352,7 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
         int vc_base = vnet*m_vc_per_vnet;
         for (int vc_offset = 0; vc_offset < m_vc_per_vnet; vc_offset++) {
             int temp_vc = vc_base + vc_offset;
-            if (input_unit->need_stage(temp_vc, SA_, curTick()) &&
+            if (input_unit->needSAStage(temp_vc, curTick()) &&
                (input_unit->get_outport(temp_vc) == outport) &&
                (input_unit->get_enqueue_time(temp_vc) < t_enqueue_time)) {
                 DPRINTF(RubyNetwork, "SA[%d] Decline [%s][%d] -> [%s][%d] "
@@ -403,7 +403,7 @@ SwitchAllocator::check_for_wakeup()
 
     for (int i = 0; i < m_num_inports; i++) {
         for (int j = 0; j < m_num_vcs; j++) {
-            if (m_router->getInputUnit(i)->need_stage(j, SA_, nextCycle)) {
+            if (m_router->getInputUnit(i)->needSAStage(j, nextCycle)) {
                 m_router->schedule_wakeup(Cycles(1));
                 return;
             }

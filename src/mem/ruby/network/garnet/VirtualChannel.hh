@@ -76,6 +76,18 @@ class VirtualChannel
         inputBuffer.insert(t_flit);
     }
 
+    // Insert Flit at SA_ stage. Update our SA_stage_time.
+    inline void
+    insertSAFlit(flit *t_flit, Tick time)
+    {
+        inputBuffer.insert(t_flit);
+        t_flit->advance_stage(SA_, time);
+        if (m_SA_stage_time == MaxTick) {
+            // This is our first SA flit.
+            m_SA_stage_time = time;
+        }
+    }
+
     inline int getSize() {
         return inputBuffer.getSize();
     }
@@ -99,6 +111,28 @@ class VirtualChannel
         return inputBuffer.getTopFlit();
     }
 
+    // Get top flit at SA_ stage.
+    inline flit*
+    getTopSAFlit()
+    {
+        auto t_flit = inputBuffer.getTopFlit();
+        assert(t_flit->get_stage().first == SA_);
+        if (inputBuffer.isEmpty()) {
+            m_SA_stage_time = MaxTick;
+        } else {
+            auto next = inputBuffer.peekTopFlit();
+            assert(next->get_stage().first == SA_);
+            m_SA_stage_time = next->get_stage().second;
+        }
+        return t_flit;
+    }
+
+    inline bool
+    needSAStage(Tick time)
+    {
+        return m_SA_stage_time <= time && inputBuffer.isReady(time);
+    }
+
     bool functionalRead(Packet *pkt, WriteMask &mask);
     uint32_t functionalWrite(Packet *pkt);
 
@@ -108,6 +142,11 @@ class VirtualChannel
     int m_output_port;
     Tick m_enqueue_time;
     int m_output_vc;
+
+    /**
+     * Memorize the SA stage flit time.
+     */
+    Tick m_SA_stage_time = MaxTick;
 };
 
 } // namespace garnet

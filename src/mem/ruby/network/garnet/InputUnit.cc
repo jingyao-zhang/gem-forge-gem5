@@ -100,7 +100,7 @@ InputUnit::wakeup()
         }
 
         this->allocateMulticastBuffer(t_flit);
-        this->duplicateMulitcastFlit(t_flit);
+        this->duplicateMulticastFlit(t_flit);
 
         auto flitType = t_flit->get_type();
         if ((flitType == HEAD_) || (flitType == HEAD_TAIL_)) {
@@ -125,9 +125,6 @@ InputUnit::wakeup()
             virtualChannels[vc].getSize(),
             t_flit->get_id(), *(t_flit->get_msg_ptr()));
 
-        // Buffer the flit
-        virtualChannels[vc].insertFlit(t_flit);
-
         int vnet = vc/m_vc_per_vnet;
         // number of writes same as reads
         // any flit that is written will be read only once
@@ -138,14 +135,15 @@ InputUnit::wakeup()
         if (pipe_stages == 1) {
             // 1-cycle router
             // Flit goes for SA directly
-            t_flit->advance_stage(SA_, curTick());
+            virtualChannels[vc].insertSAFlit(t_flit, curTick());
         } else {
             assert(pipe_stages > 1);
             // Router delay is modeled by making flit wait in buffer for
             // (pipe_stages cycles - 1) cycles before going for SA
 
             Cycles wait_time = pipe_stages - Cycles(1);
-            t_flit->advance_stage(SA_, m_router->clockEdge(wait_time));
+            virtualChannels[vc].insertSAFlit(t_flit,
+                m_router->clockEdge(wait_time));
 
             // Wakeup the router in that cycle to perform SA
             m_router->schedule_wakeup(Cycles(wait_time));
@@ -248,71 +246,13 @@ InputUnit::PortToDestinationMap InputUnit::groupDestinationByRouting(
 
 flit *InputUnit::selectFlit() {
 
-    auto checkIfCanPop = [this](flit *f) -> bool {
-        auto flitType = f->get_type();
-        if (flitType == HEAD_ || flitType == HEAD_TAIL_) {
-            if (virtualChannels[f->get_vc()].get_state() != IDLE_) {
-                return false;
-            }
-        }
-        return true;
-    };
-
     /**
      * Prioritize the MulitcastDuplicateBuffer.
+     * NOTE: Deprecated.
      */
     if (m_router->get_net_ptr()->isMulticastEnabled() &&
         this->totalReadyMulitcastFlits > 0) {
-        int selectBufferIdx = -1;
-        for (int i = 0; i < virtualChannels.size(); ++i) {
-            auto idx = (this->currMulticastBufferIdx + i) % virtualChannels.size();
-            auto &buffer = this->multicastBuffers.at(idx);
-            if (buffer.isReady()) {
-                selectBufferIdx = idx;
-                break;
-            }
-        }
-        assert(selectBufferIdx >= 0 && "No ready MulticastBuffer.");
-        auto &buffer = this->multicastBuffers.at(selectBufferIdx);
-        flit *f = buffer.peek();
-
-        /**
-         * Check if we can find an idle vc for the header vc.
-         */
-        auto flitType = f->get_type();
-        if (flitType == HEAD_ || flitType == HEAD_TAIL_) {
-            auto vc = this->calculateVCForMulticastDuplicateFlit(f->get_vnet());
-            if (vc != -1) {
-                // We found one idle vc, set all flits.
-                buffer.setVCForFrontMsg(vc);
-            } else {
-                // The below checkIfCanPop() will fail for us.
-            }
-        }
-
-        /**
-         * Check if the vc is idle.
-         */
-        if (checkIfCanPop(f)) {
-            /**
-             * If this is the tail flit, we want to increment
-             * currMulitcastBufferIdx to round robin.
-             */
-            buffer.pop();
-            auto flitType = f->get_type();
-            if (flitType == TAIL_ || flitType == HEAD_TAIL_) {
-                this->currMulticastBufferIdx = (selectBufferIdx + 1)
-                    % virtualChannels.size();
-            }
-
-            DPRINTF(RubyMulticast, "InputUnit[%d][%s][%d] "
-                "MulticastBuffer Pop: Flit %d.\n",
-                m_router->get_id(),
-                m_router->getPortDirectionName(this->get_direction()),
-                f->get_vc(),
-                f->get_id());
-            return f;
-        }
+        assert(false && "Multicast Msg is Duplicated to Interface.");
     }
 
     if (m_in_link->isReady(curTick())) {
@@ -405,7 +345,7 @@ void InputUnit::allocateMulticastBuffer(flit *f) {
     multicastBuffer.allocate(remainRoute, remainMsg);
 }
 
-void InputUnit::duplicateMulitcastFlit(flit *f) {
+void InputUnit::duplicateMulticastFlit(flit *f) {
 
     /**
      * We may need to duplicate the message if it's multicast.
