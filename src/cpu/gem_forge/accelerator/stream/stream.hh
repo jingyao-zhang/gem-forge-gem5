@@ -457,9 +457,15 @@ public:
   allocateCacheConfigureDataForAffineIV(uint64_t configSeqNum);
 
   std::list<DynStream> dynamicStreams;
+  std::unordered_map<InstSeqNum, DynStream *> configSeqNumToDynStreamMap;
   bool hasDynStream() const { return !this->dynamicStreams.empty(); }
   size_t getNumDynStreams() const { return this->dynamicStreams.size(); }
-  DynStream &getDynStream(InstSeqNum seqNum);
+  DynStream &getDynStream(InstSeqNum seqNum) {
+    auto iter = this->configSeqNumToDynStreamMap.find(seqNum);
+    assert(iter != this->configSeqNumToDynStreamMap.end() &&
+           "Failed to find DynStream by ConfigSeqNum.");
+    return *iter->second;
+  }
   DynStream &getDynStreamByEndSeqNum(InstSeqNum seqNum);
   DynStream &getDynStreamByInstance(InstanceId instance);
   DynStream *tryGetDynStreamByInstance(InstanceId instance);

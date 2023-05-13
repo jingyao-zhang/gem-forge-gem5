@@ -253,6 +253,8 @@ public:
   int getBaseElemReuseCount(Stream *baseS) const;
   int getBaseElemSkipCount(Stream *baseS) const;
 
+  // Some memorized information for StepDynS.
+  uint64_t minStepStreamAllocElemIdx = 0;
   bool allStepMemStreamsOffloaded = false;
   std::vector<DynStream *> stepDynStreams;
   void addStepStreams();

@@ -115,8 +115,9 @@ SwitchAllocator::arbitrate_inports()
     for (int inport = 0; inport < m_num_inports; inport++) {
         int invc = m_round_robin_invc[inport];
 
+        auto input_unit = m_router->getInputUnit(inport);
+
         for (int invc_iter = 0; invc_iter < m_num_vcs; invc_iter++) {
-            auto input_unit = m_router->getInputUnit(inport);
 
             if (input_unit->needSAStage(invc, curTick())) {
                 // This flit is in SA stage
@@ -128,7 +129,8 @@ SwitchAllocator::arbitrate_inports()
                 // check if the flit in this InputVC is allowed to be sent
                 // send_allowed conditions described in that function.
                 bool make_request =
-                    send_allowed(inport, invc, outport, outvc);
+                    send_allowed(input_unit, output_unit,
+                        inport, invc, outport, outvc);
 
                 if (make_request) {
                     m_input_arbiter_activity++;
@@ -295,7 +297,8 @@ SwitchAllocator::arbitrate_outports()
  */
 
 bool
-SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
+SwitchAllocator::send_allowed(InputUnit *input_unit, OutputUnit *output_unit,
+    int inport, int invc, int outport, int outvc)
 {
     // Check if outvc needed
     // Check if credit needed (for multi-flit packet)
@@ -305,8 +308,6 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
     bool has_outvc = (outvc != -1);
     bool has_credit = false;
 
-    auto input_unit = m_router->getInputUnit(inport);
-    auto output_unit = m_router->getOutputUnit(outport);
     if (!has_outvc) {
 
         // needs outvc
@@ -342,7 +343,6 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
 
     // protocol ordering check
     if ((m_router->get_net_ptr())->isVNetOrdered(vnet)) {
-        auto input_unit = m_router->getInputUnit(inport);
 
         // enqueue time of this flit
         Tick t_enqueue_time = input_unit->get_enqueue_time(invc);

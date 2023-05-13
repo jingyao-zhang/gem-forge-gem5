@@ -935,10 +935,10 @@ StreamElement *DynStream::getFirstUnsteppedElem() const {
   if (this->allocSize <= this->stepSize) {
     return nullptr;
   }
-  auto element = this->stepped->next;
+  auto elem = this->stepped->next;
   // * Notice the element is guaranteed to be not stepped.
-  assert(!element->isStepped && "Dispatch user to stepped stream element.");
-  return element;
+  assert(!elem->isStepped && "Dispatch user to stepped stream element.");
+  return elem;
 }
 
 StreamElement *DynStream::stepElement(bool isEnd) {
@@ -1078,17 +1078,16 @@ StreamElement *DynStream::releaseElementUnstepped() {
 }
 
 bool DynStream::hasUnsteppedElem() const {
-  auto element = this->getFirstUnsteppedElem();
-  if (!element) {
+  auto ret = this->allocSize > this->stepSize;
+  if (!ret) {
     // We don't have element for this used stream.
     DYN_S_DPRINTF(this->dynStreamId,
                   "NoUnsteppedElem config executed %d alloc %d stepped %d "
                   "total %d next %s.\n",
                   this->configExecuted, this->allocSize, this->stepSize,
                   this->getTotalTripCount(), this->FIFOIdx);
-    return false;
   }
-  return true;
+  return ret;
 }
 
 bool DynStream::isElemStepped(uint64_t elemIdx) const {

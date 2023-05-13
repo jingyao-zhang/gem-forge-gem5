@@ -17,7 +17,7 @@ namespace gem5 {
 bool StreamRegionController::canSkipAllocatingDynS(StaticRegion &staticRegion,
                                                    DynStream &stepRootDynS) {
 
-  auto &stepDynStreams = stepRootDynS.stepDynStreams;
+  // auto &stepDynStreams = stepRootDynS.stepDynStreams;
 
   /**
    * If the dynRegion has marked skipToEnd, but the dynS has no TotalTripCount,
@@ -92,16 +92,17 @@ bool StreamRegionController::canSkipAllocatingDynS(StaticRegion &staticRegion,
   }
 
   if (maxTailElemIdx != -1) {
-    bool allStepStreamsAllocated = true;
-    for (auto stepDynS : stepDynStreams) {
-      // DYN_S_DPRINTF(stepDynS.dynStreamId,
-      //               "TotalTripCount %d, Next FIFOIdx %s.\n",
-      //               totalTripCount, stepDynS.FIFOIdx);
-      if (stepDynS->FIFOIdx.entryIdx < maxTailElemIdx) {
-        allStepStreamsAllocated = false;
-        break;
-      }
-    }
+    bool allStepStreamsAllocated =
+        stepRootDynS.minStepStreamAllocElemIdx >= maxTailElemIdx;
+    // for (auto stepDynS : stepDynStreams) {
+    //   // DYN_S_DPRINTF(stepDynS.dynStreamId,
+    //   //               "TotalTripCount %d, Next FIFOIdx %s.\n",
+    //   //               totalTripCount, stepDynS.FIFOIdx);
+    //   if (stepDynS->FIFOIdx.entryIdx < maxTailElemIdx) {
+    //     allStepStreamsAllocated = false;
+    //     break;
+    //   }
+    // }
     if (allStepStreamsAllocated) {
       // All allocated, we can move to next one.
       DYN_S_DPRINTF(stepRootDynS.dynStreamId,
@@ -157,7 +158,6 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
      * 3. If has TotalTripCount, not all step streams has allocated all
      * elements.
      */
-    const auto &stepStreams = se->getStepStreamList(stepRootStream);
     DynStream *allocatingStepRootDynS = nullptr;
     for (auto &stepRootDynS : stepRootStream->dynamicStreams) {
       if (!stepRootDynS.configExecuted) {
@@ -332,18 +332,21 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
      * We should try to limit maximum allocation per cycle cause I still see
      * some deadlock when one stream used all the FIFO entries orz.
      */
+    auto &stepDynStreams = allocatingStepRootDynS->stepDynStreams;
     const size_t MaxAllocationPerCycle = 4;
-    for (size_t targetSize = 1, allocated = 0;
+    int allocated = 0;
+    for (size_t targetSize = 1;
          targetSize <= maxAllocSize && se->hasFreeElement() &&
          allocated < MaxAllocationPerCycle;
          ++targetSize) {
-      for (auto S : stepStreams) {
+      for (auto allocatingDynS : stepDynStreams) {
+        auto &dynS = *allocatingDynS;
+        auto S = dynS.stream;
         assert(S->isConfigured() && "Try to allocate for unconfigured stream.");
         if (!se->hasFreeElement()) {
           S_DPRINTF(S, "No FreeElement.\n");
           break;
         }
-        auto &dynS = S->getDynStreamByInstance(allocRootDynId.streamInstance);
         if (S->getAllocSize() >= S->maxSize) {
           DYN_S_DPRINTF(dynS.dynStreamId, "Reached MaxAllocSize %d >= %d.\n",
                         S->getAllocSize(), S->maxSize);
@@ -378,6 +381,16 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
         se->allocateElement(dynS);
         allocated++;
       }
+    }
+
+    // Update the MinStepStreamAllocElemIdx.
+    if (allocated > 0) {
+      uint64_t minAllocElemIdx = allocatingStepRootDynS->FIFOIdx.entryIdx;
+      for (const auto &dynS : stepDynStreams) {
+        minAllocElemIdx = std::min(minAllocElemIdx, dynS->FIFOIdx.entryIdx);
+      }
+      allocatingStepRootDynS->minStepStreamAllocElemIdx = std::max(
+          allocatingStepRootDynS->minStepStreamAllocElemIdx, minAllocElemIdx);
     }
   }
 }

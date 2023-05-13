@@ -299,6 +299,8 @@ void Stream::dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc) {
   this->dynamicStreams.emplace_back(this, this->allocateNewInstance(), seqNum,
                                     this->getCPUDelegator()->curCycle(), tc,
                                     this->se);
+  this->configSeqNumToDynStreamMap.emplace(seqNum,
+                                           &this->dynamicStreams.back());
 }
 
 void Stream::executeStreamConfig(uint64_t seqNum,
@@ -397,6 +399,7 @@ void Stream::rewindStreamConfig(uint64_t seqNum) {
   }
 
   // Get rid of the dynamicStream.
+  this->configSeqNumToDynStreamMap.erase(dynStream.configSeqNum);
   this->dynamicStreams.pop_back();
 
   assert(dynStream.allocSize == dynStream.stepSize &&
@@ -414,6 +417,7 @@ void Stream::releaseDynStream(uint64_t configSeqNum) {
        iter != this->dynamicStreams.end(); ++iter) {
     auto &dynS = *iter;
     if (dynS.endDispatched && dynS.configSeqNum == configSeqNum) {
+      this->configSeqNumToDynStreamMap.erase(dynS.configSeqNum);
       this->dynamicStreams.erase(iter);
       return;
     }
@@ -450,15 +454,6 @@ DynStream *Stream::tryGetDynStreamByInstance(InstanceId instance) {
     }
   }
   return nullptr;
-}
-
-DynStream &Stream::getDynStream(uint64_t seqNum) {
-  for (auto &dynStream : this->dynamicStreams) {
-    if (dynStream.configSeqNum == seqNum) {
-      return dynStream;
-    }
-  }
-  S_PANIC(this, "Failed to find DynStream by ConfigSeqNum %llu.\n", seqNum);
 }
 
 DynStream &Stream::getDynStreamByEndSeqNum(uint64_t seqNum) {
