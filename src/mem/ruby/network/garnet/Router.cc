@@ -74,6 +74,8 @@ Router::wakeup()
     DPRINTF(RubyNetwork, "Router %d woke up\n", m_id);
     assert(clockEdge() == curTick());
 
+    m_router_activity++;
+
     // check for incoming flits
     for (int inport = 0; inport < m_input_unit.size(); inport++) {
         m_input_unit[inport]->wakeup();
@@ -199,6 +201,11 @@ Router::regStats()
 
     m_buffer_writes
         .name(name() + ".buffer_writes")
+        .flags(statistics::nozero)
+    ;
+
+    m_router_activity
+        .name(name() + ".router_activity")
         .flags(statistics::nozero)
     ;
 

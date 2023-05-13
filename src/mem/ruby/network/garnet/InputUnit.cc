@@ -135,15 +135,14 @@ InputUnit::wakeup()
         if (pipe_stages == 1) {
             // 1-cycle router
             // Flit goes for SA directly
-            virtualChannels[vc].insertSAFlit(t_flit, curTick());
+            insertSAFlit(vc, t_flit, curTick());
         } else {
             assert(pipe_stages > 1);
             // Router delay is modeled by making flit wait in buffer for
             // (pipe_stages cycles - 1) cycles before going for SA
 
             Cycles wait_time = pipe_stages - Cycles(1);
-            virtualChannels[vc].insertSAFlit(t_flit,
-                m_router->clockEdge(wait_time));
+            insertSAFlit(vc, t_flit, m_router->clockEdge(wait_time));
 
             // Wakeup the router in that cycle to perform SA
             m_router->schedule_wakeup(Cycles(wait_time));

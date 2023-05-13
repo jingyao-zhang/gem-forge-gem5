@@ -115,21 +115,22 @@ class InputUnit : public Consumer
     }
 
     inline flit*
-    getTopFlit(int vc)
+    getTopSAFlit(int vc)
     {
+        m_SA_flits--;
         return virtualChannels[vc].getTopSAFlit();
-    }
-
-    inline bool
-    need_stage(int vc, flit_stage stage, Tick time)
-    {
-        return virtualChannels[vc].need_stage(stage, time);
     }
 
     inline bool
     needSAStage(int vc, Tick time)
     {
         return virtualChannels[vc].needSAStage(time);
+    }
+
+    inline bool
+    needSAStage() const
+    {
+        return m_SA_flits > 0;
     }
 
     inline bool
@@ -177,9 +178,18 @@ class InputUnit : public Consumer
     // Input Virtual channels
     std::vector<VirtualChannel> virtualChannels;
 
+    // Remember SA flits.
+    int m_SA_flits = 0;
+
     // Statistical variables
     std::vector<double> m_num_buffer_writes;
     std::vector<double> m_num_buffer_reads;
+
+    void insertSAFlit(int vc, flit *t_flit, Tick time)
+    {
+        virtualChannels[vc].insertSAFlit(t_flit, time);
+        m_SA_flits++;
+    }
 
     struct MulticastDuplicateBuffer {
         enum StateE {

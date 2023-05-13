@@ -113,9 +113,13 @@ SwitchAllocator::arbitrate_inports()
     // Select a VC from each input in a round robin manner
     // Independent arbiter at each input port
     for (int inport = 0; inport < m_num_inports; inport++) {
-        int invc = m_round_robin_invc[inport];
 
         auto input_unit = m_router->getInputUnit(inport);
+        if (!input_unit->needSAStage()) {
+            continue;
+        }
+
+        int invc = m_round_robin_invc[inport];
 
         for (int invc_iter = 0; invc_iter < m_num_vcs; invc_iter++) {
 
@@ -196,7 +200,7 @@ SwitchAllocator::arbitrate_outports()
                 }
 
                 // remove flit from Input VC
-                flit *t_flit = input_unit->getTopFlit(invc);
+                flit *t_flit = input_unit->getTopSAFlit(invc);
 
                 DPRINTF(RubyNetwork,
                     "SA[%d] Grant %s/%d -> %s/%d to %s at %lld, %d of %s.\n",
@@ -402,8 +406,12 @@ SwitchAllocator::check_for_wakeup()
     }
 
     for (int i = 0; i < m_num_inports; i++) {
+        auto input_unit = m_router->getInputUnit(i);
+        if (!input_unit->needSAStage()) {
+            continue;
+        }
         for (int j = 0; j < m_num_vcs; j++) {
-            if (m_router->getInputUnit(i)->needSAStage(j, nextCycle)) {
+            if (input_unit->needSAStage(j, nextCycle)) {
                 m_router->schedule_wakeup(Cycles(1));
                 return;
             }

@@ -52,7 +52,6 @@ class VirtualChannel
     VirtualChannel();
     ~VirtualChannel() = default;
 
-    bool need_stage(flit_stage stage, Tick time);
     void set_idle(Tick curTime);
     void set_active(Tick curTime);
     void set_outvc(int outvc)               { m_output_vc = outvc; }
