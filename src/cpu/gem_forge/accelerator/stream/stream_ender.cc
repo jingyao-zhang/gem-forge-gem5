@@ -41,6 +41,10 @@ bool StreamRegionController::canDispatchStreamEnd(const EndArgs &args) {
 bool StreamRegionController::canDispatchStreamEndImpl(
     StaticRegion &staticRegion, DynRegion &dynRegion) {
 
+  if (dynRegion.endCannotDispatch) {
+    return false;
+  }
+
   for (auto S : staticRegion.streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
 
@@ -82,6 +86,31 @@ bool StreamRegionController::canDispatchStreamEndImpl(
                             "[NotDispatchStreamEnd] Not LoopEliminated "
                             "LastElem TripCount %ld.\n",
                             dynS.getTotalTripCount());
+
+          /**
+           * We only do this optimization if we know the trip count, and the
+           * last element has not been allocated yet.
+           */
+          if (dynS.hasTotalTripCount() &&
+              dynS.FIFOIdx.entryIdx < dynS.getTotalTripCount()) {
+            dynRegion.endCannotDispatch = true;
+            auto dynRegionPtr = &dynRegion;
+            auto allocElemCallback = [this,
+                                      dynRegionPtr](DynStream *dynS,
+                                                    uint64_t elemIdx) -> bool {
+              assert(dynS->hasTotalTripCount());
+              if (elemIdx >= dynS->getTotalTripCount()) {
+                // We are done.
+                dynRegionPtr->endCannotDispatch = false;
+                return true;
+              } else {
+                // Not done yet.
+                return false;
+              }
+            };
+            dynS.registerAllocElemCallback(allocElemCallback);
+          }
+
           return false;
         }
       }
@@ -230,6 +259,10 @@ bool StreamRegionController::canCommitStreamEnd(const EndArgs &args) {
 bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
                                                     DynRegion &dynRegion) {
 
+  if (dynRegion.endCannotCommit) {
+    return false;
+  }
+
   // Can not release region if we have nest regions.
   if (this->hasRemainingNestRegions(dynRegion)) {
     SE_DPRINTF("[StreamEnd] NoCommit as RemainNestRegions.\n");
@@ -350,6 +383,27 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
           endElem, "[StreamEnd] Cannot commit as not enough Ack %llu < %llu.\n",
           dynS.cacheAckedElements.size(),
           dynS.getNumFloatedElemUntil(endElemIdx));
+      dynRegion.endCannotCommit = true;
+
+      // Register the callback.
+      {
+        auto dynRegionPtr = &dynRegion;
+        auto cacheElemAckCallback = [this, dynRegionPtr,
+                                     endElemIdx](DynStream *dynS,
+                                                 uint64_t elemIdx) -> bool {
+          if (dynS->cacheAckedElements.size() <
+              dynS->getNumFloatedElemUntil(endElemIdx)) {
+            // Not done yet.
+            return false;
+          } else {
+            // We are done.
+            dynRegionPtr->endCannotCommit = false;
+            return true;
+          }
+        };
+        dynS.registerCacheAckElemCallback(cacheElemAckCallback);
+      }
+
       return false;
     }
     /**

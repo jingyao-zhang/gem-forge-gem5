@@ -524,7 +524,7 @@ void MLCDynStream::makeAck(MLCStreamSlice &slice) {
       MLC_SLICE_DPRINTF(slice.sliceId,
                         "Ack for StrandElem %llu StreamElem %llu.\n",
                         strandElemIdx, streamElemIdx);
-      dynS->cacheAckedElements.insert(streamElemIdx);
+      dynS->ackCacheElement(streamElemIdx);
 
       /**
        * We call ElementAckCallback here.

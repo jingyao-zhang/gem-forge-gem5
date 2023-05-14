@@ -99,10 +99,10 @@ void MLCStreamNDCController::receiveStreamNDCResponse(const ruby::ResponseMsg &m
     MLC_NDC_DPRINTF(ndc, "Receive NDC Response, vaddr %#x size %d.\n", vaddr,
                     size);
     element->setValue(vaddr, size, data);
-    dynS->cacheAckedElements.insert(ndc->entryIdx.entryIdx);
+    dynS->ackCacheElement(ndc->entryIdx.entryIdx);
   } else if (S->isStoreComputeStream()) {
     MLC_NDC_DPRINTF(ndc, "Receive NDC Ack.\n");
-    dynS->cacheAckedElements.insert(ndc->entryIdx.entryIdx);
+    dynS->ackCacheElement(ndc->entryIdx.entryIdx);
   } else {
     MLC_NDC_PANIC(ndc, "Illegal StreamType for NDC.");
   }

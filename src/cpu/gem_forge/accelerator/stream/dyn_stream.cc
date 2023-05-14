@@ -1037,6 +1037,8 @@ void DynStream::allocateElement(StreamElement *newElem) {
       }
     }
   }
+
+  this->invokeAllocElemCallback(newElem->FIFOIdx.entryIdx);
 }
 
 StreamElement *DynStream::releaseElementUnstepped() {
@@ -1468,6 +1470,57 @@ void DynStream::setElementRemoteBank(uint64_t elemIdx, int remoteBank) {
     return;
   }
   DYN_S_PANIC(this->dynStreamId, "No Elem %lu to set RemoteBank.", elemIdx);
+}
+
+void DynStream::ackCacheElement(uint64_t elemIdx) {
+  this->cacheAckedElements.insert(elemIdx);
+  this->invokeCacheAckElemCallback(elemIdx);
+}
+
+void DynStream::registerCacheAckElemCallback(ElementCallback callback) {
+  this->cacheAckElemCallbacks.emplace_back(std::move(callback));
+}
+
+void DynStream::invokeCacheAckElemCallback(uint64_t elemIdx) {
+
+  auto iter = this->cacheAckElemCallbacks.begin();
+  auto end = this->cacheAckElemCallbacks.end();
+
+  DYN_S_DPRINTF(this->dynStreamId, "Invoke CacheAckElemCallbacks # %lu.\n",
+                this->cacheAckElemCallbacks.size());
+
+  while (iter != end) {
+    auto &callback = *iter;
+    auto done = callback(this, elemIdx);
+    if (done) {
+      iter = this->cacheAckElemCallbacks.erase(iter);
+    } else {
+      ++iter;
+    }
+  }
+}
+
+void DynStream::registerAllocElemCallback(ElementCallback callback) {
+  this->allocElemCallbacks.emplace_back(std::move(callback));
+}
+
+void DynStream::invokeAllocElemCallback(uint64_t elemIdx) {
+
+  auto iter = this->allocElemCallbacks.begin();
+  auto end = this->allocElemCallbacks.end();
+
+  DYN_S_DPRINTF(this->dynStreamId, "Invoke AllocElemCallbacks # %lu.\n",
+                this->allocElemCallbacks.size());
+
+  while (iter != end) {
+    auto &callback = *iter;
+    auto done = callback(this, elemIdx);
+    if (done) {
+      iter = this->allocElemCallbacks.erase(iter);
+    } else {
+      ++iter;
+    }
+  }
 }
 
 std::string DynStream::dumpString() const {

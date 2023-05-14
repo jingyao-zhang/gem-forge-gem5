@@ -51,6 +51,9 @@ public:
 
     bool endDispatched = false;
     uint64_t endSeqNum = 0;
+    // We are blocked by something to endStream().
+    bool endCannotDispatch = false;
+    bool endCannotCommit = false;
     void dispatchStreamEnd(uint64_t endSeqNum) {
       assert(!this->endDispatched);
       this->endDispatched = true;
@@ -147,6 +150,8 @@ public:
         int staticGroupIdx;
         // How many elements we want step at each time.
         uint64_t stepElemCount = 1;
+        // Currently no need to step this group.
+        bool skipStep = false;
         DynStepGroupInfo(int _loopLevel, int _staticGroupIdx)
             : loopLevel(_loopLevel), staticGroupIdx(_staticGroupIdx) {}
       };

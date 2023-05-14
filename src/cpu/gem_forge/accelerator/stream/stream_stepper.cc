@@ -294,6 +294,11 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
 
   auto &dynStep = dynRegion.step;
   auto &dynGroup = dynStep.stepGroups[dynStep.nextDynGroupIdx];
+
+  if (dynGroup.skipStep) {
+    return;
+  }
+
   auto &staticStep = staticRegion.step;
   auto &staticGroup = staticStep.stepGroups[dynGroup.staticGroupIdx];
   auto stepRootS = staticGroup.stepRootS;
@@ -334,8 +339,9 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
   if (stepRootDynS.hasTotalTripCount() &&
       dynGroup.nextElemIdx >= stepRootDynS.getTotalTripCount()) {
     DYN_S_DPRINTF(stepRootDynS.dynStreamId,
-                  "[Stepper] Wait For TripCount: %llu >= %llu.\n",
+                  "[Stepper] Wait For TripCount: %llu >= %llu. Set SkipStep.\n",
                   dynGroup.nextElemIdx, dynGroup.totalTripCount);
+    dynGroup.skipStep = true;
     return;
   }
 
@@ -484,6 +490,10 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
 bool StreamRegionController::endStream(DynRegion &dynRegion) {
 
   auto &staticRegion = *dynRegion.staticRegion;
+
+  if (dynRegion.endCannotDispatch || dynRegion.endCannotCommit) {
+    return false;
+  }
 
   assert(staticRegion.shouldEndStream());
 

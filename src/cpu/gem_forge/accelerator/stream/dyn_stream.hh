@@ -67,6 +67,21 @@ struct DynStream {
 
   // A hack to store how many elements has the cache acked.
   std::set<uint64_t> cacheAckedElements;
+  void ackCacheElement(uint64_t elemIdx);
+
+  /**
+   * @brief Callback when some event happened.
+   * @param DynStream.
+   * @param ElementIdx.
+   * @return Should the callback be removed.
+   */
+  using ElementCallback = std::function<bool(DynStream *, uint64_t)>;
+  std::list<ElementCallback> cacheAckElemCallbacks;
+  void registerCacheAckElemCallback(ElementCallback callback);
+  void invokeCacheAckElemCallback(uint64_t elemIdx);
+  std::list<ElementCallback> allocElemCallbacks;
+  void registerAllocElemCallback(ElementCallback callback);
+  void invokeAllocElemCallback(uint64_t elemIdx);
 
   /**
    * Offload flags are now set to private.

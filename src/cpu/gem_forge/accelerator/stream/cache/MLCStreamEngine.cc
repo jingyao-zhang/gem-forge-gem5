@@ -206,7 +206,7 @@ void MLCStreamEngine::receiveStreamDataForSingleSlice(
           MLC_SLICE_DPRINTF(
               sliceId,
               "HACK! Directly Ack for Two-Level Indirect StoreComputeStream.");
-          dynCoreS->cacheAckedElements.insert(sliceId.getStartIdx());
+          dynCoreS->ackCacheElement(sliceId.getStartIdx());
           return;
         }
       }
