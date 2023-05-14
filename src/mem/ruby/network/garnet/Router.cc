@@ -204,11 +204,6 @@ Router::regStats()
         .flags(statistics::nozero)
     ;
 
-    m_router_activity
-        .name(name() + ".router_activity")
-        .flags(statistics::nozero)
-    ;
-
     m_crossbar_activity
         .name(name() + ".crossbar_activity")
         .flags(statistics::nozero)
@@ -223,6 +218,27 @@ Router::regStats()
         .name(name() + ".sw_output_arbiter_activity")
         .flags(statistics::nozero)
     ;
+
+    m_router_activity
+        .name(name() + ".router_activity")
+        .flags(statistics::nozero)
+    ;
+
+    m_input_sched
+        .name(name() + ".input_sched")
+        .flags(statistics::nozero)
+    ;
+
+    m_output_sched
+        .name(name() + ".output_sched")
+        .flags(statistics::nozero)
+    ;
+
+    m_switch_sched
+        .name(name() + ".switch_sched")
+        .flags(statistics::nozero)
+    ;
+
 }
 
 void

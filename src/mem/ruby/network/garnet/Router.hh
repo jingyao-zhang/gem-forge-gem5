@@ -164,6 +164,11 @@ class Router : public BasicRouter, public Consumer
 
     statistics::Scalar m_crossbar_activity;
     statistics::Scalar m_router_activity;
+
+  public:
+    statistics::Scalar m_input_sched;
+    statistics::Scalar m_output_sched;
+    statistics::Scalar m_switch_sched;
 };
 
 } // namespace garnet

@@ -66,6 +66,7 @@ SwitchAllocator::init()
     m_round_robin_invc.resize(m_num_inports);
     m_port_requests.resize(m_num_inports);
     m_vc_winners.resize(m_num_inports);
+    m_out_port_requests.resize(m_num_outports);
 
     for (int i = 0; i < m_num_inports; i++) {
         m_round_robin_invc[i] = 0;
@@ -75,6 +76,7 @@ SwitchAllocator::init()
 
     for (int i = 0; i < m_num_outports; i++) {
         m_round_robin_inport[i] = 0;
+        m_out_port_requests[i] = 0;
     }
 }
 
@@ -140,6 +142,7 @@ SwitchAllocator::arbitrate_inports()
                     m_input_arbiter_activity++;
                     m_port_requests[inport] = outport;
                     m_vc_winners[inport] = invc;
+                    m_out_port_requests[outport]++;
 
                     DPRINTF(RubyNetwork, "SA[%d] Arbitrate inport [%s][%d] -> [%s][%d].\n",
                         m_router->get_id(),
@@ -180,6 +183,11 @@ SwitchAllocator::arbitrate_outports()
     // Again do round robin arbitration on these requests
     // Independent arbiter at each output port
     for (int outport = 0; outport < m_num_outports; outport++) {
+
+        if (m_out_port_requests[outport] == 0) {
+            continue;
+        }
+
         int inport = m_round_robin_inport[outport];
 
         for (int inport_iter = 0; inport_iter < m_num_inports;
@@ -413,6 +421,7 @@ SwitchAllocator::check_for_wakeup()
         for (int j = 0; j < m_num_vcs; j++) {
             if (input_unit->needSAStage(j, nextCycle)) {
                 m_router->schedule_wakeup(Cycles(1));
+                this->m_router->m_switch_sched++;
                 return;
             }
         }
@@ -434,6 +443,7 @@ void
 SwitchAllocator::clear_request_vector()
 {
     std::fill(m_port_requests.begin(), m_port_requests.end(), -1);
+    std::fill(m_out_port_requests.begin(), m_out_port_requests.end(), 0);
 }
 
 void

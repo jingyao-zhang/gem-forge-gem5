@@ -380,9 +380,12 @@ RubyPort::MemResponsePort::recvAtomic(PacketPtr pkt)
         if (rs->m_abstract_controls[MachineType_Directory].size() != 0) {
             mem_interface_type = MachineType_Directory;
         }
-        else if (rs->m_abstract_controls[MachineType_Memory].size() != 0) {
-            mem_interface_type = MachineType_Memory;
-        }
+        /**
+         * ! GemForge: We disable some MachineType.
+         */
+        // else if (rs->m_abstract_controls[MachineType_Memory].size() != 0) {
+        //     mem_interface_type = MachineType_Memory;
+        // }
         else {
             panic("Can't find the memory controller interface\n");
         }

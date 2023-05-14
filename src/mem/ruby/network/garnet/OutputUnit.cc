@@ -143,6 +143,7 @@ OutputUnit::wakeup()
 
         if (m_credit_link->isReady(curTick())) {
             scheduleEvent(Cycles(1));
+            this->m_router->m_output_sched++;
         }
     }
 }

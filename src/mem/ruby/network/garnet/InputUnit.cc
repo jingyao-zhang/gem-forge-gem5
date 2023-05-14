@@ -146,13 +146,12 @@ InputUnit::wakeup()
 
             // Wakeup the router in that cycle to perform SA
             m_router->schedule_wakeup(Cycles(wait_time));
+            this->m_router->m_input_sched++;
         }
 
     }
 
-    if (m_in_link->isReady(curTick()) ||
-        this->totalReadyMulitcastFlits > 0) {
-        // Due to MulticastBuffer, we need to aggressively schedule wakeup.
+    if (m_in_link->isReady(curTick())) {
         this->m_router->schedule_wakeup(Cycles(1));
     }
 }

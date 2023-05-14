@@ -25,7 +25,17 @@ bool StreamRegionController::canDispatchStreamEnd(const EndArgs &args) {
     // It's possible that the Stream has not configured yet (e.g., Nest).
     return false;
   }
-  return this->canDispatchStreamEndImpl(staticRegion, *dynRegion);
+
+  bool canDispatch = this->canDispatchStreamEndImpl(staticRegion, *dynRegion);
+  /**
+   * For Eliminated Region, we try to yield the CPU.
+   */
+  if (streamRegion.loop_eliminated() && !canDispatch) {
+    SE_DPRINTF("[NotDispatchStreamEnd] Yield.\n");
+    this->se->cpuDelegator->getSingleThreadContext()->schedYield();
+  }
+
+  return canDispatch;
 }
 
 bool StreamRegionController::canDispatchStreamEndImpl(
@@ -139,7 +149,16 @@ bool StreamRegionController::canExecuteStreamEnd(const EndArgs &args) {
   auto &staticRegion = this->getStaticRegion(streamRegion.region());
   auto &dynRegion = this->getDynRegionByEndSeqNum(staticRegion, args.seqNum);
 
-  return this->canExecuteStreamEndImpl(staticRegion, dynRegion);
+  bool canExecute = this->canExecuteStreamEndImpl(staticRegion, dynRegion);
+  /**
+   * For Eliminated Region, we try to yield the CPU.
+   */
+  if (streamRegion.loop_eliminated() && !canExecute) {
+    SE_DPRINTF("[NotExecuteStreamEnd] Yield.\n");
+    this->se->cpuDelegator->getSingleThreadContext()->schedYield();
+  }
+
+  return canExecute;
 }
 
 bool StreamRegionController::canExecuteStreamEndImpl(StaticRegion &staticRegion,
@@ -196,7 +215,16 @@ bool StreamRegionController::canCommitStreamEnd(const EndArgs &args) {
 
   auto &dynRegion = this->getDynRegionByEndSeqNum(staticRegion, args.seqNum);
 
-  return this->canCommitStreamEndImpl(staticRegion, dynRegion);
+  bool canCommit = this->canCommitStreamEndImpl(staticRegion, dynRegion);
+
+  /**
+   * For Eliminated Region, we try to yield the CPU.
+   */
+  if (streamRegion.loop_eliminated() && !canCommit) {
+    this->se->cpuDelegator->getSingleThreadContext()->schedYield();
+  }
+
+  return canCommit;
 }
 
 bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,

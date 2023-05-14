@@ -1061,8 +1061,9 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
   assert(this->userElementMap.count(seqNum) != 0);
 
   bool ready = true;
-  for (auto &element : this->userElementMap.at(seqNum)) {
-    if (element == nullptr) {
+  bool allStreamLoopEliminated = true;
+  for (auto &elem : this->userElementMap.at(seqNum)) {
+    if (elem == nullptr) {
       /**
        * Sometimes there is use after stream end,
        * in such case we assume the element is copied to register and
@@ -1070,10 +1071,13 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
        */
       continue;
     }
-    auto S = element->stream;
+    auto S = elem->stream;
+    if (!S->isLoopEliminated()) {
+      allStreamLoopEliminated = false;
+    }
     // Floating Store/AtomicComputeStream will only check for Ack when stepping.
     // This also true for floating UpdateStream's SQCallback.
-    if (element->isElemFloatedToCache() || element->isElemFloatedAsNDC()) {
+    if (elem->isElemFloatedToCache() || elem->isElemFloatedAsNDC()) {
       if (S->isStoreComputeStream()) {
         continue;
       }
@@ -1089,32 +1093,36 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
        * Special case for UpdateStream's SQCallback:
        * We check the UpdateValue, not the normal value.
        */
-      if (!(element->isAddrReady() && element->checkUpdateValueReady())) {
-        S_ELEMENT_DPRINTF(
-            element, "NotReady: AddrReady %d UpdateValueReady %d.\n",
-            element->isAddrReady(), element->isUpdateValueReady());
+      if (!(elem->isAddrReady() && elem->checkUpdateValueReady())) {
+        S_ELEMENT_DPRINTF(elem, "NotReady: AddrReady %d UpdateValueReady %d.\n",
+                          elem->isAddrReady(), elem->isUpdateValueReady());
         ready = false;
       }
-    } else if (S->isLoadComputeStream() && !element->isElemFloatedToCache()) {
+    } else if (S->isLoadComputeStream() && !elem->isElemFloatedToCache()) {
       /**
        * Special case for not floated LoadComputeStream, where we should check
        * for LoadComputeValue.
        */
-      if (!(element->isAddrReady() &&
-            element->checkLoadComputeValueReady(true /* CheckedByCore */))) {
-        S_ELEMENT_DPRINTF(
-            element, "NotReady: AddrReady %d LoadComputeValueReady %d.\n",
-            element->isAddrReady(), element->isUpdateValueReady());
+      if (!(elem->isAddrReady() &&
+            elem->checkLoadComputeValueReady(true /* CheckedByCore */))) {
+        S_ELEMENT_DPRINTF(elem,
+                          "NotReady: AddrReady %d LoadComputeValueReady %d.\n",
+                          elem->isAddrReady(), elem->isUpdateValueReady());
         ready = false;
       }
     } else {
-      if (!(element->isAddrReady() &&
-            element->checkValueReady(true /* CheckedByCore */))) {
-        S_ELEMENT_DPRINTF(element, "NotReady: AddrReady %d ValueReady %d.\n",
-                          element->isAddrReady(), element->isValueReady);
+      if (!(elem->isAddrReady() &&
+            elem->checkValueReady(true /* CheckedByCore */))) {
+        S_ELEMENT_DPRINTF(elem, "NotReady: AddrReady %d ValueReady %d.\n",
+                          elem->isAddrReady(), elem->isValueReady);
         ready = false;
       }
     }
+  }
+
+  if (!ready && allStreamLoopEliminated) {
+    SE_DPRINTF("StreamNotReady: Yield.\n");
+    this->cpuDelegator->getSingleThreadContext()->schedYield();
   }
 
   return ready;

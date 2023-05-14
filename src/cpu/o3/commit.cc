@@ -637,8 +637,12 @@ Commit::tick()
     wroteToTimeBuffer = false;
     _nextStatus = Inactive;
 
-    if (activeThreads->empty())
-        return;
+    // ! GemForge:
+    // I comment this out because I need markCompletedInsts() to continue to
+    // mark the instructions already in fromIEW, so that my quiesced thread
+    // can be properly restarted.
+    // if (activeThreads->empty())
+    //     return;
 
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
@@ -958,6 +962,10 @@ Commit::commitInsts()
     // it is writing in during this cycle.  Can't commit and squash
     // things at the same time...
     ////////////////////////////////////
+
+    if (activeThreads->empty()) {
+        return;
+    }
 
     DPRINTF(Commit, "Trying to commit instructions in the ROB.\n");
 
