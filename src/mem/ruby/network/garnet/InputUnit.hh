@@ -270,7 +270,6 @@ class InputUnit : public Consumer
     PortToDestinationMap groupDestinationByRouting(
         flit* inflyFlit,
         const std::vector<MachineID> &destMachineIDs);
-    flit *selectFlit();
     void allocateMulticastBuffer(flit *f);
     void duplicateMulticastFlit(flit *f);
     int calculateVCForMulticastDuplicateFlit(int vnet);

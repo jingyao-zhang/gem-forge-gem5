@@ -53,16 +53,16 @@ class RoutingUnit
 {
   public:
     RoutingUnit(Router *router);
-    int outportCompute(RouteInfo route,
+    int outportCompute(const RouteInfo &route,
                       int inport,
-                      PortDirection inport_dirn);
+                      const PortDirection &inport_dirn);
 
     // Topology-agnostic Routing Table based routing (default)
     void addRoute(std::vector<NetDest>& routing_table_entry);
     void addWeight(int link_weight);
 
     // get output port from routing table
-    int  lookupRoutingTable(int vnet, NetDest net_dest);
+    int lookupRoutingTable(int vnet, const NetDest &net_dest);
 
     // Topology-specific direction based routing
     void addInDirection(PortDirection inport_dirn, int inport);

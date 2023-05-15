@@ -94,7 +94,7 @@ RoutingUnit::supportsVnet(int vnet, std::vector<int> sVnets)
  * Correct weight assignments are critical to provide deadlock avoidance.
  */
 int
-RoutingUnit::lookupRoutingTable(int vnet, NetDest msg_destination)
+RoutingUnit::lookupRoutingTable(int vnet, const NetDest &msg_destination)
 {
     // First find all possible output link candidates
     // For ordered vnet, just choose the first
@@ -105,34 +105,49 @@ RoutingUnit::lookupRoutingTable(int vnet, NetDest msg_destination)
 
     int output_link = -1;
     int min_weight = INFINITE_;
-    std::vector<int> output_link_candidates;
+    const int MaxLinkCandidates = 4;
+    std::array<int, MaxLinkCandidates> output_link_candidates;
     int num_candidates = 0;
 
     // Identify the minimum weight among the candidate output links
     for (int link = 0; link < m_routing_table[vnet].size(); link++) {
         if (msg_destination.intersectionIsNotEmpty(
             m_routing_table[vnet][link])) {
+            
+            const auto weight = m_weight_table[link];
 
-        if (m_weight_table[link] <= min_weight)
-            min_weight = m_weight_table[link];
-        }
-    }
-
-    // Collect all candidate output links with this minimum weight
-    for (int link = 0; link < m_routing_table[vnet].size(); link++) {
-        if (msg_destination.intersectionIsNotEmpty(
-            m_routing_table[vnet][link])) {
-
-            if (m_weight_table[link] == min_weight) {
+            if (weight <= min_weight) {
+                if (weight < min_weight) {
+                    min_weight = weight;
+                    num_candidates = 0;
+                }
+                assert(num_candidates < MaxLinkCandidates &&
+                       "Link Candidate Overflow.");
+                output_link_candidates[num_candidates] = link;
                 num_candidates++;
-                output_link_candidates.push_back(link);
             }
         }
     }
 
-    if (output_link_candidates.size() == 0) {
+    // // Collect all candidate output links with this minimum weight
+    // for (int link = 0; link < m_routing_table[vnet].size(); link++) {
+    //     if (msg_destination.intersectionIsNotEmpty(
+    //         m_routing_table[vnet][link])) {
+
+    //         if (m_weight_table[link] == min_weight) {
+    //             num_candidates++;
+    //             output_link_candidates.push_back(link);
+    //         }
+    //     }
+    // }
+
+    if (num_candidates == 0) {
         fatal("Fatal Error:: No Route exists from this Router.");
         exit(0);
+    }
+
+    if (num_candidates == 1) {
+        return output_link_candidates[0];
     }
 
     // Randomly select any candidate output link
@@ -166,8 +181,9 @@ RoutingUnit::addOutDirection(PortDirection outport_dirn, int outport_idx)
 // table is provided here.
 
 int
-RoutingUnit::outportCompute(RouteInfo route, int inport,
-                            PortDirection inport_dirn)
+RoutingUnit::outportCompute(const RouteInfo &route,
+                            int inport,
+                            const PortDirection &inport_dirn)
 {
     int outport = -1;
 

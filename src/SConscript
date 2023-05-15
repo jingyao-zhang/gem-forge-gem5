@@ -667,6 +667,7 @@ env['SHOBJSUFFIX'] = '${OBJSUFFIX}s'
 envs = {
     'debug': env.Clone(ENV_LABEL='debug', OBJSUFFIX='.do'),
     'opt': env.Clone(ENV_LABEL='opt', OBJSUFFIX='.o'),
+    'opt-fp': env.Clone(ENV_LABEL='opt-fp', OBJSUFFIX='.fpo'),
     'fast': env.Clone(ENV_LABEL='fast', OBJSUFFIX='.fo'),
 }
 
@@ -677,6 +678,7 @@ envs = {
 ccflags = {
     'debug' : [],
     'opt' : ['-g'],
+    'opt-fp' : ['-g', '-fno-omit-frame-pointer'],
     'fast' : ['-pthread'],
     'prof' : ['-g', '-pg'],
     'perf' : ['-g']
@@ -690,6 +692,8 @@ ldflags = {
     'debug' : [
     ],
     'opt' : [
+    ],
+    'opt-fp' : [
     ],
     'fast' : [
         '-pthread',
@@ -706,6 +710,7 @@ ldflags = {
 
 envs['debug'].Append(CPPDEFINES=['DEBUG', 'TRACING_ON=1'])
 envs['opt'].Append(CCFLAGS=['-g'], CPPDEFINES=['TRACING_ON=1'])
+envs['opt-fp'].Append(CCFLAGS=['-g', '-fno-omit-frame-pointer'], CPPDEFINES=['TRACING_ON=1'])
 envs['fast'].Append(CPPDEFINES=['NDEBUG', 'TRACING_ON=0'])
 
 # For Link Time Optimization, the optimisation flags used to compile
@@ -720,14 +725,14 @@ if env['GCC']:
     envs['debug'].Append(LINKFLAGS=['-O0'])
     # opt and fast share the same cc flags, also add the optimization to the
     # linkflags as LTO defers the optimization to link time
-    for target in ['opt', 'fast']:
+    for target in ['opt', 'opt-fp', 'fast']:
         envs[target].Append(CCFLAGS=['-O3', '${LTO_CCFLAGS}'])
         envs[target].Append(LINKFLAGS=['-O3', '${LTO_LINKFLAGS}'])
 
 elif env['CLANG']:
     envs['debug'].Append(CCFLAGS=['-g', '-O0'])
     # opt and fast share the same cc flags
-    for target in ['opt', 'fast']:
+    for target in ['opt', 'opt-fp', 'fast']:
         envs[target].Append(CCFLAGS=['-O3'])
 else:
     error('Unknown compiler, please fix compiler options')

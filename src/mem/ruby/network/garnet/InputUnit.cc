@@ -84,9 +84,12 @@ InputUnit::InputUnit(int id, PortDirection direction, Router *router)
 void
 InputUnit::wakeup()
 {
-    flit *t_flit = this->selectFlit();
+    if (m_in_link->isReady(curTick())) {
+        flit *t_flit = m_in_link->consumeLink();
+        DPRINTF(RubyNetwork, "Router[%d] Consuming:%s Width: %d Flit:%s\n",
+                m_router->get_id(), m_in_link->name(),
+                m_router->getBitWidth(), *t_flit);
 
-    if (t_flit) {
         int vc = t_flit->get_vc();
         t_flit->increment_hops(); // for stats
 
@@ -240,28 +243,6 @@ InputUnit::PortToDestinationMap InputUnit::groupDestinationByRouting(
     }
 
     return grouped;
-}
-
-flit *InputUnit::selectFlit() {
-
-    /**
-     * Prioritize the MulitcastDuplicateBuffer.
-     * NOTE: Deprecated.
-     */
-    if (m_router->get_net_ptr()->isMulticastEnabled() &&
-        this->totalReadyMulitcastFlits > 0) {
-        assert(false && "Multicast Msg is Duplicated to Interface.");
-    }
-
-    if (m_in_link->isReady(curTick())) {
-        flit *f = m_in_link->consumeLink();
-        DPRINTF(RubyNetwork, "Router[%d] Consuming:%s Width: %d Flit:%s\n",
-                m_router->get_id(), m_in_link->name(),
-                m_router->getBitWidth(), *f);
-        assert(f->m_width == m_router->getBitWidth());
-        return f;
-    }
-    return nullptr;
 }
 
 void InputUnit::allocateMulticastBuffer(flit *f) {
