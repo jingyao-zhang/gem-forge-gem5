@@ -520,7 +520,7 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
 
     // First release all element.
     // This is to ensure that StepRooDynS is still here.
-    while (dynS.allocSize > dynS.stepSize) {
+    while (dynS.hasUnsteppedElem()) {
       dynS.releaseElementUnstepped();
     }
   }
@@ -2055,15 +2055,15 @@ void StreamEngine::releaseElementStepped(DynStream *dynS, bool isEnd,
 
 bool StreamEngine::releaseElementUnstepped(DynStream &dynS) {
   auto S = dynS.stream;
-  auto releaseElement = S->releaseElementUnstepped(dynS);
-  if (releaseElement) {
-    if (S->trackedByPEB() && releaseElement->isReqIssued()) {
+  auto elem = dynS.releaseElementUnstepped();
+  if (elem) {
+    if (S->trackedByPEB() && elem->isReqIssued()) {
       // This should be in PEB.
-      this->peb.removeElement(releaseElement);
+      this->peb.removeElement(elem);
     }
-    this->addFreeElement(releaseElement);
+    this->addFreeElement(elem);
   }
-  return releaseElement != nullptr;
+  return elem != nullptr;
 }
 
 void StreamEngine::addIssuingDynS(DynStream *dynS) {
@@ -2862,14 +2862,7 @@ void StreamEngine::writebackElement(StreamElement *elem,
 }
 
 void StreamEngine::dumpFIFO() const {
-  bool dumped = false;
-  for (const auto &IdStream : this->streamMap) {
-    auto S = IdStream.second;
-    if (!S->dynamicStreams.empty()) {
-      S->dump();
-      dumped = true;
-    }
-  }
+  bool dumped = this->regionController->dump();
   if (dumped) {
     NO_LOC_INFORM("Total elements %d, free %d, totalRunAhead %d\n",
                   this->FIFOArray.size(), this->numFreeFIFOEntries,

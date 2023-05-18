@@ -405,4 +405,56 @@ void StreamRegionController::trySkipToStreamEnd(DynRegion &dynRegion) {
   }
   // The stepper will update itself in tryStepToStreamEnd().
 }
+
+std::ostream &operator<<(std::ostream &os,
+                         const StreamRegionController::DynRegion &dynRegion) {
+  const auto &staticRegion = *dynRegion.staticRegion;
+
+  auto streamInstance = staticRegion.streams.front()
+                            ->getDynStream(dynRegion.seqNum)
+                            .dynStreamId.streamInstance;
+
+  os << "---- DynRegion ConfigSeq " << dynRegion.seqNum;
+  os << " Instance " << streamInstance;
+
+  if (staticRegion.region.is_loop_bound()) {
+    os << "\n LoopBound " << dynRegion.loopBound;
+  }
+
+  return os;
+}
+
+std::ostream &
+operator<<(std::ostream &os,
+           const StreamRegionController::StaticRegion &staticRegion) {
+  os << "------------------ " << staticRegion.region.region() << " DynRegions "
+     << staticRegion.dynRegions.size() << '\n';
+  for (const auto &dynRegion : staticRegion.dynRegions) {
+    os << dynRegion << '\n';
+  }
+  return os;
+}
+
+bool StreamRegionController::dump() const {
+
+  bool dumped = false;
+  std::stringstream ss;
+  for (const auto &iter : this->staticRegionMap) {
+    const auto &staticRegion = iter.second;
+    if (staticRegion.dynRegions.empty()) {
+      // No dynamic streams.
+      continue;
+    }
+    dumped = true;
+    ss << staticRegion << '\n';
+    for (auto S : staticRegion.streams) {
+      ss << S->dumpString();
+    }
+  }
+  if (dumped) {
+    NO_LOC_INFORM("%s\n", ss.str());
+  }
+  return dumped;
+}
+
 } // namespace gem5

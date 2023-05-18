@@ -407,12 +407,6 @@ public:
   DynStreamId allocateNewInstance();
 
   /**
-   * Remove one unstepped element from the dynamic stream.
-   * CommitStreamEnd will release from the first dynamic stream.
-   * RewindStreamConfig will release from the last one.
-   */
-  StreamElement *releaseElementUnstepped(DynStream &dynS);
-  /**
    * Check if the dynamic stream has an unstepped element.
    * @param instanceId: if Invalid, check FirstAliveDynStream.
    */
@@ -459,6 +453,7 @@ public:
   /**
    * For debug.
    */
+  std::string dumpString() const;
   void dump() const;
   void sampleStatistic();
 

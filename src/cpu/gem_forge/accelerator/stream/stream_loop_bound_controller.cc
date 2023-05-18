@@ -14,6 +14,21 @@
 
 namespace gem5 {
 
+std::ostream &
+operator<<(std::ostream &os,
+           const StreamRegionController::DynRegion::DynLoopBound &dynBound) {
+  os << "Bound ";
+  os << " skip " << dynBound.skipLoopBound;
+  os << " next " << dynBound.nextElemIdx;
+  os << " broken " << dynBound.brokenOut;
+  if (dynBound.offloaded) {
+    os << " offloaded " << dynBound.offloadedFirstElementIdx;
+  } else {
+    os << " not-offloaded";
+  }
+  return os;
+}
+
 void StreamRegionController::initializeStreamLoopBound(
     const ::LLVM::TDG::StreamRegion &region, StaticRegion &staticRegion) {
   if (!region.is_loop_bound()) {
@@ -110,6 +125,11 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
 
   auto &staticBound = staticRegion.loopBound;
   auto &dynBound = dynRegion.loopBound;
+
+  if (dynBound.skipLoopBound) {
+    return;
+  }
+
   if (dynBound.brokenOut) {
     // We already reached the end of the loop.
     return;
@@ -139,24 +159,30 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
       continue;
     }
     auto &baseDynS = baseS->getDynStream(dynRegion.seqNum);
-    auto baseElement = baseDynS.getElemByIdx(nextElemIdx);
-    if (!baseElement) {
+    auto baseElem = baseDynS.getElemByIdx(nextElemIdx);
+    if (!baseElem) {
       if (baseDynS.FIFOIdx.entryIdx > nextElemIdx) {
         DYN_S_PANIC(baseDynS.dynStreamId, "[LoopBound] Miss Element %llu.\n",
                     nextElemIdx);
       } else {
         // The base element is not allocated yet.
         DYN_S_DPRINTF(baseDynS.dynStreamId,
-                      "[LoopBound] BaseElement %llu not Allocated.\n",
+                      "[LoopBound] BaseElem %llu not Allocated.\n",
                       nextElemIdx);
         return;
       }
     }
-    if (!baseElement->isValueReady) {
-      S_ELEMENT_DPRINTF(baseElement, "[LoopBound] Not Ready.\n");
+    if (!baseElem->isValueReady) {
+      S_ELEMENT_DPRINTF(baseElem, "[LoopBound] Not Ready. Skip.\n");
+      dynBound.skipLoopBound = true;
+      auto elemValueReadyCallback = [&dynBound](StreamElement *elem) -> bool {
+        dynBound.skipLoopBound = false;
+        return true;
+      };
+      baseElem->registerValueReadyCallback(elemValueReadyCallback);
       return;
     }
-    baseElements.insert(baseElement);
+    baseElements.insert(baseElem);
   }
 
   // Add InnerLoopBaseElems.

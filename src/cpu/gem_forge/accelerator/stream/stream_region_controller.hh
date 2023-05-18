@@ -38,6 +38,8 @@ public:
 
   void takeOverBy(GemForgeCPUDelegator *newCPUDelegator);
 
+  bool dump() const;
+
   using StreamIdSet = std::set<Stream::StaticId>;
   using StreamSet = std::set<Stream *>;
   using StreamVec = std::vector<Stream *>;
@@ -138,6 +140,9 @@ public:
       uint64_t offloadedFirstElementIdx = 0;
       DynLoopBound(const DynStreamId &_loopBoundDynId)
           : innerLoopDepTracker(_loopBoundDynId) {}
+
+      // Whether we can skip working on it.
+      bool skipLoopBound = false;
     };
     DynLoopBound loopBound;
 
@@ -380,6 +385,17 @@ private:
                                DynRegion &dynRegion);
   bool canCommitStreamEndImpl(StaticRegion &staticRegion, DynRegion &dynRegion);
 };
+
+std::ostream &
+operator<<(std::ostream &os,
+           const StreamRegionController::StaticRegion &staticRegion);
+
+std::ostream &operator<<(std::ostream &os,
+                         const StreamRegionController::DynRegion &dynRegion);
+
+std::ostream &
+operator<<(std::ostream &os,
+           const StreamRegionController::DynRegion::DynLoopBound &dynBound);
 
 } // namespace gem5
 

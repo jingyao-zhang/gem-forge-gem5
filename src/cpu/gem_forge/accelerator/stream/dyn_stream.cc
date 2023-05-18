@@ -1067,7 +1067,7 @@ StreamElement *DynStream::releaseElementUnstepped() {
   this->freeElemCallbacks.invokeCallback(this, releaseElem->FIFOIdx.entryIdx);
   this->head = prevElement;
 
-  S_ELEMENT_DPRINTF(releaseElem, "ReleaseElementUnstepped, isAddrReady %d.\n",
+  S_ELEMENT_DPRINTF(releaseElem, "ReleaseElemUnstepped, isAddrReady %d.\n",
                     releaseElem->isAddrReady());
   /**
    * Since this element is released as unstepped,
@@ -1209,7 +1209,6 @@ StreamElement *DynStream::releaseElementStepped(bool isEnd) {
   this->stepSize--;
   this->decrementAllocSize();
   this->freeElemCallbacks.invokeCallback(this, releaseElem->FIFOIdx.entryIdx);
-  S->decrementAllocSize();
 
   S_ELEMENT_DPRINTF(releaseElem, "ReleaseElementStepped, used %d.\n", used);
   return releaseElem;
@@ -1486,6 +1485,7 @@ void DynStream::decrementAllocSize() {
   auto &stepRootDynS = stepRootS->getDynStream(this->configSeqNum);
   stepRootDynS.minStepStreamAllocSize =
       std::min(stepRootDynS.minStepStreamAllocSize, this->allocSize);
+  this->stream->decrementAllocSize();
 }
 
 void DynStream::ackCacheElement(uint64_t elemIdx) {

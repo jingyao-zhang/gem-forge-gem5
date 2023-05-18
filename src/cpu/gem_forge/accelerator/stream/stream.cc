@@ -395,6 +395,7 @@ void Stream::rewindStreamConfig(uint64_t seqNum) {
    * Unstepped elements is already released in StreamEngine.
    */
   assert(dynS.allocSize == dynS.stepSize);
+  assert(dynS.allocSize == 0);
 
   if (dynS.skipAllocElem) {
     dynS.clearSkipAllocElem();
@@ -947,14 +948,6 @@ DynStreamId Stream::allocateNewInstance() {
                      this->streamName.c_str());
 }
 
-StreamElement *Stream::releaseElementUnstepped(DynStream &dynS) {
-  auto elem = dynS.releaseElementUnstepped();
-  if (elem) {
-    this->decrementAllocSize();
-  }
-  return elem;
-}
-
 bool Stream::hasUnsteppedElement(DynStreamId::InstanceId instanceId) {
   if (!this->isConfigured()) {
     // This must be wrong.
@@ -1291,18 +1284,22 @@ void Stream::incrementOffloadedStepped() {
   this->se->numOffloadedSteppedSinceLastCheck++;
 }
 
-void Stream::dump() const {
+std::string Stream::dumpString() const {
   std::stringstream ss;
   ss << "============ ";
   ss << '-' << this->getCPUDelegator()->cpuId() << '-' << this->staticId << '-';
-  ss << " DynS " << this->dynamicStreams.size();
+  ss << " #dynS " << this->dynamicStreams.size();
+  ss << " alloc " << this->getAllocSize();
   if (this->stepRootStream == this) {
     ss << " StepSkipAllocDynS " << this->numSkipAllocDynS;
   }
   ss << " " << this->getStreamName();
-  NO_LOC_INFORM("%s", ss.str());
+  ss << '\n';
   for (const auto &dynS : this->dynamicStreams) {
-    dynS.dump();
+    ss << dynS.dumpString() << '\n';
   }
+  return ss.str();
 }
+
+void Stream::dump() const { NO_LOC_INFORM("%s\n", this->dumpString()); }
 } // namespace gem5

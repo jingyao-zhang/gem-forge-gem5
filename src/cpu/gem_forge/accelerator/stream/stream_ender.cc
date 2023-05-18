@@ -519,7 +519,8 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
     /**
      * Release all unstepped element until there is none.
      */
-    while (this->se->releaseElementUnstepped(dynS)) {
+    while (dynS.hasUnsteppedElem()) {
+      this->se->releaseElementUnstepped(dynS);
     }
 
     /**
