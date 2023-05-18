@@ -17,7 +17,9 @@ namespace gem5 {
 bool StreamRegionController::canSkipAllocatingDynS(StaticRegion &staticRegion,
                                                    DynStream &stepRootDynS) {
 
-  // auto &stepDynStreams = stepRootDynS.stepDynStreams;
+  if (stepRootDynS.skipAllocElem) {
+    return true;
+  }
 
   /**
    * If the dynRegion has marked skipToEnd, but the dynS has no TotalTripCount,
@@ -52,25 +54,12 @@ bool StreamRegionController::canSkipAllocatingDynS(StaticRegion &staticRegion,
      */
     auto stepRootS = stepRootDynS.stream;
 
-    bool boundedByPointerChase = false;
-    if (stepRootS->isPointerChase()) {
-      boundedByPointerChase = true;
-    } else {
-      for (const auto &backBaseS : stepRootS->backBaseStreams) {
-        if (backBaseS->stepRootStream->isPointerChase()) {
-          boundedByPointerChase = true;
-        }
-      }
-    }
-
-    if (boundedByPointerChase) {
-      if (stepRootDynS.allocSize >= 4) {
-        DYN_S_DPRINTF(stepRootDynS.dynStreamId,
-                      "[StreamAlloc] BoundedPointerChase AllocSize %d "
-                      "TailElemIdx %llu.\n",
-                      stepRootDynS.allocSize, stepRootDynS.FIFOIdx.entryIdx);
-        maxTailElemIdx = stepRootDynS.FIFOIdx.entryIdx;
-      }
+    if (stepRootS->isBoundedByPointerChase && stepRootDynS.allocSize >= 4) {
+      DYN_S_DPRINTF(stepRootDynS.dynStreamId,
+                    "[StreamAlloc] BoundedPointerChase AllocSize %d "
+                    "TailElemIdx %llu.\n",
+                    stepRootDynS.allocSize, stepRootDynS.FIFOIdx.entryIdx);
+      maxTailElemIdx = stepRootDynS.FIFOIdx.entryIdx;
     }
   }
 
@@ -94,21 +83,20 @@ bool StreamRegionController::canSkipAllocatingDynS(StaticRegion &staticRegion,
   if (maxTailElemIdx != -1) {
     bool allStepStreamsAllocated =
         stepRootDynS.minStepStreamAllocElemIdx >= maxTailElemIdx;
-    // for (auto stepDynS : stepDynStreams) {
-    //   // DYN_S_DPRINTF(stepDynS.dynStreamId,
-    //   //               "TotalTripCount %d, Next FIFOIdx %s.\n",
-    //   //               totalTripCount, stepDynS.FIFOIdx);
-    //   if (stepDynS->FIFOIdx.entryIdx < maxTailElemIdx) {
-    //     allStepStreamsAllocated = false;
-    //     break;
-    //   }
-    // }
     if (allStepStreamsAllocated) {
       // All allocated, we can move to next one.
-      DYN_S_DPRINTF(stepRootDynS.dynStreamId,
-                    "All StepStreamAllocated. CanSkip. AllocSize %d "
-                    "MaxTailElemIdx %llu.\n",
-                    stepRootDynS.allocSize, maxTailElemIdx);
+      DYN_S_DPRINTF(
+          stepRootDynS.dynStreamId,
+          "All StepStreamAllocated. AllocSize %d MaxTailElemIdx %llu. Skip.\n",
+          stepRootDynS.allocSize, maxTailElemIdx);
+
+      stepRootDynS.setSkipAllocElem();
+      auto freeElemCallback = [](DynStream *dynS, uint64_t elemIdx) -> bool {
+        // we are always done.
+        dynS->clearSkipAllocElem();
+        return true;
+      };
+      stepRootDynS.registerFreeElemCallback(freeElemCallback);
       return true;
     }
   } else {
@@ -149,6 +137,10 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
             });
 
   for (auto stepRootStream : stepRootStreams) {
+
+    if (stepRootStream->skipAlloc()) {
+      continue;
+    }
 
     /**
      * With the new NestStream, we have to search for the correct dynamic stream
@@ -335,7 +327,7 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
     auto &stepDynStreams = allocatingStepRootDynS->stepDynStreams;
     const size_t MaxAllocationPerCycle = 4;
     int allocated = 0;
-    for (size_t targetSize = 1;
+    for (size_t targetSize = allocatingStepRootDynS->minStepStreamAllocSize + 1;
          targetSize <= maxAllocSize && se->hasFreeElement() &&
          allocated < MaxAllocationPerCycle;
          ++targetSize) {
@@ -377,7 +369,8 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
             continue;
           }
         }
-        DYN_S_DPRINTF(dynS.dynStreamId, "Allocate %d.\n", dynS.allocSize);
+        DYN_S_DPRINTF(dynS.dynStreamId, "Allocate %d+1=%d.\n", dynS.allocSize,
+                      dynS.allocSize + 1);
         se->allocateElement(dynS);
         allocated++;
       }
@@ -386,11 +379,13 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
     // Update the MinStepStreamAllocElemIdx.
     if (allocated > 0) {
       uint64_t minAllocElemIdx = allocatingStepRootDynS->FIFOIdx.entryIdx;
+      int minAllocSize = allocatingStepRootDynS->allocSize;
       for (const auto &dynS : stepDynStreams) {
         minAllocElemIdx = std::min(minAllocElemIdx, dynS->FIFOIdx.entryIdx);
+        minAllocSize = std::min(minAllocSize, dynS->allocSize);
       }
-      allocatingStepRootDynS->minStepStreamAllocElemIdx = std::max(
-          allocatingStepRootDynS->minStepStreamAllocElemIdx, minAllocElemIdx);
+      allocatingStepRootDynS->minStepStreamAllocElemIdx = minAllocElemIdx;
+      allocatingStepRootDynS->minStepStreamAllocSize = minAllocSize;
     }
   }
 }

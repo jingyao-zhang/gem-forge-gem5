@@ -204,14 +204,14 @@ void StreamRegionController::executeStreamConfigForNestStreams(
              dynRegion.staticRegion->region.region());
 }
 
-bool StreamRegionController::hasRemainingNestRegions(
-    const DynRegion &dynRegion) {
+StreamRegionController::DynRegion::DynNestConfig *
+StreamRegionController::getFirstRemainingNestRegion(DynRegion &dynRegion) {
 
   if (dynRegion.nestConfigs.empty()) {
-    return false;
+    return nullptr;
   }
 
-  for (const auto &dynNestConfig : dynRegion.nestConfigs) {
+  for (auto &dynNestConfig : dynRegion.nestConfigs) {
     if (dynNestConfig.lastConfigSeqNum ==
         DynRegion::DynNestConfig::InvalidConfigSeqNum) {
       continue;
@@ -224,13 +224,17 @@ bool StreamRegionController::hasRemainingNestRegions(
                dynRegion.staticRegion->region.region(),
                staticNestRegion.region.region(),
                dynNestConfig.nestDynRegions.front().configSeqNum);
-    return true;
+    return &dynNestConfig;
   }
-  return false;
+  return nullptr;
 }
 
 void StreamRegionController::configureNestStream(
     DynRegion &dynRegion, DynRegion::DynNestConfig &dynNestConfig) {
+
+  if (dynNestConfig.skipConfig) {
+    return;
+  }
 
   auto &staticRegion = *dynRegion.staticRegion;
   auto &staticNestRegion = *(dynNestConfig.staticRegion);
@@ -285,6 +289,7 @@ void StreamRegionController::configureNestStream(
       DYN_S_DPRINTF(baseDynS.dynStreamId,
                     "[Nest] Overflow Next %lu TripCount %lu.\n", nextElemIdx,
                     baseDynS.getTotalTripCount());
+      dynNestConfig.skipConfig = true;
       return;
     }
     auto baseE = baseDynS.getElemByIdx(nextElemIdx);
@@ -302,11 +307,31 @@ void StreamRegionController::configureNestStream(
                   "[Nest] BaseElem %llu not allocated yet for NestConfig. "
                   "Current NestRegions %d.\n",
                   nextElemIdx, staticNestRegion.dynRegions.size());
+        dynNestConfig.skipConfig = true;
+        auto allocElemCallback = [&dynNestConfig](DynStream *dynS,
+                                                  uint64_t elemIdx) -> bool {
+          if (elemIdx >= dynNestConfig.nextConfigElemIdx) {
+            // We are done.
+            dynNestConfig.skipConfig = false;
+            return true;
+          } else {
+            // We are not done.
+            return false;
+          }
+        };
+        baseDynS.registerAllocElemCallback(allocElemCallback);
         return;
       }
     }
     if (!baseE->isValueReady) {
-      S_ELEMENT_DPRINTF(baseE, "[Nest] Value not ready.\n");
+      S_ELEMENT_DPRINTF(baseE, "[Nest] Value not ready. Skip.\n");
+      dynNestConfig.skipConfig = true;
+      auto elemValueReadyCallback =
+          [&dynNestConfig](StreamElement *elem) -> bool {
+        dynNestConfig.skipConfig = false;
+        return true;
+      };
+      baseE->registerValueReadyCallback(elemValueReadyCallback);
       return;
     }
     if (baseE->isAnyValueFaulted()) {
@@ -424,9 +449,24 @@ void StreamRegionController::configureNestStream(
    */
   auto numDynNestRegions = nestSE->regionController->getNumDynRegion(
       staticNestRegion.region.region());
-  if (numDynNestRegions > this->se->myParams->elimNestStreamInstances) {
-    SE_DPRINTF("[Nest] Too Many Infly RemoteNestConfig %d.\n",
+  if (numDynNestRegions >= this->se->myParams->elimNestStreamInstances) {
+    SE_DPRINTF("[Nest] Too Many Infly RemoteNestConfig %d. Skip.\n",
                numDynNestRegions);
+    dynNestConfig.skipConfig = true;
+    auto dynRegionReleaseCallback =
+        [this, &dynNestConfig](StaticRegion *staticRegion) -> bool {
+      if (staticRegion->dynRegions.size() <
+          this->se->myParams->elimNestStreamInstances) {
+        // We are done.
+        dynNestConfig.skipConfig = false;
+        return true;
+      } else {
+        // We are not done yet.
+        return false;
+      }
+    };
+    nestSE->regionController->getStaticRegion(staticNestRegion.region.region())
+        .registerDynRegionReleaseCallback(dynRegionReleaseCallback);
     return;
   }
 
@@ -443,9 +483,20 @@ void StreamRegionController::configureNestStream(
   for (auto S : staticNestRegion.streams) {
     if (S->getAllocSize() + 1 >= S->maxSize) {
       S_DPRINTF(S,
-                "[Nest] No Free Elem to allocate NestConfig, "
-                "AllocSize %d, MaxSize %d.\n",
+                "[Nest] No Free Elem to allocate NestConfig, AllocSize %d, "
+                "MaxSize %d. Skip.\n",
                 S->getAllocSize(), S->maxSize);
+      dynNestConfig.skipConfig = true;
+      auto freeElemCallback = [&dynNestConfig](Stream *S) -> bool {
+        if (S->getAllocSize() + 1 >= S->maxSize) {
+          // Still not available.
+          return false;
+        } else {
+          dynNestConfig.skipConfig = false;
+          return true;
+        }
+      };
+      S->registerFreeElemCallback(freeElemCallback);
       return;
     }
   }

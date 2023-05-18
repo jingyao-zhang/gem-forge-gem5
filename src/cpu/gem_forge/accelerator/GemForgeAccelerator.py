@@ -140,6 +140,9 @@ class StreamEngine(GemForgeAccelerator):
     enableFloatMem = Param.Bool(False, "Whether to enable stream float to mem ctrl.")
     floatLevelPolicy = Param.String("static", "Policy to choose floating level.")
 
+    yield_latency = Param.Latency('400ns',
+        "Latency to yield the CPU for stream region.")
+
 class GemForgeAcceleratorManager(SimObject):
     type = 'GemForgeAcceleratorManager'
     cxx_header = 'cpu/gem_forge/accelerator/gem_forge_accelerator.hh'

@@ -382,27 +382,29 @@ void Stream::rewindStreamConfig(uint64_t seqNum) {
   // Rewind must happen in reverse order.
   assert(!this->dynamicStreams.empty() &&
          "Missing DynStream when rewinding StreamConfig.");
-  auto &dynStream = this->dynamicStreams.back();
-  assert(dynStream.configSeqNum == seqNum && "Mismatch configSeqNum.");
+  auto &dynS = this->dynamicStreams.back();
+  assert(dynS.configSeqNum == seqNum && "Mismatch configSeqNum.");
 
   // Check if we have offloaded this.
-  if (dynStream.isFloatedToCache()) {
+  if (dynS.isFloatedToCache()) {
     // Sink streams should have already been taken care of.
     panic("Don't support rewind StreamConfig for offloaded stream.");
   }
 
   /**
-   * Get rid of any unstepped elements of the dynamic stream.
+   * Unstepped elements is already released in StreamEngine.
    */
-  while (dynStream.allocSize > dynStream.stepSize) {
-    this->se->releaseElementUnstepped(dynStream);
+  assert(dynS.allocSize == dynS.stepSize);
+
+  if (dynS.skipAllocElem) {
+    dynS.clearSkipAllocElem();
   }
 
   // Get rid of the dynamicStream.
-  this->configSeqNumToDynStreamMap.erase(dynStream.configSeqNum);
+  this->configSeqNumToDynStreamMap.erase(dynS.configSeqNum);
   this->dynamicStreams.pop_back();
 
-  assert(dynStream.allocSize == dynStream.stepSize &&
+  assert(dynS.allocSize == dynS.stepSize &&
          "Unstepped elements when rewind StreamConfig.");
   this->statistic.numMisConfigured++;
 }
@@ -417,6 +419,9 @@ void Stream::releaseDynStream(uint64_t configSeqNum) {
        iter != this->dynamicStreams.end(); ++iter) {
     auto &dynS = *iter;
     if (dynS.endDispatched && dynS.configSeqNum == configSeqNum) {
+      if (dynS.skipAllocElem) {
+        dynS.clearSkipAllocElem();
+      }
       this->configSeqNumToDynStreamMap.erase(dynS.configSeqNum);
       this->dynamicStreams.erase(iter);
       return;
@@ -943,11 +948,11 @@ DynStreamId Stream::allocateNewInstance() {
 }
 
 StreamElement *Stream::releaseElementUnstepped(DynStream &dynS) {
-  auto element = dynS.releaseElementUnstepped();
-  if (element) {
-    this->allocSize--;
+  auto elem = dynS.releaseElementUnstepped();
+  if (elem) {
+    this->decrementAllocSize();
   }
-  return element;
+  return elem;
 }
 
 bool Stream::hasUnsteppedElement(DynStreamId::InstanceId instanceId) {
@@ -1287,9 +1292,15 @@ void Stream::incrementOffloadedStepped() {
 }
 
 void Stream::dump() const {
-  NO_LOC_INFORM("===== -%d-%d- %50s DynS %d ==========================\n",
-                this->getCPUDelegator()->cpuId(), this->staticId,
-                this->getStreamName(), this->dynamicStreams.size());
+  std::stringstream ss;
+  ss << "============ ";
+  ss << '-' << this->getCPUDelegator()->cpuId() << '-' << this->staticId << '-';
+  ss << " DynS " << this->dynamicStreams.size();
+  if (this->stepRootStream == this) {
+    ss << " StepSkipAllocDynS " << this->numSkipAllocDynS;
+  }
+  ss << " " << this->getStreamName();
+  NO_LOC_INFORM("%s", ss.str());
   for (const auto &dynS : this->dynamicStreams) {
     dynS.dump();
   }

@@ -80,7 +80,7 @@ void StreamThrottler::throttleStream(StreamElement *elem) {
           0.9f * static_cast<float>(this->se->FIFOArray.size())) {
         for (auto stepS : streamList) {
           // Increase the run ahead length by step.
-          stepS->maxSize += incrementStep;
+          stepS->incrementMaxSize(incrementStep);
         }
         assert(S->maxSize == oldRunAheadSize + 2 &&
                "RunAheadLength is not increased.");
@@ -332,7 +332,7 @@ bool StreamThrottler::tryGlobalThrottle(Stream *S) {
   [[maybe_unused]] auto oldMaxSize = S->maxSize;
   for (auto stepS : streamList) {
     // Increase the run ahead length by 2.
-    stepS->maxSize += incrementStep;
+    stepS->incrementMaxSize(incrementStep);
   }
   assert(S->maxSize == oldMaxSize + incrementStep &&
          "RunAheadLength is not increased.");

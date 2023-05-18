@@ -4,6 +4,7 @@
 #include "addr_gen_callback.hh"
 #include "cache/DynStreamAddressRange.hh"
 #include "cache/StreamFloatPlan.hh"
+#include "cpu/gem_forge/callback_list.hh"
 #include "fifo_entry_idx.hh"
 #include "stream_inner_loop_dep.hh"
 
@@ -55,6 +56,8 @@ struct DynStream {
   StreamElement *stepped;
   StreamElement *tail;
   int allocSize = 0;
+  void decrementAllocSize();
+
   int stepSize = 0;
   FIFOEntryIdx FIFOIdx;
 
@@ -76,12 +79,18 @@ struct DynStream {
    * @return Should the callback be removed.
    */
   using ElementCallback = std::function<bool(DynStream *, uint64_t)>;
-  std::list<ElementCallback> cacheAckElemCallbacks;
-  void registerCacheAckElemCallback(ElementCallback callback);
-  void invokeCacheAckElemCallback(uint64_t elemIdx);
-  std::list<ElementCallback> allocElemCallbacks;
-  void registerAllocElemCallback(ElementCallback callback);
-  void invokeAllocElemCallback(uint64_t elemIdx);
+  CallbackList<ElementCallback> cacheAckElemCallbacks;
+  void registerCacheAckElemCallback(ElementCallback callback) {
+    cacheAckElemCallbacks.registerCallback(callback);
+  }
+  CallbackList<ElementCallback> allocElemCallbacks;
+  void registerAllocElemCallback(ElementCallback callback) {
+    allocElemCallbacks.registerCallback(callback);
+  }
+  CallbackList<ElementCallback> freeElemCallbacks;
+  void registerFreeElemCallback(ElementCallback callback) {
+    freeElemCallbacks.registerCallback(callback);
+  }
 
   /**
    * Offload flags are now set to private.
@@ -186,6 +195,11 @@ public:
   InstSeqNum endSeqNum = 0;
   bool endDispatched = false;
 
+  // Whether we can skip allocation for this dynS.
+  bool skipAllocElem = false;
+  void setSkipAllocElem();
+  void clearSkipAllocElem();
+
   // Address generator.
   DynStreamFormalParamV addrGenFormalParams;
   AddrGenCallbackPtr addrGenCallback;
@@ -270,6 +284,7 @@ public:
 
   // Some memorized information for StepDynS.
   uint64_t minStepStreamAllocElemIdx = 0;
+  int minStepStreamAllocSize = 0;
   bool allStepMemStreamsOffloaded = false;
   std::vector<DynStream *> stepDynStreams;
   void addStepStreams();

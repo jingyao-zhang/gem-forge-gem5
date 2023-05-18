@@ -181,7 +181,7 @@ class ThreadContext : public PCEventScope
     void quiesceTick(Tick resume);
 
     /// Used for sched_yield syscall.
-    void schedYield();
+    void schedYield(Tick yieldTick = MaxTick);
 
     virtual void takeOverFrom(ThreadContext *old_context) = 0;
 

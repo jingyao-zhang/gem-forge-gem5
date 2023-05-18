@@ -5,6 +5,7 @@
 #include "base/optional.hh"
 #include "base/types.hh"
 #include "cache/DynStreamSliceId.hh"
+#include "cpu/gem_forge/callback_list.hh"
 #include "cpu/gem_forge/gem_forge_packet_handler.hh"
 #include "fifo_entry_idx.hh"
 
@@ -337,6 +338,12 @@ struct StreamElement {
   void computeValue();
   void tryMarkValueReady();
   void markValueReady();
+
+  using ElementCallback = std::function<bool(StreamElement *elem)>;
+  CallbackList<ElementCallback> valueReadyCallbacks;
+  void registerValueReadyCallback(ElementCallback callback) {
+    valueReadyCallbacks.registerCallback(callback);
+  }
 
   void splitIntoCacheBlocks();
 

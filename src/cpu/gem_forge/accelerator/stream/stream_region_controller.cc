@@ -154,18 +154,19 @@ void StreamRegionController::rewindStreamConfig(const ConfigArgs &args) {
   auto &staticRegion = this->getStaticRegion(streamRegion.region());
   assert(!staticRegion.dynRegions.empty() && "Missing DynRegion.");
 
-  const auto &dynRegion = staticRegion.dynRegions.back();
+  auto &dynRegion = staticRegion.dynRegions.back();
   assert(dynRegion.seqNum == args.seqNum && "Mismatch in rewind seqNum.");
 
   SE_DPRINTF("[Region] Rewind DynRegion for region %s.\n",
              streamRegion.region());
-  if (this->hasRemainingNestRegions(dynRegion)) {
+  if (this->getFirstRemainingNestRegion(dynRegion)) {
     SE_PANIC("[Region] %s Rewind with Remaining NestRegions.",
              streamRegion.region());
   }
 
   this->activeDynRegionMap.erase(args.seqNum);
   staticRegion.dynRegions.pop_back();
+  staticRegion.dynRegionReleaseCallbacks.invokeCallback(&staticRegion);
 }
 
 void StreamRegionController::tick() {

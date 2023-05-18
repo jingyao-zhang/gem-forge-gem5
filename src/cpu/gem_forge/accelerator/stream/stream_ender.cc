@@ -21,18 +21,17 @@ bool StreamRegionController::canDispatchStreamEnd(const EndArgs &args) {
   auto &staticRegion = this->getStaticRegion(streamRegion.region());
 
   auto dynRegion = this->tryGetNextEndDynRegion(staticRegion);
-  if (!dynRegion) {
-    // It's possible that the Stream has not configured yet (e.g., Nest).
-    return false;
-  }
-
-  bool canDispatch = this->canDispatchStreamEndImpl(staticRegion, *dynRegion);
+  bool canDispatch =
+      dynRegion && this->canDispatchStreamEndImpl(staticRegion, *dynRegion);
   /**
-   * For Eliminated Region, we try to yield the CPU.
+   * For Eliminated Region, we try to yield the CPU only when:
+   * 1. All DynRegions Config are committed.
+   * 2. The StaticRegion is eliminated.
    */
-  if (streamRegion.loop_eliminated() && !canDispatch) {
+  if (streamRegion.loop_eliminated() && !canDispatch &&
+      this->allDynRegionConfigCommitted(staticRegion)) {
     SE_DPRINTF("[NotDispatchStreamEnd] Yield.\n");
-    this->se->cpuDelegator->getSingleThreadContext()->schedYield();
+    this->se->yieldCPU();
   }
 
   return canDispatch;
@@ -94,14 +93,12 @@ bool StreamRegionController::canDispatchStreamEndImpl(
           if (dynS.hasTotalTripCount() &&
               dynS.FIFOIdx.entryIdx < dynS.getTotalTripCount()) {
             dynRegion.endCannotDispatch = true;
-            auto dynRegionPtr = &dynRegion;
-            auto allocElemCallback = [this,
-                                      dynRegionPtr](DynStream *dynS,
-                                                    uint64_t elemIdx) -> bool {
+            auto allocElemCallback =
+                [this, &dynRegion](DynStream *dynS, uint64_t elemIdx) -> bool {
               assert(dynS->hasTotalTripCount());
               if (elemIdx >= dynS->getTotalTripCount()) {
                 // We are done.
-                dynRegionPtr->endCannotDispatch = false;
+                dynRegion.endCannotDispatch = false;
                 return true;
               } else {
                 // Not done yet.
@@ -182,9 +179,10 @@ bool StreamRegionController::canExecuteStreamEnd(const EndArgs &args) {
   /**
    * For Eliminated Region, we try to yield the CPU.
    */
-  if (streamRegion.loop_eliminated() && !canExecute) {
+  if (streamRegion.loop_eliminated() && !canExecute &&
+      this->allDynRegionConfigCommitted(staticRegion)) {
     SE_DPRINTF("[NotExecuteStreamEnd] Yield.\n");
-    this->se->cpuDelegator->getSingleThreadContext()->schedYield();
+    this->se->yieldCPU();
   }
 
   return canExecute;
@@ -192,6 +190,11 @@ bool StreamRegionController::canExecuteStreamEnd(const EndArgs &args) {
 
 bool StreamRegionController::canExecuteStreamEndImpl(StaticRegion &staticRegion,
                                                      DynRegion &dynRegion) {
+
+  if (dynRegion.endCannotExecute) {
+    return false;
+  }
+
   for (auto S : staticRegion.streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
     if (S->isStoreStream()) {
@@ -207,6 +210,23 @@ bool StreamRegionController::canExecuteStreamEndImpl(StaticRegion &staticRegion,
                       "%ld < Floated %llu.\n",
                       dynS.cacheAckedElements.size(), dynS.stepElemCount,
                       dynS.getNumFloatedElemUntil(dynS.FIFOIdx.entryIdx));
+
+        {
+          dynRegion.endCannotExecute = true;
+          auto cacheAckCallback = [&dynRegion](DynStream *dynS,
+                                               uint64_t elemIdx) -> bool {
+            if (dynS->cacheAckedElements.size() + dynS->stepElemCount <
+                dynS->getNumFloatedElemUntil(dynS->FIFOIdx.entryIdx)) {
+              // Not ack the last elem.
+              return false;
+            } else {
+              dynRegion.endCannotExecute = false;
+              return true;
+            }
+          };
+          dynS.registerCacheAckElemCallback(cacheAckCallback);
+        }
+
         return false;
       }
     }
@@ -249,8 +269,10 @@ bool StreamRegionController::canCommitStreamEnd(const EndArgs &args) {
   /**
    * For Eliminated Region, we try to yield the CPU.
    */
-  if (streamRegion.loop_eliminated() && !canCommit) {
-    this->se->cpuDelegator->getSingleThreadContext()->schedYield();
+  if (streamRegion.loop_eliminated() && !canCommit &&
+      this->allDynRegionConfigCommitted(staticRegion)) {
+    SE_DPRINTF("[NotCommitStreamEnd] Yield.\n");
+    this->se->yieldCPU();
   }
 
   return canCommit;
@@ -264,8 +286,24 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
   }
 
   // Can not release region if we have nest regions.
-  if (this->hasRemainingNestRegions(dynRegion)) {
-    SE_DPRINTF("[StreamEnd] NoCommit as RemainNestRegions.\n");
+  if (auto dynNestConfig = this->getFirstRemainingNestRegion(dynRegion)) {
+    SE_DPRINTF("[StreamEnd] NoCommit as RemainNestRegions. Skip.\n");
+
+    dynRegion.endCannotCommit = true;
+    auto nestConfigReleaseCallback =
+        [&dynRegion](DynRegion::DynNestConfig *dynNestConfig) -> bool {
+      if (dynNestConfig->nestDynRegions.empty()) {
+        // We are done.
+        dynRegion.endCannotCommit = false;
+        return true;
+      } else {
+        // Still some remaining NestRegion.
+        return false;
+      }
+    };
+    dynNestConfig->registerNestDynRegionReleaseCallback(
+        nestConfigReleaseCallback);
+
     return false;
   }
   for (auto S : staticRegion.streams) {
@@ -455,7 +493,7 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
       "[Region] Release DynRegion SeqNum %llu %s Remaining %llu Total %llu.\n",
       dynRegion.seqNum, streamRegion.region(),
       staticRegion.dynRegions.size() - 1, this->activeDynRegionMap.size() - 1);
-  if (this->hasRemainingNestRegions(dynRegion)) {
+  if (this->getFirstRemainingNestRegion(dynRegion)) {
     SE_PANIC("[Region] %s End with Remaining NestRegions.",
              streamRegion.region());
   }
@@ -546,6 +584,8 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
             assert(iter->configSE == this->se);
             erasedFromNestParent = true;
             nestParentDynConfig->nestDynRegions.erase(iter);
+            nestParentDynConfig->nestDynRegionReleaseCallbacks.invokeCallback(
+                nestParentDynConfig);
             break;
           }
         }
@@ -553,6 +593,7 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
       }
 
       staticRegion.dynRegions.erase(iter);
+      staticRegion.dynRegionReleaseCallbacks.invokeCallback(&staticRegion);
       break;
     }
   }
@@ -591,6 +632,16 @@ StreamRegionController::getFirstAliveDynRegion(StaticRegion &staticRegion) {
     }
   }
   SE_PANIC("No Alive DynRegion.");
+}
+
+bool StreamRegionController::allDynRegionConfigCommitted(
+    StaticRegion &staticRegion) const {
+  for (auto &dynRegion : staticRegion.dynRegions) {
+    if (!dynRegion.configCommitted) {
+      return false;
+    }
+  }
+  return true;
 }
 
 StreamRegionController::DynRegion *

@@ -517,7 +517,16 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
     // Remove from the IssueList.
     auto &dynS = S->getDynStream(configSeqNum);
     this->removeIssuingDynS(&dynS);
-    // This file is already too long, move this to stream.cc.
+
+    // First release all element.
+    // This is to ensure that StepRooDynS is still here.
+    while (dynS.allocSize > dynS.stepSize) {
+      dynS.releaseElementUnstepped();
+    }
+  }
+
+  for (auto &S : configStreams) {
+    // Finally rewind the DynStream.
     S->rewindStreamConfig(configSeqNum);
   }
 
@@ -1062,6 +1071,7 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
 
   bool ready = true;
   bool allStreamLoopEliminated = true;
+  bool allDynStreamConfigCommitted = true;
   for (auto &elem : this->userElementMap.at(seqNum)) {
     if (elem == nullptr) {
       /**
@@ -1074,6 +1084,9 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
     auto S = elem->stream;
     if (!S->isLoopEliminated()) {
       allStreamLoopEliminated = false;
+    }
+    if (!elem->dynS->configCommitted) {
+      allDynStreamConfigCommitted = false;
     }
     // Floating Store/AtomicComputeStream will only check for Ack when stepping.
     // This also true for floating UpdateStream's SQCallback.
@@ -1120,9 +1133,9 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
     }
   }
 
-  if (!ready && allStreamLoopEliminated) {
+  if (!ready && allStreamLoopEliminated && allDynStreamConfigCommitted) {
     SE_DPRINTF("StreamNotReady: Yield.\n");
-    this->cpuDelegator->getSingleThreadContext()->schedYield();
+    this->yieldCPU();
   }
 
   return ready;

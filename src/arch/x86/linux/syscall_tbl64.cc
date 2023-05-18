@@ -63,7 +63,7 @@ SyscallDescTable<EmuLinux::SyscallABI64> EmuLinux::syscallDescs64 = {
     {  21, "access", accessFunc },
     {  22, "pipe", pipeFunc },
     {  23, "select", selectFunc<X86Linux64> },
-    {  24, "sched_yield", ignoreWarnOnceFunc },
+    {  24, "sched_yield", schedYieldFunc },
     {  25, "mremap", mremapFunc<X86Linux64> },
     {  26, "msync" },
     {  27, "mincore" },

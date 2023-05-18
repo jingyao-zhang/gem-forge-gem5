@@ -4912,7 +4912,7 @@ Cycles LLCStreamEngine::lastSampleCycle = Cycles(0);
 int LLCStreamEngine::totalSamples = 0;
 
 void LLCStreamEngine::sampleLLCStreams() {
-  const Cycles sampleInterval = Cycles(100);
+  const Cycles sampleInterval = Cycles(1000);
   if (curCycle() < LLCStreamEngine::lastSampleCycle + sampleInterval) {
     return;
   }

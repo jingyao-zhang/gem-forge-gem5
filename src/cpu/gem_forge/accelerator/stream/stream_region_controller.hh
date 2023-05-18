@@ -53,6 +53,7 @@ public:
     uint64_t endSeqNum = 0;
     // We are blocked by something to endStream().
     bool endCannotDispatch = false;
+    bool endCannotExecute = false;
     bool endCannotCommit = false;
     void dispatchStreamEnd(uint64_t endSeqNum) {
       assert(!this->endDispatched);
@@ -82,6 +83,9 @@ public:
       // Whether this nest config is handled remotely.
       bool isRemoteConfig = false;
 
+      // Whether this nest config is blocked.
+      bool skipConfig = false;
+
       /**
        * ConfigSeqNum of configured NestRegion.
        * So far this is only used to end eliminated nest stream.
@@ -106,6 +110,12 @@ public:
       static InstSeqNum GlobalNestConfigSeqNum;
       InstSeqNum getConfigSeqNum(StreamEngine *se, uint64_t elemIdx,
                                  uint64_t outSeqNum) const;
+
+      using NestConfigCallback = std::function<bool(DynNestConfig *)>;
+      CallbackList<NestConfigCallback> nestDynRegionReleaseCallbacks;
+      void registerNestDynRegionReleaseCallback(NestConfigCallback callback) {
+        nestDynRegionReleaseCallbacks.registerCallback(callback);
+      }
     };
     StreamEngine *nestParentSE = nullptr;
     DynNestConfig *nestParentDynConfig = nullptr;
@@ -237,6 +247,12 @@ public:
       // So far we only need to end eliminated nest region.
       return this->region.is_nest() && this->region.loop_eliminated();
     }
+
+    using StaticRegionCallback = std::function<bool(StaticRegion *)>;
+    CallbackList<StaticRegionCallback> dynRegionReleaseCallbacks;
+    void registerDynRegionReleaseCallback(StaticRegionCallback callback) {
+      dynRegionReleaseCallbacks.registerCallback(callback);
+    }
   };
 
   /******************************************************************
@@ -271,7 +287,7 @@ private:
                                           DynRegion &dynRegion);
   void executeStreamConfigForNestStreams(const ConfigArgs &args,
                                          DynRegion &dynRegion);
-  bool hasRemainingNestRegions(const DynRegion &dynRegion);
+  DynRegion::DynNestConfig *getFirstRemainingNestRegion(DynRegion &dynRegion);
   void configureNestStream(DynRegion &dynRegion,
                            DynRegion::DynNestConfig &dynNestConfig);
 
@@ -349,6 +365,7 @@ private:
   DynRegion *tryGetFirstAliveDynRegion(StaticRegion &staticRegion);
   DynRegion &getFirstAliveDynRegion(StaticRegion &staticRegion);
 
+  bool allDynRegionConfigCommitted(StaticRegion &staticRegion) const;
   DynRegion *tryGetNextEndDynRegion(StaticRegion &staticRegion);
   DynRegion &getNextEndDynRegion(StaticRegion &staticRegion);
 

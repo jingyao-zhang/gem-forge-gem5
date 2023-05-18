@@ -177,16 +177,18 @@ ThreadContext::getReg(const RegId &reg) const
 }
 
 void
-ThreadContext::schedYield()
+ThreadContext::schedYield(Tick yieldTick)
 {
     auto cpu = this->getCpuPtr();
-    auto yieldLatency = cpu->params().yield_latency;
-    if (yieldLatency == 0) {
+    if (yieldTick == MaxTick) {
+        yieldTick = cpu->params().yield_latency;
+    }
+    if (yieldTick == 0) {
         warn("Ignore sched_yield(). "
              "Set --cpu-yield-lat=Xns to enable yielding.\n");
         return;
     }
-    this->quiesceTick(curTick() + yieldLatency);
+    this->quiesceTick(curTick() + yieldTick);
 }
 
 void

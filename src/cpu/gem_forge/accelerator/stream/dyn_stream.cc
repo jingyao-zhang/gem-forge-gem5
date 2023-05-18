@@ -1038,7 +1038,7 @@ void DynStream::allocateElement(StreamElement *newElem) {
     }
   }
 
-  this->invokeAllocElemCallback(newElem->FIFOIdx.entryIdx);
+  this->allocElemCallbacks.invokeCallback(this, newElem->FIFOIdx.entryIdx);
 }
 
 StreamElement *DynStream::releaseElementUnstepped() {
@@ -1049,34 +1049,33 @@ StreamElement *DynStream::releaseElementUnstepped() {
    * Make sure we release in reverse order.
    */
   auto prevElement = this->stepped;
-  auto releaseElement = this->stepped->next;
-  assert(releaseElement && "Missing unstepped element.");
-  while (releaseElement->next) {
-    prevElement = releaseElement;
-    releaseElement = releaseElement->next;
+  auto releaseElem = this->stepped->next;
+  assert(releaseElem && "Missing unstepped element.");
+  while (releaseElem->next) {
+    prevElement = releaseElem;
+    releaseElem = releaseElem->next;
   }
-  assert(releaseElement == this->head &&
-         "Head should point to the last element.");
+  assert(releaseElem == this->head && "Head should point to the last element.");
 
   // This should be unused.
-  assert(!releaseElement->isStepped && "Release stepped element.");
-  assert(!releaseElement->isFirstUserDispatched() &&
+  assert(!releaseElem->isStepped && "Release stepped element.");
+  assert(!releaseElem->isFirstUserDispatched() &&
          "Release unstepped but used element.");
 
-  prevElement->next = releaseElement->next;
-  this->allocSize--;
+  prevElement->next = releaseElem->next;
+  this->decrementAllocSize();
+  this->freeElemCallbacks.invokeCallback(this, releaseElem->FIFOIdx.entryIdx);
   this->head = prevElement;
 
-  S_ELEMENT_DPRINTF(releaseElement,
-                    "ReleaseElementUnstepped, isAddrReady %d.\n",
-                    releaseElement->isAddrReady());
+  S_ELEMENT_DPRINTF(releaseElem, "ReleaseElementUnstepped, isAddrReady %d.\n",
+                    releaseElem->isAddrReady());
   /**
    * Since this element is released as unstepped,
    * we need to reverse the FIFOIdx so that if we misspeculated,
    * new elements can be allocated with correct FIFOIdx.
    */
   this->FIFOIdx.prev(this->stepElemCount);
-  return releaseElement;
+  return releaseElem;
 }
 
 bool DynStream::hasUnsteppedElem() const {
@@ -1116,10 +1115,10 @@ StreamElement *DynStream::releaseElementStepped(bool isEnd) {
    */
 
   assert(this->stepSize > 0 && "No element to release.");
-  auto releaseElement = this->tail->next;
-  assert(releaseElement->isStepped && "Release unstepped element.");
+  auto releaseElem = this->tail->next;
+  assert(releaseElem->isStepped && "Release unstepped element.");
 
-  const bool used = releaseElement->isFirstUserDispatched();
+  const bool used = releaseElem->isFirstUserDispatched();
   bool late = false;
 
   auto S = this->stream;
@@ -1132,50 +1131,46 @@ StreamElement *DynStream::releaseElementStepped(bool isEnd) {
      * Since this element is used by the core, we update the statistic
      * of the latency of this element experienced by the core.
      */
-    if (releaseElement->valueReadyCycle <
-        releaseElement->firstValueCheckCycle) {
+    if (releaseElem->valueReadyCycle < releaseElem->firstValueCheckCycle) {
       // The element is ready earlier than core's user.
-      auto earlyCycles = releaseElement->firstValueCheckCycle -
-                         releaseElement->valueReadyCycle;
+      auto earlyCycles =
+          releaseElem->firstValueCheckCycle - releaseElem->valueReadyCycle;
       statistic.numCoreEarlyElement++;
       statistic.numCoreEarlyCycle += earlyCycles;
     } else {
       // The element makes the core's user wait.
-      auto lateCycles = releaseElement->valueReadyCycle -
-                        releaseElement->firstValueCheckCycle;
+      auto lateCycles =
+          releaseElem->valueReadyCycle - releaseElem->firstValueCheckCycle;
       statistic.numCoreLateElement++;
       statistic.numCoreLateCycle += lateCycles;
       late = true;
       if (lateCycles > 1000) {
         S_ELEMENT_DPRINTF_(
-            StreamCritical, releaseElement,
+            StreamCritical, releaseElem,
             "Extreme Late %lu, Request Lat %lu, AddrReady %lu Issue %lu "
             "ValReady %lu FirstCheck %lu.\n",
-            lateCycles,
-            releaseElement->valueReadyCycle - releaseElement->issueCycle,
-            releaseElement->addrReadyCycle - releaseElement->allocateCycle,
-            releaseElement->issueCycle - releaseElement->allocateCycle,
-            releaseElement->valueReadyCycle - releaseElement->allocateCycle,
-            releaseElement->firstValueCheckCycle -
-                releaseElement->allocateCycle);
+            lateCycles, releaseElem->valueReadyCycle - releaseElem->issueCycle,
+            releaseElem->addrReadyCycle - releaseElem->allocateCycle,
+            releaseElem->issueCycle - releaseElem->allocateCycle,
+            releaseElem->valueReadyCycle - releaseElem->allocateCycle,
+            releaseElem->firstValueCheckCycle - releaseElem->allocateCycle);
       }
     }
   }
   this->updateStatsOnReleaseStepElement(S->getCPUDelegator()->curCycle(),
-                                        releaseElement->addr, late);
+                                        releaseElem->addr, late);
 
   // Update the aliased statistic.
-  if (releaseElement->isAddrAliased) {
+  if (releaseElem->isAddrAliased) {
     statistic.numAliased++;
   }
-  if (releaseElement->flushed) {
+  if (releaseElem->flushed) {
     statistic.numFlushed++;
   }
 
   // Check if the element is faulted.
-  if (S->isMemStream() && releaseElement->isAddrReady()) {
-    if (releaseElement->isValueFaulted(releaseElement->addr,
-                                       releaseElement->size)) {
+  if (S->isMemStream() && releaseElem->isAddrReady()) {
+    if (releaseElem->isValueFaulted(releaseElem->addr, releaseElem->size)) {
       statistic.numFaulted++;
     }
   }
@@ -1184,13 +1179,13 @@ StreamElement *DynStream::releaseElementStepped(bool isEnd) {
    * If this stream is not offloaded, and we have dispatched a StreamStore to
    * this element, we push the element to PendingWritebackElements.
    */
-  if (!releaseElement->isElemFloatedToCache() &&
-      releaseElement->isFirstStoreDispatched()) {
+  if (!releaseElem->isElemFloatedToCache() &&
+      releaseElem->isFirstStoreDispatched()) {
     /**
      * So far only enable this for IndirectUpdateStream.
      */
     if (S->isUpdateStream() && S->isIndirectLoadStream()) {
-      this->stream->se->addPendingWritebackElement(releaseElement);
+      this->stream->se->addPendingWritebackElement(releaseElem);
     }
   }
 
@@ -1204,19 +1199,20 @@ StreamElement *DynStream::releaseElementStepped(bool isEnd) {
     // this->handleMergedPredicate(dynS, releaseElement);
   }
 
-  this->tail->next = releaseElement->next;
-  if (this->stepped == releaseElement) {
+  this->tail->next = releaseElem->next;
+  if (this->stepped == releaseElem) {
     this->stepped = this->tail;
   }
-  if (this->head == releaseElement) {
+  if (this->head == releaseElem) {
     this->head = this->tail;
   }
   this->stepSize--;
-  this->allocSize--;
-  S->allocSize--;
+  this->decrementAllocSize();
+  this->freeElemCallbacks.invokeCallback(this, releaseElem->FIFOIdx.entryIdx);
+  S->decrementAllocSize();
 
-  S_ELEMENT_DPRINTF(releaseElement, "ReleaseElementStepped, used %d.\n", used);
-  return releaseElement;
+  S_ELEMENT_DPRINTF(releaseElem, "ReleaseElementStepped, used %d.\n", used);
+  return releaseElem;
 }
 
 void DynStream::updateStatsOnReleaseStepElement(Cycles releaseCycle,
@@ -1331,6 +1327,18 @@ void DynStream::cancelFloat() {
   this->floatPlan.clear();
   S->statistic.numFloatCancelled++;
   this->updateFloatInfoForElems();
+}
+
+void DynStream::setSkipAllocElem() {
+  assert(!this->skipAllocElem);
+  this->skipAllocElem = true;
+  this->stream->incrementSkipAllocDynS();
+}
+
+void DynStream::clearSkipAllocElem() {
+  assert(this->skipAllocElem);
+  this->skipAllocElem = false;
+  this->stream->decrementSkipAllocDynS();
 }
 
 bool DynStream::isInnerSecondElem(uint64_t elemIdx) const {
@@ -1472,55 +1480,17 @@ void DynStream::setElementRemoteBank(uint64_t elemIdx, int remoteBank) {
   DYN_S_PANIC(this->dynStreamId, "No Elem %lu to set RemoteBank.", elemIdx);
 }
 
+void DynStream::decrementAllocSize() {
+  this->allocSize--;
+  auto stepRootS = this->stream->stepRootStream;
+  auto &stepRootDynS = stepRootS->getDynStream(this->configSeqNum);
+  stepRootDynS.minStepStreamAllocSize =
+      std::min(stepRootDynS.minStepStreamAllocSize, this->allocSize);
+}
+
 void DynStream::ackCacheElement(uint64_t elemIdx) {
   this->cacheAckedElements.insert(elemIdx);
-  this->invokeCacheAckElemCallback(elemIdx);
-}
-
-void DynStream::registerCacheAckElemCallback(ElementCallback callback) {
-  this->cacheAckElemCallbacks.emplace_back(std::move(callback));
-}
-
-void DynStream::invokeCacheAckElemCallback(uint64_t elemIdx) {
-
-  auto iter = this->cacheAckElemCallbacks.begin();
-  auto end = this->cacheAckElemCallbacks.end();
-
-  DYN_S_DPRINTF(this->dynStreamId, "Invoke CacheAckElemCallbacks # %lu.\n",
-                this->cacheAckElemCallbacks.size());
-
-  while (iter != end) {
-    auto &callback = *iter;
-    auto done = callback(this, elemIdx);
-    if (done) {
-      iter = this->cacheAckElemCallbacks.erase(iter);
-    } else {
-      ++iter;
-    }
-  }
-}
-
-void DynStream::registerAllocElemCallback(ElementCallback callback) {
-  this->allocElemCallbacks.emplace_back(std::move(callback));
-}
-
-void DynStream::invokeAllocElemCallback(uint64_t elemIdx) {
-
-  auto iter = this->allocElemCallbacks.begin();
-  auto end = this->allocElemCallbacks.end();
-
-  DYN_S_DPRINTF(this->dynStreamId, "Invoke AllocElemCallbacks # %lu.\n",
-                this->allocElemCallbacks.size());
-
-  while (iter != end) {
-    auto &callback = *iter;
-    auto done = callback(this, elemIdx);
-    if (done) {
-      iter = this->allocElemCallbacks.erase(iter);
-    } else {
-      ++iter;
-    }
-  }
+  this->cacheAckElemCallbacks.invokeCallback(this, elemIdx);
 }
 
 std::string DynStream::dumpString() const {
@@ -1541,6 +1511,9 @@ std::string DynStream::dumpString() const {
   }
   if (this->shouldCoreSEIssue()) {
     ss << " issuing " << this->se->isDynSIssuing(const_cast<DynStream *>(this));
+  }
+  if (this->skipAllocElem) {
+    ss << " skip-alloc";
   }
   ss << " ========";
   if (this->getNumInnerLoopDepS() != 0) {

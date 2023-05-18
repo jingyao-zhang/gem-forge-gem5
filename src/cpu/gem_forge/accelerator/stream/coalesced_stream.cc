@@ -93,6 +93,17 @@ void Stream::postFinalize() {
       }
     }
   }
+  if (this->stepRootStream == this) {
+    if (this->isPointerChase()) {
+      this->isBoundedByPointerChase = true;
+    } else {
+      for (const auto &backBaseS : this->backBaseStreams) {
+        if (backBaseS->stepRootStream->isPointerChase()) {
+          this->isBoundedByPointerChase = true;
+        }
+      }
+    }
+  }
 }
 
 void Stream::selectPrimeLogicalStream() {

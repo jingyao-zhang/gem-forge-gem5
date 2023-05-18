@@ -491,7 +491,8 @@ bool StreamRegionController::endStream(DynRegion &dynRegion) {
 
   auto &staticRegion = *dynRegion.staticRegion;
 
-  if (dynRegion.endCannotDispatch || dynRegion.endCannotCommit) {
+  if (dynRegion.endCannotDispatch || dynRegion.endCannotExecute ||
+      dynRegion.endCannotCommit) {
     return false;
   }
 

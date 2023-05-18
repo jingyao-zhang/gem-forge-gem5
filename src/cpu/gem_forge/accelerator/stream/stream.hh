@@ -241,6 +241,11 @@ public:
    */
   size_t stepSize;
   size_t maxSize;
+  void incrementMaxSize(size_t delta) {
+    this->maxSize += delta;
+    this->freeElemCallbacks.invokeCallback(this);
+  }
+
   int lateFetchCount;
   int numInflyStreamRequests = 0;
   void incrementInflyStreamRequest() { this->numInflyStreamRequests++; }
@@ -318,6 +323,7 @@ public:
   StreamSet backBaseStreams;
   StreamSet backDepStreams;
   bool hasBackDepReductionStream = false;
+  bool isBoundedByPointerChase = false;
 
   /**
    * Dependence on inner-loop streams.
@@ -358,8 +364,6 @@ public:
   StreamFloatTracer floatTracer;
   void dumpStreamStats(std::ostream &os) const;
 
-  void tick();
-
   LLVMTraceCPU *getCPU() { return this->cpu; }
   GemForgeCPUDelegator *getCPUDelegator() const;
   StreamEngine *getSE() const;
@@ -382,6 +386,20 @@ public:
    * Get the total number of allocated elements among all dynamic streams.
    */
   int getAllocSize() const { return this->allocSize; }
+
+  void decrementAllocSize() {
+    this->allocSize--;
+    this->freeElemCallbacks.invokeCallback(this);
+  }
+
+  /**
+   * Callback when there is free element.
+   */
+  using StreamCallback = std::function<bool(Stream *)>;
+  CallbackList<StreamCallback> freeElemCallbacks;
+  void registerFreeElemCallback(StreamCallback callback) {
+    freeElemCallbacks.registerCallback(callback);
+  }
 
   /**
    * Allocate a new dynamic instance with FIFOIdx.
@@ -456,6 +474,9 @@ public:
   CacheStreamConfigureDataPtr
   allocateCacheConfigureDataForAffineIV(uint64_t configSeqNum);
 
+  /**
+   * We may take reference of DynS in callbacks. Use list.
+   */
   std::list<DynStream> dynamicStreams;
   std::unordered_map<InstSeqNum, DynStream *> configSeqNumToDynStreamMap;
   bool hasDynStream() const { return !this->dynamicStreams.empty(); }
@@ -548,6 +569,19 @@ public:
    */
   void incrementOffloadedStepped();
 
+  /**
+   * Manage SkipAllocDynS Count.
+   */
+  int getNumSkipAllocDynS() const { return this->numSkipAllocDynS; }
+  bool skipAlloc() const {
+    return this->getNumSkipAllocDynS() == this->getNumDynStreams();
+  }
+  void incrementSkipAllocDynS() { this->numSkipAllocDynS++; }
+  void decrementSkipAllocDynS() {
+    assert(this->numSkipAllocDynS > 0);
+    this->numSkipAllocDynS--;
+  }
+
 protected:
   StreamSet baseStepStreams;
   StreamSet baseStepRootStreams;
@@ -572,6 +606,11 @@ protected:
    * Total allocated elements among all dynamic streams.
    */
   size_t allocSize;
+
+  /**
+   * Number of skip alloc dynS.
+   */
+  int numSkipAllocDynS = 0;
 
   /**
    * Step the dependent streams in this order.

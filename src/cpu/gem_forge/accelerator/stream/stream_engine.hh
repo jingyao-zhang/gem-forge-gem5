@@ -192,6 +192,11 @@ public:
     return cpuDelegator->cpuType == GemForgeCPUDelegator::CPUTypeE::LLVM_TRACE;
   }
 
+  void yieldCPU() {
+    this->cpuDelegator->getSingleThreadContext()->schedYield(
+        this->myParams->yield_latency);
+  }
+
   bool isMergeEnabled() const { return this->enableMerge; }
   bool isOracleEnabled() const { return this->isOracle; }
 

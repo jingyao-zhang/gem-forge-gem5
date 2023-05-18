@@ -318,6 +318,9 @@ void StreamElement::clear() {
 
   this->floatedToCache = false;
   this->remoteBank = InvalidRemoteBank;
+
+  assert(this->valueReadyCallbacks.empty() &&
+         "Unhandled ElemValueReadyCallback.");
 }
 
 void StreamElement::flush(bool aliased) {
@@ -736,6 +739,8 @@ void StreamElement::markValueReady() {
     this->stream->statistic.numCycleRequestLatency +=
         this->valueReadyCycle - this->issueCycle;
   }
+
+  this->valueReadyCallbacks.invokeCallback(this);
 }
 
 void StreamElement::splitIntoCacheBlocks() {
