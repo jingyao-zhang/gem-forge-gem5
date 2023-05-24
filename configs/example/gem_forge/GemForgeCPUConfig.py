@@ -119,7 +119,9 @@ def createCPUNonStandalone(args, CPUClass, multiprocesses, numThreads):
         else:
             cpu.workload = multiprocesses[i]
         cpu.function_acc_tick = args.gem_forge_enable_func_acc_tick
-        cpu.function_trace = args.gem_forge_enable_func_trace
+        if args.gem_forge_enable_func_trace_at_tick != -1:
+            cpu.function_trace = True
+            cpu.function_trace_start = args.gem_forge_enable_func_trace_at_tick
         cpu.createThreads()
         # Also set the common parameters for the normal CPUs.
         if isinstance(cpu, BaseO3CPU):

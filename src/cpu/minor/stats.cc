@@ -118,38 +118,40 @@ MinorStats::MinorStats(BaseCPU *base_cpu)
 {
     quiesceCycles.prereq(quiesceCycles);
 
+#define Name() base_cpu->name()
+
     loadBlockedIssueCycles
-        .name(name() + ".loadBlockedIssueCycles")
+        .name(Name() + ".loadBlockedIssueCycles")
         .desc("Total number of cycles that CPU has blocked issue waiting "
               "for a load")
         .prereq(loadBlockedIssueCycles);
     loadBlockedIssueInsts
-        .name(name() + ".loadBlockedIssueInsts")
+        .name(Name() + ".loadBlockedIssueInsts")
         .desc("Total number of insts that CPU has blocked issue waiting "
               "for a load")
         .prereq(loadBlockedIssueInsts);
     loadBlockedIssueCPI
-        .name(name() + ".loadBlockedCPI")
+        .name(Name() + ".loadBlockedCPI")
         .desc("LoadBlockedCPI: cycles per instruction")
         .precision(6);
     loadBlockedIssueCPI = loadBlockedIssueCycles / loadBlockedIssueInsts;
     loadBlockedIssueCyclesPercentage
-        .name(name() + ".loadBlockedCyclesPercengate")
+        .name(Name() + ".loadBlockedCyclesPercengate")
         .desc("Percentage of cycles issue blocked by a load")
         .precision(6);
     loadBlockedIssueCyclesPercentage =
         loadBlockedIssueCycles / base_cpu->baseStats.numCycles;
 
     ideaCycles
-        .name(name() + ".ideaCycles")
+        .name(Name() + ".ideaCycles")
         .desc("Ideal inorder cpu cycles")
         .prereq(ideaCycles);
     ideaCyclesNoFUTiming
-        .name(name() + ".ideaCyclesNoFUTiming")
+        .name(Name() + ".ideaCyclesNoFUTiming")
         .desc("Ideal inorder cpu cycles without FUTiming")
         .prereq(ideaCyclesNoFUTiming);
     ideaCyclesNoLDTiming
-        .name(name() + ".ideaCyclesNoLDTiming")
+        .name(Name() + ".ideaCyclesNoLDTiming")
         .desc("Ideal inorder cpu cycles without LDTiming")
         .prereq(ideaCyclesNoLDTiming);
 
@@ -178,75 +180,75 @@ MinorStats::MinorStats(BaseCPU *base_cpu)
         [this]() -> void { this->resetLoadBlockedStat(); });
 
     numFetch2Branches
-        .name(name() + ".fetch2.branches")
+        .name(Name() + ".fetch2.branches")
         .desc("Number of branches fetched");
 
     numDecodedInsts
-        .name(name() + ".decode.insts")
+        .name(Name() + ".decode.insts")
         .desc("Number of instructions decoded");
     numDecodedOps
-        .name(name() + ".decode.ops")
+        .name(Name() + ".decode.ops")
         .desc("Number of ops (including micro ops) decoded");
 
     numLSQLoadOps
-        .name(name() + ".lsq.loads")
+        .name(Name() + ".lsq.loads")
         .desc("Number of load ops executed");
     numLSQStoreOps
-        .name(name() + ".lsq.stores")
+        .name(Name() + ".lsq.stores")
         .desc("Number of store ops executed");
 
     numIQIntReads
-        .name(name() + ".execute.iqIntReads")
+        .name(Name() + ".execute.iqIntReads")
         .desc("Number of reads to int iq");
     numIQIntWrites
-        .name(name() + ".execute.iqIntWrites")
+        .name(Name() + ".execute.iqIntWrites")
         .desc("Number of writes to int iq");
     numIQIntWakeups
-        .name(name() + ".execute.iqIntWakeups")
+        .name(Name() + ".execute.iqIntWakeups")
         .desc("Number of wakeups to int iq");
     numIQFpReads
-        .name(name() + ".execute.iqFpReads")
+        .name(Name() + ".execute.iqFpReads")
         .desc("Number of reads to fp iq");
     numIQFpWrites
-        .name(name() + ".execute.iqFpWrites")
+        .name(Name() + ".execute.iqFpWrites")
         .desc("Number of writes to fp iq");
     numIQFpWakeups
-        .name(name() + ".execute.iqFpWakeups")
+        .name(Name() + ".execute.iqFpWakeups")
         .desc("Number of wakeups to fp iq");
 
     numIntRegReads
-        .name(name() + ".execute.intRegReads")
+        .name(Name() + ".execute.intRegReads")
         .desc("Number of reads to int regs");
     numIntRegWrites
-        .name(name() + ".execute.intRegWrites")
+        .name(Name() + ".execute.intRegWrites")
         .desc("Number of writes to int regs");
     numFpRegReads
-        .name(name() + ".execute.fpRegReads")
+        .name(Name() + ".execute.fpRegReads")
         .desc("Number of reads to fp regs");
     numFpRegWrites
-        .name(name() + ".execute.fpRegWrites")
+        .name(Name() + ".execute.fpRegWrites")
         .desc("Number of writes to fp regs");
 
     numCommittedIntOps
-        .name(name() + ".commit.intOps")
+        .name(Name() + ".commit.intOps")
         .desc("Number of int ops committed");
     numCommittedFpOps
-        .name(name() + ".commit.fpOps")
+        .name(Name() + ".commit.fpOps")
         .desc("Number of fp ops committed");
     numCommittedCallInsts
-        .name(name() + ".commit.callInsts")
+        .name(Name() + ".commit.callInsts")
         .desc("Number of call insts committed");
 
     numInsts
-        .name(name() + ".committedInsts")
+        .name(Name() + ".committedInsts")
         .desc("Number of instructions committed");
 
     numOps
-        .name(name() + ".committedOps")
+        .name(Name() + ".committedOps")
         .desc("Number of ops (including micro ops) committed");
 
     numDiscardedOps
-        .name(name() + ".discardedOps")
+        .name(Name() + ".discardedOps")
         .desc("Number of ops (including micro ops) which were discarded "
             "before commit");
 }

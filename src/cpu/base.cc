@@ -205,7 +205,8 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
         maxThreadsPerCPU = numThreads;
 
     if (p.function_trace || p.function_acc_tick) {
-        this->funcTracer = std::make_unique<FunctionTracer>(name());
+        this->funcTracer = std::make_unique<FunctionTracer>(
+            name(), this->clockPeriod());
 
         if (p.function_trace_start == 0) {
             if (p.function_trace)

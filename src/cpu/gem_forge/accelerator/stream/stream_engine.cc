@@ -521,7 +521,7 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
     // First release all element.
     // This is to ensure that StepRooDynS is still here.
     while (dynS.hasUnsteppedElem()) {
-      dynS.releaseElementUnstepped();
+      this->releaseElementUnstepped(dynS);
     }
   }
 
@@ -1819,21 +1819,21 @@ void StreamEngine::initializeFIFO(size_t totalElements) {
   }
 }
 
-void StreamEngine::addFreeElement(StreamElement *element) {
-  element->clearInflyMemAccesses();
-  element->clear();
-  element->next = this->FIFOFreeListHead;
-  this->FIFOFreeListHead = element;
+void StreamEngine::addFreeElement(StreamElement *elem) {
+  elem->clearInflyMemAccesses();
+  elem->clear();
+  elem->next = this->FIFOFreeListHead;
+  this->FIFOFreeListHead = elem;
   this->numFreeFIFOEntries++;
 }
 
 StreamElement *StreamEngine::removeFreeElement() {
   assert(this->hasFreeElement() && "No free element to remove.");
-  auto newElement = this->FIFOFreeListHead;
+  auto newElem = this->FIFOFreeListHead;
   this->FIFOFreeListHead = this->FIFOFreeListHead->next;
   this->numFreeFIFOEntries--;
-  newElement->clear();
-  return newElement;
+  newElem->clear();
+  return newElem;
 }
 
 bool StreamEngine::hasFreeElement() const {
@@ -2864,7 +2864,7 @@ void StreamEngine::writebackElement(StreamElement *elem,
 void StreamEngine::dumpFIFO() const {
   bool dumped = this->regionController->dump();
   if (dumped) {
-    NO_LOC_INFORM("Total elements %d, free %d, totalRunAhead %d\n",
+    NO_LOC_INFORM("Total elems %d, free %d, totalRunAhead %d\n",
                   this->FIFOArray.size(), this->numFreeFIFOEntries,
                   this->getTotalRunAheadLength());
   }

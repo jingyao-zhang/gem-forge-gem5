@@ -315,10 +315,16 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
       }
     }
 
-    DYN_S_DPRINTF(
-        allocRootDynId,
-        "Allocating StepRootDynS AllocSize %d MaxSize %d MaxAllocSize %d.\n",
-        stepRootStream->getAllocSize(), stepRootStream->maxSize, maxAllocSize);
+    const auto minStepStreamAllocSize =
+        allocatingStepRootDynS->minStepStreamAllocSize;
+    DYN_S_DPRINTF(allocRootDynId,
+                  "Allocating AllocSize %d MaxSize %d MaxAllocSize %d "
+                  "MinStepStreamAllocSize %d HasFreeElem %d.\n",
+                  stepRootStream->getAllocSize(), stepRootStream->maxSize,
+                  maxAllocSize, minStepStreamAllocSize, se->hasFreeElement());
+
+    assert(minStepStreamAllocSize <= allocatingStepRootDynS->allocSize &&
+           "Illegal MinStepStreamAllocSize");
 
     /**
      * We should try to limit maximum allocation per cycle cause I still see
@@ -327,7 +333,7 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
     auto &stepDynStreams = allocatingStepRootDynS->stepDynStreams;
     const size_t MaxAllocationPerCycle = 4;
     int allocated = 0;
-    for (size_t targetSize = allocatingStepRootDynS->minStepStreamAllocSize + 1;
+    for (size_t targetSize = minStepStreamAllocSize + 1;
          targetSize <= maxAllocSize && se->hasFreeElement() &&
          allocated < MaxAllocationPerCycle;
          ++targetSize) {

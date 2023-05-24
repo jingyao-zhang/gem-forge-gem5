@@ -59,8 +59,13 @@ void FunctionTracer::traceFunctions(Addr pc) {
       if (!found) {
         oldFuncName = csprintf("0x%x", oldFunctionStart);
       }
-      ccprintf(*this->functionTraceStream, " %lu-%lu: %s %s %s\n",
-               curTick() / 500, accumulateTick / 500, oldFuncName,
+      if (this->functionTraceFirstTick == 0) {
+        this->functionTraceFirstTick = curTick();
+      }
+      ccprintf(*this->functionTraceStream, " %lu-%12lu-%8lu: %20s %10s %20s\n",
+               curTick() / this->clockPeriod,
+               (curTick() - this->functionTraceFirstTick) / clockPeriod,
+               accumulateTick / clockPeriod, oldFuncName,
                pc == this->currentFunctionStart ? ">>Enter" : ">>BackTo",
                sym_str);
     }
@@ -94,6 +99,7 @@ void FunctionTracer::resetFuncAccumulateTick() {
   this->addrFuncProfileMap.clear();
   // We also reset the function entry tick.
   this->functionEntryTick = curTick();
+  this->functionTraceFirstTick = 0;
 }
 
 void FunctionTracer::dumpFuncAccumulateTick() {
@@ -150,7 +156,7 @@ void FunctionTracer::dumpFuncAccumulateTick() {
     float percentage =
         static_cast<float>(tick) / static_cast<float>(sumTicks) * 100.f;
     ccprintf(*this->functionAccumulateTickStream, "%5.2f %20llu %15llu : %s\n",
-             percentage, tick / 500, microOps, symbol);
+             percentage, tick / clockPeriod, microOps, symbol);
   }
 }
 } // namespace gem5

@@ -243,7 +243,8 @@ bool StreamElement::isFirstFloatElem() const {
   return this->dynS->getAdjustedFirstFloatElemIdx() == this->FIFOIdx.entryIdx;
 }
 bool StreamElement::isFloatElem() const {
-  return this->dynS->getAdjustedFirstFloatElemIdx() <= this->FIFOIdx.entryIdx;
+  return this->dynS->isFloatedToCache() &&
+         this->dynS->getAdjustedFirstFloatElemIdx() <= this->FIFOIdx.entryIdx;
 }
 bool StreamElement::isElemFloatedToCacheAsRoot() const {
   return this->dynS->isFloatedToCacheAsRoot() && this->isFloatElem();
