@@ -97,10 +97,13 @@ public:
       InstSeqNum lastConfigSeqNum = InvalidConfigSeqNum;
 
       struct NestDynRegion {
+        uint64_t outerElemIdx = 0;
         InstSeqNum configSeqNum = InvalidConfigSeqNum;
         StreamEngine *configSE = nullptr;
-        NestDynRegion(InstSeqNum _configSeqNum, StreamEngine *_configSE)
-            : configSeqNum(_configSeqNum), configSE(_configSE) {}
+        NestDynRegion(uint64_t _outerElemIdx, InstSeqNum _configSeqNum,
+                      StreamEngine *_configSE)
+            : outerElemIdx(_outerElemIdx), configSeqNum(_configSeqNum),
+              configSE(_configSE) {}
       };
 
       std::list<NestDynRegion> nestDynRegions;

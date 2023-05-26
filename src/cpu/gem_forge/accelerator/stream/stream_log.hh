@@ -7,8 +7,8 @@ namespace gem5 {
  */
 
 #define S_MSG(S, format, args...)                                              \
-  "[SE%d][%lu][%s]: " format, S->getCPUDelegator()->cpuId(), S->staticId,      \
-      S->getStreamName(), ##args
+  "[SE%d]%s -%d-%d-: " format, S->getCPUDelegator()->cpuId(),                  \
+      S->getStreamName(), S->getCPUDelegator()->cpuId(), S->staticId, ##args
 
 #define S_DPRINTF_(X, S, format, args...) DPRINTF(X, S_MSG(S, format, ##args))
 #define S_DPRINTF(S, format, args...) S_DPRINTF_(DEBUG_TYPE, S, format, ##args)

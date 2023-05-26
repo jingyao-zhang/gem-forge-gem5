@@ -9,10 +9,9 @@
 #include "../stream_log.hh"
 
 #define ALM_ELEMENT_DPRINTF(element, format, args...)                          \
-  LLC_SE_DPRINTF("%s%llu-: " format, (element)->strandId, (element)->idx,      \
-                 ##args)
+  LLC_SE_ELEM_DPRINTF(element, format, ##args)
 #define ALM_ELEMENT_PANIC(element, format, args...)                            \
-  LLC_SE_PANIC("%s%llu-: " format, (element)->strandId, (element)->idx, ##args)
+  LLC_SE_ELEM_PANIC(element, format, ##args)
 
 namespace gem5 {
 
@@ -459,5 +458,5 @@ void LLCStreamAtomicLockManager::checkDeadlock(
   if (foundDeadlock) {
     this->se->controller->m_statLLCDeadlockAtomics++;
   }
-}} // namespace gem5
-
+}
+} // namespace gem5

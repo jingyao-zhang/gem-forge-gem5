@@ -117,17 +117,17 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
      * Otherwise, we check that the element is released.
      */
     if (dynIS->shouldIssueAfterCommit()) {
-      auto nextCommitIndirectElementIdx = nextCommitElementIdx;
+      auto nextCommitIndElemIdx = nextCommitElementIdx;
       if (dynIS->isOneIterationBehind()) {
-        nextCommitIndirectElementIdx++;
+        nextCommitIndElemIdx++;
       }
-      auto nextCommitElement = dynIS->getElem(nextCommitIndirectElementIdx);
+      auto nextCommitElement = dynIS->getElem(nextCommitIndElemIdx);
       if (!nextCommitElement) {
-        if (dynIS->isElemReleased(nextCommitIndirectElementIdx)) {
+        if (dynIS->isElemReleased(nextCommitIndElemIdx)) {
           LLC_S_PANIC(
               dynIS->getDynStrandId(),
               "[Commit] IndElement %llu already released before commit.",
-              nextCommitIndirectElementIdx);
+              nextCommitIndElemIdx);
         }
         /**
          * Somehow this element is not yet allocated.
@@ -145,7 +145,7 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
         }
         LLC_S_PANIC(dynIS->getDynStrandId(),
                     "[Commit] Failed to find IndElement %llu to commit.",
-                    nextCommitIndirectElementIdx);
+                    nextCommitIndElemIdx);
       } else {
         if (!nextCommitElement->areBaseElemsReady()) {
           // We can not issue this yet.
@@ -174,24 +174,24 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
                 nextCommitElementIdx);
   for (auto dynIS : dynS->getIndStreams()) {
     if (dynIS->shouldIssueAfterCommit()) {
-      auto nextCommitIndirectElementIdx = nextCommitElementIdx;
+      auto nextCommitIndElemIdx = nextCommitElementIdx;
       if (dynIS->isOneIterationBehind()) {
-        nextCommitIndirectElementIdx++;
+        nextCommitIndElemIdx++;
       }
-      auto nextCommitElement = dynIS->getElem(nextCommitIndirectElementIdx);
+      auto nextCommitElement = dynIS->getElem(nextCommitIndElemIdx);
 
       if (dynIS->shouldIssueBeforeCommit() &&
           dynIS->getStaticS()->isAtomicComputeStream()) {
         // This should be the Indirect StreamUnlock request.
         LLC_S_DPRINTF(dynS->getDynStrandId(),
-                      "[Commit] Issue Unlock for DynIS %s %llu.\n",
-                      dynIS->getDynStrandId(), nextCommitIndirectElementIdx);
+                      "[Commit] Issue Unlock for DynIS %s%llu.\n",
+                      dynIS->getDynStrandId(), nextCommitIndElemIdx);
         this->se->issueIndirectAtomicUnlockRequest(dynIS, nextCommitElement);
       } else {
         // We directly issue this.
         LLC_S_DPRINTF(dynS->getDynStrandId(),
-                      "[Commit] Issue AfterCommit for DynIS %s %llu.\n",
-                      dynIS->getDynStrandId(), nextCommitIndirectElementIdx);
+                      "[Commit] Issue AfterCommit for DynIS %s%llu.\n",
+                      dynIS->getDynStrandId(), nextCommitIndElemIdx);
         this->se->generateIndirectStreamReq(dynIS, nextCommitElement);
       }
     }
@@ -239,4 +239,3 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
   return true;
 }
 } // namespace gem5
-

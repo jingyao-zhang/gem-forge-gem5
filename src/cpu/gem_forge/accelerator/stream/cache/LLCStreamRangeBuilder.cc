@@ -120,7 +120,7 @@ void LLCStreamRangeBuilder::tryBuildRange() {
   }
 }
 
-void LLCStreamRangeBuilder::pushNextRangeTailElementIdx(
+void LLCStreamRangeBuilder::pushNextRangeTailElemIdx(
     uint64_t nextRangeTailElemIdx) {
   /**
    * Due to multi-slice elements, it is possible that we have multiple same
@@ -129,22 +129,22 @@ void LLCStreamRangeBuilder::pushNextRangeTailElementIdx(
    */
   if (nextRangeTailElemIdx == 0) {
     LLC_S_PANIC(this->stream->getDynStrandId(),
-                "[RangeBuilder] Zero NextRangeTailElementIdx.\n");
+                "[RangeBuilder] Zero NextRangeTailElemIdx.\n");
   }
   if (this->prevNextRangeTailElementIdx > nextRangeTailElemIdx) {
     LLC_S_PANIC(this->stream->getDynStrandId(),
-                "[RangeBuilder] NextRangeTailElementIdx out-of-order %llu < "
+                "[RangeBuilder] NextRangeTailElemIdx out-of-order %llu < "
                 "back %llu.",
                 nextRangeTailElemIdx, this->prevNextRangeTailElementIdx);
   } else if (this->prevNextRangeTailElementIdx == nextRangeTailElemIdx) {
     LLC_S_DPRINTF(this->stream->getDynStrandId(),
-                  "[RangeBuilder] Ignore NextRangeTailElementIdx %llu == "
-                  "PrevTailElementIdx %llu.",
+                  "[RangeBuilder] Ignore NextRangeTailElemIdx %llu == "
+                  "PrevTailElemIdx %llu.",
                   nextRangeTailElemIdx, this->prevNextRangeTailElementIdx);
     return;
   }
   LLC_S_DPRINTF(this->stream->getDynStrandId(),
-                "[RangeBuilder] NextRangeTailElementIdx %llu.\n",
+                "[RangeBuilder] NextRangeTailElemIdx %llu.\n",
                 nextRangeTailElemIdx);
   this->nextRangeTailElementIdxQueue.push_back(nextRangeTailElemIdx);
   this->prevNextRangeTailElementIdx = nextRangeTailElemIdx;

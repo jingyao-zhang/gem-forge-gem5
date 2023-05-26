@@ -189,7 +189,7 @@ public:
   bool translateToPAddr(Addr vaddr, Addr &paddr) const;
 
   void addCredit(uint64_t n);
-  void addNextRangeTailElementIdx(uint64_t rangeTailElementIdx);
+  void addNextRangeTailElemIdx(uint64_t rangeTailElementIdx);
 
   DynStreamSliceId initNextSlice();
 
@@ -585,8 +585,12 @@ public:
    * AfterCommit:
    *  Store/AtomicComputeStreams with range-sync.
    */
-  bool shouldIssueBeforeCommit() const;
-  bool shouldIssueAfterCommit() const;
+  bool issueBeforeCommit = true;
+  bool issueAfterCommit = false;
+  bool shouldIssueBeforeCommit() const { return this->issueBeforeCommit; }
+  bool shouldIssueAfterCommit() const { return this->issueAfterCommit;}
+  bool checkIssueBeforeCommit() const;
+  bool checkIssueAfterCommit() const;
 
   void evaluateLoopBound(LLCStreamEngine *se, uint64_t elemIdx);
   bool hasLoopBound() const {

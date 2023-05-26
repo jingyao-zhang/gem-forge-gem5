@@ -725,7 +725,7 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
 
   // We have one more condition for range-based check.
   if (auto noRangeDynS = this->rangeSyncController->getNoRangeDynS()) {
-    SE_DPRINTF("[CanNotCommitStep] No Range for %s. CheckElementIdx %llu.\n",
+    SE_DPRINTF("[CanNotCommitStep] No Range for %s%llu.\n",
                noRangeDynS->dynStreamId,
                this->rangeSyncController->getCheckElemIdx(noRangeDynS));
     return false;
@@ -1039,26 +1039,26 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
       assert(!S->isMerged() &&
              "Merged stream should never be used by the core.");
 
-      auto element = S->getFirstUnsteppedElement();
+      auto elem = S->getFirstUnsteppedElement();
       // Mark the first user sequence number.
-      if (!element->isFirstUserDispatched()) {
-        element->firstUserSeqNum = seqNum;
+      if (!elem->isFirstUserDispatched()) {
+        elem->firstUserSeqNum = seqNum;
         // Remember the first core user pc.
         S->setFirstCoreUserPC(args.pc);
-        if (S->trackedByPEB() && element->isReqIssued()) {
+        if (S->trackedByPEB() && elem->isReqIssued()) {
           // The element should already be in peb, remove it.
-          this->peb.removeElement(element);
+          this->peb.removeElement(elem);
         }
       }
-      if (!element->isFirstStoreDispatched() && args.isStore) {
+      if (!elem->isFirstStoreDispatched() && args.isStore) {
         // Remember the first StreamStore.
-        element->firstStoreSeqNum = seqNum;
+        elem->firstStoreSeqNum = seqNum;
       }
-      S_ELEMENT_DPRINTF(element, "Used by core inst sn: %llu.\n", seqNum);
-      elementSet.insert(element);
+      S_ELEMENT_DPRINTF(elem, "Dispatch StreamUser %llu.\n", seqNum);
+      elementSet.insert(elem);
       // Construct the elementUserMap.
       this->elementUserMap
-          .emplace(std::piecewise_construct, std::forward_as_tuple(element),
+          .emplace(std::piecewise_construct, std::forward_as_tuple(elem),
                    std::forward_as_tuple())
           .first->second.insert(seqNum);
     }
@@ -1084,6 +1084,16 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
     auto S = elem->stream;
     if (!S->isLoopEliminated()) {
       allStreamLoopEliminated = false;
+    } else {
+      if (S->isNestStream()) {
+        const auto &innerStaticRegion =
+            this->regionController->getStaticRegion(S);
+        const auto &outerStaticRegion = this->regionController->getStaticRegion(
+            innerStaticRegion.nestConfig.outerRegion);
+        if (!outerStaticRegion.allStreamsLoopEliminated) {
+          allStreamLoopEliminated = false;
+        }
+      }
     }
     if (!elem->dynS->configCommitted) {
       allDynStreamConfigCommitted = false;
@@ -1201,28 +1211,29 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
     }
     auto size = S->getCoreElementSize();
     S_ELEMENT_DPRINTF(
-        elem, "Execute StreamUser, Value %s.\n",
+        elem, "Execute StreamUser %lu, Value %s.\n", seqNum,
         GemForgeUtils::dataToString(args.values->back().data(), size));
   }
 }
 
 void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
   auto seqNum = args.seqNum;
-  SE_DPRINTF("Commit StreamUser %llu.\n", seqNum);
+  SE_DPRINTF("Commit StreamUser %lu.\n", seqNum);
   assert(this->userElementMap.count(seqNum) && "UserElementMap not correct.");
   // Remove the entry from the elementUserMap.
-  for (auto element : this->userElementMap.at(seqNum)) {
+  for (auto elem : this->userElementMap.at(seqNum)) {
     /**
      * As a hack, we use nullptr to represent an out-of-loop use.
      * TODO: Fix this.
      */
-    if (!element) {
+    if (!elem) {
       continue;
     }
+    S_ELEMENT_DPRINTF(elem, "Commit StreamUser %lu.\n", seqNum);
 
-    auto S = element->getStream();
+    auto S = elem->getStream();
     bool isActuallyUsed = true;
-    if (element->isElemFloatedToCache() || element->isElemFloatedAsNDC()) {
+    if (elem->isElemFloatedToCache() || elem->isElemFloatedAsNDC()) {
       if (S->isStoreComputeStream()) {
         isActuallyUsed = false;
       }
@@ -1233,19 +1244,19 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
     }
     if (S->isUpdateStream() && args.isStore) {
       isActuallyUsed = false;
-      if (!element->isElemFloatedToCache()) {
-        if (!element->isUpdateValueReady()) {
+      if (!elem->isElemFloatedToCache()) {
+        if (!elem->isUpdateValueReady()) {
           S_ELEMENT_PANIC(
-              element,
+              elem,
               "Commit StoreUser for UpdateStream, but UpdateValue not ready.");
         }
       }
     }
-    if (!element->isValueReady) {
+    if (!elem->isValueReady) {
       // The only exception is the Store/AtomicComputeStream is floated,
       // as well as the StreamStore to UpdateStream.
       if (isActuallyUsed) {
-        S_ELEMENT_PANIC(element, "Commit user, but value not ready.");
+        S_ELEMENT_PANIC(elem, "Commit user, but value not ready.");
       }
     }
 
@@ -1258,19 +1269,60 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
         if (this->getStream(streamId) != S) {
           continue;
         }
-        auto vaddr = element->addr;
-        int32_t size = element->size;
+        auto vaddr = elem->addr;
+        int32_t size = elem->size;
         // Handle offset for coalesced stream.
         int32_t offset;
         S->getCoalescedOffsetAndSize(streamId, offset, size);
         vaddr += offset;
-        if (element->isValueFaulted(vaddr, size)) {
-          S_ELEMENT_PANIC(element, "Commit user of faulted value.");
+        if (elem->isValueFaulted(vaddr, size)) {
+          S_ELEMENT_PANIC(elem, "Commit user of faulted value.");
         }
       }
     }
 
-    auto &userSet = this->elementUserMap.at(element);
+    /**
+     * Sanity check that the FinalValueUser really used the correct NestStream
+     * instance. The used InnerS should be configured by the current header
+     * element of the OuterS.
+     */
+    if (S->isInnerFinalValueUsedByCore() && elem->isInnerLastElem() &&
+        S->isLoopEliminated() && S->isNestStream()) {
+      const auto &innerStaticRegion =
+          this->regionController->getStaticRegion(S);
+      const auto &outerStaticRegion = this->regionController->getStaticRegion(
+          innerStaticRegion.nestConfig.outerRegion);
+      assert(!outerStaticRegion.dynRegions.empty());
+      const auto &outerDynRegion = outerStaticRegion.dynRegions.front();
+      auto innerConfigSeqNum = elem->dynS->configSeqNum;
+      auto outerS = outerStaticRegion.streams.front();
+      const auto &outerDynS = outerS->getDynStream(outerDynRegion.seqNum);
+      auto outerFirstElem = outerDynS.getFirstElem();
+      __attribute__((unused)) bool foundNestDynRegion = false;
+      for (const auto &nestConfig : outerDynRegion.nestConfigs) {
+        if (nestConfig.staticRegion != &innerStaticRegion) {
+          // This is not our NestConfig.
+          continue;
+        }
+        for (const auto &nestDynRegion : nestConfig.nestDynRegions) {
+          if (nestDynRegion.configSeqNum == innerConfigSeqNum) {
+            // We found it.
+            foundNestDynRegion = true;
+            if (nestDynRegion.outerElemIdx !=
+                outerFirstElem->FIFOIdx.entryIdx) {
+              S_ELEMENT_PANIC(elem,
+                              "Mismatch between ElimNest InnerS and OuterS. "
+                              "OuterHeadElem %s OuterConfigElemIdx %lu.\n",
+                              outerFirstElem->FIFOIdx,
+                              nestDynRegion.outerElemIdx);
+            }
+          }
+        }
+      }
+      assert(foundNestDynRegion);
+    }
+
+    auto &userSet = this->elementUserMap.at(elem);
     panic_if(!userSet.erase(seqNum), "Not found in userSet.");
   }
   // Remove the entry in the userElementMap.
@@ -1280,23 +1332,24 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
 
 void StreamEngine::rewindStreamUser(const StreamUserArgs &args) {
   auto seqNum = args.seqNum;
-  for (auto element : this->userElementMap.at(seqNum)) {
+  for (auto elem : this->userElementMap.at(seqNum)) {
     // The element should be in unstepped state.
-    assert(!element->isStepped && "Rewind user of stepped element.");
-    if (element->firstUserSeqNum == seqNum) {
+    assert(!elem->isStepped && "Rewind user of stepped element.");
+    S_ELEMENT_DPRINTF(elem, "Rewind StreamUser %lu.\n", seqNum);
+    if (elem->firstUserSeqNum == seqNum) {
       // I am the first user.
-      element->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
+      elem->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
       // Check if the element should go back to PEB.
-      if (element->stream->trackedByPEB() && element->isReqIssued()) {
-        this->peb.addElement(element);
+      if (elem->stream->trackedByPEB() && elem->isReqIssued()) {
+        this->peb.addElement(elem);
       }
     }
-    if (element->firstStoreSeqNum == seqNum) {
+    if (elem->firstStoreSeqNum == seqNum) {
       // I am the first store.
-      element->firstStoreSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
+      elem->firstStoreSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
     }
     // Remove the entry from the elementUserMap.
-    auto &userSet = this->elementUserMap.at(element);
+    auto &userSet = this->elementUserMap.at(elem);
     panic_if(!userSet.erase(seqNum), "Not found in userSet.");
   }
   // Remove the entry in the userElementMap.

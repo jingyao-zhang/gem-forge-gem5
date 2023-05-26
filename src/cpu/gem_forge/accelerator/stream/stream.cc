@@ -401,6 +401,9 @@ void Stream::rewindStreamConfig(uint64_t seqNum) {
     dynS.clearSkipAllocElem();
   }
 
+  // Record the instance as rewinded.
+  this->recordRewindedDynS(dynS.dynStreamId);
+
   // Get rid of the dynamicStream.
   this->configSeqNumToDynStreamMap.erase(dynS.configSeqNum);
   this->dynamicStreams.pop_back();
@@ -491,6 +494,23 @@ DynStream *Stream::getDynStream(const DynStreamId &dynId) {
     }
   }
   return nullptr;
+}
+
+void Stream::recordRewindedDynS(const DynStreamId &dynStreamId) {
+  constexpr int numRewindRecords = 16;
+  if (this->rewindedInstances.size() == numRewindRecords) {
+    this->rewindedInstances.pop_front();
+  }
+  this->rewindedInstances.push_back(dynStreamId.streamInstance);
+}
+
+bool Stream::isDynStreamRewinded(const DynStreamId &dynStreamId) const {
+  for (const auto &instance : this->rewindedInstances) {
+    if (instance == dynStreamId.streamInstance) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void Stream::setupLinearAddrFunc(DynStream &dynStream,

@@ -479,15 +479,6 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
          "Negative infly StreamConfigurations.");
 
   auto &dynRegion = this->getDynRegionByEndSeqNum(staticRegion, args.seqNum);
-  if (dynRegion.seqNum > dynRegion.endSeqNum) {
-    /**
-     * We allow the == case because in nested stream, it is still
-     * possible that InnerStreamEnd comes right after OuterStreamConfig,
-     * leaving there no space to insert the InnerStreamConfig.
-     */
-    SE_PANIC("[Region] %s End (%lu) before Configure (%lu).\n",
-             streamRegion.region(), dynRegion.endSeqNum, dynRegion.seqNum);
-  }
 
   SE_DPRINTF(
       "[Region] Release DynRegion SeqNum %llu %s Remaining %llu Total %llu.\n",

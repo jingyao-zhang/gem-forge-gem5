@@ -508,9 +508,13 @@ void MLCDynStream::makeAck(MLCStreamSlice &slice) {
       if (!dynS) {
         /**
          * Make ack when the CoreDynS is already released:
-         * 1. The second Ack for RangeSync AtomicStream.
-         * 2. LoopBound cut the stream early.
+         * 1. The stream is rewinded.
+         * 2. The second Ack for RangeSync AtomicStream.
+         * 3. LoopBound cut the stream early.
          */
+        if (this->isCoreDynStreamRewinded()) {
+          continue;
+        }
         if (this->shouldRangeSync() && this->stream->isAtomicComputeStream()) {
           continue;
         }
@@ -529,12 +533,12 @@ void MLCDynStream::makeAck(MLCStreamSlice &slice) {
       /**
        * We call ElementAckCallback here.
        */
-      auto elemAckCallbackIter = this->elementAckCallbacks.find(strandElemIdx);
-      if (elemAckCallbackIter != this->elementAckCallbacks.end()) {
+      auto elemAckCallbackIter = this->elemAckCallbacks.find(strandElemIdx);
+      if (elemAckCallbackIter != this->elemAckCallbacks.end()) {
         for (auto &callback : elemAckCallbackIter->second) {
           callback(this->getDynStreamId(), strandElemIdx);
         }
-        this->elementAckCallbacks.erase(elemAckCallbackIter);
+        this->elemAckCallbacks.erase(elemAckCallbackIter);
       }
     }
   }
@@ -612,7 +616,7 @@ void MLCDynStream::registerElementAckCallback(uint64_t strandElemIdx,
                 "Register ElementAckCallback for Acked Element %llu.",
                 strandElemIdx);
   }
-  this->elementAckCallbacks
+  this->elemAckCallbacks
       .emplace(std::piecewise_construct, std::forward_as_tuple(strandElemIdx),
                std::forward_as_tuple())
       .first->second.push_back(callback);

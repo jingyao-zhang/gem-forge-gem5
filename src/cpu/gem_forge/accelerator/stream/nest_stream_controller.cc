@@ -512,8 +512,10 @@ void StreamRegionController::configureNestStream(
         dynNestConfig.predFormalParams, getStreamValue);
     auto predRet = dynNestConfig.predFunc->invoke(predActualParams).front();
     if (predRet != staticNestConfig.predRet) {
-      SE_DPRINTF("[Nest] Predicated Skip (%d != %d) NestRegion %s.\n", predRet,
-                 staticNestConfig.predRet, staticNestRegion.region.region());
+      SE_DPRINTF(
+          "[Nest] Predicated Skip OuterElemIdx %lu (%d != %d) NestRegion %s.\n",
+          dynNestConfig.nextConfigElemIdx, predRet, staticNestConfig.predRet,
+          staticNestRegion.region.region());
       dynNestConfig.nextConfigElemIdx++;
       return;
     }
@@ -524,8 +526,7 @@ void StreamRegionController::configureNestStream(
 
   if (Debug::StreamNest) {
     SE_DPRINTF("[Nest] Value ready. Configure NestRegion %s, "
-               "OuterElementIdx "
-               "%lu, ActualParams:\n",
+               "OuterElemIdx %lu, ActualParams:\n",
                staticNestRegion.region.region(),
                dynNestConfig.nextConfigElemIdx);
     for (const auto &actualParam : actualParams) {
@@ -571,7 +572,8 @@ void StreamRegionController::configureNestStream(
     nestConfigSeqNum = dynS.configSeqNum;
   }
   dynNestConfig.lastConfigSeqNum = nestConfigSeqNum;
-  dynNestConfig.nestDynRegions.emplace_back(nestConfigSeqNum, nestSE);
+  dynNestConfig.nestDynRegions.emplace_back(dynNestConfig.nextConfigElemIdx,
+                                            nestConfigSeqNum, nestSE);
   auto &dynNestRegion =
       nestSE->regionController->getDynRegion("NestConfig", nestConfigSeqNum);
   dynNestRegion.nestParentSE = this->se;

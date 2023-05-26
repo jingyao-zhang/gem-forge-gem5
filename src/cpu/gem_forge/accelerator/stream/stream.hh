@@ -495,6 +495,12 @@ public:
     assert(!this->dynamicStreams.empty() && "No dynamic stream.");
     return this->dynamicStreams.front();
   }
+  /**
+   * Record the last a few rewinded DynStream instances for debug purpose.
+   */
+  std::deque<DynStreamId::InstanceId> rewindedInstances;
+  void recordRewindedDynS(const DynStreamId &dynStreamId);
+  bool isDynStreamRewinded(const DynStreamId &dynStreamId) const;
 
   LLVMTraceCPU *cpu;
   StreamEngine *se;

@@ -78,7 +78,7 @@ void StreamRangeSyncController::updateCurrentWorkingRange(
     if (auto currentWorkingRange = dynS->getCurrentWorkingRange()) {
       if (currentWorkingRange->elementRange.rhsElementIdx <= elementIdx) {
         DYN_S_DPRINTF(dynS->dynStreamId,
-                      "[CoreRange] Release range for element [%llu, +%d).\n",
+                      "[CoreRange] Release range for elem [%llu, +%d).\n",
                       currentWorkingRange->elementRange.getLHSElementIdx(),
                       currentWorkingRange->elementRange.getNumElements());
         dynS->setCurrentWorkingRange(nullptr);

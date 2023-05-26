@@ -121,6 +121,9 @@ LLCDynStream::LLCDynStream(ruby::AbstractStreamAwareController *_mlcController,
     }
   }
 
+  this->issueBeforeCommit = this->checkIssueBeforeCommit();
+  this->issueAfterCommit = this->checkIssueAfterCommit();
+
   /**
    * Cache the TripCount info here.
    */
@@ -267,7 +270,7 @@ void LLCDynStream::addCredit(uint64_t n) {
     auto sliceIdx = this->nextAllocSliceIdx;
     auto sliceIter = this->slices.begin();
     auto tailElemIdx = 0;
-    while (sliceIdx + 1 < this->creditedSliceIdx &&
+    while (sliceIdx + 1 <= this->creditedSliceIdx &&
            sliceIter != this->slices.end()) {
       if (sliceIdx + 1 == this->creditedSliceIdx) {
         tailElemIdx = (*sliceIter)->getSliceId().getEndIdx();
@@ -284,15 +287,15 @@ void LLCDynStream::addCredit(uint64_t n) {
     }
     LLC_S_DPRINTF(this->getDynStrandId(),
                   "[RangeSync] Add RangeTailElem %lu.\n", tailElemIdx);
-    this->addNextRangeTailElementIdx(tailElemIdx);
+    this->addNextRangeTailElemIdx(tailElemIdx);
   }
 }
 
-void LLCDynStream::addNextRangeTailElementIdx(uint64_t rangeTailElementIdx) {
+void LLCDynStream::addNextRangeTailElemIdx(uint64_t rangeTailElementIdx) {
   if (this->shouldRangeSync()) {
-    this->rangeBuilder->pushNextRangeTailElementIdx(rangeTailElementIdx);
-    for (auto dynIS : this->getIndStreams()) {
-      dynIS->rangeBuilder->pushNextRangeTailElementIdx(rangeTailElementIdx);
+    this->rangeBuilder->pushNextRangeTailElemIdx(rangeTailElementIdx);
+    for (auto dynIS : this->getAllIndStreams()) {
+      dynIS->rangeBuilder->pushNextRangeTailElemIdx(rangeTailElementIdx);
     }
   }
 }
@@ -1995,7 +1998,7 @@ LLCStreamElementPtr LLCDynStream::getFirstReadyToIssueElem() const {
   }
 }
 
-bool LLCDynStream::shouldIssueBeforeCommit() const {
+bool LLCDynStream::checkIssueBeforeCommit() const {
   if (!this->shouldRangeSync()) {
     return true;
   }
@@ -2015,18 +2018,22 @@ bool LLCDynStream::shouldIssueBeforeCommit() const {
   auto S = this->getStaticS();
   if (S->isAtomicComputeStream()) {
     auto dynS = this->getCoreDynS();
-    if (S->staticId == 81) {
+    if (!dynS) {
+      LLC_S_DPRINTF(this->getDynStrandId(), "[IssueBeforeCommit] No dynS.\n");
+    } else {
+      auto shouldCoreSEIssue = dynS->shouldCoreSEIssue();
       LLC_S_DPRINTF(this->getDynStrandId(),
-                    "[IssueBeforeCommitTest] dynS %d.\n", dynS != nullptr);
-    }
-    if (dynS && !dynS->shouldCoreSEIssue()) {
-      return false;
+                    "[IssueBeforeCommit] CoreSE Issue %d.\n",
+                    shouldCoreSEIssue);
+      if (!shouldCoreSEIssue) {
+        return false;
+      }
     }
   }
   return true;
 }
 
-bool LLCDynStream::shouldIssueAfterCommit() const {
+bool LLCDynStream::checkIssueAfterCommit() const {
   if (!this->shouldRangeSync()) {
     return false;
   }

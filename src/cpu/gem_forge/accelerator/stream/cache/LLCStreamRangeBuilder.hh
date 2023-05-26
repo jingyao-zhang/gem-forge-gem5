@@ -20,7 +20,7 @@ public:
   /**
    * Push the next range tail element idx.
    */
-  void pushNextRangeTailElementIdx(uint64_t nextRangeTailElementIdx);
+  void pushNextRangeTailElemIdx(uint64_t nextRangeTailElementIdx);
 
   /**
    * Cut total trip count due to StreamLoopBound.

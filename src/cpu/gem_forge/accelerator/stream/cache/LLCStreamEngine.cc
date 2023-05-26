@@ -675,9 +675,10 @@ void LLCStreamEngine::receiveStreamData(
    * 3. IndirectLoadComputeStream is released in releaseSlice().
    */
   LLC_S_DPRINTF(dynS->getDynStrandId(),
-                "[IndRelease] Check ShouldIssueAfterCommit %d "
+                "[IndRelease] Check ShouldIssueBefore/AfterCommit %d/%d "
                 "IsLoadCompute %d.\n",
-                dynS->shouldIssueAfterCommit(), S->isLoadComputeStream());
+                dynS->shouldIssueBeforeCommit(), dynS->shouldIssueAfterCommit(),
+                S->isLoadComputeStream());
   if (!dynS->shouldIssueAfterCommit() && !S->isLoadComputeStream() &&
       !S->isAtomicComputeStream()) {
     while (!dynS->idxToElementMap.empty()) {
@@ -3763,8 +3764,7 @@ void LLCStreamEngine::triggerAtomic(LLCDynStreamPtr dynS,
   this->atomicLockManager->enqueue(elemPAddr, elemMemSize, elem,
                                    memoryModified);
   if (!(dynS->shouldIssueBeforeCommit() && dynS->shouldIssueAfterCommit())) {
-    // This AtomicStream just takes one request, we can immediately
-    // commit it.
+    // This AtomicS just takes one request, we can immediately commit it.
     this->atomicLockManager->commit(elemPAddr, elemMemSize, elem);
   }
 }
@@ -4232,12 +4232,12 @@ void LLCStreamEngine::processIndirectAtomicSlice(
   if (elem->hasFirstIndirectAtomicReqSeen()) {
     // This is the second time, should already be handled in
     // receiveStreamIndirectReq().
-    LLC_SLICE_PANIC(sliceId, "[Commit] Atomic should be release when "
+    LLC_SLICE_PANIC(sliceId, "[Commit] Atomic should be released when "
                              "receiving the second request.");
   }
 
   LLC_SLICE_DPRINTF(sliceId,
-                    "[IndirectAtomic] Schedule computation for vaddr %#x.\n",
+                    "[IndAtomic] Schedule computation for vaddr %#x.\n",
                     elem->vaddr);
   /**
    * We are still waiting for BaseElements. However, the element itself is not
@@ -4305,7 +4305,7 @@ void LLCStreamEngine::postProcessIndirectAtomicSlice(
       const auto &elem = elemIter->second;
       if (!elem->isComputationDone() && !elem->isPredicatedOff()) {
         LLC_SE_ELEM_DPRINTF(
-            elem, "[IndirectAtomic] Not Release: !CmpDone && !PredOff.\n");
+            elem, "[IndAtomic] Not Release: !CmpDone && !PredOff.\n");
         break;
       }
       dynS->eraseElem(elemIter);

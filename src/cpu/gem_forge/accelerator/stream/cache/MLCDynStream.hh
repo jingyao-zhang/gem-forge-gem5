@@ -37,6 +37,9 @@ public:
   DynStream *getCoreDynS() const {
     return this->getStaticStream()->getDynStream(this->getDynStreamId());
   }
+  bool isCoreDynStreamRewinded() const {
+    return this->getStaticStream()->isDynStreamRewinded(this->getDynStreamId());
+  }
 
   bool getIsPseudoOffload() const { return this->isPseudoOffload; }
   uint64_t getFirstFloatElemIdx() const {
@@ -247,7 +250,7 @@ protected:
    * @brief Remember the callbacks.
    */
   using ElementCallbackList = std::list<ElementCallback>;
-  std::map<uint64_t, ElementCallbackList> elementAckCallbacks;
+  std::map<uint64_t, ElementCallbackList> elemAckCallbacks;
 
 public:
   /**
@@ -277,7 +280,6 @@ public:
 
   // This stream has been cut by LLCStreamBound.
   bool loopBoundBrokenOut = false;
-
 };
 
 } // namespace gem5
