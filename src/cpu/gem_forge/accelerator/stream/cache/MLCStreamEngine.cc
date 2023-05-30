@@ -149,11 +149,11 @@ void MLCStreamEngine::receiveStreamData(const ruby::ResponseMsg &msg) {
     auto stream = this->getStreamFromStrandId(sliceId.getDynStrandId());
     if (stream) {
       MLC_SLICE_DPRINTF_(StreamRangeSync, sliceId,
-                         "[Commit] Receive StreamDone.\n");
+                         "[Commit] Recv StreamDone.\n");
       stream->receiveStreamDone(sliceId);
     } else {
       MLC_SLICE_DPRINTF_(StreamRangeSync, sliceId,
-                         "[Commit] Receive StreamDone.\n");
+                         "[Commit] Recv StreamDone but stream released.\n");
     }
     return;
   }

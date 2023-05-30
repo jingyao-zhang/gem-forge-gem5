@@ -139,6 +139,7 @@ CPUProgressEvent::process()
     if (cpu->shouldCheckDeadlock() &&
         (cpu->cpuId() == 0 || isAccelerating) &&
         temp == lastNumInst && !accelProgress) {
+        this->_stucked++;
         Tick no_progress_ticks = this->_stucked *
             cpu->params().progress_interval;
         Tick deadlock_ticks = cpu->params().deadlock_interval;
@@ -146,7 +147,6 @@ CPUProgressEvent::process()
             panic("Deadlock in CPU %d! LastCommit at %llu.\n",
                 cpu->cpuId(), cpu->getLastCommitTick());
         }
-        this->_stucked++;
     } else {
         this->_stucked = 0;
     }

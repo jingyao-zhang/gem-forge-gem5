@@ -13,6 +13,7 @@ namespace gem5 {
 #define S_DPRINTF_(X, S, format, args...) DPRINTF(X, S_MSG(S, format, ##args))
 #define S_DPRINTF(S, format, args...) S_DPRINTF_(DEBUG_TYPE, S, format, ##args)
 #define S_HACK(S, format, args...) hack(S_MSG(S, format, ##args))
+#define S_WARN(S, format, args...) warn(S_MSG(S, format, ##args))
 #define S_PANIC(S, format, args...) panic(S_MSG(S, format, ##args))
 
 #define S_FIFO_ENTRY_MSG(E, format, args...) "%s: " format, (E), ##args

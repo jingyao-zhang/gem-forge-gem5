@@ -512,7 +512,7 @@ Addr StreamElement::computeAddr() {
         int32_t size = baseE->size;
         // Handle offset for coalesced stream.
         int32_t offset;
-        baseStream->getCoalescedOffsetAndSize(baseStreamId, offset, size);
+        baseStream->getCoalescedOffsetAndMemSize(baseStreamId, offset, size);
         vaddr += offset;
         // TODO: Fix this for reduction stream.
         assert(size <= sizeof(StreamValue) &&
@@ -880,7 +880,7 @@ void StreamElement::getValueByStreamId(StaticId streamId, uint8_t *val,
   int size = this->size;
   // Handle offset for coalesced stream.
   int32_t offset;
-  this->stream->getCoalescedOffsetAndSize(streamId, offset, size);
+  this->stream->getCoalescedOffsetAndMemSize(streamId, offset, size);
   assert(size <= valLen && "ElemSize overflow.");
   vaddr += offset;
   this->getValue(vaddr, size, val);
@@ -891,7 +891,7 @@ const uint8_t *StreamElement::getValuePtrByStreamId(StaticId streamId) const {
   int size = this->size;
   // Handle offset for coalesced stream.
   int32_t offset;
-  this->stream->getCoalescedOffsetAndSize(streamId, offset, size);
+  this->stream->getCoalescedOffsetAndMemSize(streamId, offset, size);
   vaddr += offset;
   auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
   S_ELEMENT_DPRINTF(
@@ -909,7 +909,7 @@ StreamElement::getUpdateValuePtrByStreamId(StaticId streamId) const {
    * UpdateValue is not handled at line granularity.
    */
   int32_t offset;
-  this->stream->getCoalescedOffsetAndSize(streamId, offset, size);
+  this->stream->getCoalescedOffsetAndMemSize(streamId, offset, size);
   S_ELEMENT_DPRINTF(
       this, "GetUpdateValue [%#x, +%d), offset %d, data %s.\n", vaddr, size,
       offset,

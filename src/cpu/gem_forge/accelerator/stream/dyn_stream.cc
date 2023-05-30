@@ -1545,13 +1545,21 @@ std::string DynStream::dumpString() const {
       ss << elem->isReqIssued();
     }
     ss << ')';
-    ss << " AddrBaseE";
-    for (const auto &baseEdge : elem->addrBaseElements) {
-      dumpEdge(baseEdge);
+    if (this->isFloatedToCache()) {
+      bool acked = this->cacheAckedElements.count(elem->FIFOIdx.entryIdx);
+      ss << (acked ? " Ack " : " NAck");
     }
-    ss << " ValBaseE";
-    for (const auto &baseEdge : elem->valueBaseElements) {
-      dumpEdge(baseEdge);
+    if (!elem->addrBaseElements.empty()) {
+      ss << " AddrBaseE";
+      for (const auto &baseEdge : elem->addrBaseElements) {
+        dumpEdge(baseEdge);
+      }
+    }
+    if (!elem->valueBaseElements.empty()) {
+      ss << " ValBaseE";
+      for (const auto &baseEdge : elem->valueBaseElements) {
+        dumpEdge(baseEdge);
+      }
     }
   }
 

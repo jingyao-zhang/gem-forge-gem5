@@ -243,8 +243,9 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
       endSE->receiveStreamEnd(pkt);
       return;
     } else {
-      // It's coming here.
-      assert(endS->getState() == LLCDynStream::State::MIGRATING);
+      // It's coming here or not even configured yet.
+      assert(endS->getState() == LLCDynStream::State::MIGRATING ||
+             endS->getState() == LLCDynStream::State::INITIALIZED);
     }
   }
 
@@ -271,7 +272,7 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynStreamPtr dynS,
    */
   if (isCommit) {
     LLC_S_DPRINTF_(StreamRangeSync, dynS->getDynStrandId(),
-                   "[Commit] Received migrate.\n");
+                   "[Commit] Recv commit migrate.\n");
     if (dynS->isTerminated()) {
       LLC_S_DPRINTF_(StreamRangeSync, dynS->getDynStrandId(),
                      "[Commit] Already terminated.\n");
@@ -3818,6 +3819,16 @@ LLCStreamEngine::releaseSlice(SliceList::iterator sliceIter) {
     while (!dynS->idxToElementMap.empty()) {
       auto elemIter = dynS->idxToElementMap.begin();
       auto &elem = elemIter->second;
+      /**
+       * We avoid releasing an elem if not all slices are registered.
+       * This is the case for multi-line element, and the next slice is not
+       * initialized yet.
+       * TODO: This could cover the below adhoc check on element map size?
+       */
+      if (!elem->areAllSlicesRegistered()) {
+        LLC_SE_ELEM_DPRINTF(elem, "Not released as not AllSlicesRegistered.\n");
+        break;
+      }
       // StoreComputeStream is never ready.
       if ((elem->isReady() || dynS->getStaticS()->isStoreComputeStream()) &&
           elem->areSlicesReleased()) {
@@ -4304,8 +4315,8 @@ void LLCStreamEngine::postProcessIndirectAtomicSlice(
       auto elemIter = dynS->idxToElementMap.begin();
       const auto &elem = elemIter->second;
       if (!elem->isComputationDone() && !elem->isPredicatedOff()) {
-        LLC_SE_ELEM_DPRINTF(
-            elem, "[IndAtomic] Not Release: !CmpDone && !PredOff.\n");
+        LLC_SE_ELEM_DPRINTF(elem,
+                            "[IndAtomic] Not Release: !CmpDone && !PredOff.\n");
         break;
       }
       dynS->eraseElem(elemIter);

@@ -89,6 +89,8 @@ class StreamEngine(GemForgeAccelerator):
         8, "Number of outer elems for eliminated nest streams")
     elimNestStreamInstances = Param.UInt32(
         8, "Number of eliminated nest streams")
+    yieldCoreWhenBlocked = Param.Bool(
+        False, "Try to yield the core when blocked by stream")
 
     # parameters for stream float.
     streamEngineEnableFloat = Param.Bool(

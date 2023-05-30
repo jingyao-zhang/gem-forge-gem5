@@ -95,7 +95,7 @@ public:
    * The only difference between get() and getUsed() is that
    * get() returns the value for myself, while getUsed()
    * returns the computedValue if I am LoadComputeS.
-   * 
+   *
    * For LoadCompute/Update, use get().
    * For Predication/LoopBound, use getUsed().
    */
@@ -164,6 +164,9 @@ public:
   void extractElementDataFromSlice(GemForgeCPUDelegator *cpuDelegator,
                                    const DynStreamSliceId &sliceId,
                                    const ruby::DataBlock &dataBlock);
+  void extractComputedValueFromSlice(GemForgeCPUDelegator *cpuDelegator,
+                                     const DynStreamSliceId &sliceId,
+                                     const ruby::DataBlock &dataBlock);
 
   /**
    * Helper function to compute the overlap between the a range and the element.
@@ -191,6 +194,9 @@ public:
   const LLCStreamSlicePtr &getSliceAt(int i) const {
     assert(i >= 0 && i < this->numSlices && "GetSliceAt() Illegal Index.");
     return this->slices.at(i);
+  }
+  bool areAllSlicesRegistered() const {
+    return this->numSliceBytes == this->size;
   }
 
   /**
@@ -282,6 +288,7 @@ private:
   static constexpr int MAX_SLICES_PER_ELEMENT = 3;
   std::array<LLCStreamSlicePtr, MAX_SLICES_PER_ELEMENT> slices;
   int numSlices = 0;
+  int numSliceBytes = 0;
 
   State state = State::INITIALIZED;
 
@@ -319,7 +326,9 @@ private:
    * Computation Result. Currently used for:
    * 1. LoadComputeStream.
    * 2. UpdateStream's StoreValue.
+   * For forwarded computed value, we need to track the received bytes.
    */
+  size_t receivedComputedValueBytes = 0;
   StreamValue computedValue;
   bool computedValueReady = false;
 

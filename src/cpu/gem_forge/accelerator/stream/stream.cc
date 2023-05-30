@@ -37,7 +37,7 @@ StreamValue GetCoalescedStreamValue::operator()(uint64_t streamId) const {
   assert(this->stream->isCoalescedHere(streamId) &&
          "Invalid CoalescedStreamId.");
   int32_t offset, size;
-  this->stream->getCoalescedOffsetAndSize(streamId, offset, size);
+  this->stream->getCoalescedOffsetAndMemSize(streamId, offset, size);
   StreamValue ret;
   memcpy(ret.uint8Ptr(), this->streamValue.uint8Ptr(offset), size);
   return ret;
@@ -305,9 +305,9 @@ void Stream::dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc) {
 
 void Stream::executeStreamConfig(uint64_t seqNum,
                                  const DynStreamParamV *inputVec) {
-  auto &dynStream = this->getDynStream(seqNum);
-  assert(!dynStream.configExecuted && "StreamConfig already executed.");
-  dynStream.configExecuted = true;
+  auto &dynS = this->getDynStream(seqNum);
+  assert(!dynS.configExecuted && "StreamConfig already executed.");
+  dynS.configExecuted = true;
 
   /**
    * We intercept the extra input value here.
@@ -315,12 +315,12 @@ void Stream::executeStreamConfig(uint64_t seqNum,
   if (inputVec) {
     assert(!se->isTraceSim());
     DynStreamParamV inputVecCopy(*inputVec);
-    this->extractExtraInputValues(dynStream, &inputVecCopy);
-    this->setupAddrGen(dynStream, &inputVecCopy);
+    this->extractExtraInputValues(dynS, &inputVecCopy);
+    this->setupAddrGen(dynS, &inputVecCopy);
   } else {
     assert(se->isTraceSim());
-    this->extractExtraInputValues(dynStream, nullptr);
-    this->setupAddrGen(dynStream, nullptr);
+    this->extractExtraInputValues(dynS, nullptr);
+    this->setupAddrGen(dynS, nullptr);
   }
 
   /**
@@ -331,17 +331,17 @@ void Stream::executeStreamConfig(uint64_t seqNum,
     assert(rootDynS.configExecuted &&
            "Root dynamic stream should be executed.");
     if (rootDynS.hasTotalTripCount()) {
-      if (dynStream.hasTotalTripCount()) {
-        assert(dynStream.getTotalTripCount() == rootDynS.getTotalTripCount() &&
+      if (dynS.hasTotalTripCount()) {
+        assert(dynS.getTotalTripCount() == rootDynS.getTotalTripCount() &&
                "Mismatch in TotalTripCount.");
       } else {
-        dynStream.setTotalAndInnerTripCount(rootDynS.getTotalTripCount());
-        DYN_S_DPRINTF(dynStream.dynStreamId,
+        dynS.setTotalAndInnerTripCount(rootDynS.getTotalTripCount());
+        DYN_S_DPRINTF(dynS.dynStreamId,
                       "Set TotalTripCount %llu from StepRoot.\n",
-                      dynStream.getTotalTripCount());
+                      dynS.getTotalTripCount());
       }
     } else {
-      assert(!dynStream.hasTotalTripCount() &&
+      assert(!dynS.hasTotalTripCount() &&
              "Missing TotalTripCount in StepRootStream.");
     }
   } else if (!this->backBaseStreams.empty()) {
@@ -350,10 +350,10 @@ void Stream::executeStreamConfig(uint64_t seqNum,
     auto backBaseS = *(this->backBaseStreams.begin());
     const auto &backBaseDynS = backBaseS->getDynStream(seqNum);
     if (backBaseDynS.configExecuted) {
-      dynStream.setTotalAndInnerTripCount(backBaseDynS.getTotalTripCount());
-      DYN_S_DPRINTF(dynStream.dynStreamId,
-                    "Set TotalTripCount %llu from BackBase.\n",
-                    dynStream.getTotalTripCount());
+      DYN_S_DPRINTF(dynS.dynStreamId,
+                    "Set TotalTripCount %llu from BackBase %s.\n",
+                    backBaseDynS.getTotalTripCount(), backBaseDynS.dynStreamId);
+      dynS.setTotalAndInnerTripCount(backBaseDynS.getTotalTripCount());
     }
   }
 
@@ -364,10 +364,10 @@ void Stream::executeStreamConfig(uint64_t seqNum,
       continue;
     }
     auto &backDepDynS = backDepS->getDynStream(seqNum);
-    backDepDynS.setTotalAndInnerTripCount(dynStream.getTotalTripCount());
     DYN_S_DPRINTF(backDepDynS.dynStreamId,
-                  "Set TotalTripCount %llu from BackBase.\n",
-                  backDepDynS.getTotalTripCount());
+                  "Set TotalTripCount %llu from BackBase %s.\n",
+                  backDepDynS.getTotalTripCount(), dynS.dynStreamId);
+    backDepDynS.setTotalAndInnerTripCount(dynS.getTotalTripCount());
   }
 }
 
@@ -513,6 +513,21 @@ bool Stream::isDynStreamRewinded(const DynStreamId &dynStreamId) const {
   return false;
 }
 
+int64_t Stream::fixSuspiciousTripCount(int64_t tripCount) const {
+  if ((tripCount >> 56) & 0xFF) {
+    /**
+     * ! Hack: LLVM may generate crazy trip count expression that does not
+     * ! consider the case when TripCount could be negative or zero, as it
+     * ! assumes such case is covered by some branch checking.
+     * ! As a hack here, we check the most significant 8 bits, and if they
+     * ! are set, we set the TripCount to 0.
+     */
+    S_WARN(this, "Adjust Suspicious TripCount %lu To %lu.\n", tripCount, 0);
+    tripCount = 0;
+  }
+  return tripCount;
+}
+
 void Stream::setupLinearAddrFunc(DynStream &dynStream,
                                  const DynStreamParamV *inputVec,
                                  const LLVM::TDG::StreamInfo &info) {
@@ -576,19 +591,7 @@ void Stream::setupLinearAddrFunc(DynStream &dynStream,
     auto &formalParam = formalParams.at(idx);
     // TripCount.
     auto curTripCount = formalParam.invariant.uint64();
-    if ((curTripCount >> 56) & 0xFF) {
-      /**
-       * ! Hack: LLVM may generate crazy trip count expression that does not
-       * ! consider the case when TripCount could be negative or zero, as it
-       * ! assumes such case is covered by some branch checking.
-       * ! As a hack here, we check the most significant 8 bits, and if they
-       * ! are set, we set the TripCount to 0.
-       */
-      DYN_S_WARN(dynStream.dynStreamId,
-                 "Adjust Suspicious TripCount %d %lu To %lu.\n", idx,
-                 curTripCount, 0);
-      curTripCount = 0;
-    }
+    curTripCount = this->fixSuspiciousTripCount(curTripCount);
     // TotalTripCount.
     totalTripCount *= curTripCount;
     formalParam.invariant.uint64() = totalTripCount;
@@ -779,12 +782,12 @@ void Stream::extractExtraInputValues(DynStream &dynS,
            loopLevel >= this->getConfigLoopLevel(); --loopLevel) {
         uint64_t loopTripCount;
 
-        if (inputIdx <
-            this->primeLogical->info.static_info().iv_pattern().params_size()) {
+        const auto &ivPattern =
+            this->primeLogical->info.static_info().iv_pattern();
 
-          const auto &protoParam =
-              this->primeLogical->info.static_info().iv_pattern().params(
-                  inputIdx);
+        if (inputIdx < ivPattern.params_size()) {
+
+          const auto &protoParam = ivPattern.params(inputIdx);
           if (protoParam.is_static()) {
             loopTripCount = protoParam.value();
           } else {
@@ -809,6 +812,7 @@ void Stream::extractExtraInputValues(DynStream &dynS,
           inputVec->erase(inputVec->begin());
           inputIdx++;
         }
+        loopTripCount = this->fixSuspiciousTripCount(loopTripCount);
         DYN_S_DPRINTF(dynS.dynStreamId,
                       "[FixTripCount] LoopLevel %d TripCount %lu x "
                       "TotalTripCount %lu = %lu.\n",

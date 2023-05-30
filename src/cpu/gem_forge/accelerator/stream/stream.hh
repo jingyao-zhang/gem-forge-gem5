@@ -451,6 +451,15 @@ public:
   void extractExtraInputValues(DynStream &dynS, DynStreamParamV *inputVec);
 
   /**
+   * ! Hack: LLVM may generate crazy trip count expression that does not
+   * ! consider the case when TripCount could be negative or zero, as it
+   * ! assumes such case is covered by some branch checking.
+   * ! As a hack here, we check the most significant 8 bits, and if they
+   * ! are set, we set the TripCount to 0.
+   */
+  int64_t fixSuspiciousTripCount(int64_t tripCount) const;
+
+  /**
    * For debug.
    */
   std::string dumpString() const;
@@ -789,18 +798,18 @@ public:
   uint64_t getTrueFootprint() const;
   bool isContinuous() const;
   uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const;
-  void getCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
-                                 int32_t &size) const;
 
   /**
    * Try to get coalesced offset and size.
    * @return: whether the streamId is coalesced here.
    */
-  bool tryGetCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
+  bool tryGetCoalescedOffsetAndMemSize(uint64_t streamId, int32_t &offset,
+                                       int32_t &size) const;
+  void getCoalescedOffsetAndMemSize(uint64_t streamId, int32_t &offset,
                                     int32_t &size) const;
   bool isCoalescedHere(uint64_t streamId) const {
     int32_t offset, size;
-    return this->tryGetCoalescedOffsetAndSize(streamId, offset, size);
+    return this->tryGetCoalescedOffsetAndMemSize(streamId, offset, size);
   }
 
   void setNested() { this->nested = true; }

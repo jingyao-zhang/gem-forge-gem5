@@ -28,7 +28,8 @@ bool StreamRegionController::canDispatchStreamEnd(const EndArgs &args) {
    * 1. All DynRegions Config are committed.
    * 2. The StaticRegion is eliminated.
    */
-  if (streamRegion.loop_eliminated() && !canDispatch &&
+  if (this->se->myParams->yieldCoreWhenBlocked &&
+      streamRegion.loop_eliminated() && !canDispatch &&
       this->allDynRegionConfigCommitted(staticRegion)) {
     SE_DPRINTF("[NotDispatchStreamEnd] Yield.\n");
     this->se->yieldCPU();
@@ -179,7 +180,8 @@ bool StreamRegionController::canExecuteStreamEnd(const EndArgs &args) {
   /**
    * For Eliminated Region, we try to yield the CPU.
    */
-  if (streamRegion.loop_eliminated() && !canExecute &&
+  if (this->se->myParams->yieldCoreWhenBlocked &&
+      streamRegion.loop_eliminated() && !canExecute &&
       this->allDynRegionConfigCommitted(staticRegion)) {
     SE_DPRINTF("[NotExecuteStreamEnd] Yield.\n");
     this->se->yieldCPU();
@@ -269,7 +271,8 @@ bool StreamRegionController::canCommitStreamEnd(const EndArgs &args) {
   /**
    * For Eliminated Region, we try to yield the CPU.
    */
-  if (streamRegion.loop_eliminated() && !canCommit &&
+  if (this->se->myParams->yieldCoreWhenBlocked &&
+      streamRegion.loop_eliminated() && !canCommit &&
       this->allDynRegionConfigCommitted(staticRegion)) {
     SE_DPRINTF("[NotCommitStreamEnd] Yield.\n");
     this->se->yieldCPU();

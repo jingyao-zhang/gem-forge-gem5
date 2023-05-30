@@ -46,8 +46,8 @@ parser.add_argument("--gem-forge-enable-func-acc-tick", action="store_true",
                   help="""enable func accumulate ticks.""", default=False)
 parser.add_argument("--gem-forge-enable-func-trace-at-tick", action="store", type=int,
                   help="""enable func trace at this tick.""", default=-1)
-parser.add_argument("--gem-forge-cpu-deadlock-interval", action="store", type=str, default="200000ns",
-                  help="""Raise deadlock in CPU 0 after this amount of time without progress.""")
+parser.add_argument("--gem-forge-cpu-deadlock-interval", action="store", type=str, default="10000ns",
+                  help="""Raise deadlock in CPU after this amount of time without progress.""")
 parser.add_argument("--gem-forge-empty-mem", action="store_true",
                   help="""start simulation without installing the memory snapshot.""",
                   default=False)
@@ -136,6 +136,8 @@ parser.add_argument("--gem-forge-stream-engine-elim-nest-stream-instances", acti
                   default="8", type=int, help="""number of elim nested stream instances""")
 parser.add_argument("--gem-forge-stream-engine-elim-nest-outer-stream-elems", action="store",
                   default="16", type=int, help="""number of elim nested outer stream elems""")
+parser.add_argument("--gem-forge-stream-engine-yield-core-when-blocked", action="store_true",
+                  default=False, help="""yield the core when blocked by stream engine""")
 
 # Stream Float options.
 parser.add_argument("--gem-forge-stream-engine-enable-float", action="store_true", default=False,

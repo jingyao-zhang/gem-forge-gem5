@@ -455,6 +455,13 @@ public:
   // For initialization control.
   uint64_t nextInitSliceIdx = 0;
 
+  // Exclude uncredited slices.
+  uint64_t getNumUncreditedSlices() const {
+    // Always initialized before credited.
+    assert(this->nextInitSliceIdx >= this->creditedSliceIdx);
+    return this->nextInitSliceIdx - this->creditedSliceIdx;
+  }
+
   /**
    * Number of requests of this stream (not including indirect streams)
    * issued but data not ready.
@@ -588,7 +595,7 @@ public:
   bool issueBeforeCommit = true;
   bool issueAfterCommit = false;
   bool shouldIssueBeforeCommit() const { return this->issueBeforeCommit; }
-  bool shouldIssueAfterCommit() const { return this->issueAfterCommit;}
+  bool shouldIssueAfterCommit() const { return this->issueAfterCommit; }
   bool checkIssueBeforeCommit() const;
   bool checkIssueAfterCommit() const;
 

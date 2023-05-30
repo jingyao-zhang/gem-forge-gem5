@@ -48,7 +48,7 @@ void LLCStreamCommitController::commit() {
   for (auto dynS : this->streams) {
     if (dynS->commitController != this) {
       LLC_S_PANIC(dynS->getDynStrandId(),
-                  "Try commit a LLCDynStream not registered here.");
+                  "Try commit a LLCDynS not registered here.");
     }
     if (numCommitted >= commitWidth) {
       break;

@@ -145,12 +145,9 @@ StreamValue LLCStreamElement::getUsedValueByStreamId(uint64_t streamId) const {
 
   if (this->S->isLoadComputeStream()) {
     // This is the ComputedValue.
+    // We check that size is CoreElemSize.
     assert(this->isComputedValueReady() && "ComputedValue not Ready.");
-    int32_t offset = 0;
-    int size = this->size;
-    this->S->getCoalescedOffsetAndSize(streamId, offset, size);
-    assert(offset == 0);
-    assert(size == this->size);
+    assert(this->S->isCoalescedHere(streamId) && "Stream not coalesced here.");
     return this->computedValue;
   }
 
@@ -165,7 +162,7 @@ StreamValue LLCStreamElement::getValueByStreamId(uint64_t streamId) const {
   int size = this->size;
   // AtomicComputeS is never coalesced, and should use CoreElemSize.
   if (!this->S->isAtomicComputeStream()) {
-    this->S->getCoalescedOffsetAndSize(streamId, offset, size);
+    this->S->getCoalescedOffsetAndMemSize(streamId, offset, size);
   }
   return this->getValue(offset, size);
 }
@@ -174,7 +171,7 @@ uint64_t LLCStreamElement::getUInt64ByStreamId(uint64_t streamId) const {
   assert(this->isReady());
   int32_t offset = 0;
   int size = this->size;
-  this->S->getCoalescedOffsetAndSize(streamId, offset, size);
+  this->S->getCoalescedOffsetAndMemSize(streamId, offset, size);
   assert(size <= sizeof(uint64_t) && "ElementSize overflow.");
   assert(offset + size <= this->size && "Size overflow.");
   return GemForgeUtils::rebuildData(this->getUInt8Ptr(offset), size);
@@ -248,7 +245,7 @@ int LLCStreamElement::computeOverlapImpl(int elemSize, Addr rangeVAddr,
                                          int &elemOffset) const {
   if (this->S->isMemStream()) {
     if (this->vaddr == 0) {
-      panic("Try to computeOverlap without elementVAddr.");
+      panic("Try to computeOverlap without elemVAddr.");
     }
   }
   // Compute the overlap between the element and the slice.
@@ -306,10 +303,8 @@ void LLCStreamElement::extractElementDataFromSlice(
   auto data = dataBlock.getData(
       overlapLHS % ruby::RubySystem::getBlockSizeBytes(), overlapSize);
   memcpy(this->getUInt8Ptr(elemOffset), data, overlapSize);
-  if (Debug::LLCRubyStreamBase) {
-    LLC_SLICE_DPRINTF(sliceId, "Extract elem data %dB %s.\n", overlapSize,
-                      GemForgeUtils::dataToString(data, overlapSize));
-  }
+  LLC_SLICE_DPRINTF(sliceId, "Extract elem data %dB %s.\n", overlapSize,
+                    GemForgeUtils::dataToString(data, overlapSize));
 
   // Mark these bytes ready.
   this->addReadyBytes(overlapSize);
@@ -327,12 +322,71 @@ void LLCStreamElement::extractElementDataFromSlice(
   }
 }
 
-void LLCStreamElement::addSlice(LLCStreamSlicePtr &slice) {
-  if (this->numSlices >= MAX_SLICES_PER_ELEMENT) {
-    LLC_SLICE_PANIC(slice->getSliceId(), "Element -> Slices overflow.");
+void LLCStreamElement::extractComputedValueFromSlice(
+    GemForgeCPUDelegator *cpuDelegator, const DynStreamSliceId &sliceId,
+    const ruby::DataBlock &dataBlock) {
+
+  auto elemIdx = this->idx;
+  auto valSize = this->S->getCoreElementSize();
+  if (this->vaddr == 0 || sliceId.vaddr == 0) {
+    LLC_ELEMENT_PANIC(this, "Cannot extract data without vaddr.");
   }
-  LLC_ELEMENT_DPRINTF(this, "Register slice %s.\n", slice->getSliceId());
+
+  int sliceOffset;
+  int elemOffset;
+  int overlapSize = this->computeLoadComputeOverlap(
+      sliceId.vaddr, sliceId.getSize(), sliceOffset, elemOffset);
+  if (overlapSize == 0) {
+    // It's possible that there is no overlap due to shrinked CoreElemSize.
+    return;
+  }
+  assert(elemOffset + overlapSize <= valSize && "Overflown ComputedValue.");
+  Addr overlapLHS = this->vaddr + elemOffset;
+
+  // Get the data from the cache line.
+  auto data = dataBlock.getData(
+      overlapLHS % ruby::RubySystem::getBlockSizeBytes(), overlapSize);
+
+  LLC_SLICE_DPRINTF(
+      sliceId, "Recv ComputedVal %lu Size %d [%lu, %lu) Slice [%lu, %lu) %s.\n",
+      elemIdx, valSize, elemOffset, elemOffset + overlapSize, sliceOffset,
+      sliceOffset + overlapSize,
+      GemForgeUtils::dataToString(data, overlapSize));
+
+  // Copy the data.
+  assert(elemOffset + overlapSize <= sizeof(this->computedValue));
+  memcpy(this->computedValue.uint8Ptr(elemOffset), data, overlapSize);
+
+  this->receivedComputedValueBytes += overlapSize;
+  if (this->receivedComputedValueBytes == valSize) {
+    this->computedValueReady = true;
+  }
+}
+
+void LLCStreamElement::addSlice(LLCStreamSlicePtr &slice) {
+  const auto &sliceId = slice->getSliceId();
+  if (this->numSlices >= MAX_SLICES_PER_ELEMENT) {
+    LLC_SLICE_PANIC(sliceId, "Elem -> Slices overflow.");
+  }
+  LLC_ELEMENT_DPRINTF(this, "Register slice %s. ElemVAddr %#x.\n",
+                      slice->getSliceId(), this->vaddr);
   this->slices[this->numSlices] = slice;
   this->numSlices++;
+
+  // Compute the overlaped slice bytes.
+  if (this->vaddr == 0) {
+    // This is a faulted element on PtrChase?
+    LLC_ELEMENT_DPRINTF(this, "Skip add SliceBytes.\n");
+    assert(this->S->isPointerChaseLoadStream() && "AddSlice but no VAddr.");
+    // If so we skip this.
+    return;
+  }
+  int sliceOffset;
+  int elemOffset;
+  int overlapSize = this->computeOverlap(sliceId.vaddr, sliceId.getSize(),
+                                         sliceOffset, elemOffset);
+  assert(overlapSize > 0 && "Empty overlap.");
+  this->numSliceBytes += overlapSize;
+  assert(this->numSliceBytes <= this->size && "SliceBytes overflow.");
 }
 } // namespace gem5

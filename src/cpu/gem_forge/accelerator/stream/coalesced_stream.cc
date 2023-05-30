@@ -62,10 +62,35 @@ void Stream::finalize() {
   // Merge predicated info.
   for (auto LS : this->logicals) {
     if (!LS->getPredicatedStreams().empty()) {
-      if (!this->predFuncInfos.empty()) {
-        panic("MultiPredCallback on LS: %s.", LS->info.name());
-      }
       const auto &LSInfo = LS->info.static_info();
+      if (!this->predFuncInfos.empty()) {
+        for (const auto &predX : LSInfo.pred_func_info()) {
+          bool matched = false;
+          for (const auto &predY : this->predFuncInfos) {
+            if (predX.name() == predY->name()) {
+              matched = true;
+              break;
+            }
+          }
+          if (!matched) {
+            panic("Mismatched PredFunc on LS: %s.", LS->info.name());
+          }
+        }
+        for (const auto &predicatedStreamId : LS->getPredicatedStreams()) {
+          bool matched = false;
+          for (const auto &predS : this->predicatedStreamIds) {
+            if (predS.id().id() == predicatedStreamId.id().id()) {
+              matched = true;
+              break;
+            }
+          }
+          if (!matched) {
+            panic("Mismatched PredS on LS: %s.", LS->info.name());
+          }
+        }
+        // All PredFunc matched. we skip it.
+        continue;
+      }
       for (auto i = 0; i < LSInfo.pred_func_info_size(); ++i) {
         this->predFuncInfos.push_back(&LSInfo.pred_func_info(i));
       }
@@ -522,20 +547,15 @@ uint64_t Stream::getStreamLengthAtInstance(uint64_t streamInstance) const {
   panic("Coalesced stream length at instance is not supported yet.\n");
 }
 
-void Stream::getCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
-                                       int32_t &size) const {
-  for (auto LS : this->logicals) {
-    if (LS->getStreamId() == streamId) {
-      offset = LS->getCoalesceOffset() - this->baseOffset;
-      size = LS->getMemElementSize();
-      return;
-    }
+void Stream::getCoalescedOffsetAndMemSize(uint64_t streamId, int32_t &offset,
+                                          int32_t &size) const {
+  if (!this->tryGetCoalescedOffsetAndMemSize(streamId, offset, size)) {
+    S_PANIC(this, "Failed to find logical stream %llu.\n", streamId);
   }
-  S_PANIC(this, "Failed to find logical stream %llu.\n", streamId);
 }
 
-bool Stream::tryGetCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
-                                          int32_t &size) const {
+bool Stream::tryGetCoalescedOffsetAndMemSize(uint64_t streamId, int32_t &offset,
+                                             int32_t &size) const {
   for (auto LS : this->logicals) {
     if (LS->getStreamId() == streamId) {
       offset = LS->getCoalesceOffset() - this->baseOffset;

@@ -564,7 +564,7 @@ void LLCDynStream::initNextElem(Addr vaddr) {
    */
   if (this->getStaticS()->isDirectMemStream() &&
       this->getMemElementSize() >= 64) {
-    if (this->idxToElementMap.size() >= 512) {
+    if (this->idxToElementMap.size() >= 2048) {
       int sliceNotReleasedElements = 0;
       for (const auto &entry : this->idxToElementMap) {
         const auto &element = entry.second;
@@ -574,16 +574,16 @@ void LLCDynStream::initNextElem(Addr vaddr) {
       }
       if (sliceNotReleasedElements > 128) {
         for (const auto &entry : this->idxToElementMap) {
-          const auto &element = entry.second;
-          LLC_ELEMENT_HACK(
-              element, "Element Overflow. Ready %d. AllSlicedReleased %d.\n",
-              element->isReady(), element->areSlicesReleased());
-          for (int i = 0, nSlices = element->getNumSlices(); i < nSlices; ++i) {
-            const auto &slice = element->getSliceAt(i);
+          const auto &elem = entry.second;
+          LLC_ELEMENT_HACK(elem,
+                           "Elem Overflow. Ready %d. AllSlicedReleased %d.\n",
+                           elem->isReady(), elem->areSlicesReleased());
+          for (int i = 0, nSlices = elem->getNumSlices(); i < nSlices; ++i) {
+            const auto &slice = elem->getSliceAt(i);
             Addr sliceVAddr = slice->getSliceId().vaddr;
             Addr slicePAddr = 0;
             this->translateToPAddr(sliceVAddr, slicePAddr);
-            LLC_ELEMENT_HACK(element, "  Slice %s %s VAddr %#x PAddr %#x.",
+            LLC_ELEMENT_HACK(elem, "  Slice %s %s VAddr %#x PAddr %#x.",
                              slice->getSliceId(),
                              LLCStreamSlice::stateToString(slice->getState()),
                              sliceVAddr, slicePAddr);
@@ -595,9 +595,9 @@ void LLCDynStream::initNextElem(Addr vaddr) {
           MLCDynS->panicDump();
         } else {
           LLC_S_HACK(this->getDynStrandId(),
-                     "LLCElement Overflow, but MLCDynS Released?");
+                     "LLCElem Overflow, but MLCDynS Released?");
         }
-        LLC_S_PANIC(this->getDynStrandId(), "Infly Elements Overflow %d.",
+        LLC_S_PANIC(this->getDynStrandId(), "Infly Elem Overflow %d.",
                     this->idxToElementMap.size());
       }
     }
@@ -1044,8 +1044,7 @@ void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
     if (baseElem->strandId == sliceId.getDynStrandId()) {
       /**
        * Found the base element to hold the data.
-       * If the BaseStream is IndirectStream, we copy the ElementVaddr from the
-       * slice.
+       * If the BaseS is IndS, we copy the ElemVaddr from the slice.
        */
       if (baseElem->vaddr == 0) {
         baseElem->vaddr = sliceId.vaddr;
@@ -1057,6 +1056,11 @@ void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
           sliceId.vaddr);
       baseElem->extractElementDataFromSlice(S->getCPUDelegator(), sliceId,
                                             dataBlk);
+      if (baseElem->S->isLoadComputeStream()) {
+        // Also extract the LoadComputeValue.
+        baseElem->extractComputedValueFromSlice(S->getCPUDelegator(), sliceId,
+                                                dataBlk);
+      }
       foundBaseElem = true;
       break;
     }
@@ -2214,7 +2218,7 @@ LLCStreamElementPtr LLCDynStream::getElemPanic(uint64_t elemIdx,
                                                const char *errMsg) const {
   auto elem = this->getElem(elemIdx);
   if (!elem) {
-    LLC_S_PANIC(this->getDynStrandId(), "Failed to get LLCElem %llu for %s.",
+    LLC_S_PANIC(this->getDynStrandId(), "Failed to get LLCElem %lu for %s.",
                 elemIdx, errMsg);
   }
   return elem;

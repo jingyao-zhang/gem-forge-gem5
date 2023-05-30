@@ -48,6 +48,8 @@ def initializeStreamEngine(args):
         args.gem_forge_stream_engine_elim_nest_stream_instances
     se.elimNestOuterStreamElems = \
         args.gem_forge_stream_engine_elim_nest_outer_stream_elems
+    se.yieldCoreWhenBlocked = \
+        args.gem_forge_stream_engine_yield_core_when_blocked
 
     se.streamEngineEnableFloat = args.gem_forge_stream_engine_enable_float
     se.streamEngineFloatPolicy = args.gem_forge_stream_engine_float_policy

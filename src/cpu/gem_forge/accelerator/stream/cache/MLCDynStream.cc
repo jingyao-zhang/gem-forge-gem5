@@ -184,7 +184,7 @@ void MLCDynStream::recvCoreReq(const DynStreamSliceId &sliceId) {
 }
 
 void MLCDynStream::recvCoreReqHit(const DynStreamSliceId &sliceId) {
-  MLC_SLICE_DPRINTF(sliceId, "Receive request hit to %#x.\n", sliceId.vaddr);
+  MLC_SLICE_DPRINTF(sliceId, "Recv req hit to %#x.\n", sliceId.vaddr);
 
   auto slice = this->findSliceForCoreRequest(sliceId);
   if (slice->coreStatus != MLCStreamSlice::CoreStatusE::NONE) {

@@ -1143,7 +1143,8 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
     }
   }
 
-  if (!ready && allStreamLoopEliminated && allDynStreamConfigCommitted) {
+  if (this->myParams->yieldCoreWhenBlocked && !ready &&
+      allStreamLoopEliminated && allDynStreamConfigCommitted) {
     SE_DPRINTF("StreamNotReady: Yield.\n");
     this->yieldCPU();
   }
@@ -1273,7 +1274,7 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
         int32_t size = elem->size;
         // Handle offset for coalesced stream.
         int32_t offset;
-        S->getCoalescedOffsetAndSize(streamId, offset, size);
+        S->getCoalescedOffsetAndMemSize(streamId, offset, size);
         vaddr += offset;
         if (elem->isValueFaulted(vaddr, size)) {
           S_ELEMENT_PANIC(elem, "Commit user of faulted value.");

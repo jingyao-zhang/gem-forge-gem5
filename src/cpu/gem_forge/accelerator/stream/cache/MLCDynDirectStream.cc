@@ -460,12 +460,14 @@ void MLCDynDirectStream::trySendCreditToLLC() {
 
     /**
      * Additional sanity check that the RemoteS does not have too many slices.
+     * We exclude those uncredited slices.
      */
     {
       auto remoteDynS = LLCDynStream::getLLCStreamPanic(this->getDynStrandId(),
                                                         "trySendCredit()");
       auto inflySlices = remoteDynS->idxToElementMap.size() /
-                         this->slicedStream.getElemPerSlice();
+                             this->slicedStream.getElemPerSlice() -
+                         remoteDynS->getNumUncreditedSlices();
       auto inflySlicesThreshold =
           std::max(this->config->mlcBufferNumSlices * 2, 4);
       if (inflySlices >= inflySlicesThreshold) {
@@ -476,7 +478,7 @@ void MLCDynDirectStream::trySendCreditToLLC() {
                       inflySlicesThreshold);
 
         /**
-         * PUMPrefetchStream won't send back anything, we here we register a
+         * PUMPrefetchS won't send back anything, we here we register a
          * release callback to continue issuing credits.
          */
         auto mlcController = this->controller;
@@ -907,7 +909,7 @@ void MLCDynDirectStream::notifyIndStreams(const MLCStreamSlice &slice) {
         int32_t subOffset = 0;
         int32_t subSize = elementSize;
 
-        S->getCoalescedOffsetAndSize(streamId, subOffset, subSize);
+        S->getCoalescedOffsetAndMemSize(streamId, subOffset, subSize);
         assert(subOffset + subSize <= elementSize &&
                "Overflow of coalesced base element.");
         uint64_t baseData =
@@ -1184,7 +1186,7 @@ void MLCDynDirectStream::checkCoreCommitProgress() {
                            firstCoreElemIdx < segEndElementIdx;
       if (isLastSegment) {
         MLC_S_DPRINTF_(StreamRangeSync, this->getDynStrandId(),
-                       "[RangeCommit] Override the LastSegment ElementRange "
+                       "[RangeCommit] Override the LastSegment ElemRange "
                        "[%llu, %llu) -> [%llu, %llu).\n",
                        segStartElementIdx, segEndElementIdx, segStartElementIdx,
                        firstCoreElemIdx);
@@ -1206,10 +1208,22 @@ void MLCDynDirectStream::checkCoreCommitProgress() {
     seg.state = LLCSegmentPosition::State::COMMITTING;
   }
   // As a final touch, we release segment if we are done.
+  bool releasedSeg = false;
   while (this->llcSegments.size() > 1 &&
          this->llcSegments.front().state ==
              LLCSegmentPosition::State::COMMITTED) {
+    const auto &segment = this->llcSegments.front();
+    auto startElementIdx = segment.sliceIds.firstSliceId().getStartIdx();
+    auto endElementIdx = segment.endSliceId.getStartIdx();
+    MLC_S_DPRINTF_(StreamRangeSync, this->strandId,
+                   "[Range] Release Committed Seg [%llu, %lu).\n",
+                   startElementIdx, endElementIdx);
     this->llcSegments.pop_front();
+    releasedSeg = true;
+  }
+  // Schedule an event if we released some segments.
+  if (releasedSeg) {
+    this->scheduleAdvanceStream();
   }
 }
 
@@ -1295,7 +1309,8 @@ void MLCDynDirectStream::receiveStreamDone(const DynStreamSliceId &sliceId) {
       }
       if (dynS->getNextCacheDoneElemIdx() < segment.endSliceId.getStartIdx()) {
         MLC_S_DPRINTF_(StreamRangeSync, this->getDynStrandId(),
-                       "[Commit] Notify the Core StreamDone until %llu.\n",
+                       "[Commit] Notify the Core StreamDone [%llu, %llu).\n",
+                       segment.sliceIds.firstSliceId().getStartIdx(),
                        segment.endSliceId.getStartIdx());
         dynS->setNextCacheDoneElemIdx(segment.endSliceId.getStartIdx());
       }

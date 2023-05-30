@@ -127,8 +127,12 @@ void MLCStrandManager::checkShouldBeSliced(ConfigVec &configs) const {
       }
       if (useInnerLoopNonReduceValueBaseS) {
         MLC_S_DPRINTF(config->dynamicId,
-                      "Disabled StoreS Slicing in LoopLevel %u < %u.\n",
-                      config->stream->getLoopLevel(), innerMostLoopLevel);
+                      "Disabled Slicing with StoreFunc with InnerValBaseS.\n");
+        config->shouldBeSlicedToCacheLines = false;
+      } else if (!config->stream->isLoopEliminated()) {
+        // The core still needs to step one by one.
+        MLC_S_DPRINTF(config->dynamicId,
+                      "Disabled Slicing with StoreFunc as not Eliminated.\n");
         config->shouldBeSlicedToCacheLines = false;
       }
     }

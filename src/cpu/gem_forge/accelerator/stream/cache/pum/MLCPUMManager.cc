@@ -3969,7 +3969,7 @@ void MLCPUMManager::decoalesceAndDevectorizePattern(const ConfigPtr &config,
 
     int32_t offset = 0;
     int32_t size = 0;
-    config->stream->getCoalescedOffsetAndSize(id, offset, size);
+    config->stream->getCoalescedOffsetAndMemSize(id, offset, size);
 
     if (offset == 0 && size < patInfo.scalarElemSize) {
       MLC_S_DPRINTF(config->dynamicId,
@@ -3983,7 +3983,7 @@ void MLCPUMManager::decoalesceAndDevectorizePattern(const ConfigPtr &config,
   for (const auto &id : patInfo.scalarPatLogicalStreamIds) {
     int32_t offset = 0;
     int32_t size = 0;
-    config->stream->getCoalescedOffsetAndSize(id, offset, size);
+    config->stream->getCoalescedOffsetAndMemSize(id, offset, size);
 
     MLC_S_DPRINTF(config->dynamicId,
                   "[Decoalesce] LogicalS %lu Size %d Offset %d.\n", id, size,
