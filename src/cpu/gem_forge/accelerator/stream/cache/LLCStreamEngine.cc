@@ -3972,13 +3972,12 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
   }
   if (S->isAtomicComputeStream()) {
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-      auto element =
-          dynS->getElemPanic(idx, "Check base elements ready for update.");
+      auto elem = dynS->getElemPanic(idx, "Check base elem ready for update.");
       // LLC_SLICE_DPRINTF(
       //     sliceId, "Process for element %llu, Ready %d, BaseReady
       //     %d.\n", element->idx, element->isReady(),
       //     element->areBaseElementsReady());
-      if (!element->areBaseElemsReady()) {
+      if (!elem->areBaseElemsReady()) {
         // We are still waiting for base elements.
         return ++sliceIter;
       }
@@ -3987,8 +3986,8 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
        * Although this has responded, a multi-slice element may still
        * not be ready.
        */
-      if (S->isUpdateStream() && !element->isReady()) {
-        LLC_SE_ELEM_DPRINTF(element, "[Update] Slice blocked by me.\n");
+      if (S->isUpdateStream() && !elem->isReady()) {
+        LLC_SE_ELEM_DPRINTF(elem, "[Update] Slice blocked by me.\n");
         return ++sliceIter;
       }
     }
@@ -4177,10 +4176,6 @@ void LLCStreamEngine::processDirectAtomicSlice(
     auto elem = dynS->getElemPanic(idx, "Process slice of AtomicS");
     LLC_SLICE_DPRINTF(sliceId, "TriggerAtomic for elem %llu vaddr %#x.\n",
                       elem->idx, elem->vaddr);
-    if (!elem->isReady()) {
-      // Not ready yet. Break.
-      LLC_SLICE_PANIC(sliceId, "Elem %llu not ready when updating.", idx);
-    }
     if (!elem->areBaseElemsReady()) {
       // We are still waiting for base elements.
       LLC_SLICE_PANIC(sliceId, "Elem %llu has unready base elem when updating.",
