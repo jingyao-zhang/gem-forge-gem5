@@ -35,8 +35,7 @@ void StreamComputeEngine::startComputation() {
              this->se->myParams->computeMaxInflyComputation) {
     auto computation = std::move(this->readyComputations.front());
 
-    S_ELEMENT_DPRINTF(computation->element,
-                      "Start computation. Charge Latency %llu.\n",
+    S_ELEMENT_DPRINTF(computation->element, "Start computation. Lat %llu.\n",
                       computation->latency);
     this->pushInflyComputation(std::move(computation));
 

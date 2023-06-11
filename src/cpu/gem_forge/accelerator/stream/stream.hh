@@ -82,7 +82,12 @@ public:
     return false;
   }
   bool getFloatManual() const {
-    return this->info.static_info().float_manual();
+    return this->info.static_info().float_manual() ==
+           ::LLVM::TDG::StaticStreamInfo_ManualFloatType_FLOAT;
+  }
+  bool getNotFloatManual() const {
+    return this->info.static_info().float_manual() ==
+           ::LLVM::TDG::StaticStreamInfo_ManualFloatType_NOT_FLOAT;
   }
   uint64_t getCoalesceBaseStreamId() const {
     return this->info.coalesce_info().base_stream();
@@ -693,6 +698,7 @@ public:
   Get(bool, IsInnerMostLoop);
   Get(bool, IsConditional);
   Get(bool, FloatManual);
+  Get(bool, NotFloatManual);
   Get(const PredicatedStreamIdList &, MergedPredicatedStreams);
   Get(const StreamIdList &, MergedLoadStoreDepStreams);
   Get(const StreamIdList &, MergedLoadStoreBaseStreams);

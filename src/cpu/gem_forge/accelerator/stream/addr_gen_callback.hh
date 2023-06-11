@@ -122,6 +122,10 @@ std::ostream &operator<<(std::ostream &os, const DynStreamFormalParamV &params);
 std::string to_string(const DynStreamFormalParamV &params);
 std::string printAffinePatternParams(const DynStreamFormalParamV &params);
 
+void extractStrideAndTripFromAffinePatternParams(
+    const DynStreamFormalParamV &params, std::vector<int64_t> &strides,
+    std::vector<int64_t> &trips);
+
 } // namespace gem5
 
 #endif

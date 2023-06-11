@@ -70,8 +70,11 @@ private:
   struct StrandSplitContext {
     int64_t noSplitOuterTrip = 0;
     int totalStrands = 1;
+    // Whether we want to skip sanity check.
+    bool skipSanityCheck = false;
     // We allow each stream to have specific interleaving.
     struct ContextPerStream {
+      int splitCnt = 1;
       int splitDim = 0;
       int64_t innerTrip = 0;
       int64_t outerTrip = 0;
@@ -105,6 +108,10 @@ private:
                                       const int64_t splitDimStride,
                                       int64_t &splitDimTripPerStrand) const;
   bool chooseSplitDimIntrlv(StrandSplitContext &context,
+                            const ConfigVec &configs) const;
+  bool chooseSplitDimIntrlvMMOuter(StrandSplitContext &context,
+                                   const ConfigVec &configs) const;
+  bool chooseSplitDimIntrlv(StrandSplitContext &context,
                             ConfigPtr config) const;
   bool fixSplitDimIntrlv(StrandSplitContext &context,
                          const ConfigVec &configs) const;
@@ -117,6 +124,8 @@ private:
                                            ConfigPtr config,
                                            const StrandSplitInfo &strandSplit,
                                            int strandIdx);
+  void fixReusedSendTo(StrandSplitContext &context, ConfigVec &streamConfigs,
+                       ConfigVec &strandConfigs);
 
   /**
    * Recognize the broadcast opportunities between strands.

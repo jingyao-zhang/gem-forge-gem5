@@ -219,13 +219,15 @@ bool MLCStrandManager::canSplitIntoStrands(StrandSplitContext &context,
     }
   }
 
-  for (const auto &config : configs) {
-    if (!this->chooseSplitDimIntrlv(context, config)) {
-      return false;
-    }
+  if (!this->chooseSplitDimIntrlv(context, configs)) {
+    return false;
   }
 
-  // Some additional check.
+  if (context.skipSanityCheck) {
+    return true;
+  }
+
+  // Some additional sanity check.
   if (!this->fixSplitDimIntrlv(context, configs)) {
     return false;
   }
@@ -518,6 +520,109 @@ bool MLCStrandManager::chooseNoSplitOuterTrip(StrandSplitContext &context,
 }
 
 bool MLCStrandManager::chooseSplitDimIntrlv(StrandSplitContext &context,
+                                            const ConfigVec &configs) const {
+
+  // Try mm_outer special case.
+  if (this->chooseSplitDimIntrlvMMOuter(context, configs)) {
+    return true;
+  }
+
+  for (const auto &config : configs) {
+    if (!this->chooseSplitDimIntrlv(context, config)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool MLCStrandManager::chooseSplitDimIntrlvMMOuter(
+    StrandSplitContext &context, const ConfigVec &configs) const {
+
+  /**
+   * A special case handling MM outer. Split on both dimensions.
+   */
+  if (configs.size() != 3) {
+    return false;
+  }
+
+  ConfigPtr configA = nullptr;
+  ConfigPtr configB = nullptr;
+  ConfigPtr configC = nullptr;
+  for (auto &config : configs) {
+    std::string streamName = config->dynamicId.streamName;
+    if (streamName.find("gfm.mm_outer.A") != std::string::npos) {
+      configA = config;
+    }
+    if (streamName.find("gfm.mm_outer.B") != std::string::npos) {
+      configB = config;
+    }
+    if (streamName.find("gfm.mm_outer.C") != std::string::npos) {
+      configC = config;
+    }
+  }
+  if (!configA || !configB || !configC) {
+    return false;
+  }
+
+  STRAND_LOG_(MLCRubyStrandSplit, configA->dynamicId,
+              "[Strand] Handle as mm_outer: %s.\n",
+              printAffinePatternParams(configA->addrGenFormalParams));
+  STRAND_LOG_(MLCRubyStrandSplit, configB->dynamicId,
+              "[Strand] Handle as mm_outer: %s.\n",
+              printAffinePatternParams(configB->addrGenFormalParams));
+  STRAND_LOG_(MLCRubyStrandSplit, configC->dynamicId,
+              "[Strand] Handle as mm_outer: %s.\n",
+              printAffinePatternParams(configC->addrGenFormalParams));
+
+  auto &pscA = context.perStreamContext.at(configA->dynamicId);
+  auto &pscB = context.perStreamContext.at(configB->dynamicId);
+  auto &pscC = context.perStreamContext.at(configC->dynamicId);
+
+  extractStrideAndTripFromAffinePatternParams(configA->addrGenFormalParams,
+                                              pscA.strides, pscA.trips);
+  extractStrideAndTripFromAffinePatternParams(configB->addrGenFormalParams,
+                                              pscB.strides, pscB.trips);
+  extractStrideAndTripFromAffinePatternParams(configC->addrGenFormalParams,
+                                              pscC.strides, pscC.trips);
+
+  // Let's first split at inner dimension, and keep A not splited.
+  auto splitDim = 0;
+  auto splitDimTrip = pscB.trips.at(splitDim);
+  auto outerTrip = AffinePattern::reduce_mul(
+      pscB.trips.begin() + pscB.splitDim + 1, pscB.trips.end(), 1);
+  auto totalTrip =
+      AffinePattern::reduce_mul(pscB.trips.begin(), pscB.trips.end(), 1);
+  auto innerTrip = totalTrip / outerTrip / splitDimTrip;
+  auto splitCount = 8;
+
+  auto splitDimTripPerStrand = (splitDimTrip + splitCount - 1) / splitCount;
+
+  STRAND_LOG_(MLCRubyStrandSplit, configB->dynamicId,
+              "[Strand] SplitDim %d SplitDimTrip %lu SplitCount %d "
+              "SplitDimTrip/Strand %lu.\n",
+              splitDim, splitDimTrip, splitCount, splitDimTripPerStrand);
+
+  context.totalStrands = splitCount;
+  context.skipSanityCheck = true;
+  // So far do not split A.
+  pscA.splitCnt = 1;
+  pscB.splitCnt = splitCount;
+  pscC.splitCnt = splitCount;
+  pscA.splitDim = -1;
+  pscB.splitDim = splitDim;
+  pscC.splitDim = splitDim;
+  pscB.innerTrip = innerTrip;
+  pscC.innerTrip = innerTrip;
+  pscB.outerTrip = outerTrip;
+  pscC.outerTrip = outerTrip;
+  pscB.splitTripPerStrand = splitDimTripPerStrand;
+  pscC.splitTripPerStrand = splitDimTripPerStrand;
+
+  return true;
+}
+
+bool MLCStrandManager::chooseSplitDimIntrlv(StrandSplitContext &context,
                                             ConfigPtr config) const {
 
   /**
@@ -556,22 +661,8 @@ bool MLCStrandManager::chooseSplitDimIntrlv(StrandSplitContext &context,
               printAffinePatternParams(config->addrGenFormalParams));
   auto &trips = perStreamContext.trips;
   auto &strides = perStreamContext.strides;
-  {
-    assert((config->addrGenFormalParams.size() % 2) == 1);
-    uint64_t prevTrip = 1;
-    for (int i = 1; i + 1 < config->addrGenFormalParams.size(); i += 2) {
-      const auto &p = config->addrGenFormalParams.at(i);
-      assert(p.isInvariant);
-      auto trip = p.invariant.uint64();
-      trips.push_back(trip / prevTrip);
-      prevTrip = trip;
-      const auto &s = config->addrGenFormalParams.at(i - 1);
-      assert(s.isInvariant);
-      auto stride = s.invariant.uint64();
-      strides.push_back(stride);
-    }
-    assert(!trips.empty());
-  }
+  extractStrideAndTripFromAffinePatternParams(config->addrGenFormalParams,
+                                              strides, trips);
 
   int splitDim = trips.size() - 1;
   {
@@ -654,6 +745,7 @@ bool MLCStrandManager::chooseSplitDimIntrlv(StrandSplitContext &context,
                                          splitDimTripPerStrand);
   }
 
+  perStreamContext.splitCnt = splitCount;
   perStreamContext.splitDim = splitDim;
   perStreamContext.splitTripPerStrand = splitDimTripPerStrand;
 
@@ -691,7 +783,7 @@ bool MLCStrandManager::fixSplitDimIntrlv(StrandSplitContext &context,
     auto splitDimTrip = perStreamContext.trips.at(splitDim);
     if (dims - splitDim != firstDims - firstSplitDim) {
       STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
-                  "[Strand] Mismatch in SplitDim %d-%d %d-%d %s.", dims,
+                  "[Strand] Mismatch in SplitDim %d-%d %d-%d %s.\n", dims,
                   splitDim, firstDims, firstSplitDim,
                   configs.front()->dynamicId);
       return false;
@@ -835,6 +927,9 @@ void MLCStrandManager::splitIntoStrands(StrandSplitContext &context,
                   printAffinePatternParams(strandConfig->addrGenFormalParams));
     }
   }
+
+  // Fix the reused SendTo relationship.
+  this->fixReusedSendTo(context, streamConfigs, configs);
 }
 
 MLCStrandManager::ConfigVec
@@ -857,11 +952,14 @@ MLCStrandManager::splitIntoStrands(StrandSplitContext &context,
                                       isDirect);
   }
 
-  // For now just split by interleave = 1kB / 64B = 16, totalStrands = 64.
   auto &psc = context.perStreamContext.at(config->dynamicId);
-  // auto interleave =
-  //     perStreamState.splitTripPerStrand * perStreamState.innerTrip;
-  // auto tailInterleave = perStreamState.splitTailInterleave;
+
+  if (psc.splitDim == -1) {
+    // Don't split this Stream.
+    ConfigVec strands;
+    strands.push_back(config);
+    return strands;
+  }
 
   bool isDirect = true;
   StrandSplitInfo strandSplit(psc.innerTrip, psc.trips.at(psc.splitDim),
@@ -874,13 +972,13 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
     bool isDirect) {
 
   if (isDirect) {
-    MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
-                   "[StrandSplit] ---------- Start Split Direct. Original "
-                   "AddrPattern %s.\n",
-                   printAffinePatternParams(config->addrGenFormalParams));
+    STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+                "[StrandSplit] ---------- Start Split Direct. Original "
+                "AddrPat %s.\n",
+                printAffinePatternParams(config->addrGenFormalParams));
   } else {
-    MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
-                   "[StrandSplit] ---------- Start Split Indirect.\n");
+    STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+                "[StrandSplit] ---------- Start Split Indirect.\n");
     /*********************************************************************
      * Now that IndS may have reuse on the BaseS. Adjust the StrandSplit.
      *********************************************************************/
@@ -890,10 +988,9 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
           assert(strandSplit.getTailInterleave() == 0 &&
                  "Cannot handle TailInterleave and IndS with reuse for now.");
           strandSplit.setInnerTrip(strandSplit.getInnerTrip() * base.reuse);
-          MLC_S_DPRINTF_(
-              MLCRubyStrandSplit, config->dynamicId,
-              "[StrandSplit] Adjust Interleave by IndReuse %d -> %ld.\n",
-              base.reuse, strandSplit.getInterleave());
+          STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+                      "[StrandSplit] Adjust Intrlv by IndReuse %d -> %ld.\n",
+                      base.reuse, strandSplit.getInterleave());
         }
         break;
       }
@@ -938,9 +1035,9 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
       auto strandAddrGenFormalParams =
           this->splitAffinePattern(context, config, strandSplit, strandIdx);
 
-      MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
-                     "[StrandSplit] StrandIdx %d AddrPattern %s.\n", strandIdx,
-                     printAffinePatternParams(strandAddrGenFormalParams));
+      STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+                  "[StrandSplit] StrandIdx %d AddrPat %s.\n", strandIdx,
+                  printAffinePatternParams(strandAddrGenFormalParams));
 
       strand->addrGenFormalParams = strandAddrGenFormalParams;
       strand->totalTripCount = strandSplit.getStrandTripCount(
@@ -1162,6 +1259,83 @@ DynStreamFormalParamV MLCStrandManager::splitAffinePattern(
                                             strandSplit.getTotalStrands());
   } else {
     panic("Unsupported StrandSplitInfo.");
+  }
+}
+
+void MLCStrandManager::fixReusedSendTo(StrandSplitContext &context,
+                                       ConfigVec &streamConfigs,
+                                       ConfigVec &strandConfigs) {
+
+  for (auto &strand : strandConfigs) {
+
+    std::vector<CacheStreamConfigureData::DepEdge> fixedDepEdges;
+
+    for (auto &dep : strand->depEdges) {
+      if (dep.type != CacheStreamConfigureData::DepEdge::Type::SendTo) {
+        fixedDepEdges.push_back(dep);
+        continue;
+      }
+      if (dep.reuse == 1) {
+        fixedDepEdges.push_back(dep);
+        continue;
+      }
+
+      auto &recvStream = dep.data;
+      auto &recvPSC = context.perStreamContext.at(recvStream->dynamicId);
+
+      if (recvPSC.innerTrip >= dep.reuse) {
+        // Reuse is not splitted.
+        fixedDepEdges.push_back(dep);
+        continue;
+      }
+
+      auto recvSplitDimTrip = recvPSC.trips.at(recvPSC.splitDim);
+
+      // We need to split the SendTo to each Strand.
+      STRAND_LOG_(
+          MLCRubyStrandSplit, strand->getStrandId(),
+          "[ReuseSendTo] R/S %ld/%ld -> %s O/S/I Trip %ld/%ld/%ld Cnt %d.\n",
+          dep.reuse, dep.skip, recvStream->getStrandId(), recvPSC.outerTrip,
+          recvSplitDimTrip, recvPSC.innerTrip, recvPSC.splitCnt);
+
+      // We only handle the case reuse >= splitTrip * innerTrip.
+      assert(dep.reuse >= recvSplitDimTrip * recvPSC.innerTrip);
+      assert(dep.reuse % recvPSC.splitCnt == 0);
+
+      auto fixedReuse = dep.reuse / recvPSC.splitCnt;
+
+      for (auto &recvStrand : strandConfigs) {
+        if (recvStrand->dynamicId != recvStream->dynamicId) {
+          // This is not the recv strand.
+          continue;
+        }
+
+        // Dupliate the DepEdge and fix the reuse.
+        auto fixedDep = dep;
+        fixedDep.reuse = fixedReuse;
+        fixedDep.data = recvStrand;
+
+        STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
+                    "[ReuseSendTo] Fixed R/S %ld/%ld -> %s.\n", fixedDep.reuse,
+                    fixedDep.skip, recvStrand->getStrandId());
+        fixedDepEdges.push_back(fixedDep);
+
+        // Also fix the recv strand's reuse.
+        __attribute__((unused)) bool fixedRecvReuse = false;
+        for (auto &base : recvStrand->baseEdges) {
+          if (base.dynStreamId == strand->dynamicId) {
+            assert(base.reuse == dep.reuse);
+            base.reuse = fixedReuse;
+            base.isStrandSendTo = true;
+            fixedRecvReuse = true;
+            break;
+          }
+        }
+        assert(fixedRecvReuse);
+      }
+    }
+
+    strand->depEdges = std::move(fixedDepEdges);
   }
 }
 

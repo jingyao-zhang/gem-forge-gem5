@@ -589,6 +589,11 @@ bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
   }
   StreamFloatPolicy::logS(*dynS) << "[FloatIndirect] >>>>>>>>> \n"
                                  << std::flush;
+  if (S->getNotFloatManual()) {
+    StreamFloatPolicy::logS(*dynS) << "[Not Float] Manual Override.\n"
+                                   << std::flush;
+    return false;
+  }
   const auto &addrBaseStreams = S->addrBaseStreams;
   /**
    * We assume:

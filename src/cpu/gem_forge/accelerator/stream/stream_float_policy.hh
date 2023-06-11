@@ -27,6 +27,7 @@ public:
 
   static std::ostream &logS(const DynStream &dynS);
   static std::ostream &logS(const DynStreamId &dynId);
+  static std::ostream &logS(const DynStrandId &dynId);
   static std::ostream &getLog() {
     assert(log && "No log for StreamFloatPolicy.");
     return *log->stream();
@@ -47,6 +48,7 @@ private:
   bool enabled;
   bool enabledFloatMem;
   bool enabledHistory;
+  bool enabledFloatReuse = false;
   enum PolicyE {
     STATIC,
     MANUAL,

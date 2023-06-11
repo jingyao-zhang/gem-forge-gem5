@@ -2378,7 +2378,7 @@ void LLCStreamEngine::issueStreamReqToRemoteBank(const LLCStreamRequest &req) {
     msg->m_DataBlk = req.dataBlock;
     // Only used for NonMigrate stream.
     msg->m_streamStoreBlk = req.storeValueBlock;
-    msg->m_sendToStrandId = req.forwardToStrandId;
+    msg->m_sendToSliceId = req.forwardToSliceId;
     /**
      * We model special size for StreamForward request.
      */
@@ -2618,39 +2618,15 @@ void LLCStreamEngine::issueStreamDataToLLC(
     LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId,
     const ruby::DataBlock &dataBlock,
     const CacheStreamConfigureData::DepEdge &sendToEdge, int payloadSize) {
+
+  auto recvConfig = sendToEdge.data;
+
   /**
    * Unlike sending data to MLC, we have to calculate the virtual
    * address of the receiving stream and translate that. Also, we can
    * only handle the simpliest case so far: no spliting, and no
    * multi-line receiver element.
-   *
-   * Now that we have strands, we have to be careful translating between
-   * StreamElemIdx and StrandElemIdx.
-   *
-   * SendStrandElemIdx -> SendStreamElemIdx -> RecvStreamElemIdx
    */
-  auto recvConfig = sendToEdge.data;
-
-  auto convertSendStrandElemIdxToRecvStreamElemIdx =
-      [&sendToEdge](const CacheStreamConfigureDataPtr &sendConfig,
-                    uint64_t sendStrandElemIdx) -> uint64_t {
-    auto sendStreamElemIdx =
-        sendConfig->getStreamElemIdxFromStrandElemIdx(sendStrandElemIdx);
-    auto recvStreamElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
-        sendStreamElemIdx, sendToEdge.reuse, sendToEdge.skip);
-    return recvStreamElemIdx;
-  };
-
-  auto getRecvElemVAddr = [&recvConfig](uint64_t recvStreamElemIdx) -> Addr {
-    assert(!recvConfig->isStrandConfig() &&
-           "RecvConfig should be StreamConfig");
-    auto recvElemVAddr =
-        recvConfig->addrGenCallback
-            ->genAddr(recvStreamElemIdx, recvConfig->addrGenFormalParams,
-                      getStreamValueFail)
-            .front();
-    return recvElemVAddr;
-  };
 
   auto sendStrandElemIdx = sliceId.getStartIdx();
   if (dynS->isOneIterationBehind()) {
@@ -2666,47 +2642,44 @@ void LLCStreamEngine::issueStreamDataToLLC(
 
   for (const auto &sendConfig : broadcastStrands) {
 
-    auto recvStreamElemIdx = convertSendStrandElemIdxToRecvStreamElemIdx(
-        sendConfig, sendStrandElemIdx);
-    auto recvStrandId =
-        recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+    auto translation = sendConfig->translateSendToRecv(sendToEdge, sendConfig,
+                                                       sendStrandElemIdx);
+    auto recvStrandId = std::get<0>(translation);
+    auto recvStrandElemIdx = std::get<1>(translation);
+    auto recvElemVAddr = std::get<2>(translation);
+    auto recvElemMachineType = std::get<3>(translation);
 
-    auto sendStreamElemIdx =
-        sendConfig->getStreamElemIdxFromStrandElemIdx(sendStrandElemIdx);
-    auto recvStrandElemIdx =
-        recvConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
-    LLC_SLICE_DPRINTF(
-        sliceId,
-        "[LLCFwd] SendStrandElemIdx %lu SendStreamElemIdx %lu R/S %ld/%ld -> "
-        "RecvStreamElemIdx %lu RecvStrand %s RecvStrandElemIdx %lu.\n",
-        sendStrandElemIdx, sendStreamElemIdx, sendToEdge.reuse, sendToEdge.skip,
-        recvStreamElemIdx, recvStrandId, recvStrandElemIdx);
-
-    auto recvElemVAddr = getRecvElemVAddr(recvStreamElemIdx);
     auto recvElemVAddrEnd = recvElemVAddr + recvConfig->elementSize;
+
+    DynStreamSliceId recvSliceId;
+    recvSliceId.getDynStrandId() = recvStrandId;
+    recvSliceId.getStartIdx() = recvStrandElemIdx;
+    recvSliceId.getEndIdx() = recvStrandElemIdx + 1;
 
     // Check that receiver does not across lines.
     for (auto sendStrandElemIdx = sliceId.getStartIdx() + 1;
          sendStrandElemIdx < sliceId.getEndIdx(); ++sendStrandElemIdx) {
 
-      auto recvStreamElemIdx = convertSendStrandElemIdxToRecvStreamElemIdx(
-          sendConfig, sendStrandElemIdx);
+      auto translation = sendConfig->translateSendToRecv(sendToEdge, sendConfig,
+                                                         sendStrandElemIdx);
+      __attribute__((unused)) const auto &tailRecvStrandId =
+          std::get<0>(translation);
+      const auto &tailRecvStrandElemIdx = std::get<1>(translation);
+      const auto &tailRecvElemVAddr = std::get<2>(translation);
+      auto tailRecvElemVAddrEnd = tailRecvElemVAddr + recvConfig->elementSize;
 
-      assert(recvStrandId ==
-                 recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx) &&
-             "Forward to MultiStrand.");
+      assert(recvStrandId == tailRecvStrandId && "Fwd to MultiStrand.");
+      assert(tailRecvStrandElemIdx == recvSliceId.getEndIdx());
+      recvSliceId.getEndIdx() = tailRecvStrandElemIdx + 1;
 
-      auto vaddr = getRecvElemVAddr(recvStreamElemIdx);
-      auto vaddrEnd = vaddr + recvConfig->elementSize;
-
-      recvElemVAddr = std::min(recvElemVAddr, vaddr);
-      recvElemVAddrEnd = std::max(recvElemVAddrEnd, vaddrEnd);
+      recvElemVAddr = std::min(recvElemVAddr, tailRecvElemVAddr);
+      recvElemVAddrEnd = std::max(recvElemVAddrEnd, tailRecvElemVAddrEnd);
     }
 
     auto recvElemVAddrLine = ruby::makeLineAddress(recvElemVAddr);
     auto recvElemVAddrEndLine = ruby::makeLineAddress(recvElemVAddr);
     if (recvElemVAddrLine != recvElemVAddrEndLine) {
-      LLC_SLICE_PANIC(sliceId, "Multiline StreamForward Receiver: %s.",
+      LLC_SLICE_PANIC(sliceId, "Multiline StreamFwd Receiver: %s.",
                       recvConfig->dynamicId);
     }
 
@@ -2730,21 +2703,17 @@ void LLCStreamEngine::issueStreamDataToLLC(
       }
 
       // Now we enqueue the translation request.
-      auto recvElemMachineType =
-          recvConfig->floatPlan.getMachineTypeAtElem(recvStreamElemIdx);
       auto reqIter = this->enqueueRequest(
           dynS->getStaticS(), sendSliceId, recvElemVAddrLine, recvElemPAddrLine,
           recvElemMachineType, ruby::CoherenceRequestType_STREAM_FORWARD);
 
       // Remember the receiver StrandId and forwarded data block.
-      reqIter->forwardToStrandId =
-          recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+      reqIter->forwardToSliceId = recvSliceId;
       reqIter->dataBlock = dataBlock;
       reqIter->payloadSize = payloadSize;
     } else {
-      LLC_SLICE_PANIC(sliceId, "Fault on RecvS: %s%lu(%lu) VAddr %#x.",
-                      recvStrandId, recvStrandElemIdx, recvStreamElemIdx,
-                      recvElemVAddrLine);
+      LLC_SLICE_PANIC(sliceId, "Fault on RecvS: %s%lu VAddr %#x.", recvStrandId,
+                      recvStrandElemIdx, recvElemVAddrLine);
     }
   }
 }
@@ -2768,7 +2737,7 @@ void LLCStreamEngine::issueNonMigrateStreamDataToLLC(
       recvElemMachineType, ruby::CoherenceRequestType_STREAM_FORWARD);
 
   // Remember the receiver StrandId and forwarded data block.
-  reqIter->forwardToStrandId = dynS->getDynStrandId();
+  reqIter->forwardToSliceId = sliceId;
   reqIter->dataBlock = dataBlock;
   reqIter->storeValueBlock = storeValueBlock;
   reqIter->payloadSize = payloadSize;
@@ -3242,7 +3211,11 @@ void LLCStreamEngine::receiveStreamFwdReq(const ruby::RequestMsg &req) {
 void LLCStreamEngine::processStreamFwdReq(const ruby::RequestMsg &req) {
 
   const auto &sliceId = req.m_sliceIds.singleSliceId();
-  const auto &recvDynId = req.m_sendToStrandId;
+  const auto &recvSliceId = req.m_sendToSliceId;
+  const auto &recvDynId = recvSliceId.getDynStrandId();
+
+  assert(recvSliceId.getNumElements() == sliceId.getNumElements());
+
   // Search through the direct streams.
   auto dynS = LLCDynStream::getLLCStream(recvDynId);
   if (!dynS) {
@@ -3283,17 +3256,17 @@ void LLCStreamEngine::processStreamFwdReq(const ruby::RequestMsg &req) {
     // Search for receiver in myself and my indirect streams.
     if (dynS->isBasedOn(sliceId.getDynStreamId())) {
       foundReceiver = true;
-      for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-        dynS->recvStreamForward(this, idx, sliceId, req.m_DataBlk);
+      for (auto idx = 0; idx < sliceId.getNumElements(); ++idx) {
+        dynS->recvStreamForward(this, idx, sliceId, recvSliceId, req.m_DataBlk);
       }
     }
 
     for (auto dynIS : dynS->getAllIndStreams()) {
       if (dynIS->isBasedOn(sliceId.getDynStreamId())) {
         foundReceiver = true;
-        for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx();
-             ++idx) {
-          dynIS->recvStreamForward(this, idx, sliceId, req.m_DataBlk);
+        for (auto idx = 0; idx < sliceId.getNumElements(); ++idx) {
+          dynIS->recvStreamForward(this, idx, sliceId, recvSliceId,
+                                   req.m_DataBlk);
         }
       }
     }
@@ -3320,9 +3293,9 @@ void LLCStreamEngine::processStreamFwdReq(const ruby::RequestMsg &req) {
       for (auto dynIIS : dynIS->getIndStreams()) {
         if (dynIIS->isBasedOn(sliceId.getDynStreamId())) {
           foundReceiver = true;
-          for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx();
-               ++idx) {
-            dynIIS->recvStreamForward(this, idx, sliceId, req.m_DataBlk);
+          for (auto idx = 0; idx < sliceId.getNumElements(); ++idx) {
+            dynIIS->recvStreamForward(this, idx, sliceId, recvSliceId,
+                                      req.m_DataBlk);
           }
         }
       }
@@ -3441,12 +3414,16 @@ void LLCStreamEngine::predicateOffElem(LLCDynStreamPtr dynS,
   }
   auto S = dynS->getStaticS();
   if (S->isStoreComputeStream() || S->isAtomicComputeStream()) {
-    // Need to send back a fake ack using a single slice for this elem.
+    /**
+     * Need to send back a fake ack using a single slice for this elem.
+     * This ack can be idealized, assuming the PredBaseElem would also
+     * send back an ack.
+     */
     DynStreamSliceId elemSliceId;
     elemSliceId.getDynStrandId() = dynS->getDynStrandId();
     elemSliceId.getStartIdx() = elem->idx;
     elemSliceId.getEndIdx() = elem->idx + 1;
-    this->issueStreamAckToMLC(elemSliceId);
+    this->issueStreamAckToMLC(elemSliceId, true /* forceIdea */);
     if (dynS->isIndirect() && S->isStoreComputeStream()) {
       elem->setIndirectStoreAcked();
     }

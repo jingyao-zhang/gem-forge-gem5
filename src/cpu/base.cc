@@ -143,7 +143,11 @@ CPUProgressEvent::process()
         Tick no_progress_ticks = this->_stucked *
             cpu->params().progress_interval;
         Tick deadlock_ticks = cpu->params().deadlock_interval;
-        if (no_progress_ticks >= deadlock_ticks) {
+        // Ignore first deadlock if numCycles is less than deadlock_ticks.
+        auto numTicks = cpu->cyclesToTicks(Cycles(
+            cpu->baseStats.numCycles.value()));
+        if (no_progress_ticks >= deadlock_ticks &&
+            numTicks >= deadlock_ticks) {
             panic("Deadlock in CPU %d! LastCommit at %llu.\n",
                 cpu->cpuId(), cpu->getLastCommitTick());
         }

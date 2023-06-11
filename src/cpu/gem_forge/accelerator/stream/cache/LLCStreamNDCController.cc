@@ -267,7 +267,8 @@ void LLCStreamNDCController::handleForwardNDC(
   msg->m_MessageSize = ruby::MessageSizeType_Control;
   msg->m_sliceIds.add(sliceId);
   msg->m_DataBlk = dataBlock;
-  msg->m_sendToStrandId = DynStrandId(context.ndc->receiverEntryIdx.streamId);
+  msg->m_sendToSliceId.getDynStrandId() =
+      DynStrandId(context.ndc->receiverEntryIdx.streamId);
   /**
    * We model special size for StreamForward request.
    */
@@ -287,7 +288,7 @@ void LLCStreamNDCController::handleForwardNDC(
 void LLCStreamNDCController::receiveStreamForwardRequest(
     const ruby::RequestMsg &msg) {
   const auto &sliceId = msg.m_sliceIds.singleSliceId();
-  const auto &recvDynId = msg.m_sendToStrandId;
+  const auto &recvDynId = msg.m_sendToSliceId.getDynStrandId();
 
   LLCSE_DPRINTF("Received NDC Forward %s -> %s.\n", sliceId, recvDynId);
 

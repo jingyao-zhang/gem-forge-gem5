@@ -121,16 +121,25 @@ void StreamRegionController::executeStreamConfig(const ConfigArgs &args) {
    * Also try to boost the corresponding outer loop streams.
    */
   auto &staticRegion = *dynRegion.staticRegion;
-  if (staticRegion.region.loop_eliminated() &&
-      staticRegion.streams.front()->getIsInnerMostLoop()) {
-    se->throttler->boostStreams(staticRegion.step.stepRootStreams);
-    if (!staticRegion.nestConfig.baseStreamIds.empty()) {
-      auto firstNestParentStreamId =
-          *staticRegion.nestConfig.baseStreamIds.begin();
-      if (auto nestParentS = this->se->tryGetStream(firstNestParentStreamId)) {
-        // Due to RemoteConfig, we may not have NestParentS.
-        auto &outerStaticRegion = this->getStaticRegion(nestParentS);
-        se->throttler->boostStreams(outerStaticRegion.step.stepRootStreams);
+  if (staticRegion.region.loop_eliminated()) {
+    bool hasInnerMostStream = false;
+    for (const auto S : staticRegion.streams) {
+      if (S->getIsInnerMostLoop()) {
+        hasInnerMostStream = true;
+        break;
+      }
+    }
+    if (hasInnerMostStream) {
+      se->throttler->boostStreams(staticRegion.step.stepRootStreams);
+      if (!staticRegion.nestConfig.baseStreamIds.empty()) {
+        auto firstNestParentStreamId =
+            *staticRegion.nestConfig.baseStreamIds.begin();
+        if (auto nestParentS =
+                this->se->tryGetStream(firstNestParentStreamId)) {
+          // Due to RemoteConfig, we may not have NestParentS.
+          auto &outerStaticRegion = this->getStaticRegion(nestParentS);
+          se->throttler->boostStreams(outerStaticRegion.step.stepRootStreams);
+        }
       }
     }
   }
@@ -186,7 +195,8 @@ void StreamRegionController::tick() {
        * Check that this is the first DynStream.
        * But StreamStep is relaxed to be only inorder within each DynStream.
        */
-      this->stepStream(dynRegion);
+      while (this->stepStream(dynRegion)) {
+      }
       if (dynRegion.seqNum ==
           dynRegion.staticRegion->dynRegions.front().seqNum) {
         this->allocateElements(*dynRegion.staticRegion);

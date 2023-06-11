@@ -464,6 +464,9 @@ void MLCStreamEngine::issueStreamDataToLLC(
     auto recvElemMachineType =
         recvConfig->floatPlan.getMachineTypeAtElem(recvStreamElemIdx);
 
+    auto recvStrandElemIdx =
+        recvConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
+
     auto dstMachineId = this->controller->mapAddressToLLCOrMem(
         recvElemPAddrLine, recvElemMachineType);
 
@@ -477,8 +480,10 @@ void MLCStreamEngine::issueStreamDataToLLC(
     msg->m_MessageSize = this->controller->getMessageSizeType(payloadSize);
     msg->m_sliceIds.add(sliceId);
     msg->m_DataBlk = dataBlock;
-    msg->m_sendToStrandId =
+    msg->m_sendToSliceId.getDynStrandId() =
         recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+    msg->m_sendToSliceId.getStartIdx() = recvStrandElemIdx;
+    msg->m_sendToSliceId.getEndIdx() = recvStrandElemIdx + 1;
 
     Cycles latency(1);
     this->requestToLLCMsgBuffer->enqueue(

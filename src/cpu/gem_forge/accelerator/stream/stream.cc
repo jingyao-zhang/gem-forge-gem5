@@ -799,7 +799,6 @@ void Stream::extractExtraInputValues(DynStream &dynS,
             }
             loopTripCount = inputVec->front().uint64();
             inputVec->erase(inputVec->begin());
-            inputIdx++;
           }
         } else {
           if (inputVec->empty()) {
@@ -810,8 +809,8 @@ void Stream::extractExtraInputValues(DynStream &dynS,
           }
           loopTripCount = inputVec->front().uint64();
           inputVec->erase(inputVec->begin());
-          inputIdx++;
         }
+        inputIdx++;
         loopTripCount = this->fixSuspiciousTripCount(loopTripCount);
         DYN_S_DPRINTF(dynS.dynStreamId,
                       "[FixTripCount] LoopLevel %d TripCount %lu x "

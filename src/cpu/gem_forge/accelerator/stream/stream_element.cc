@@ -284,6 +284,7 @@ void StreamElement::clear() {
   this->innerLoopDepElements.clear();
   this->hasUnInitInnerLoopAddrBaseElem = false;
   this->hasUnInitInnerLoopValueBaseElem = false;
+  this->numUnInitValueBaseElems = 0;
   this->next = nullptr;
   this->stream = nullptr;
   this->dynS = nullptr;
@@ -1072,8 +1073,11 @@ bool StreamElement::checkValueBaseElemsValueReady() {
   if (this->hasUnInitInnerLoopValueBaseElem) {
     this->dynS->tryAddInnerLoopBaseElements(this);
   }
-  S_ELEMENT_DPRINTF(this, "[AddrBaseReady] Check.\n");
+  S_ELEMENT_DPRINTF(this, "[ValBaseReady] Check.\n");
   if (this->hasUnInitInnerLoopValueBaseElem) {
+    return false;
+  }
+  if (this->numUnInitValueBaseElems > 0) {
     return false;
   }
   /**

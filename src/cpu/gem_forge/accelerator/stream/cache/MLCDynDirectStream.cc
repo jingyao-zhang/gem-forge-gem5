@@ -571,28 +571,20 @@ bool MLCDynDirectStream::checkWaitForLLCRecvS(
 
     for (auto &config : broadcastStrands) {
 
-      auto tailStreamElemIdx =
-          config->getStreamElemIdxFromStrandElemIdx(tailStrandElemIdx);
-
-      auto recvStreamElemIdx =
-          CacheStreamConfigureData::convertBaseToDepElemIdx(
-              tailStreamElemIdx, sendToEdge.reuse, sendToEdge.skip);
-
-      auto recvStrandId =
-          sendToConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
-      auto recvStrandElemIdx =
-          sendToConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
+      auto translation = sendToConfig->translateSendToRecv(sendToEdge, config,
+                                                           tailStrandElemIdx);
+      auto recvStrandId = std::get<0>(translation);
+      auto recvStrandElemIdx = std::get<1>(translation);
 
       if (auto recvRemoteS = LLCDynStream::getLLCStream(recvStrandId)) {
         if (!recvRemoteS->isElemInitialized(recvStrandElemIdx)) {
           waitForRecvStrandId = recvStrandId;
           waitForRecvStrandElemIdx = recvStrandElemIdx;
 
-          MLC_S_DPRINTF(
-              this->getDynStrandId(),
-              "BrdStrand %d TailElem %lu(%lu) WaitForRecv %s%lu(%lu).\n",
-              config->strandIdx, tailStrandElemIdx, tailStreamElemIdx,
-              recvStrandId, recvStrandElemIdx, recvStreamElemIdx);
+          MLC_S_DPRINTF(this->getDynStrandId(),
+                        "BrdStrand %d TailElem %lu WaitForRecv %s%lu.\n",
+                        config->strandIdx, tailStrandElemIdx, recvStrandId,
+                        recvStrandElemIdx);
 
           return true;
         }

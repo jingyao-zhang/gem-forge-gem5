@@ -614,6 +614,63 @@ void LLCDynStream::initNextElem(Addr vaddr) {
   this->idxToElementMap.emplace(strandElemIdx, elem);
   this->nextInitStrandElemIdx++;
 
+  auto translateDepToBase =
+      [this, streamElemIdx, strandElemIdx,
+       &elem](const CacheStreamConfigureData::BaseEdge &baseEdge,
+              const CacheStreamConfigureDataPtr &baseConfig)
+      -> std::tuple<DynStrandId, uint64_t, uint64_t> {
+    /**
+     * Translate to base strand.
+     * NOTE: Here we need to adjust BaseStreamElemIdx with ReuseCount.
+     * NOTE: Be careful with StreamElemIdx and StrandElemIdx.
+     * NOTE: After splitted into strands, IsOneIterBehind actually means one
+     * StrandElem behind. This changed the dependence chain, and should only be
+     * applied to Reduction (Not PtrChase).
+     */
+    DynStrandId baseStrandId;
+    uint64_t baseStrandElemIdx;
+    uint64_t baseStreamElemIdx;
+    if (baseEdge.isStrandSendTo) {
+      // Strand SendTo. No need to convert to stream.
+      assert(!this->isOneIterationBehind());
+      baseStrandId = baseConfig->getStrandId();
+      baseStrandElemIdx = CacheStreamConfigureData::convertDepToBaseElemIdx(
+          strandElemIdx, baseEdge.reuse, baseEdge.skip);
+      baseStreamElemIdx = baseConfig->getStreamElemIdxFromStrandElemIdx(
+          baseStrandId, baseStrandElemIdx);
+
+      LLC_ELEMENT_DPRINTF(
+          elem, "Add R/S %ld/%ld -> BaseStrnd %s%lu -> BaseStrm %lu.\n",
+          baseEdge.reuse, baseEdge.skip, baseStrandId, baseStrandElemIdx,
+          baseStreamElemIdx);
+
+    } else {
+      auto depStreamElemIdx = streamElemIdx;
+      if (this->isOneIterationBehind()) {
+        assert(strandElemIdx > 0 &&
+               "OneIterationBehind StreamElement begins at 1.");
+        depStreamElemIdx = this->configData->getStreamElemIdxFromStrandElemIdx(
+            strandElemIdx - 1);
+      }
+
+      baseStreamElemIdx = CacheStreamConfigureData::convertDepToBaseElemIdx(
+          depStreamElemIdx, baseEdge.reuse, baseEdge.skip);
+
+      baseStrandId =
+          baseConfig->getStrandIdFromStreamElemIdx(baseStreamElemIdx);
+      baseStrandElemIdx =
+          baseConfig->getStrandElemIdxFromStreamElemIdx(baseStreamElemIdx);
+
+      LLC_ELEMENT_DPRINTF(
+          elem,
+          "Add DepStrm %lu R/S %ld/%ld -> BaseStrm %lu BaseStrnd %s%lu.\n",
+          depStreamElemIdx, baseEdge.reuse, baseEdge.skip, baseStreamElemIdx,
+          baseStrandId, baseStrandElemIdx);
+    }
+
+    return std::make_tuple(baseStrandId, baseStrandElemIdx, baseStreamElemIdx);
+  };
+
   for (auto i = 0; i < this->baseOnConfigs.size(); ++i) {
 
     /**
@@ -626,32 +683,16 @@ void LLCDynStream::initNextElem(Addr vaddr) {
      * StrandElem behind. This changed the dependence chain, and should only be
      * applied to Reduction (Not PtrChase).
      */
-    auto depStreamElemIdx = streamElemIdx;
-    if (this->isOneIterationBehind()) {
-      assert(strandElemIdx > 0 &&
-             "OneIterationBehind StreamElement begins at 1.");
-      depStreamElemIdx = this->configData->getStreamElemIdxFromStrandElemIdx(
-          strandElemIdx - 1);
-    }
 
     const auto &baseEdge = this->configData->baseEdges.at(i);
-
-    auto baseStreamElemIdx = CacheStreamConfigureData::convertDepToBaseElemIdx(
-        depStreamElemIdx, baseEdge.reuse, baseEdge.skip);
-
+    const auto &baseConfig = this->baseOnConfigs.at(i);
     auto &reusedBaseElem = this->reusedBaseElems.at(i);
 
-    const auto &baseConfig = this->baseOnConfigs.at(i);
-    auto baseStrandId =
-        baseConfig->getStrandIdFromStreamElemIdx(baseStreamElemIdx);
-    auto baseStrandElemIdx =
-        baseConfig->getStrandElemIdxFromStreamElemIdx(baseStreamElemIdx);
+    auto translation = translateDepToBase(baseEdge, baseConfig);
+    const auto &baseStrandId = std::get<0>(translation);
+    const auto &baseStrandElemIdx = std::get<1>(translation);
+    const auto &baseStreamElemIdx = std::get<2>(translation);
 
-    LLC_ELEMENT_DPRINTF(elem,
-                        "Add BaseStrandElem %s%llu R/S %ld/%ld "
-                        "BaseStreamElemIdx %lu.\n",
-                        baseStrandId, baseStrandElemIdx, baseEdge.reuse,
-                        baseEdge.skip, baseStreamElemIdx);
     const auto &baseDynStreamId = baseConfig->dynamicId;
     auto baseS = baseConfig->stream;
     // Search through the FloatChain.
@@ -977,53 +1018,25 @@ bool LLCDynStream::isBasedOn(const DynStreamId &baseId) const {
   return false;
 }
 
-void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
-                                     const uint64_t sendStrandElemIdx,
+void LLCDynStream::recvStreamForward(LLCStreamEngine *se, int offset,
                                      const DynStreamSliceId &sliceId,
+                                     const DynStreamSliceId &sendToSliceId,
                                      const ruby::DataBlock &dataBlk) {
-  auto recvStrandElemIdx = sendStrandElemIdx;
+  auto sendStrandElemIdx = sliceId.getStartIdx() + offset;
+  auto recvStrandElemIdx = sendToSliceId.getStartIdx() + offset;
   bool found = false;
   for (const auto &baseEdge : this->configData->baseEdges) {
     if (baseEdge.dynStreamId == sliceId.getDynStreamId()) {
-
-      /**
-       * Carefully adjust:
-       * SendStrandElemIdx -> SendStreamElemIdx ->
-       * RecvStreamElemIdx -> RecvStrandElemIdx.
-       *
-       * So far the first step requires that BaseConfig is not released yet.
-       * TODO: Send SendStreamElemIdx along with the message.
-       */
-      auto sendConfig = baseEdge.data.lock();
-      assert(sendConfig && "SendConfig already released.");
-
-      auto adjustedSendStrandElemIdx = sendStrandElemIdx;
-      if (sendConfig->isOneIterationBehind) {
-        adjustedSendStrandElemIdx--;
-      }
-      auto sendStreamElemIdx = sendConfig->getStreamElemIdxFromStrandElemIdx(
-          sliceId.getDynStrandId(), adjustedSendStrandElemIdx);
-      auto recvStreamElemIdx =
-          CacheStreamConfigureData::convertBaseToDepElemIdx(
-              sendStreamElemIdx, baseEdge.reuse, baseEdge.skip);
-      auto recvStrandId =
-          this->configData->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
-      recvStrandElemIdx = this->configData->getStrandElemIdxFromStreamElemIdx(
-          recvStreamElemIdx);
 
       // OneIterBehind is defined on Strand.
       if (this->isOneIterationBehind()) {
         recvStrandElemIdx++;
       }
 
-      LLC_S_DPRINTF(
-          this->getDynStrandId(),
-          "[Fwd] Recv Send %s%lu(%lu) by R/S %d/%d = Recv %d%lu(%lu).\n",
-          sliceId.getDynStrandId(), sendStrandElemIdx, sendStreamElemIdx,
-          baseEdge.reuse, baseEdge.skip, recvStrandId, recvStrandElemIdx,
-          recvStreamElemIdx);
-
-      assert(recvStrandId == this->getDynStrandId());
+      LLC_S_DPRINTF(this->getDynStrandId(),
+                    "[Fwd] Recv Send %s%lu by R/S %d/%d = Recv %lu.\n",
+                    sliceId.getDynStrandId(), sendStrandElemIdx, baseEdge.reuse,
+                    baseEdge.skip, recvStrandElemIdx);
 
       found = true;
       break;

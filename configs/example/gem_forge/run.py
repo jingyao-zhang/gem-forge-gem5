@@ -143,7 +143,7 @@ parser.add_argument("--gem-forge-stream-engine-yield-core-when-blocked", action=
 parser.add_argument("--gem-forge-stream-engine-enable-float", action="store_true", default=False,
                   help="Enable stream float in LLC.")
 parser.add_argument("--gem-forge-stream-engine-float-policy", type=str, default="static",
-                  choices=['static', 'manual', 'smart', 'smart-computation'],
+                  choices=['static', 'manual', 'smart', 'smart-reuse', 'smart-computation'],
                   help="Policy to choose floating stream in LLC.")
 parser.add_argument("--gem-forge-stream-engine-enable-float-history", action="store", type=int,
                   default=0, help="Enable stream float history when making float decision.")

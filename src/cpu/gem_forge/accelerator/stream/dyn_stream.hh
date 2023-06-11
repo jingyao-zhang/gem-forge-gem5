@@ -131,6 +131,7 @@ struct DynStream {
   }
 
   bool isLoopElimInCoreStoreCmpS() const;
+  bool isLoopElimInCoreUpdateS() const;
 
   void setFloatConfigDelayed(bool val) { this->floatConfigDelayed = val; }
   void setFloatedToCacheAsRoot(bool val) { this->floatedToCacheAsRoot = val; }
@@ -402,6 +403,10 @@ public:
    * Check if an element is released.
    */
   bool isElemReleased(uint64_t elemIdx) const;
+  /**
+   * Check if an element is allocated.
+   */
+  bool isElemAllocated(uint64_t elemIdx) const;
   /**
    * Step one element.
    */

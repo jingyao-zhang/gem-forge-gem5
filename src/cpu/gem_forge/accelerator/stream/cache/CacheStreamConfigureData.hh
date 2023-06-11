@@ -236,6 +236,11 @@ public:
     int reuse;
     int skip;
     /**
+     * Whether this SendTo is simply based on Strand. No need to translate to
+     * stream.
+     */
+    bool isStrandSendTo = false;
+    /**
      * Whether this is the BaseS we offloaded with.
      * Used to quickly find the associated BaseS when offloaded.
      */
@@ -381,6 +386,14 @@ public:
   uint64_t getStreamElemIdxFromStrandElemIdx(uint64_t strandElemIdx) const;
   uint64_t getStreamElemIdxFromStrandElemIdx(const DynStrandId &strandId,
                                              uint64_t strandElemIdx) const;
+
+  /**
+   * Translate from Send to Recv.
+   */
+  std::tuple<DynStrandId, uint64_t, Addr, ruby::MachineType>
+  translateSendToRecv(const DepEdge &sendToEdge,
+                      const CacheStreamConfigureDataPtr &sendConfig,
+                      uint64_t sendStrandElemIdx);
 
   // Set by the MLC stream, for flow control.
   int initCreditedIdx;

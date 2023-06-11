@@ -633,6 +633,20 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
         return false;
       }
     }
+    if (dynS->isLoopElimInCoreUpdateS()) {
+      auto cmpValReady = stepElem->isComputeValueReady();
+      if (!cmpValReady) {
+        S_ELEMENT_DPRINTF(
+            stepElem,
+            "[CanNotCommitStep] LoopElimInCoreUpdateS CmpValReady %d.\n",
+            cmpValReady);
+        if (!stepElem->scheduledComputation &&
+            stepElem->checkValueBaseElemsValueReady()) {
+          this->addIssuingDynS(dynS);
+        }
+        return false;
+      }
+    }
     if (!dynS->areNextBackDepElementsReady(stepElem)) {
       S_ELEMENT_DPRINTF(stepElem,
                         "[CanNotCommitStep] BackDepElement Unready.\n");
@@ -2121,7 +2135,7 @@ bool StreamEngine::releaseElementUnstepped(DynStream &dynS) {
 }
 
 void StreamEngine::addIssuingDynS(DynStream *dynS) {
-  DYN_S_DPRINTF(dynS->dynStreamId, "Try Add to IssueList: %d.\n",
+  DYN_S_DPRINTF(dynS->dynStreamId, "Try Add to IssueList: Already In? %d.\n",
                 this->issuingDynStreamSet.count(dynS));
   this->issuingDynStreamSet.insert(dynS);
 }

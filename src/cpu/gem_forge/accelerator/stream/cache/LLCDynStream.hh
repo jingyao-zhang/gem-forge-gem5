@@ -62,8 +62,8 @@ struct LLCStreamRequest {
   // Optional for Multicast request, excluding the original stream
   std::vector<DynStreamSliceId> multicastSliceIds;
 
-  // Optional for StreamForward request, the receiver stream id.
-  DynStrandId forwardToStrandId;
+  // Optional for StreamForward request, the receiver.
+  DynStreamSliceId forwardToSliceId;
 };
 
 class LLCDynStream {
@@ -281,8 +281,9 @@ public:
                      CacheStreamConfigureVec &configs);
 
   bool isBasedOn(const DynStreamId &baseId) const;
-  void recvStreamForward(LLCStreamEngine *se, uint64_t sendStrandElemIdx,
+  void recvStreamForward(LLCStreamEngine *se, int offset,
                          const DynStreamSliceId &sliceId,
+                         const DynStreamSliceId &sendToSliceId,
                          const ruby::DataBlock &dataBlk);
 
   bool hasComputation() const;

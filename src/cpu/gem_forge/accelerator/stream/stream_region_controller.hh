@@ -319,7 +319,14 @@ private:
                                    DynRegion &dynRegion);
   void executeStreamConfigForStep(const ConfigArgs &args, DynRegion &dynRegion);
   void commitStreamConfigForStep(const ConfigArgs &args, DynRegion &dynRegion);
-  void stepStream(DynRegion &dynRegion);
+  /**
+   * Try to step the stream. Return whether we made some progress and want to
+   * keep going on this cycle.
+   *
+   * @param dynRegion
+   * @return Whether we want to keep stepping.
+   */
+  bool stepStream(DynRegion &dynRegion);
   void tryStepToStreamEnd(DynRegion &dynRegion, DynRegion::DynStep &dynStep,
                           DynRegion::DynStep::DynStepGroupInfo &dynGroup,
                           DynStream &stepRootDynS);

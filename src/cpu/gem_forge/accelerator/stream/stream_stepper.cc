@@ -286,17 +286,17 @@ void StreamRegionController::tryStepToStreamEnd(
   }
 }
 
-void StreamRegionController::stepStream(DynRegion &dynRegion) {
+bool StreamRegionController::stepStream(DynRegion &dynRegion) {
   auto &staticRegion = *dynRegion.staticRegion;
   if (!staticRegion.someStreamsLoopEliminated) {
-    return;
+    return false;
   }
 
   auto &dynStep = dynRegion.step;
   auto &dynGroup = dynStep.stepGroups[dynStep.nextDynGroupIdx];
 
   if (dynGroup.skipStep) {
-    return;
+    return false;
   }
 
   auto &staticStep = staticRegion.step;
@@ -316,7 +316,7 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
       if (!dynRegion.configCommitted) {
         DYN_S_DPRINTF(stepRootDynS.dynStreamId,
                       "[Stepper] Wait For Config Commit to Skip.\n");
-        return;
+        return false;
       }
       this->tryStepToStreamEnd(dynRegion, dynStep, dynGroup, stepRootDynS);
     }
@@ -332,7 +332,7 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
       DYN_S_DPRINTF(stepRootDynS.dynStreamId,
                     "[Stepper] Wait For LoopBound: %llu >= %llu.\n",
                     dynGroup.nextElemIdx, dynBound.nextElemIdx);
-      return;
+      return false;
     }
   }
   // Check for TotalTripCount.
@@ -342,7 +342,7 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
                   "[Stepper] Wait For TripCount: %llu >= %llu. Set SkipStep.\n",
                   dynGroup.nextElemIdx, dynGroup.totalTripCount);
     dynGroup.skipStep = true;
-    return;
+    return false;
   }
 
   for (const auto &dynNestConfig : dynRegion.nestConfigs) {
@@ -351,7 +351,7 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
                     "[Stepper] Wait for NestRegion: %llu >= %llu Region %s.\n",
                     dynGroup.nextElemIdx, dynNestConfig.nextConfigElemIdx,
                     dynNestConfig.staticRegion->region.region());
-      return;
+      return false;
     }
   }
 
@@ -401,6 +401,8 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
   StreamEngine::StreamStepArgs args(stepRootStreamId);
   args.dynInstanceId = stepRootDynS.dynStreamId.streamInstance;
 
+  bool keepStepping = false;
+
   switch (dynStep.state) {
   default: {
     SE_PANIC("[Stepper] Invalid State %d.", dynStep.state);
@@ -439,6 +441,7 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
         DYN_S_DPRINTF(stepRootDynS.dynStreamId, "[Stepper] Dispatch.\n");
         se->dispatchStreamStep(args);
         dynStep.state = DynRegion::DynStep::StepState::BEFORE_COMMIT;
+        keepStepping = true;
 
       } else {
         DYN_S_DPRINTF(stepRootDynS.dynStreamId, "[Stepper] CanNot Dispatch.\n");
@@ -466,6 +469,7 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
         DYN_S_DPRINTF(stepRootDynS.dynStreamId, "[Stepper] Commit.\n");
         se->commitStreamStep(args);
         stepToNextGroup();
+        keepStepping = true;
 
       } else {
         DYN_S_DPRINTF(stepRootDynS.dynStreamId, "[Stepper] CanNot Commit.\n");
@@ -485,6 +489,7 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
     }
   }
   }
+  return keepStepping;
 }
 
 bool StreamRegionController::endStream(DynRegion &dynRegion) {

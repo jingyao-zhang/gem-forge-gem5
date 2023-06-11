@@ -75,6 +75,27 @@ std::string printAffinePatternParams(const DynStreamFormalParamV &params) {
   return ss.str();
 }
 
+void extractStrideAndTripFromAffinePatternParams(
+    const DynStreamFormalParamV &params, std::vector<int64_t> &strides,
+    std::vector<int64_t> &trips) {
+  strides.clear();
+  trips.clear();
+  assert((params.size() % 2) == 1);
+  uint64_t prevTrip = 1;
+  for (int i = 1; i + 1 < params.size(); i += 2) {
+    const auto &p = params.at(i);
+    assert(p.isInvariant);
+    auto trip = p.invariant.uint64();
+    trips.push_back(trip / prevTrip);
+    prevTrip = trip;
+    const auto &s = params.at(i - 1);
+    assert(s.isInvariant);
+    auto stride = s.invariant.uint64();
+    strides.push_back(stride);
+  }
+  assert(!trips.empty());
+}
+
 StreamValue GetSingleStreamValue::operator()(uint64_t streamId) const {
   assert(this->streamId == streamId && "Invalid base stream.");
   return this->streamValue;

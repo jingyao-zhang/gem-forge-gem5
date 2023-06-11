@@ -187,6 +187,7 @@ struct StreamElement {
   std::vector<ElementEdge> innerLoopDepElements;
   bool hasUnInitInnerLoopAddrBaseElem = false;
   bool hasUnInitInnerLoopValueBaseElem = false;
+  int numUnInitValueBaseElems = 0;
 
   bool checkAddrBaseElementsReady(bool checkByCore);
 

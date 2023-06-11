@@ -18,6 +18,10 @@ struct DynStrandElementRangeId {
   uint64_t rhsElementIdx;
   DynStrandElementRangeId() : strandId(), lhsElementIdx(0), rhsElementIdx(0) {}
 
+  DynStrandElementRangeId(const DynStrandId &_strandId, uint64_t _elemIdx)
+      : strandId(_strandId), lhsElementIdx(_elemIdx),
+        rhsElementIdx(_elemIdx + 1) {}
+
   bool isValid() const {
     return !(this->lhsElementIdx == 0 && this->rhsElementIdx == 0);
   }

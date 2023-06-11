@@ -1,6 +1,7 @@
 #include "CacheStreamConfigureData.hh"
 #include "../stream.hh"
 
+#include "debug/LLCRubyStreamBase.hh"
 #include "debug/MLCRubyStrandSplit.hh"
 #include "debug/StreamLoopBound.hh"
 
@@ -483,4 +484,95 @@ uint64_t CacheStreamConfigureData::getStreamElemIdxFromStrandElemIdx(
   StrandElemSplitIdx elemSplit(strandId.strandIdx, strandElemIdx);
   return this->strandSplit.mapStrandToStream(elemSplit);
 }
+
+std::tuple<DynStrandId, uint64_t, Addr, ruby::MachineType>
+CacheStreamConfigureData::translateSendToRecv(
+    const DepEdge &sendToEdge, const CacheStreamConfigureDataPtr &sendConfig,
+    uint64_t sendStrandElemIdx) {
+
+  /**
+   * Unlike sending data to MLC, we have to calculate the virtual
+   * address of the receiving stream and translate that. Also, we can
+   * only handle the simpliest case so far: no spliting, and no
+   * multi-line receiver element.
+   *
+   * Now that we have strands, we have to be careful translating between
+   * StreamElemIdx and StrandElemIdx.
+   *
+   *
+   * If the RecvConfig is Strand, then we don't translate to StreamElemIdx.
+   *
+   * SendStrandElemIdx -> RecvStrandElemIdx
+   */
+
+  auto recvConfig = sendToEdge.data;
+  /**
+   * If RecvConfig is StreamConfig, we go through:
+   * SendStrand -> SendStream -> RecvStream -> RecvStrand
+   */
+  if (!recvConfig->isStrandConfig()) {
+
+    // SendStrandElemIdx -> SendStreamElemIdx.
+    auto sendStreamElemIdx =
+        sendConfig->getStreamElemIdxFromStrandElemIdx(sendStrandElemIdx);
+
+    // SendStreamElemIdx -> RecvStreamElemIdx.
+    auto recvStreamElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
+        sendStreamElemIdx, sendToEdge.reuse, sendToEdge.skip);
+
+    // RecvStreamElemIdx -> RecvStrandElemIdx.
+    auto recvStrandId =
+        recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+    auto recvStrandElemIdx =
+        recvConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
+
+    // Get the VAddr.
+    auto recvElemVAddr =
+        recvConfig->addrGenCallback
+            ->genAddr(recvStreamElemIdx, recvConfig->addrGenFormalParams,
+                      getStreamValueFail)
+            .front();
+
+    auto recvElemMachineType =
+        recvConfig->floatPlan.getMachineTypeAtElem(recvStreamElemIdx);
+
+    DYN_S_DPRINTF_(LLCRubyStreamBase, sendConfig->getStrandId(),
+                   "[Fwd] SendStrnd %lu -> SendStrm %lu R/S %ld/%ld -> "
+                   "RecvStrm %lu -> RecvStrnd %s%lu %s.\n",
+                   sendStrandElemIdx, sendStreamElemIdx, sendToEdge.reuse,
+                   sendToEdge.skip, recvStreamElemIdx, recvStrandId,
+                   recvStrandElemIdx, recvElemMachineType);
+
+    return std::make_tuple(recvStrandId, recvStrandElemIdx, recvElemVAddr,
+                           recvElemMachineType);
+  } else {
+    // The RecvConfig is StrandConfig, we skip the stream part.
+    auto recvStrandId = recvConfig->getStrandId();
+    auto recvStrandElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
+        sendStrandElemIdx, sendToEdge.reuse, sendToEdge.skip);
+
+    // Get the VAddr.
+    auto recvElemVAddr =
+        recvConfig->addrGenCallback
+            ->genAddr(recvStrandElemIdx, recvConfig->addrGenFormalParams,
+                      getStreamValueFail)
+            .front();
+
+    auto recvStreamElemIdx =
+        recvConfig->getStreamElemIdxFromStrandElemIdx(recvStrandElemIdx);
+    auto recvElemMachineType =
+        recvConfig->streamConfig->floatPlan.getMachineTypeAtElem(
+            recvStreamElemIdx);
+
+    DYN_S_DPRINTF_(
+        LLCRubyStreamBase, sendConfig->getStrandId(),
+        "[LLCFwd] SendStrnd %lu R/S %ld/%ld -> RecvStrnd %s%lu %s.\n",
+        sendStrandElemIdx, sendToEdge.reuse, sendToEdge.skip, recvStrandId,
+        recvStrandElemIdx, recvElemMachineType);
+
+    return std::make_tuple(recvStrandId, recvStrandElemIdx, recvElemVAddr,
+                           recvElemMachineType);
+  }
+}
+
 } // namespace gem5

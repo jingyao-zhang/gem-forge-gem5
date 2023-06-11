@@ -530,33 +530,42 @@ bool DynStream::isNextValueBaseElementAllocated(
      * Special cases like LoadComputeStream, UpdateStream are handled
      * in addBaseElements().
      */
-    DYN_S_PANIC(this->dynStreamId, "ValueDependence on myself.");
+    DYN_S_PANIC(this->dynStreamId, "ValueDep on myself.");
   }
 
   const auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
   auto baseElemIdx = edge.getBaseElemIdx(this->FIFOIdx.entryIdx);
-  // Try to find this element.
   if (baseDynS.FIFOIdx.entryIdx <= baseElemIdx) {
-    DYN_S_DPRINTF(this->dynStreamId,
-                  "NextElem(%llu) BaseElem(%llu) Not Ready, Align %llu, Reuse "
-                  "%llu, Skip %llu BaseS %s.\n",
-                  this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
-                  edge.baseElemReuseCnt, edge.baseElemSkipCnt,
-                  baseS->getStreamName());
+    /**
+     * The next base elem is not allocated yet. However, if the BaseS is from
+     * some InnerLoop, we allow this case and remember that there is unallocated
+     * InnerLoopBaseS for the DepElem.
+     */
+    DYN_S_DPRINTF(
+        this->dynStreamId,
+        "NextElem(%llu) BaseElem(%llu) Not Allocated. Align %llu, Reuse "
+        "%llu, Skip %llu BaseS %s.\n",
+        this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
+        edge.baseElemReuseCnt, edge.baseElemSkipCnt, baseS->getStreamName());
+    if (baseS->getLoopLevel() > S->getLoopLevel()) {
+      DYN_S_DPRINTF(this->dynStreamId, "Allow Not Allcoated InnerBaseElem.");
+      return true;
+    }
     return false;
   }
-  auto baseElement = baseDynS.getElemByIdx(baseElemIdx);
-  if (!baseElement) {
+  // Try to find this element.
+  auto baseElem = baseDynS.getElemByIdx(baseElemIdx);
+  if (!baseElem) {
     DYN_S_DPRINTF(this->dynStreamId,
-                  "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
+                  "NextElemIdx(%llu) BaseElemIdx(%llu) Already "
                   "Released? Align(%llu), Reuse(%llu), BaseStream %s\n",
                   this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
                   edge.baseElemReuseCnt, baseS->getStreamName());
     DYN_S_DPRINTF(this->dynStreamId, "BaseDynS %s.\n", baseDynS.dumpString());
   }
-  assert(baseElement && "Base Element Already Released?");
-  if (baseElement->isStepped) {
+  assert(baseElem && "ValBaseElem Already Released?");
+  if (baseElem->isStepped) {
     DYN_S_DPRINTF(this->dynStreamId,
                   "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
                   "(Misspeculatively) Stepped? Align(%llu), Reuse(%llu), "
@@ -645,16 +654,53 @@ void DynStream::addValueBaseElementEdge(StreamElement *newElem,
   auto newElemIdx = newElem->FIFOIdx.entryIdx;
 
   auto baseS = S->se->getStream(edge.baseStaticId);
-  const auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
+  auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
   auto baseElemIdx = edge.getBaseElemIdx(newElemIdx);
   // Try to find this element.
   auto baseElem = baseDynS.getElemByIdx(baseElemIdx);
   if (!baseElem) {
-    S_ELEMENT_PANIC(newElem, "Failed to find value base element %llu from %s.",
+    /**
+     * The only possible case is that the BaseElem is from InnerLoop and not
+     * allocated yet. We register a callback when that elem is allocated.
+     * We assume that DynS would never be released when the BaseS is trying
+     * to allocate.
+     */
+    if (!baseDynS.isElemAllocated(baseElemIdx) &&
+        baseS->getLoopLevel() > S->getLoopLevel()) {
+      S_ELEMENT_DPRINTF(newElem, "Add Unallcoated ValBaseElem: %s%lu.\n",
+                        baseDynS.dynStreamId, baseElemIdx);
+      newElem->numUnInitValueBaseElems++;
+      auto elemAllocCallback = [this, newElem, newElemIdx, baseElemIdx](
+                                   DynStream *dynS, uint64_t elemIdx) -> bool {
+        // First check that newElem is still valid.
+        if (newElem->FIFOIdx.streamId != this->dynStreamId ||
+            newElem->FIFOIdx.entryIdx != newElemIdx) {
+          // Somehow the newElem is rewinded or so. We are done.
+          return true;
+        }
+        // If this is not the ValBaseElem we are waiting for.
+        if (elemIdx != baseElemIdx) {
+          return false;
+        }
+        // This is the one.
+        assert(newElem->numUnInitValueBaseElems > 0);
+        newElem->numUnInitValueBaseElems--;
+        auto baseElem = dynS->getElemByIdx(elemIdx);
+        S_ELEMENT_DPRINTF(
+            newElem, "Add Delayed Init ValBaseElem: %s. Remain UnInit %d.\n",
+            baseElem->FIFOIdx, newElem->numUnInitValueBaseElems);
+        newElem->valueBaseElements.emplace_back(baseElem);
+        return true;
+      };
+      baseDynS.registerAllocElemCallback(elemAllocCallback);
+
+      return;
+    }
+    S_ELEMENT_PANIC(newElem, "Failed to find ValBaseElem %llu from %s.",
                     baseElemIdx, baseDynS.dynStreamId);
   }
-  S_ELEMENT_DPRINTF(newElem, "Add ValueBaseElement: %s.\n", baseElem->FIFOIdx);
+  S_ELEMENT_DPRINTF(newElem, "Add ValBaseElem: %s.\n", baseElem->FIFOIdx);
   newElem->valueBaseElements.emplace_back(baseElem);
 }
 
@@ -1107,6 +1153,10 @@ bool DynStream::isElemReleased(uint64_t elemIdx) const {
   }
 }
 
+bool DynStream::isElemAllocated(uint64_t elemIdx) const {
+  return elemIdx < this->FIFOIdx.entryIdx;
+}
+
 StreamElement *DynStream::releaseElementStepped(bool isEnd) {
 
   /**
@@ -1466,6 +1516,11 @@ bool DynStream::isLoopElimInCoreStoreCmpS() const {
          this->stream->isLoopEliminated() && !this->isFloatedToCache();
 }
 
+bool DynStream::isLoopElimInCoreUpdateS() const {
+  return this->stream->isUpdateStream() && this->stream->isLoopEliminated() &&
+         !this->isFloatedToCache();
+}
+
 void DynStream::setElementRemoteBank(uint64_t elemIdx, int remoteBank) {
   if (elemIdx >= this->FIFOIdx.entryIdx) {
     // This is a future element bank.
@@ -1543,6 +1598,9 @@ std::string DynStream::dumpString() const {
     ss << elem->isValueReady;
     if (elem->shouldIssue() && this->stream->isMemStream()) {
       ss << elem->isReqIssued();
+    }
+    if (elem->shouldComputeValue()) {
+      ss << 'C' << elem->isComputeValueReady() << elem->scheduledComputation;
     }
     ss << ')';
     if (this->isFloatedToCache()) {

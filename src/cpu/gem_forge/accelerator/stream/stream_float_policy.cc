@@ -72,6 +72,9 @@ StreamFloatPolicy::StreamFloatPolicy(StreamEngine *_se, bool _enabled,
     this->policy = PolicyE::SMART;
   } else if (_policy == "smart-computation") {
     this->policy = PolicyE::SMART_COMPUTATION;
+  } else if (_policy == "smart-reuse") {
+    this->policy = PolicyE::SMART;
+    this->enabledFloatReuse = true;
   } else {
     panic("Invalid StreamFloatPolicy %s.", _policy);
   }
@@ -112,6 +115,10 @@ std::ostream &StreamFloatPolicy::logS(const DynStreamId &dynId) {
   return getLog() << dynId << ": ";
 }
 
+std::ostream &StreamFloatPolicy::logS(const DynStrandId &dynId) {
+  return getLog() << dynId << ": ";
+}
+
 StreamFloatPolicy::FloatDecision
 StreamFloatPolicy::shouldFloatStream(DynStream &dynS) {
   if (!this->enabled) {
@@ -123,6 +130,12 @@ StreamFloatPolicy::shouldFloatStream(DynStream &dynS) {
   }
   // Initialize the private cache capacity.
   auto S = dynS.stream;
+  /**
+   * Override by not float decision.
+   */
+  if (S->getNotFloatManual()) {
+    return FloatDecision();
+  }
   /**
    * ! Crazy hack to avoid float akk and bk in GaussElim.
    * ! This causes problem in the coherence protocol with the
@@ -253,7 +266,7 @@ bool StreamFloatPolicy::checkAggregateHistory(DynStream &dynS) {
    * If so, we should not float this stream.
    */
   auto S = dynS.stream;
-  if (S->aggregateHistory.empty() || !enabledHistory) {
+  if (S->aggregateHistory.empty() || !this->enabledHistory) {
     return true;
   }
   auto linearAddrGen =
@@ -414,7 +427,8 @@ StreamFloatPolicy::shouldFloatStreamSmart(DynStream &dynS) {
     }
   }
 
-  if (!this->checkReuseWithinStream(dynS)) {
+  // Only check reuse if we can not float reuse.
+  if (!this->enabledFloatReuse && !this->checkReuseWithinStream(dynS)) {
     return FloatDecision(false);
   }
 
