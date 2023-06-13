@@ -74,8 +74,10 @@ private:
     bool skipSanityCheck = false;
     // We allow each stream to have specific interleaving.
     struct ContextPerStream {
-      int splitCnt = 1;
-      int splitDim = 0;
+      // We allow split some continguous dimensions.
+      // Ordered from inner-most dimension (dim 0).
+      using SplitDim = StrandSplitInfo::SplitDim;
+      std::vector<SplitDim> splitDims;
       int64_t innerTrip = 0;
       int64_t outerTrip = 0;
       int64_t splitTripPerStrand = 0;

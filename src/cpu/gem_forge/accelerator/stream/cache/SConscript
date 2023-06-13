@@ -67,3 +67,9 @@ Source('CacheStreamConfigureData.cc')
 Source('SlicedDynStream.cc')
 Source('StreamFloatPlan.cc')
 Source('StreamReuseBuffer.cc')
+
+GTest('StrandSplitInfo.test',
+    'StrandSplitInfo.test.cc',
+    'StrandSplitInfo.cc',
+    with_tag('gem5 trace')
+)
