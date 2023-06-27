@@ -137,7 +137,7 @@ StrandSplitInfo::getStrandTripCount(TripCount streamTripCount,
   }
 
   if (this->splitByDim) {
-    return this->getStrandTripCountByDim(streamTripCount, strandIdx);
+    return this->getStrandTripCountByDim(strandIdx);
   }
 
   assert(this->totalStrands == 1);
@@ -166,13 +166,20 @@ StrandSplitInfo::mapStreamToStrandByDim(StreamElemIdx streamElemIdx) const {
   return StrandElemSplitIdx(accStrandId, accStrandElemIdx);
 }
 
-StrandSplitInfo::TripCount
-StrandSplitInfo::getStrandTripCountByDim(TripCount streamTripCount,
-                                         StrandIdx strandIdx) const {
+StrandSplitInfo::TripCount StrandSplitInfo::getStrandTripCountByDim(
+    StrandIdx strandIdx, int untilDim) const {
+
+  auto endDim = this->dimensions.size();
+  if (untilDim != -1) {
+    endDim = untilDim;
+  }
+  assert(endDim <= this->dimensions.size());
 
   StrandIdx accSplitCnt = 1;
   TripCount accStrandTrip = 1;
-  for (const auto &dim : this->dimensions) {
+
+  for (int i = 0; i < endDim; ++i) {
+    const auto &dim = this->dimensions.at(i);
 
     auto strandId = strandIdx % accSplitCnt;
     auto strandTrip = dim.getStrandTrip(strandId);

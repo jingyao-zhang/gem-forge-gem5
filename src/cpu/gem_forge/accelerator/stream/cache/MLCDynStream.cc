@@ -203,22 +203,20 @@ bool MLCDynStream::checkRecvDynSForPop(const DynStreamSliceId &sliceId) {
   auto broadcastStrands = this->config->broadcastStrands;
   broadcastStrands.insert(broadcastStrands.begin(), this->config);
 
-  for (const auto &dep : this->sendToEdges) {
+  // Check all the receiver.
+  for (auto &config : broadcastStrands) {
 
-    // Check all the receiver.
-    for (auto &config : broadcastStrands) {
+    for (const auto &dep : config->depEdges) {
 
-      auto streamElemIdx =
-          config->getStreamElemIdxFromStrandElemIdx(strandElemIdx);
+      if (dep.type != CacheStreamConfigureData::DepEdge::Type::SendTo) {
+        continue;
+      }
 
-      auto recvStreamElemIdx =
-          CacheStreamConfigureData::convertBaseToDepElemIdx(
-              streamElemIdx, dep.reuse, dep.skip);
+      auto translation =
+          config->translateSendToRecv(dep, config, strandElemIdx);
 
-      auto recvStrandId =
-          dep.data->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
-      auto recvStrandElemIdx =
-          dep.data->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
+      auto recvStrandId = std::get<0>(translation);
+      auto recvStrandElemIdx = std::get<1>(translation);
 
       auto remoteRecvS = LLCDynStream::getLLCStream(recvStrandId);
       if (!remoteRecvS) {
@@ -249,11 +247,10 @@ bool MLCDynStream::checkRecvDynSForPop(const DynStreamSliceId &sliceId) {
       this->popBlocked = true;
       MLC_SLICE_DPRINTF(
           sliceId,
-          "[DelayPop] RecvElemIdx MLC BrdStrand %d %lu(%lu) -> LLC %s%lu-%lu > "
+          "[DelayPop] RecvElemIdx MLC BrdStrand %d %lu -> LLC %s%lu > "
           "%lu. RegisterCB at %lu\n",
-          config->strandIdx, strandElemIdx, streamElemIdx, recvStrandId,
-          recvStrandElemIdx, recvStreamElemIdx, recvInitStrandElemIdx,
-          recvStrandElemIdx);
+          config->strandIdx, strandElemIdx, recvStrandId, recvStrandElemIdx,
+          recvInitStrandElemIdx, recvStrandElemIdx);
       remoteRecvS->registerElemInitCallback(recvStrandElemIdx,
                                             elemInitCallback);
       return false;

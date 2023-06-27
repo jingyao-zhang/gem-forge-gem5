@@ -65,61 +65,6 @@ public:
    *   Ri = (Ti / SI / SC) * SI
    *
    * And Bi is accumulated trip on Ri.
-   *
-   * This InitOffset is for case when StreamStartAddr is not aligned to the
-   * bank.
-   * ! For now we assume InitOffset is always zero, as it's unused.
-   *
-   * | Strand0-Intrlv0 | Strand1-Intrlv0 | Strand0-Intrlv1 | Strand1-Intrlv1 |
-   * |-------------------------------| T |-------------------------------| T |
-   *
-   * Here T is used to handle some tailing missing elements.
-   * For example: the pattern is 0:1:510:512:510:26244:8
-   * With interleave = 510x8 = 4080, each strand handles 8 rows.
-   * However, the last strand only handles 6 rows,
-   * with tailInterleave = 510*2 = 1020.
-   *
-   * ElemPerRound = interleave * totalStrands - tailInterleave
-   *
-   * ElemPerStrandRound(StrandIdx) =
-   *      min(ElemPerRound, (StrandIdx + 1) * interleave)
-   *    - min(ElemPerRound, StrandIdx * interleave)
-   *
-   * The formula f(Stream) -> Strand:
-   * RoundIdx = StreamElemIdx / ElemPerRound
-   * RoundElemIdx = StreamElemIdx % ElemPerRound
-   *
-   * StrandIdx = RoundElemIdx / interleave
-   * StrandRoundElem = ElemPerStrandRound(StrandIdx)
-   * StrandElemIdx =
-   *      RoundIdx * StrandRoundElem
-   *    + RoundElemIdx % interleave
-   *
-   * Reverse: g(Strand) -> Stream
-   * StrandRoundElem = ElemPerStrandRound(StrandIdx)
-   * if StrandRoundElem == 0:
-   *    RoundIdx = 0
-   *    RoundElemIdx = 0
-   * else:
-   *    RoundIdx = StrandElemIdx / StrandRoundElem
-   *    RoundElemIdx = StrandIdx * interleave
-   *       + StrandElemIdx % StrandRoundElem
-   *
-   * StreamElemIdx =
-   *      RoundIdx * ElemPerRound
-   *    + RoundElemIdx
-   *
-   * TripCount of Strand:
-   * Let FinalStrandIdx, FinalRoundIdx, FinalStrandElemIdx = f(TotalTripCount)
-   * StrandRoundElem = ElemPerStrandRound(StrandIdx)
-   * If StrandIdx < FinalStrandIdx:
-   *   TripCount = (FinalRoundIdx + 1) * StrandRoundElem
-   * If StrandIdx = FinalStrandIdx:
-   *   TripCount = FinalStrandElemIdx
-   * If StrandIdx > FinalStrandIdx:
-   *   TripCount = FinalRoundIdx * StrandRoundElem
-   *
-   * Second implementation: split some dimension.
    */
 
   StrandSplitInfo() = default;
@@ -151,6 +96,9 @@ public:
   TripCount getStrandTripCount(TripCount streamTripCount,
                                StrandIdx strandIdx) const;
 
+  TripCount getStrandTripCountByDim(StrandIdx strandIdx,
+                                    int untilDim = -1) const;
+
   /**
    * Get all StrandElemSplitIdxes that would happen before the given
    * StreamElemIdx. Used to check the serialized progress of strands.
@@ -162,6 +110,59 @@ public:
     assert(this->splitByDim);
     assert(this->dimensions.size() == 1);
     return this->dimensions.front().splitIntrlv;
+  }
+
+  StrandIdx getStrandIdAtDim(StrandIdx strandIdx, int dimension) const {
+    assert(this->splitByDim);
+    const auto &dim = this->dimensions.at(dimension);
+    return (strandIdx / dim.accSplitCnt) % dim.splitCnt;
+  }
+
+  /**
+   * Check if the split is homogenious to another split.
+   * 1. We have dimensions equal to split after adjust by loopDiff.
+   * 2. All dimensions of split matches with ours (same trip, splitCnt,
+   * splitIntrlv).
+   */
+  bool isHomogeniousSplitTo(const StrandSplitInfo &split, int loopDiff) const {
+    if (loopDiff < 0) {
+      return split.isHomogeniousSplitTo(*this, -loopDiff);
+    }
+    if (!this->isSplitByDim() || !split.isSplitByDim() ||
+        this->dimensions.size() + loopDiff != split.dimensions.size()) {
+      return false;
+    }
+    for (int i = 0; i < this->dimensions.size(); ++i) {
+      // Compare in reverse order.
+      const auto &dim1 = this->dimensions.at(i);
+      const auto &dim2 = split.dimensions.at(i + loopDiff);
+      if (dim1.trip != dim2.trip || dim1.splitCnt != dim2.splitCnt ||
+          dim1.splitIntrlv != dim2.splitIntrlv) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Check if both strand are homogenious mapped together.
+   */
+  bool isHomogeniousMatch(const StrandSplitInfo &split, int loopDiff,
+                          StrandIdx myStrandIdx, StrandIdx strandIdx) const {
+    if (loopDiff < 0) {
+      return split.isHomogeniousMatch(*this, -loopDiff, strandIdx, myStrandIdx);
+    }
+    if (!this->isHomogeniousSplitTo(split, loopDiff)) {
+      return false;
+    }
+    for (int i = 0; i < this->dimensions.size(); ++i) {
+      auto myStrandId = this->getStrandIdAtDim(myStrandIdx, i);
+      auto strandId = split.getStrandIdAtDim(strandIdx, i + loopDiff);
+      if (myStrandId != strandId) {
+        return false;
+      }
+    }
+    return true;
   }
 
   bool isSplitByDim() const { return splitByDim; }
@@ -202,8 +203,6 @@ private:
    */
   StrandElemSplitIdx mapStreamToStrandByDim(StreamElemIdx streamElemIdx) const;
   StreamElemIdx mapStrandToStreamByDim(StrandElemSplitIdx strandElemIdx) const;
-  TripCount getStrandTripCountByDim(TripCount streamTripCount,
-                                    StrandIdx strandIdx) const;
   std::vector<StrandElemSplitIdx>
   mapStreamToPrevStrandByDim(StreamElemIdx streamElemIdx) const;
 

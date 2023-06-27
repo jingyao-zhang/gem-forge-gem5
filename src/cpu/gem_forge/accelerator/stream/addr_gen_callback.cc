@@ -6,6 +6,22 @@
 
 namespace gem5 {
 
+bool isSameInvariantFormalParams(const DynStreamFormalParamV &paramsA,
+                                 const DynStreamFormalParamV &paramsB) {
+  if (paramsA.size() != paramsB.size()) {
+    return false;
+  }
+  for (auto i = 0; i < paramsA.size(); ++i) {
+    const auto &p1 = paramsA.at(i);
+    const auto &p2 = paramsB.at(i);
+    assert(p1.isInvariant && p2.isInvariant);
+    if (p1.invariant != p2.invariant) {
+      return false;
+    }
+  }
+  return true;
+}
+
 StreamValue getStreamValueFail(uint64_t streamId) {
   panic("Failed to get stream value.");
 }

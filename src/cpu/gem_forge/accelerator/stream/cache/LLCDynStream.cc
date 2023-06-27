@@ -760,9 +760,13 @@ void LLCDynStream::initNextElem(Addr vaddr) {
                 baseConfig->addrGenCallback);
 
         if (!baseEdge.isUsedAffineIV && linearBaseAddrGen) {
+          auto addrGenBaseElemIdx = baseStreamElemIdx;
+          if (baseEdge.isStrandSendTo) {
+            addrGenBaseElemIdx = baseStrandElemIdx;
+          }
           baseElemVAddr =
               baseConfig->addrGenCallback
-                  ->genAddr(baseStreamElemIdx, baseConfig->addrGenFormalParams,
+                  ->genAddr(addrGenBaseElemIdx, baseConfig->addrGenFormalParams,
                             getStreamValueFail)
                   .front();
           LLC_ELEMENT_DPRINTF(elem, "BaseStrandElem %s%llu VAddr %#x.\n",

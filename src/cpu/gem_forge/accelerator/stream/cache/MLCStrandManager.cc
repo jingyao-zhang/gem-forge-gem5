@@ -614,6 +614,14 @@ bool MLCStrandManager::chooseSplitDimIntrlvMMOuter(
   pscB.splitTripPerStrand = splitDimTripPerStrand;
   pscC.splitTripPerStrand = splitDimTripPerStrand;
 
+  // Lets also split B and C on the second dimension, with 1 interleave.
+  pscB.splitDims.emplace_back(1, 8, 1);
+  pscC.splitDims.emplace_back(1, 8, 1);
+
+  // A is split on the first dimension (which is the outer loop, with 1
+  // interleave).
+  pscA.splitDims.emplace_back(0, 8, 1);
+
   return true;
 }
 
@@ -773,7 +781,7 @@ bool MLCStrandManager::fixSplitDimIntrlv(StrandSplitContext &context,
   for (const auto &config : configs) {
     const auto &psc = context.perStreamContext.at(config->dynamicId);
     auto dims = psc.trips.size();
-    assert(!psc.splitDims.empty() && "Cannot handle this now.");
+    assert(psc.splitDims.size() == 1 && "Can only handle single dim split.");
     auto splitDim = psc.splitDims.front().dim;
     auto splitDimTrip = psc.trips.at(splitDim);
     if (dims - splitDim != firstDims - firstSplitDim) {
@@ -790,7 +798,7 @@ bool MLCStrandManager::fixSplitDimIntrlv(StrandSplitContext &context,
       return false;
     }
 
-    auto splitDimIntrlv = psc.splitTripPerStrand;
+    auto splitDimIntrlv = psc.splitDims.front().intrlv;
     if (splitDimIntrlv < minSplitDimIntrlv) {
       STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
                   "[Strand] Min SplitDimIntrlv %d.\n", splitDimIntrlv);
@@ -800,12 +808,13 @@ bool MLCStrandManager::fixSplitDimIntrlv(StrandSplitContext &context,
 
   for (const auto &config : configs) {
     auto &psc = context.perStreamContext.at(config->dynamicId);
-    auto splitDimIntrlv = psc.splitTripPerStrand;
+    assert(psc.splitDims.size() == 1);
+    auto splitDimIntrlv = psc.splitDims.front().intrlv;
     if (splitDimIntrlv > minSplitDimIntrlv) {
       STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
                   "[Strand] Adjust SplitDimIntrlv %d -> %d.\n", splitDimIntrlv,
                   minSplitDimIntrlv);
-      psc.splitTripPerStrand = minSplitDimIntrlv;
+      psc.splitDims.front().intrlv = minSplitDimIntrlv;
     }
 
     // /**
@@ -909,19 +918,45 @@ void MLCStrandManager::splitIntoStrands(StrandSplitContext &context,
   auto streamConfigs = configs;
   configs.clear();
 
-  // Split and insert into configs.
+  // Split into strands.
+  StreamToStrandsMap streamToStrandMap;
   for (auto &config : streamConfigs) {
-    auto strandConfigs = this->splitIntoStrands(context, config);
-    configs.insert(configs.end(), strandConfigs.begin(), strandConfigs.end());
+    auto &strands =
+        streamToStrandMap
+            .emplace(std::piecewise_construct, std::forward_as_tuple(config),
+                     std::forward_as_tuple())
+            .first->second;
+    strands = this->splitIntoStrands(context, config);
     STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
                 "---------------Split Strands\n");
-    for (const auto &strandConfig : strandConfigs) {
+    for (const auto &strand : strands) {
       STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId, "Strand %s %s.\n",
-                  DynStrandId(strandConfig->dynamicId, strandConfig->strandIdx,
-                              strandConfig->totalStrands),
-                  printAffinePatternParams(strandConfig->addrGenFormalParams));
+                  strand->getStrandId(),
+                  printAffinePatternParams(strand->addrGenFormalParams));
     }
   }
+
+  // Some post process after the initial split and insert into configs.
+  for (auto &split : streamToStrandMap) {
+    auto &strands = split.second;
+    this->mergeBroadcastStrands(context, streamToStrandMap, strands);
+    configs.insert(configs.end(), strands.begin(), strands.end());
+  }
+
+  // // Split and insert into configs.
+  // for (auto &config : streamConfigs) {
+  //   auto strandConfigs = this->splitIntoStrands(context, config);
+  //   configs.insert(configs.end(), strandConfigs.begin(),
+  //   strandConfigs.end()); STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+  //               "---------------Split Strands\n");
+  //   for (const auto &strandConfig : strandConfigs) {
+  //     STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId, "Strand %s %s.\n",
+  //                 DynStrandId(strandConfig->dynamicId,
+  //                 strandConfig->strandIdx,
+  //                             strandConfig->totalStrands),
+  //                 printAffinePatternParams(strandConfig->addrGenFormalParams));
+  //   }
+  // }
 
   // Fix the reused SendTo relationship.
   this->fixReusedSendTo(context, streamConfigs, configs);
@@ -1124,12 +1159,12 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
     }
   }
 
-  this->mergeBroadcastStrands(strands);
-
   return strands;
 }
 
-void MLCStrandManager::mergeBroadcastStrands(CacheStreamConfigureVec &strands) {
+void MLCStrandManager::mergeBroadcastStrands(
+    StrandSplitContext &context, StreamToStrandsMap &streamToStrandMap,
+    CacheStreamConfigureVec &strands) {
 
   /**
    * We can merge iff:
@@ -1176,55 +1211,129 @@ void MLCStrandManager::mergeBroadcastStrands(CacheStreamConfigureVec &strands) {
   }
 
   /**
-   * Check that all params are the same.
+   * Group all strands by their patterns.
    * It's possible that some last strands have different parameters, and we
    * ignore them by not merging.
    */
-  auto mergedStrandIdxEnd = 1;
-  for (; mergedStrandIdxEnd < strands.size(); ++mergedStrandIdxEnd) {
+  std::vector<CacheStreamConfigureVec> broadcastStrands;
+  broadcastStrands.emplace_back();
+  broadcastStrands.front().push_back(firstStrand);
+  STRAND_LOG_(MLCRubyStrandSplit, firstStrand->getStrandId(),
+              "[Broadcast] New BroadCastGroup.\n");
+  for (auto mergedStrandIdxEnd = 1; mergedStrandIdxEnd < strands.size();
+       ++mergedStrandIdxEnd) {
     auto strand = strands.at(mergedStrandIdxEnd);
-    assert(strand->addrGenFormalParams.size() ==
-           firstStrand->addrGenFormalParams.size());
-    bool allParamsMatch = true;
-    for (auto i = 0; i < strand->addrGenFormalParams.size(); ++i) {
-      const auto &p1 = strand->addrGenFormalParams.at(i);
-      const auto &p2 = firstStrand->addrGenFormalParams.at(i);
-      assert(p1.isInvariant && p2.isInvariant);
-      if (p1.invariant != p2.invariant) {
-        STRAND_LOG_(MLCRubyStrandSplit, firstStrand->dynamicId,
-                    "[NoBroadcast] Params Mismatch at Starnd %d.\n",
-                    mergedStrandIdxEnd);
-        allParamsMatch = false;
+    bool merged = false;
+    for (auto &group : broadcastStrands) {
+      if (isSameInvariantFormalParams(strand->addrGenFormalParams,
+                                      group.front()->addrGenFormalParams)) {
+        STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
+                    "[Broadcast] Params match with Strand %d.\n",
+                    group.front()->strandIdx);
+        group.push_back(strand);
+        merged = true;
         break;
       }
     }
-    if (!allParamsMatch) {
-      break;
+    if (!merged) {
+      STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
+                  "[Broadcast] New BroadCastGroup.\n");
+      broadcastStrands.emplace_back();
+      broadcastStrands.back().push_back(strand);
     }
   }
 
-  // Merge them.
-  STRAND_LOG_(MLCRubyStrandSplit, firstStrand->dynamicId,
-              "[MergeBroadcast] Merged First %d Strands!\n",
-              mergedStrandIdxEnd);
-  CacheStreamConfigureVec mergedStrands;
+  // Merge all groups.
   int mergeSize = this->controller->myParams->stream_strand_broadcast_size;
-  for (auto i = 0; i < mergedStrandIdxEnd; i += mergeSize) {
+  CacheStreamConfigureVec mergedStrands;
+  for (const auto &group : broadcastStrands) {
 
-    auto thisStrandMergedIdxEnd = std::min(i + mergeSize, mergedStrandIdxEnd);
-    for (auto j = i + 1; j < thisStrandMergedIdxEnd; ++j) {
-      strands.at(i)->broadcastStrands.push_back(strands.at(j));
+    for (auto i = 0; i < group.size(); i += mergeSize) {
+
+      auto strandI = group.at(i);
+
+      // Fix the SendTo.
+      std::vector<CacheStreamConfigureData::DepEdge> fixedDepEdges;
+
+      for (auto &dep : strandI->depEdges) {
+        assert(dep.type == CacheStreamConfigureData::DepEdge::Type::SendTo);
+
+        auto &recvStream = dep.data;
+        auto &recvPSC = context.perStreamContext.at(recvStream->dynamicId);
+
+        StrandSplitInfo recvStrandSplitInfo(recvPSC.trips, recvPSC.splitDims);
+        auto recvS = recvStream->stream;
+
+        int loopDiff = recvS->getLoopLevel() - S->getLoopLevel();
+        if (loopDiff != 0) {
+          fixedDepEdges.push_back(dep);
+          continue;
+        }
+
+        if (!strandI->strandSplit.isHomogeniousSplitTo(recvStrandSplitInfo,
+                                                       loopDiff)) {
+          fixedDepEdges.push_back(dep);
+          continue;
+        }
+
+        auto &recvStrands = streamToStrandMap.at(recvStream);
+
+        for (auto &recvStrand : recvStrands) {
+
+          for (auto j = i; j < i + mergeSize && j < group.size(); ++j) {
+
+            auto strandJ = group.at(j);
+
+            if (!strandJ->strandSplit.isHomogeniousMatch(
+                    recvStrandSplitInfo, loopDiff, strandJ->strandIdx,
+                    recvStrand->strandIdx)) {
+              // This is not our recv strand.
+              continue;
+            }
+
+            auto fixedDep = dep;
+            fixedDep.data = recvStrand;
+
+            STRAND_LOG_(MLCRubyStrandSplit, strandI->getStrandId(),
+                        "[MergeBroadcast] Merged %d -> %s R/S %d/%d!\n",
+                        strandJ->strandIdx, recvStrand->getStrandId(),
+                        fixedDep.reuse, fixedDep.skip);
+            fixedDepEdges.push_back(fixedDep);
+
+            // Also fix the recv strand's reuse.
+            __attribute__((unused)) bool fixedRecvReuse = false;
+            for (auto &base : recvStrand->baseEdges) {
+              if (base.dynStreamId == strandI->dynamicId) {
+                assert(base.reuse == dep.reuse);
+                base.data = strandI;
+                base.reuse = dep.reuse;
+                base.isStrandSendTo = true;
+                fixedRecvReuse = true;
+                break;
+              }
+            }
+            assert(fixedRecvReuse);
+            break;
+          }
+        }
+      }
+
+      // for (auto j = i + 1; j < i + mergeSize && j < group.size(); ++j) {
+
+      //   auto strandJ = group.at(j);
+
+      //   STRAND_LOG_(MLCRubyStrandSplit, strandJ->dynamicId,
+      //               "[MergeBroadcast] Merged %d -> %d!\n", strandJ->strandIdx,
+      //               strandI->strandIdx);
+      //   strandI->broadcastStrands.push_back(strandJ);
+      // }
+
+      strandI->depEdges = fixedDepEdges;
+      mergedStrands.push_back(strandI);
     }
-
-    mergedStrands.push_back(strands.at(i));
   }
 
-  // Copy all the unmerged strands.
-  for (auto i = mergedStrandIdxEnd; i < strands.size(); ++i) {
-    mergedStrands.push_back(strands.at(i));
-  }
-
-  // Just keep the first strand.
+  // Just keep the lead strand.
   strands = mergedStrands;
 }
 
@@ -1234,16 +1343,9 @@ DynStreamFormalParamV MLCStrandManager::splitAffinePattern(
 
   if (strandSplit.isSplitByDim()) {
 
-    auto iter = context.perStreamContext.find(config->dynamicId);
-    assert(iter != context.perStreamContext.end());
-    const auto &psc = iter->second;
+    return this->splitAffinePatternByDim(context, config, strandSplit,
+                                         strandIdx);
 
-    assert(psc.splitDims.size() == 1);
-    auto splitDim = psc.splitDims.front().dim;
-
-    return config->splitAffinePatternAtDim(
-        splitDim, psc.splitTripPerStrand * psc.innerTrip, strandIdx,
-        strandSplit.getTotalStrands());
   } else if (strandSplit.isSplitByElem()) {
     assert(config->hasTotalTripCount());
     auto startElem =
@@ -1259,11 +1361,173 @@ DynStreamFormalParamV MLCStrandManager::splitAffinePattern(
   }
 }
 
+DynStreamFormalParamV MLCStrandManager::splitAffinePatternByDim(
+    StrandSplitContext &context, ConfigPtr config,
+    const StrandSplitInfo &strandSplit, int strandIdx) {
+
+  const auto &psc = context.perStreamContext.at(config->dynamicId);
+
+  DynStreamFormalParamV params = config->addrGenFormalParams;
+
+  // Split from outer dimensions.
+  for (int i = psc.splitDims.size() - 1; i >= 0; i--) {
+    const auto &splitDim = psc.splitDims.at(i);
+    auto strandId = strandSplit.getStrandIdAtDim(strandIdx, splitDim.dim);
+    params =
+        this->splitAffinePatternAtDim(config->dynamicId, params, splitDim.dim,
+                                      splitDim.intrlv, splitDim.cnt, strandId);
+  }
+
+  return params;
+}
+
+DynStreamFormalParamV MLCStrandManager::splitAffinePatternAtDim(
+    const DynStreamId &dynId, const DynStreamFormalParamV &params, int splitDim,
+    int64_t interleave, int totalStrands, int strandIdx) {
+
+  /**
+   * * Split an AffineStream at SplitDim. This is similar to OpenMP static
+   * * scheduling.
+   * *   start : S1 : T1 : ... : Ss : Ts : ... : Sn : Tn
+   *
+   * * Tt = interleave
+   * * Tn = Tt * totalStrands
+   *
+   * * ->
+   * *   start + strandIdx * Ss * Tt
+   * * : S1      : T1 : ...
+   * * : Ss      : Tt
+   * * : Ss * Tn : Ts / Tn + (strandIdx < (Ts % Tn) ? 1 : 0) : ...
+   * * : Sn      : Tn
+   *
+   * * Notice that we have to take care when Ts % Tn != 0 by adding one to
+   * * strands with strandIdx < (Ts % Tn).
+   */
+
+  std::vector<uint64_t> trips;
+  std::vector<int64_t> strides;
+  uint64_t prevTrip = 1;
+  assert((params.size() % 2) == 1);
+  for (int i = 0; i + 1 < params.size(); i += 2) {
+    const auto &s = params.at(i);
+    assert(s.isInvariant);
+    strides.push_back(s.invariant.int64());
+
+    const auto &t = params.at(i + 1);
+    assert(t.isInvariant);
+    auto trip = t.invariant.uint64();
+    trips.push_back(trip / prevTrip);
+    prevTrip = trip;
+  }
+  assert(!trips.empty());
+  assert(splitDim < trips.size());
+
+  auto splitDimTrip = trips.at(splitDim);
+  auto splitDimStride = strides.at(splitDim);
+
+  auto innerTrip = 1;
+  for (int i = 0; i < splitDim; ++i) {
+    innerTrip *= trips.at(i);
+  }
+  auto intrlvTrip = interleave;
+  auto totalIntrlvTrip = intrlvTrip * totalStrands;
+
+  auto start = params.back().invariant.uint64();
+  auto strandStart = start + strandIdx * splitDimStride * intrlvTrip;
+
+  // Copy the original params.
+  DynStreamFormalParamV strandParams = params;
+
+#define setTrip(dim, t)                                                        \
+  {                                                                            \
+    strandParams.at((dim)*2 + 1).isInvariant = true;                           \
+    strandParams.at((dim)*2 + 1).invariant.uint64() = t;                       \
+  }
+#define setStride(dim, t)                                                      \
+  {                                                                            \
+    strandParams.at((dim)*2).isInvariant = true;                               \
+    strandParams.at((dim)*2).invariant.uint64() = t;                           \
+  }
+#define setStart(t)                                                            \
+  {                                                                            \
+    strandParams.back().isInvariant = true;                                    \
+    strandParams.back().invariant.uint64() = t;                                \
+  }
+
+  // Insert another dimension after SplitDim.
+  strandParams.insert(strandParams.begin() + 2 * splitDim + 1,
+                      DynStreamFormalParam());
+  strandParams.insert(strandParams.begin() + 2 * splitDim + 1,
+                      DynStreamFormalParam());
+
+  // Adjust the strand start.
+  setStart(strandStart);
+
+  int64_t splitOutTrip = 1;
+  int64_t splitTrip = intrlvTrip;
+
+  DYN_S_DPRINTF_(
+      MLCRubyStrandSplit, dynId,
+      "Intrlv %d IntrlvTrip %d SplitDimTrip %d TotalStrands %d Pat %s.\n",
+      interleave, intrlvTrip, splitDimTrip, totalStrands,
+      printAffinePatternParams(params));
+
+  if (totalIntrlvTrip <= splitDimTrip) {
+    // Compute the SplitOutTrip.
+    auto remainderTrip = splitDimTrip % totalIntrlvTrip;
+    if (remainderTrip % intrlvTrip != 0) {
+      if (splitDim + 1 != trips.size()) {
+        DYN_S_PANIC(dynId,
+                    "Cannot handle remainderTrip %ld %% intrlvTrip %ld != 0.",
+                    remainderTrip, intrlvTrip);
+      }
+    }
+    auto remainderStrandIdx = (remainderTrip + intrlvTrip - 1) / intrlvTrip;
+    auto splitOutTripRemainder = (strandIdx < remainderStrandIdx) ? 1 : 0;
+    splitOutTrip = splitDimTrip / totalIntrlvTrip + splitOutTripRemainder;
+
+  } else {
+    /**
+     * Strands beyond FinalStrandIdx would have no trip count.
+     */
+    auto finalStrandIdx = splitDimTrip / intrlvTrip;
+    if (strandIdx == finalStrandIdx) {
+      splitTrip = splitDimTrip - finalStrandIdx * intrlvTrip;
+    } else if (strandIdx > finalStrandIdx) {
+      splitTrip = 0;
+    }
+
+    // In this case, SplitOutDimTrip is always 1.
+    splitOutTrip = 1;
+  }
+
+  // Adjust the SplitOutDim.
+  setTrip(splitDim, splitTrip * innerTrip);
+  setStride(splitDim + 1, splitDimStride * totalIntrlvTrip);
+  assert(splitOutTrip > 0);
+  setTrip(splitDim + 1, splitOutTrip * splitTrip * innerTrip);
+
+  // We need to fix all upper dimension's trip count.
+  for (int dim = splitDim + 2; dim < trips.size() + 1; ++dim) {
+    auto fixedOuterTrip =
+        strandParams.at(dim * 2 - 1).invariant.uint64() * trips.at(dim - 1);
+    setTrip(dim, fixedOuterTrip);
+  }
+
+#undef setTrip
+#undef setStride
+#undef setStart
+
+  return strandParams;
+}
+
 void MLCStrandManager::fixReusedSendTo(StrandSplitContext &context,
                                        ConfigVec &streamConfigs,
                                        ConfigVec &strandConfigs) {
 
   for (auto &strand : strandConfigs) {
+
+    auto S = strand->stream;
 
     std::vector<CacheStreamConfigureData::DepEdge> fixedDepEdges;
 
@@ -1279,37 +1543,48 @@ void MLCStrandManager::fixReusedSendTo(StrandSplitContext &context,
 
       auto &recvStream = dep.data;
       auto &recvPSC = context.perStreamContext.at(recvStream->dynamicId);
+      StrandSplitInfo recvStrandSplitInfo(recvPSC.trips, recvPSC.splitDims);
+      auto recvS = recvStream->stream;
 
-      assert(recvPSC.splitDims.size() == 1);
-      auto recvSplitCnt = recvPSC.splitDims.front().cnt;
-      auto recvSplitDim = recvPSC.splitDims.front().dim;
+      // Sending to inner loop.
+      assert(recvS->getLoopLevel() >= S->getLoopLevel());
 
-      if (recvPSC.innerTrip >= dep.reuse) {
+      int loopDiff = recvS->getLoopLevel() - S->getLoopLevel();
+
+      if (!strand->strandSplit.isHomogeniousSplitTo(recvStrandSplitInfo,
+                                                    loopDiff)) {
+        // This is not homogenious split. We can not handle.
+        if (strand->totalStrands != 1 || recvStream->totalStrands != 1) {
+          MLC_S_PANIC_NO_DUMP(strand->getStrandId(),
+                              "Illegal split between reuse send to %s.",
+                              recvStream->dynamicId);
+        }
         // Reuse is not splitted.
         fixedDepEdges.push_back(dep);
         continue;
       }
 
-      auto recvSplitDimTrip = recvPSC.trips.at(recvSplitDim);
-
       // We need to split the SendTo to each Strand.
-      STRAND_LOG_(
-          MLCRubyStrandSplit, strand->getStrandId(),
-          "[ReuseSendTo] R/S %ld/%ld -> %s O/S/I Trip %ld/%ld/%ld Cnt %d.\n",
-          dep.reuse, dep.skip, recvStream->getStrandId(), recvPSC.outerTrip,
-          recvSplitDimTrip, recvPSC.innerTrip, recvSplitCnt);
-
-      // We only handle the case reuse >= splitTrip * innerTrip.
-      assert(dep.reuse >= recvSplitDimTrip * recvPSC.innerTrip);
-      assert(dep.reuse % recvSplitCnt == 0);
-
-      auto fixedReuse = dep.reuse / recvSplitCnt;
+      STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
+                  "[ReuseSendTo] R/S %ld/%ld -> %s.\n", dep.reuse, dep.skip,
+                  recvStream->getStrandId());
 
       for (auto &recvStrand : strandConfigs) {
         if (recvStrand->dynamicId != recvStream->dynamicId) {
           // This is not the recv strand.
           continue;
         }
+
+        if (!strand->strandSplit.isHomogeniousMatch(recvStrandSplitInfo,
+                                                    loopDiff, strand->strandIdx,
+                                                    recvStrand->strandIdx)) {
+          // This is not our recv strand.
+          continue;
+        }
+
+        // Get the new reuse count by checking StrandTripCount.
+        auto fixedReuse = recvStrandSplitInfo.getStrandTripCountByDim(
+            recvStrand->strandIdx, loopDiff);
 
         // Dupliate the DepEdge and fix the reuse.
         auto fixedDep = dep;
@@ -1326,6 +1601,7 @@ void MLCStrandManager::fixReusedSendTo(StrandSplitContext &context,
         for (auto &base : recvStrand->baseEdges) {
           if (base.dynStreamId == strand->dynamicId) {
             assert(base.reuse == dep.reuse);
+            base.data = strand;
             base.reuse = fixedReuse;
             base.isStrandSendTo = true;
             fixedRecvReuse = true;

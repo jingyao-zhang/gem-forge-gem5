@@ -23,6 +23,9 @@ struct DynStreamFormalParam {
 };
 using DynStreamFormalParamV = std::vector<DynStreamFormalParam>;
 
+bool isSameInvariantFormalParams(const DynStreamFormalParamV &paramsA,
+                                 const DynStreamFormalParamV &paramsB);
+
 struct ExecFuncWithFormalParam {
   ExecFuncPtr func;
   DynStreamFormalParamV formalParams;
