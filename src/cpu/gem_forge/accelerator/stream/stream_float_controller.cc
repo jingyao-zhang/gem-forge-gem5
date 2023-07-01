@@ -609,7 +609,8 @@ bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
    *
    */
   std::vector<Stream *> addrBaseMemStreams;
-  std::vector<Stream *> addrBaseIVAffineStreams;
+  std::vector<Stream *> valueBaseStreams;
+  std::vector<Stream *> baseIVAffineStreams;
   for (auto addrBaseS : addrBaseStreams) {
     if (addrBaseS->isPointerChaseIndVar()) {
       StreamFloatPolicy::logS(*dynS) << "[Not Float] AddrBasePtrChaseS "
@@ -632,7 +633,7 @@ bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
       }
       addrBaseMemStreams.push_back(addrBaseS);
     } else {
-      addrBaseIVAffineStreams.push_back(addrBaseS);
+      baseIVAffineStreams.push_back(addrBaseS);
     }
   }
 
@@ -648,6 +649,11 @@ bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
 
   // Check if all ValueBaseStreams are floated.
   for (auto valueBaseS : S->valueBaseStreams) {
+    if (valueBaseS->isAffineIVStream()) {
+      baseIVAffineStreams.push_back(valueBaseS);
+      continue;
+    }
+    valueBaseStreams.push_back(valueBaseS);
     if (!floatedMap.count(valueBaseS)) {
       StreamFloatPolicy::logS(*dynS) << "[Not Float] Unfloat ValueBaseS "
                                      << valueBaseS->getStreamName() << ".\n"
@@ -709,7 +715,7 @@ bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
   /**
    * If we have a deeper ValueBaseS on the FloatChain, float with that.
    */
-  for (auto baseS : S->valueBaseStreams) {
+  for (auto baseS : valueBaseStreams) {
     auto config = floatedMap.at(baseS);
     auto floatBaseConfig = floatedMap.at(floatBaseS);
     if (baseS != floatBaseS && this->isOnFloatChain(config, floatBaseConfig)) {
@@ -747,8 +753,8 @@ bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
   /**
    * Add UsedAffineIVS.
    */
-  for (auto addrBaseIVAffineS : addrBaseIVAffineStreams) {
-    this->addUsedAffineIV(config, dynS, addrBaseIVAffineS);
+  for (auto baseIVAffineS : baseIVAffineStreams) {
+    this->addUsedAffineIV(config, dynS, baseIVAffineS);
   }
 
   /**
@@ -797,7 +803,7 @@ bool StreamFloatController::floatIndStream(const Args &args, DynStream *dynS) {
     baseConfig->addSendTo(floatRootConfig, sendReuse, sendSkip);
   };
 
-  for (auto valueBaseS : S->valueBaseStreams) {
+  for (auto valueBaseS : valueBaseStreams) {
     addBaseS(valueBaseS, false /* isPredBy */);
   }
   for (auto addrBaseMemS : addrBaseMemStreams) {
