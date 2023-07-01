@@ -47,6 +47,7 @@
 #include "base/cprintf.hh"
 #include "base/loader/object_file.hh"
 #include "base/loader/symtab.hh"
+#include "base/output.hh"
 #include "base/str.hh"
 #include "base/trace.hh"
 #include "cpu/base.hh"
@@ -396,6 +397,11 @@ System::regStats()
                          .desc("Run time stat for" + namestr.str())
                          .prereq(*workItemStats[j]);
     }
+
+    // Let's create a file to record work item start and end.
+    const std::string fname = csprintf("work_item.%s", this->name());
+    auto funcTraceFolder = simout.findOrCreateSubdirectory("ftrace");
+    this->workItemLogStream = funcTraceFolder->findOrCreate(fname)->stream();
 }
 
 void
@@ -406,7 +412,10 @@ System::workItemEnd(uint32_t tid, uint32_t workid)
         return;
 
     Tick samp = curTick() - lastWorkItemStarted[p];
-    DPRINTF(WorkItems, "Work item end: %d\t%d\t%lld\n", tid, workid, samp);
+    DPRINTF(WorkItems, "Work item end: ", tid, workid, samp);
+    ccprintf(*this->workItemLogStream, "%20lu: %4d%4d%20lld\n",
+             curTick(), tid, workid, samp);
+    this->workItemLogStream->flush();
 
     if (workid >= numWorkIds)
         fatal("Got workid greater than specified in system configuration\n");

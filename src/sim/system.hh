@@ -600,6 +600,8 @@ class System : public SimObject, public PCEventScope
     std::map<uint32_t, Stats::Histogram *> workItemTickHistogram;
     std::map<uint32_t, statistics::Scalar*> workItemTickSum;
 
+    std::ostream *workItemLogStream = nullptr;
+
     ////////////////////////////////////////////
     //
     // STATIC GLOBAL SYSTEM LIST
