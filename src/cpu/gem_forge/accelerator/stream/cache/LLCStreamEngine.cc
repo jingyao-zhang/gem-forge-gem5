@@ -2003,7 +2003,7 @@ void LLCStreamEngine::generateIndirectStreamReq(LLCDynStream *dynIS,
 void LLCStreamEngine::issueIndirectLoadReq(LLCDynStream *dynIS,
                                            LLCStreamElementPtr elem) {
   /**
-   * This function handles the most basic case: IndirectLoadStream.
+   * This function handles the most basic case: IndirectLoadS.
    */
   auto elemIdx = elem->idx;
   DynStreamSliceId sliceId;
@@ -2065,12 +2065,6 @@ void LLCStreamEngine::issueIndirectLoadReq(LLCDynStream *dynIS,
 
     totalSliceSize += curSliceSize;
     totalSlices++;
-  }
-
-  if (IS->isLoadComputeStream() && totalSlices != 1) {
-    LLC_S_PANIC(dynIS->getDynStrandId(),
-                "IndirectLoadComputeStream with Multi-Line Element "
-                "is not supported.");
   }
 }
 
@@ -3802,7 +3796,7 @@ LLCStreamEngine::releaseSlice(SliceList::iterator sliceIter) {
        * initialized yet.
        * TODO: This could cover the below adhoc check on element map size?
        */
-      if (!elem->areAllSlicesRegistered()) {
+      if (!elem->areAllSlicesRegistered() && !elem->isPredicatedOff()) {
         LLC_SE_ELEM_DPRINTF(elem, "Not released as not AllSlicesRegistered.\n");
         break;
       }
