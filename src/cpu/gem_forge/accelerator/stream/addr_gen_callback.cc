@@ -315,7 +315,7 @@ bool LinearAddrGenCallback::estimateReuse(const DynStreamFormalParamV &params,
                                           uint64_t &reuseCount) {
   int reuseStrideIdx = this->getFirstReuseDim(params) * 2;
 
-  if (reuseStrideIdx == -1) {
+  if (reuseStrideIdx < 0) {
     // No reuse found within this stream.
     return false;
   }
