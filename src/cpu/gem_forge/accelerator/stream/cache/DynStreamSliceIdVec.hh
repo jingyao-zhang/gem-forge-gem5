@@ -32,6 +32,7 @@ struct DynStreamSliceIdVec {
   void clear() { this->sliceIds.clear(); }
   bool isValid() const { return !this->sliceIds.empty(); }
   size_t size() const { return this->sliceIds.size(); }
+  bool empty() const { return this->sliceIds.empty(); }
 };
 
 std::ostream &operator<<(std::ostream &os, const DynStreamSliceIdVec &slices);

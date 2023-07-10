@@ -93,6 +93,7 @@ struct LinearAddrGenCallback : public AddrGenCallback {
    * Estimate memory footprint and reuse count.
    * @return success, reuse footprint, reuse count.
    */
+  int getFirstReuseDim(const DynStreamFormalParamV &params);
   bool estimateReuse(const DynStreamFormalParamV &params, uint64_t elementSize,
                      uint64_t &reuseFootprint, uint64_t &reuseCount);
 
@@ -128,6 +129,11 @@ std::string printAffinePatternParams(const DynStreamFormalParamV &params);
 void extractStrideAndTripFromAffinePatternParams(
     const DynStreamFormalParamV &params, std::vector<int64_t> &strides,
     std::vector<int64_t> &trips);
+
+DynStreamFormalParamV
+constructFormalParamsFromStrideAndTrip(int64_t start,
+                                       const std::vector<int64_t> &strides,
+                                       const std::vector<int64_t> &trips);
 
 } // namespace gem5
 

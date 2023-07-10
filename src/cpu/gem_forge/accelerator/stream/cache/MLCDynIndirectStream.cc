@@ -255,12 +255,13 @@ void MLCDynIndirectStream::mapBaseElemToMyElemIdxRange(
     uint64_t &strandElemIdxRhs, DynStrandId &strandIdRhs) const {
 
   auto reuse = this->getBaseStreamReuse();
+  auto reuseTileSize = this->getBaseStreamReuseTileSize();
   auto skip = this->getBaseStreamSkip();
 
-  streamElemIdxLhs =
-      this->config->convertBaseToDepElemIdx(baseStreamElemIdx, reuse, skip);
-  streamElemIdxRhs =
-      this->config->convertBaseToDepElemIdx(baseStreamElemIdx + 1, reuse, skip);
+  streamElemIdxLhs = this->config->convertBaseToDepElemIdx(
+      baseStreamElemIdx, reuse, reuseTileSize, skip);
+  streamElemIdxRhs = this->config->convertBaseToDepElemIdx(
+      baseStreamElemIdx + 1, reuse, reuseTileSize, skip);
 
   // Decrement Rhs to make sure it's within the same strand.
   assert(streamElemIdxRhs > streamElemIdxLhs);
@@ -433,7 +434,7 @@ Addr MLCDynIndirectStream::genElemVAddr(uint64_t strandElemIdx,
       auto streamElemIdx =
           this->getConfig()->getStreamElemIdxFromStrandElemIdx(strandElemIdx);
       auto baseStreamElemIdx = this->getConfig()->convertDepToBaseElemIdx(
-          streamElemIdx, edge.reuse, edge.skip);
+          streamElemIdx, edge.reuse, edge.reuseTileSize, edge.skip);
       auto value = affineIVConfig->addrGenCallback->genAddr(
           baseStreamElemIdx, affineIVConfig->addrGenFormalParams,
           getStreamValueFail);

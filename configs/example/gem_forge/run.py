@@ -195,6 +195,9 @@ parser.add_argument("--gem-forge-stream-engine-enable-float-advance-migrate", ac
 parser.add_argument("--gem-forge-stream-engine-enable-float-multicast", action="store_true",
                   default=False,
                   help="Enable multicast transimission in stream float.")
+parser.add_argument("--gem-forge-stream-engine-enable-float-multicast-forward", action="store_true",
+                  default=False,
+                  help="Enable multicast forwarding in stream float.")
 parser.add_argument("--gem-forge-stream-engine-llc-multicast-group-size", action="store",
                   type=int, default="0",
                   help="Stream MulticastGroupSize for LLCStreamEngine.")
@@ -395,6 +398,9 @@ parser.add_argument("--gem-forge-stream-engine-mc-neighbor-migration-valve-type"
 parser.add_argument("--gem-forge-stream-engine-mc-reuse-buffer-lines-per-core", action="store",
                   type=int, default="0",
                   help="Number of cache lines buffered in MC SE to extract more possible reuse.")
+parser.add_argument("--gem-forge-stream-reuse-tile-elems", action="store",
+                  type=int, default="0",
+                  help="Number of elems in reused tile.")
 parser.add_argument("--gem-forge-stream-engine-mc-issue-width", action="store",
                   type=int, default="1",
                   help="Mem StreamEngine issue width.")

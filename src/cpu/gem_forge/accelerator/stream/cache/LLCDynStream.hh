@@ -60,10 +60,10 @@ struct LLCStreamRequest {
   int payloadSize = ruby::RubySystem::getBlockSizeBytes();
 
   // Optional for Multicast request, excluding the original stream
-  std::vector<DynStreamSliceId> multicastSliceIds;
+  DynStreamSliceIdVec multicastSliceIds;
 
-  // Optional for StreamForward request, the receiver.
-  DynStreamSliceId forwardToSliceId;
+  // Optional for StreamForward request, the receivers.
+  DynStreamSliceIdVec forwardToSliceIds;
 };
 
 class LLCDynStream {
@@ -412,16 +412,47 @@ public:
    * Remember the currently reused BaseElement.
    */
   struct ReusedBaseElement {
-    const int reuse = 1;
-    uint64_t streamElemIdx = 0;
-    LLCStreamElementPtr elem = nullptr;
-    ReusedBaseElement(int _reuse) : reuse(_reuse) {}
+    int remainReuse;
+    const uint64_t streamElemIdx;
+    LLCStreamElementPtr elem;
+    ReusedBaseElement(int _remainReuse, uint64_t _streamElemIdx,
+                      LLCStreamElementPtr _elem)
+        : remainReuse(_remainReuse), streamElemIdx(_streamElemIdx),
+          elem(_elem) {}
   };
-  std::vector<ReusedBaseElement> reusedBaseElems;
+  struct ReusedBaseStream {
+    const int reuse = 1;
+    std::map<uint64_t, ReusedBaseElement> elems;
+    ReusedBaseStream(int _reuse) : reuse(_reuse) {}
+
+    bool hasElem(uint64_t streamElemIdx) const {
+      return this->elems.count(streamElemIdx);
+    }
+
+    LLCStreamElementPtr reuseElem(uint64_t streamElemIdx) {
+      auto iter = this->elems.find(streamElemIdx);
+      assert(iter != this->elems.end() && "Missing ReusedElem.");
+      auto ret = iter->second.elem;
+      iter->second.remainReuse--;
+      if (iter->second.remainReuse == 0) {
+        // We are done with the elem.
+        this->elems.erase(iter);
+      }
+      return ret;
+    }
+
+    void addElem(uint64_t streamElemIdx, LLCStreamElementPtr elem) {
+      this->elems.emplace(
+          std::piecewise_construct, std::forward_as_tuple(streamElemIdx),
+          std::forward_as_tuple(this->reuse, streamElemIdx, elem));
+    }
+  };
+  std::vector<ReusedBaseStream> reusedBaseStreams;
 
   // Base stream with reuse.
   LLCDynStream *baseStream = nullptr;
   int baseStreamReuse = 1;
+  int baseStreamReuseTileSize = 1;
 
   // Root stream.
   LLCDynStream *rootStream = nullptr;

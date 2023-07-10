@@ -617,7 +617,8 @@ bool MLCDynDirectStream::checkWaitForLLCRecvS(
       const auto &sendToConfig = sendToEdge.data;
       auto recvStreamElemIdx =
           CacheStreamConfigureData::convertBaseToDepElemIdx(
-              indStreamElemIdxRhs, sendToEdge.reuse, sendToEdge.skip);
+              indStreamElemIdxRhs, sendToEdge.reuse, sendToEdge.reuseTileSize,
+              sendToEdge.skip);
 
       auto recvStrandId =
           sendToConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);

@@ -267,8 +267,10 @@ void LLCStreamNDCController::handleForwardNDC(
   msg->m_MessageSize = ruby::MessageSizeType_Control;
   msg->m_sliceIds.add(sliceId);
   msg->m_DataBlk = dataBlock;
-  msg->m_sendToSliceId.getDynStrandId() =
+  DynStreamSliceId recvSliceId;
+  recvSliceId.getDynStrandId() =
       DynStrandId(context.ndc->receiverEntryIdx.streamId);
+  msg->m_sendToSliceIds.add(recvSliceId);
   /**
    * We model special size for StreamForward request.
    */
@@ -288,7 +290,7 @@ void LLCStreamNDCController::handleForwardNDC(
 void LLCStreamNDCController::receiveStreamForwardRequest(
     const ruby::RequestMsg &msg) {
   const auto &sliceId = msg.m_sliceIds.singleSliceId();
-  const auto &recvDynId = msg.m_sendToSliceId.getDynStrandId();
+  const auto &recvDynId = msg.m_sendToSliceIds.singleSliceId().getDynStrandId();
 
   LLCSE_DPRINTF("Received NDC Forward %s -> %s.\n", sliceId, recvDynId);
 
@@ -356,7 +358,7 @@ bool LLCStreamNDCController::computeStreamElementValue(
     auto storeValue = dynS->storeCallback->invoke(params);
 
     LLC_ELEMENT_DPRINTF_(StreamNearDataComputing, elem,
-                         "[Latency %llu] Compute StoreValue %s.\n", latency,
+                         "[Lat %llu] Compute StoreValue %s.\n", latency,
                          storeValue);
     result = storeValue;
     return true;

@@ -385,11 +385,11 @@ private:
    * This is used for LoadComputeStream, where the effective sizes is actually
    * smaller.
    */
-  void issueStreamDataToLLC(LLCDynStreamPtr dynS,
-                            const DynStreamSliceId &sliceId,
-                            const ruby::DataBlock &dataBlock,
-                            const CacheStreamConfigureData::DepEdge &sendToEdge,
-                            int payloadSize);
+  void issueStreamDataToLLC(
+      LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId,
+      const ruby::DataBlock &dataBlock,
+      const std::vector<CacheStreamConfigureData::DepEdge> &sendToEdges,
+      int payloadSize);
 
   /**
    * Send the NoMigration stream data back to its req. bank. Used to implement
@@ -555,7 +555,8 @@ private:
   /**
    * Process the StreamForward request.
    */
-  void processStreamFwdReq(const ruby::RequestMsg &req);
+  void processStreamFwdReq(const ruby::RequestMsg &req,
+                           const DynStreamSliceId &recvSliceId);
 
   /**
    * Check if this is the second request to lock the indirect atomic, if so

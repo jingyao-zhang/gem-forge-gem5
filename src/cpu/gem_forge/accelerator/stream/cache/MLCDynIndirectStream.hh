@@ -79,6 +79,7 @@ public:
   }
   void breakOutLoop(int64_t totalTripCount) override;
   int getBaseStreamReuse() const { return this->baseStreamReuse; }
+  int getBaseStreamReuseTileSize() const { return 1; }
   int getBaseStreamSkip() const { return 0; }
 
   /**

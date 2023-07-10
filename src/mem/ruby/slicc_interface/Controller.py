@@ -120,6 +120,7 @@ class RubyStreamAwareController(RubyController):
     enable_stream_compact_store = Param.Bool(False, "Whether to enable compact stream store.")
     enable_stream_advance_migrate = Param.Bool(False, "Whether to enable advance stream migrate.")
     enable_stream_multicast = Param.Bool(False, "Whether to enable multicast stream.")
+    enable_stream_multicast_forward = Param.Bool(False, "Whether to enable multicast stream forward.")
     enable_mlc_prefetch_stream = Param.Bool(False, "Whether to enable MLC prefetching stream.")
     enable_distributed_indirect_reduce = \
         Param.Bool(False, "Whether to enable distributed indirect reduce.")
@@ -168,7 +169,13 @@ class RubyStreamAwareController(RubyController):
         Param.String("none", "Migration valve type.")
 
     enable_stream_float_mem = Param.Bool(False, "Whether to enable stream float to mem ctrl.")
+
+    # Handle reuse between streams like A[i] and A[i+N].
     reuse_buffer_lines_per_core = Param.UInt32(0, "Number of cache lines per core in the reuse buffer.")
+
+    # Handle reused tile between sending and receiving streams.
+    stream_reuse_tile_elems \
+        = Param.UInt32(0, "Number of stream elems in the reused tile buffer.")
 
     enable_stream_strand = \
         Param.Bool(False, "Whether to enable stream strand auto parallelization.")

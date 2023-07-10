@@ -90,7 +90,7 @@ structure(RequestMsg, desc="...", interface="Message") {
   PacketPtr pkt,                       desc="Hack to store packet";
   DynStreamSliceIdVec sliceIds,        desc="Stream slice ids";
   DataBlock streamStoreBlk,            desc="StreamStore value";
-  DynStreamSliceId sendToSliceId,      desc="StreamForward receiver slice id";
+  DynStreamSliceIdVec sendToSliceIds,  desc="StreamForward receiver slice ids";
   bool isPUM, default="false",         desc="Mark this as StreamPUM msg";
   bool isPUMPrefetch, default="false", desc="Mark this as StreamPUM PrefetchData msg";
 

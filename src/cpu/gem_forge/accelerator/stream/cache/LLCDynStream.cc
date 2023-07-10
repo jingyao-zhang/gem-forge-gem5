@@ -54,7 +54,7 @@ LLCDynStream::LLCDynStream(ruby::AbstractStreamAwareController *_mlcController,
   for (auto &baseEdge : this->configData->baseEdges) {
     // Acquire the shared ptr of the configuration.
     this->baseOnConfigs.emplace_back(baseEdge.data.lock());
-    this->reusedBaseElems.emplace_back(baseEdge.reuse);
+    this->reusedBaseStreams.emplace_back(baseEdge.reuse);
     if (baseEdge.reuse <= 0) {
       LLC_S_PANIC(this->strandId, "Illegal Reuse Count %d on %s.",
                   baseEdge.reuse, baseEdge.data.lock()->dynamicId);
@@ -635,7 +635,7 @@ void LLCDynStream::initNextElem(Addr vaddr) {
       assert(!this->isOneIterationBehind());
       baseStrandId = baseConfig->getStrandId();
       baseStrandElemIdx = CacheStreamConfigureData::convertDepToBaseElemIdx(
-          strandElemIdx, baseEdge.reuse, baseEdge.skip);
+          strandElemIdx, baseEdge.reuse, baseEdge.reuseTileSize, baseEdge.skip);
       baseStreamElemIdx = baseConfig->getStreamElemIdxFromStrandElemIdx(
           baseStrandId, baseStrandElemIdx);
 
@@ -654,7 +654,8 @@ void LLCDynStream::initNextElem(Addr vaddr) {
       }
 
       baseStreamElemIdx = CacheStreamConfigureData::convertDepToBaseElemIdx(
-          depStreamElemIdx, baseEdge.reuse, baseEdge.skip);
+          depStreamElemIdx, baseEdge.reuse, baseEdge.reuseTileSize,
+          baseEdge.skip);
 
       baseStrandId =
           baseConfig->getStrandIdFromStreamElemIdx(baseStreamElemIdx);
@@ -686,7 +687,7 @@ void LLCDynStream::initNextElem(Addr vaddr) {
 
     const auto &baseEdge = this->configData->baseEdges.at(i);
     const auto &baseConfig = this->baseOnConfigs.at(i);
-    auto &reusedBaseElem = this->reusedBaseElems.at(i);
+    auto &reusedBaseS = this->reusedBaseStreams.at(i);
 
     auto translation = translateDepToBase(baseEdge, baseConfig);
     const auto &baseStrandId = std::get<0>(translation);
@@ -748,10 +749,9 @@ void LLCDynStream::initNextElem(Addr vaddr) {
        * Otherwise, and we have the same
        */
       LLCStreamElementPtr baseElem = nullptr;
-      if (reusedBaseElem.reuse > 1 && reusedBaseElem.elem &&
-          reusedBaseElem.streamElemIdx == baseStreamElemIdx) {
+      if (reusedBaseS.reuse > 1 && reusedBaseS.hasElem(baseStreamElemIdx)) {
         // We can reuse.
-        baseElem = reusedBaseElem.elem;
+        baseElem = reusedBaseS.reuseElem(baseStreamElemIdx);
       } else {
 
         Addr baseElemVAddr = 0;
@@ -795,8 +795,7 @@ void LLCDynStream::initNextElem(Addr vaddr) {
       }
       elem->baseElements.emplace_back(baseElem);
       // Update the ReusedStreamElem.
-      reusedBaseElem.elem = baseElem;
-      reusedBaseElem.streamElemIdx = baseStreamElemIdx;
+      reusedBaseS.addElem(baseStreamElemIdx, baseElem);
     }
   }
   // Remember to add previous element as base element for reduction.
@@ -1385,6 +1384,8 @@ LLCDynStreamPtr LLCDynStream::allocateLLCStream(
         // Let's create an indirect stream.
         ISConfig->initCreditedIdx = config->initCreditedIdx;
         auto IS = new LLCDynStream(mlcController, llcController, ISConfig);
+        // Can not handle reused tile for IndS for now.
+        assert(edge.reuseTileSize == 1);
         IS->setBaseStream(curS, edge.reuse);
         configStack.push_back(ISConfig);
       }
@@ -1511,7 +1512,7 @@ StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &elem) {
       }
       ss << "\n  -> " << elem->strandId << elem->idx << ": " << newReduceVal;
       LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, elem,
-                           "[Latency %llu] Do reduction %s.\n", latency,
+                           "[Lat %llu] Do reduction %s.\n", latency,
                            ss.str());
     }
 
@@ -1524,7 +1525,7 @@ StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &elem) {
     auto storeValue = config->storeCallback->invoke(params);
 
     LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, elem,
-                         "[Latency %llu] Compute StoreValue %s.\n", latency,
+                         "[Lat %llu] Compute StoreValue %s.\n", latency,
                          storeValue);
     return storeValue;
 
@@ -1535,7 +1536,7 @@ StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &elem) {
     auto loadComputeValue = config->loadCallback->invoke(params);
 
     LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, elem,
-                         "[Latency %llu] Compute LoadComputeValue %s.\n",
+                         "[Lat %llu] Compute LoadComputeValue %s.\n",
                          latency, loadComputeValue);
     return loadComputeValue;
 
@@ -1547,7 +1548,7 @@ StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &elem) {
     auto storeValue = config->storeCallback->invoke(params);
 
     LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, elem,
-                         "[Latency %llu] Compute StoreComputeValue %s.\n",
+                         "[Lat %llu] Compute StoreComputeValue %s.\n",
                          latency, storeValue);
     return storeValue;
 
@@ -1555,7 +1556,7 @@ StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &elem) {
 
     // So far Atomic are really computed at completeComputation.
     LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, elem,
-                         "[Latency %llu] Compute Dummy AtomicValue.\n",
+                         "[Lat %llu] Compute Dummy AtomicValue.\n",
                          S->getEstimatedComputationLatency());
     return StreamValue();
 
@@ -1814,13 +1815,11 @@ void LLCDynStream::completeFinalReduce(LLCStreamEngine *se, uint64_t elemIdx) {
   ruby::DataBlock dataBlock;
   dataBlock.setData(finalReductionValue.uint8Ptr(), lineOffset, payloadSize);
 
-  for (const auto &edge : this->sendToEdges) {
-    LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReduceElem,
-                         "[Reduce] Send result to %s.\n", edge.data->dynamicId);
-    se->issueStreamDataToLLC(
-        this, sliceId, dataBlock, edge,
-        ruby::RubySystem::getBlockSizeBytes() /* PayloadSize */);
-  }
+  LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReduceElem,
+                       "[Reduce] Forward result.\n");
+  se->issueStreamDataToLLC(
+      this, sliceId, dataBlock, this->sendToEdges,
+      ruby::RubySystem::getBlockSizeBytes() /* PayloadSize */);
 }
 
 void LLCDynStream::completeIndReduceElem(LLCStreamEngine *se,

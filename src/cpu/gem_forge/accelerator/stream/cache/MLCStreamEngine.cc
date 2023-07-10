@@ -480,10 +480,12 @@ void MLCStreamEngine::issueStreamDataToLLC(
     msg->m_MessageSize = this->controller->getMessageSizeType(payloadSize);
     msg->m_sliceIds.add(sliceId);
     msg->m_DataBlk = dataBlock;
-    msg->m_sendToSliceId.getDynStrandId() =
+    DynStreamSliceId recvSliceId;
+    recvSliceId.getDynStrandId() =
         recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
-    msg->m_sendToSliceId.getStartIdx() = recvStrandElemIdx;
-    msg->m_sendToSliceId.getEndIdx() = recvStrandElemIdx + 1;
+    recvSliceId.getStartIdx() = recvStrandElemIdx;
+    recvSliceId.getEndIdx() = recvStrandElemIdx + 1;
+    msg->m_sendToSliceIds.add(recvSliceId);
 
     Cycles latency(1);
     this->requestToLLCMsgBuffer->enqueue(

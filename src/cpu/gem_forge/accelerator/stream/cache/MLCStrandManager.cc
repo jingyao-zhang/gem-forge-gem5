@@ -960,6 +960,11 @@ void MLCStrandManager::splitIntoStrands(StrandSplitContext &context,
 
   // Fix the reused SendTo relationship.
   this->fixReusedSendTo(context, streamConfigs, configs);
+
+  // Recognize reused tile.
+  for (auto strand : configs) {
+    this->recognizeReusedTile(context, strand);
+  }
 }
 
 MLCStrandManager::ConfigVec
@@ -1323,8 +1328,8 @@ void MLCStrandManager::mergeBroadcastStrands(
       //   auto strandJ = group.at(j);
 
       //   STRAND_LOG_(MLCRubyStrandSplit, strandJ->dynamicId,
-      //               "[MergeBroadcast] Merged %d -> %d!\n", strandJ->strandIdx,
-      //               strandI->strandIdx);
+      //               "[MergeBroadcast] Merged %d -> %d!\n",
+      //               strandJ->strandIdx, strandI->strandIdx);
       //   strandI->broadcastStrands.push_back(strandJ);
       // }
 
@@ -1614,6 +1619,109 @@ void MLCStrandManager::fixReusedSendTo(StrandSplitContext &context,
 
     strand->depEdges = std::move(fixedDepEdges);
   }
+}
+
+void MLCStrandManager::recognizeReusedTile(StrandSplitContext &context,
+                                           ConfigPtr strand) {
+
+  /**
+   * We try to recognize reused tile for DirectLoadS that:
+   * 1. Has no indirect stream.
+   * 2. Reused tile size is smaller than the threshold.
+   */
+  if (this->controller->myParams->stream_reuse_tile_elems == 0) {
+    return;
+  }
+  auto S = strand->stream;
+  if (!S->isDirectLoadStream()) {
+    // Only do this on DirectLoadStream.
+    return;
+  }
+
+  if (!strand->baseEdges.empty()) {
+    return;
+  }
+
+  for (auto &dep : strand->depEdges) {
+    if (dep.type != CacheStreamConfigureData::DepEdge::Type::SendTo) {
+      // This one has indirect stream. Can not handle reused tile.
+      return;
+    }
+    if (dep.reuse != 1 || dep.reuseTileSize != 1) {
+      return;
+    }
+  }
+  auto linearAddrGen =
+      std::dynamic_pointer_cast<LinearAddrGenCallback>(strand->addrGenCallback);
+  if (!linearAddrGen) {
+    return;
+  }
+  if (strand->addrGenFormalParams.size() % 2 != 1) {
+    // Missing final trip.
+    return;
+  }
+
+  auto reuseDim = linearAddrGen->getFirstReuseDim(strand->addrGenFormalParams);
+  if (reuseDim < 0) {
+    return;
+  }
+
+  std::vector<int64_t> strides;
+  std::vector<int64_t> trips;
+
+  extractStrideAndTripFromAffinePatternParams(strand->addrGenFormalParams,
+                                              strides, trips);
+  assert(strides.at(reuseDim) == 0);
+
+  auto reuseDimEnd = reuseDim + 1;
+  while (reuseDimEnd < strides.size() && strides.at(reuseDimEnd) == 0) {
+    reuseDimEnd++;
+  }
+
+  auto reuseCount = AffinePattern::reduce_mul(trips.begin() + reuseDim,
+                                              trips.begin() + reuseDimEnd, 1);
+  auto reuseTileSize =
+      AffinePattern::reduce_mul(trips.begin(), trips.begin() + reuseDim, 1);
+
+  auto totalTrip = AffinePattern::reduce_mul(trips.begin(), trips.end(), 1);
+  auto newTrip = totalTrip / reuseCount;
+
+  STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
+              "[ReuseTile] At Dim %d Size %ld Count %ld %s.\n", reuseDim,
+              reuseTileSize, reuseCount,
+              printAffinePatternParams(strand->addrGenFormalParams));
+
+  // Change all send to edges.
+  for (auto &dep : strand->depEdges) {
+    dep.reuse = reuseCount;
+    dep.reuseTileSize = reuseTileSize;
+    auto &recvConfig = dep.data;
+    bool __attribute__((unused)) foundBaseEdge = false;
+    STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
+                "[ReuseTile] Fix -> %s.\n", recvConfig->getStrandId());
+    for (auto &base : recvConfig->baseEdges) {
+      if (base.dynStreamId == strand->dynamicId) {
+        assert(base.isStrandSendTo);
+        base.reuse = reuseCount;
+        base.reuseTileSize = reuseTileSize;
+        foundBaseEdge = true;
+        break;
+      }
+    }
+    assert(foundBaseEdge);
+  }
+
+  // Erase the resued dim.
+  trips.erase(trips.begin() + reuseDim, trips.begin() + reuseDimEnd);
+  strides.erase(strides.begin() + reuseDim, strides.begin() + reuseDimEnd);
+  auto startVAddr = strand->addrGenFormalParams.back().invariant.front();
+  strand->addrGenFormalParams =
+      constructFormalParamsFromStrideAndTrip(startVAddr, strides, trips);
+  STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
+              "[ReuseTile] Trip %ld -> %ld New Affine Pat %s.\n", totalTrip,
+              newTrip, printAffinePatternParams(strand->addrGenFormalParams));
+  strand->totalTripCount = newTrip;
+  strand->innerTripCount = newTrip;
 }
 
 void MLCStrandManager::configureStream(ConfigPtr config,

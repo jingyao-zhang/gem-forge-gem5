@@ -106,14 +106,18 @@ void CacheStreamConfigureData::addPredBy(CacheStreamConfigureDataPtr &data,
 
 uint64_t CacheStreamConfigureData::convertBaseToDepElemIdx(uint64_t baseElemIdx,
                                                            int reuse,
+                                                           int reuseTileSize,
                                                            int skip) {
   auto depElemIdx = baseElemIdx;
   if (reuse != 1) {
     assert(skip == 0);
-    depElemIdx = baseElemIdx * reuse;
+    auto tileOffset = baseElemIdx % reuseTileSize;
+    auto tileIdx = baseElemIdx / reuseTileSize;
+    depElemIdx = tileIdx * reuseTileSize * reuse + tileOffset;
   }
   if (skip != 0) {
     assert(reuse == 1);
+    assert(reuseTileSize == 1);
     depElemIdx = baseElemIdx / skip;
   }
   return depElemIdx;
@@ -121,14 +125,17 @@ uint64_t CacheStreamConfigureData::convertBaseToDepElemIdx(uint64_t baseElemIdx,
 
 uint64_t CacheStreamConfigureData::convertDepToBaseElemIdx(uint64_t depElemIdx,
                                                            int reuse,
+                                                           int reuseTileSize,
                                                            int skip) {
   auto baseElemIdx = depElemIdx;
   if (reuse != 1) {
     assert(skip == 0);
-    baseElemIdx = depElemIdx / reuse;
+    auto tileOffset = depElemIdx % reuseTileSize;
+    baseElemIdx = depElemIdx / (reuse * reuseTileSize) + tileOffset;
   }
   if (skip != 0) {
     assert(reuse == 1);
+    assert(reuseTileSize == 1);
     baseElemIdx = depElemIdx * skip;
   }
   return baseElemIdx;
@@ -518,7 +525,8 @@ CacheStreamConfigureData::translateSendToRecv(
 
     // SendStreamElemIdx -> RecvStreamElemIdx.
     auto recvStreamElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
-        sendStreamElemIdx, sendToEdge.reuse, sendToEdge.skip);
+        sendStreamElemIdx, sendToEdge.reuse, sendToEdge.reuseTileSize,
+        sendToEdge.skip);
 
     // RecvStreamElemIdx -> RecvStrandElemIdx.
     auto recvStrandId =
@@ -549,7 +557,8 @@ CacheStreamConfigureData::translateSendToRecv(
     // The RecvConfig is StrandConfig, we skip the stream part.
     auto recvStrandId = recvConfig->getStrandId();
     auto recvStrandElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
-        sendStrandElemIdx, sendToEdge.reuse, sendToEdge.skip);
+        sendStrandElemIdx, sendToEdge.reuse, sendToEdge.reuseTileSize,
+        sendToEdge.skip);
 
     // Get the VAddr.
     auto recvElemVAddr =

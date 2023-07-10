@@ -4759,7 +4759,7 @@ void MLCPUMManager::sendOneReductionResult(PUMContext &context,
 
     const auto &recvConfig = edge.data;
     auto recvElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
-        result.elemIdx, edge.reuse, edge.skip);
+        result.elemIdx, edge.reuse, edge.reuseTileSize, edge.skip);
 
     MLC_S_DPRINTF(dynId,
                   "[PUM] Send ReductionResult ElemIdx %ld Value %s To %s "

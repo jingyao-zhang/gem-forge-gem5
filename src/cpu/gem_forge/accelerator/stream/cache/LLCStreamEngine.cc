@@ -593,11 +593,9 @@ void LLCStreamEngine::receiveStreamData(
    * is computed.
    */
   if (!S->isLoadComputeStream()) {
-    for (const auto &edge : dynS->sendToEdges) {
-      this->issueStreamDataToLLC(
-          dynS, sliceId, dataBlock, edge,
-          ruby::RubySystem::getBlockSizeBytes() /* PayloadSize */);
-    }
+    this->issueStreamDataToLLC(
+        dynS, sliceId, dataBlock, dynS->sendToEdges,
+        ruby::RubySystem::getBlockSizeBytes() /* PayloadSize */);
     for (const auto &edge : dynS->sendToPUMEdges) {
       this->issueStreamDataToPUM(
           dynS, sliceId, dataBlock, edge,
@@ -1321,7 +1319,7 @@ void LLCStreamEngine::generateMulticastRequest(RequestQueueIter reqIter,
     // Track infly requests.
     dynS->inflyRequests++;
 
-    reqIter->multicastSliceIds.push_back(sliceId);
+    reqIter->multicastSliceIds.add(sliceId);
   }
 
   if (!reqIter->multicastSliceIds.empty()) {
@@ -2250,7 +2248,7 @@ LLCStreamEngine::RequestQueueIter LLCStreamEngine::enqueueRequest(
     ruby::MachineType destMachineType, ruby::CoherenceRequestType type) {
   this->requestQueue.emplace_back(S, sliceId, paddrLine, destMachineType, type,
                                   this->controller->curCycle());
-  auto requestQueueIter = std::prev(this->requestQueue.end());
+  auto reqIter = std::prev(this->requestQueue.end());
   // To match with TLB interface, we first create a fake packet.
   auto cpuDelegator = S->getCPUDelegator();
   auto tc = cpuDelegator->getSingleThreadContext();
@@ -2266,10 +2264,10 @@ LLCStreamEngine::RequestQueueIter LLCStreamEngine::enqueueRequest(
   // Start the translation.
   LLC_SLICE_DPRINTF(sliceId, "Enqueue %s Req: Start Translation.\n",
                     ruby::CoherenceRequestType_to_string(type));
-  this->translationBuffer->addTranslation(pkt, tc, requestQueueIter);
+  this->translationBuffer->addTranslation(pkt, tc, reqIter);
   // Since this generates a request, we schedule a wakeup.
   this->scheduleEvent(Cycles(1));
-  return requestQueueIter;
+  return reqIter;
 }
 
 void LLCStreamEngine::translationCallback(PacketPtr pkt, ThreadContext *tc,
@@ -2302,37 +2300,6 @@ void LLCStreamEngine::issueStreamReqToRemoteBank(const LLCStreamRequest &req) {
                       "Issue [local] %s request vaddr %#x paddrLine %#x value "
                       "%s.\n",
                       req.requestType, sliceId.vaddr, paddrLine, req.dataBlock);
-
-    /**
-     * Check if the data is cached in reuse buffer.
-     */
-    if (req.requestType == ruby::CoherenceRequestType_GETH) {
-      const auto &dynSId = sliceId.getDynStreamId();
-      if (this->reuseBuffer->shouldCheckReuse(req.S, dynSId) &&
-          this->reuseBuffer->contains(sliceId, paddrLine)) {
-        LLC_SLICE_DPRINTF(sliceId,
-                          "Reuse [local] %s request vaddr %#x paddrLine %#x.\n",
-                          req.requestType, sliceId.vaddr, paddrLine);
-
-        req.S->statistic.numRemoteReuseSlice++;
-
-        const auto &reuseDataBlock =
-            this->reuseBuffer->reuse(sliceId, paddrLine);
-
-        /**
-         * We charge 4 cycle delay.
-         */
-        Cycles reuseDelayCycles(4);
-        DynStreamSliceIdVec sliceIds;
-        sliceIds.add(sliceId);
-        ruby::DataBlock fakeStoreValueBlock;
-        this->receiveStreamDataVecFromReuse(reuseDelayCycles, paddrLine,
-                                            sliceIds, reuseDataBlock,
-                                            fakeStoreValueBlock);
-
-        return;
-      }
-    }
 
   } else {
     destMachineId =
@@ -2372,16 +2339,62 @@ void LLCStreamEngine::issueStreamReqToRemoteBank(const LLCStreamRequest &req) {
     msg->m_DataBlk = req.dataBlock;
     // Only used for NonMigrate stream.
     msg->m_streamStoreBlk = req.storeValueBlock;
-    msg->m_sendToSliceId = req.forwardToSliceId;
-    /**
-     * We model special size for StreamForward request.
-     */
+    msg->m_sendToSliceIds = req.forwardToSliceIds;
+    // We model special size for StreamForward request.
     msg->m_MessageSize = this->controller->getMessageSizeType(req.payloadSize);
+    // Handle multicast forward.
+    for (const auto &recvSliceId : req.forwardToSliceIds.sliceIds) {
+      auto recvMachineId = this->controller->mapAddressToLLCOrMem(
+          recvSliceId.vaddr, destMachineType);
+      msg->m_Destination.add(recvMachineId);
+      LLC_SLICE_DPRINTF(sliceId, "[Fwd] Multicast to %s at %s.\n", recvSliceId,
+                        recvMachineId);
+    }
+  }
+
+  if (msg->m_Destination.count() != 1) {
+    LLC_SLICE_DPRINTF(sliceId, "Issue [multicast] %s request to %s.\n",
+                      req.requestType, msg->m_Destination);
+    handledHere = false;
+  }
+
+  if (handledHere) {
+
+    /**
+     * Check if the data is cached in reuse buffer.
+     */
+    if (req.requestType == ruby::CoherenceRequestType_GETH) {
+      const auto &dynSId = sliceId.getDynStreamId();
+      if (this->reuseBuffer->shouldCheckReuse(req.S, dynSId) &&
+          this->reuseBuffer->contains(sliceId, paddrLine)) {
+        LLC_SLICE_DPRINTF(sliceId,
+                          "Reuse [local] %s request vaddr %#x paddrLine %#x.\n",
+                          req.requestType, sliceId.vaddr, paddrLine);
+
+        req.S->statistic.numRemoteReuseSlice++;
+
+        const auto &reuseDataBlock =
+            this->reuseBuffer->reuse(sliceId, paddrLine);
+
+        /**
+         * We charge 4 cycle delay.
+         */
+        Cycles reuseDelayCycles(4);
+        DynStreamSliceIdVec sliceIds;
+        sliceIds.add(sliceId);
+        ruby::DataBlock fakeStoreValueBlock;
+        this->receiveStreamDataVecFromReuse(reuseDelayCycles, paddrLine,
+                                            sliceIds, reuseDataBlock,
+                                            fakeStoreValueBlock);
+
+        return;
+      }
+    }
   }
 
   if (Debug::LLCRubyStreamMulticast && !req.multicastSliceIds.empty()) {
     std::stringstream ss;
-    for (const auto &multicastSliceId : req.multicastSliceIds) {
+    for (const auto &multicastSliceId : req.multicastSliceIds.sliceIds) {
       auto mlcMachineID = ruby::MachineID(
           static_cast<ruby::MachineType>(selfMachineId.type - 1),
           multicastSliceId.getDynStreamId().coreId);
@@ -2391,7 +2404,7 @@ void LLCStreamEngine::issueStreamReqToRemoteBank(const LLCStreamRequest &req) {
                        ss.str());
   }
 
-  for (const auto &multicastSliceId : req.multicastSliceIds) {
+  for (const auto &multicastSliceId : req.multicastSliceIds.sliceIds) {
     // TODO: We should really also pass on the sliceId.
     auto mlcMachineID =
         ruby::MachineID(static_cast<ruby::MachineType>(selfMachineId.type - 1),
@@ -2611,30 +2624,37 @@ void LLCStreamEngine::issueStreamDataToMLC(const DynStreamSliceId &sliceId,
 void LLCStreamEngine::issueStreamDataToLLC(
     LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId,
     const ruby::DataBlock &dataBlock,
-    const CacheStreamConfigureData::DepEdge &sendToEdge, int payloadSize) {
+    const std::vector<CacheStreamConfigureData::DepEdge> &sendToEdges,
+    int payloadSize) {
 
-  auto recvConfig = sendToEdge.data;
+  RequestQueueIter reqIter = this->requestQueue.end();
 
-  /**
-   * Unlike sending data to MLC, we have to calculate the virtual
-   * address of the receiving stream and translate that. Also, we can
-   * only handle the simpliest case so far: no spliting, and no
-   * multi-line receiver element.
-   */
+  for (const auto &sendToEdge : sendToEdges) {
 
-  auto sendStrandElemIdx = sliceId.getStartIdx();
-  if (dynS->isOneIterationBehind()) {
-    assert(sendStrandElemIdx > 0);
-    sendStrandElemIdx--;
-  }
+    auto recvConfig = sendToEdge.data;
 
-  /**
-   * Handle strand broadcast.
-   */
-  auto broadcastStrands = dynS->configData->broadcastStrands;
-  broadcastStrands.insert(broadcastStrands.begin(), dynS->configData);
+    LLC_SLICE_DPRINTF(sliceId, "[Fwd] -> %s.\n", recvConfig->getStrandId());
 
-  for (const auto &sendConfig : broadcastStrands) {
+    /**
+     * Unlike sending data to MLC, we have to calculate the virtual
+     * address of the receiving stream and translate that. Also, we can
+     * only handle the simpliest case so far: no spliting, and no
+     * multi-line receiver element.
+     */
+
+    auto sendStrandElemIdx = sliceId.getStartIdx();
+    if (dynS->isOneIterationBehind()) {
+      assert(sendStrandElemIdx > 0);
+      sendStrandElemIdx--;
+    }
+
+    /**
+     * Handle strand broadcast (deprectaed).
+     */
+    assert(dynS->configData->broadcastStrands.empty() &&
+           "Broadcast strand is not used anymore.");
+
+    const auto &sendConfig = dynS->configData;
 
     auto translation = sendConfig->translateSendToRecv(sendToEdge, sendConfig,
                                                        sendStrandElemIdx);
@@ -2697,14 +2717,24 @@ void LLCStreamEngine::issueStreamDataToLLC(
       }
 
       // Now we enqueue the translation request.
-      auto reqIter = this->enqueueRequest(
-          dynS->getStaticS(), sendSliceId, recvElemVAddrLine, recvElemPAddrLine,
-          recvElemMachineType, ruby::CoherenceRequestType_STREAM_FORWARD);
+      if (this->controller->myParams->enable_stream_multicast_forward &&
+          reqIter != this->requestQueue.end()) {
+        // Simply add to multicast forward.
+      } else {
+        // Allocate new request.
+        reqIter = this->enqueueRequest(
+            dynS->getStaticS(), sendSliceId, recvElemVAddrLine,
+            recvElemPAddrLine, recvElemMachineType,
+            ruby::CoherenceRequestType_STREAM_FORWARD);
+        reqIter->dataBlock = dataBlock;
+        reqIter->payloadSize = payloadSize;
+      }
 
       // Remember the receiver StrandId and forwarded data block.
-      reqIter->forwardToSliceId = recvSliceId;
-      reqIter->dataBlock = dataBlock;
-      reqIter->payloadSize = payloadSize;
+      // Abuse the vaddr to remember the paddr to distinguish mutlicast
+      // forward.
+      recvSliceId.vaddr = recvElemPAddrLine;
+      reqIter->forwardToSliceIds.add(recvSliceId);
     } else {
       LLC_SLICE_PANIC(sliceId, "Fault on RecvS: %s%lu VAddr %#x.", recvStrandId,
                       recvStrandElemIdx, recvElemVAddrLine);
@@ -2731,7 +2761,7 @@ void LLCStreamEngine::issueNonMigrateStreamDataToLLC(
       recvElemMachineType, ruby::CoherenceRequestType_STREAM_FORWARD);
 
   // Remember the receiver StrandId and forwarded data block.
-  reqIter->forwardToSliceId = sliceId;
+  reqIter->forwardToSliceIds.add(sliceId);
   reqIter->dataBlock = dataBlock;
   reqIter->storeValueBlock = storeValueBlock;
   reqIter->payloadSize = payloadSize;
@@ -3089,17 +3119,7 @@ void LLCStreamEngine::resetStats() { this->seTracer.reset(); }
 
 void LLCStreamEngine::receiveStreamIndirectReq(const ruby::RequestMsg &req) {
 
-  /**
-   * After supporting broadcast strands, it's possible that even the first req
-   * is not mapped here. Check the paddr.
-   */
-  if (req.getType() == ruby::CoherenceRequestType_STREAM_FORWARD) {
-    if (this->isPAddrHandledByMe(req.getaddr(), this->myMachineType())) {
-      this->receiveStreamIndirectReqImpl(req);
-    }
-  } else {
-    this->receiveStreamIndirectReqImpl(req);
-  }
+  this->receiveStreamIndirectReqImpl(req);
 
   /**
    * Unchain each indirect requests and call receiveStreamIndirectReqImpl().
@@ -3199,13 +3219,24 @@ void LLCStreamEngine::receivePUMData(const ruby::RequestMsg &req) {
 }
 
 void LLCStreamEngine::receiveStreamFwdReq(const ruby::RequestMsg &req) {
-  this->processStreamFwdReq(req);
+
+  for (const auto &recvSliceId : req.m_sendToSliceIds.sliceIds) {
+    /**
+     * This vaddr is abused to remember the paddr to check if this SliceId
+     * is intended here.
+     */
+    auto paddrLine = recvSliceId.vaddr;
+    if (this->isPAddrHandledByMe(paddrLine,
+                                 this->controller->getMachineID().getType())) {
+      this->processStreamFwdReq(req, recvSliceId);
+    }
+  }
 }
 
-void LLCStreamEngine::processStreamFwdReq(const ruby::RequestMsg &req) {
+void LLCStreamEngine::processStreamFwdReq(const ruby::RequestMsg &req,
+                                          const DynStreamSliceId &recvSliceId) {
 
   const auto &sliceId = req.m_sliceIds.singleSliceId();
-  const auto &recvSliceId = req.m_sendToSliceId;
   const auto &recvDynId = recvSliceId.getDynStrandId();
 
   assert(recvSliceId.getNumElements() == sliceId.getNumElements());
@@ -3561,6 +3592,7 @@ void LLCStreamEngine::triggerIndElems(LLCDynStreamPtr dynS,
    */
   for (auto IS : dynS->getAllIndStreams()) {
     auto reuse = IS->baseStreamReuse;
+    auto reuseTileSize = IS->baseStreamReuseTileSize;
 
     /**
      * Two possible cases (can only be one of them).
@@ -3576,10 +3608,10 @@ void LLCStreamEngine::triggerIndElems(LLCDynStreamPtr dynS,
     }
 
     auto skip = 0;
-    auto indElemIdxLhs =
-        IS->configData->convertBaseToDepElemIdx(idx, reuse, skip);
-    auto indElemIdxRhs =
-        IS->configData->convertBaseToDepElemIdx(idx + 1, reuse, skip);
+    auto indElemIdxLhs = IS->configData->convertBaseToDepElemIdx(
+        idx, reuse, reuseTileSize, skip);
+    auto indElemIdxRhs = IS->configData->convertBaseToDepElemIdx(
+        idx + 1, reuse, reuseTileSize, skip);
 
     LLC_SE_ELEM_DPRINTF(elem, "Trigger IndS %s Reuse %d Elems [%lu, %lu).\n",
                         IS->getDynStrandId(), reuse, indElemIdxLhs,
@@ -4112,13 +4144,10 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
   /**
    * Send the data to receiver stream.
    */
-  for (const auto &edge : dynS->sendToEdges) {
-    LLC_SLICE_DPRINTF(
-        sliceId, "Send LoadComputeValue to RecvS: %s Data %s PayloadSize %d.\n",
-        edge.data->dynamicId, loadValueBlock, payloadSize);
-    this->issueStreamDataToLLC(dynS, sliceId, loadValueBlock, edge,
-                               payloadSize);
-  }
+  LLC_SLICE_DPRINTF(sliceId, "Forward LoadComputeVal Data %s PayloadSize %d.\n",
+                    loadValueBlock, payloadSize);
+  this->issueStreamDataToLLC(dynS, sliceId, loadValueBlock, dynS->sendToEdges,
+                             payloadSize);
   slice->setLoadComputeValueSent();
 }
 
@@ -4405,9 +4434,6 @@ bool LLCStreamEngine::tryPostProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
   const auto &sliceId = slice->getSliceId();
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     auto element = dynS->getElemPanic(idx, "Process UpdateStream");
-    LLC_SLICE_DPRINTF(sliceId,
-                      "TryPostProcess for UpdateElem %llu vaddr %#x.\n",
-                      element->idx, element->vaddr);
     if (!element->isComputationDone()) {
       return false;
     }

@@ -252,6 +252,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 enable_stream_idea_ind_req=options.gem_forge_stream_engine_enable_float_idea_ind_req,
                 enable_stream_multicast=\
                     options.gem_forge_stream_engine_enable_float_multicast,
+                enable_stream_multicast_forward=\
+                    options.gem_forge_stream_engine_enable_float_multicast_forward,
                 enable_mlc_prefetch_stream=\
                     options.gem_forge_enable_mlc_prefetch_stream,
                 stream_multicast_group_size=\
@@ -269,6 +271,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 enable_stream_strand=options.gem_forge_enable_stream_strand,
                 enable_stream_strand_elem_split=\
                     options.gem_forge_enable_stream_strand_elem_split,
+                stream_reuse_tile_elems=\
+                    options.gem_forge_stream_reuse_tile_elems,
                 stream_strand_broadcast_size=\
                     options.gem_forge_enable_stream_strand_broadcast,
                 stream_pum_mode=\
@@ -383,10 +387,14 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_enable_float_advance_migrate,
                 enable_stream_multicast=\
                     options.gem_forge_stream_engine_enable_float_multicast,
+                enable_stream_multicast_forward=\
+                    options.gem_forge_stream_engine_enable_float_multicast_forward,
                 stream_multicast_group_size=\
                     options.gem_forge_stream_engine_llc_multicast_group_size,
                 stream_multicast_issue_policy=\
                     options.gem_forge_stream_engine_llc_multicast_issue_policy,
+                stream_reuse_tile_elems=\
+                    options.gem_forge_stream_reuse_tile_elems,
                 ind_stream_max_inqueue_req=\
                     options.gem_forge_stream_engine_llc_max_ind_req_inqueue_per_stream,
                 ind_stream_req_max_per_multicast_msg=\
@@ -524,6 +532,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.enable_stream_compact_store = options.gem_forge_stream_engine_enable_float_compact_store
         dir_cntrl.enable_stream_advance_migrate = options.gem_forge_stream_engine_enable_float_advance_migrate
         dir_cntrl.enable_stream_multicast = options.gem_forge_stream_engine_enable_float_multicast
+        dir_cntrl.enable_stream_multicast_forward = options.gem_forge_stream_engine_enable_float_multicast_forward
         dir_cntrl.stream_multicast_group_size = options.gem_forge_stream_engine_llc_multicast_group_size
         dir_cntrl.stream_multicast_issue_policy = options.gem_forge_stream_engine_llc_multicast_issue_policy
         dir_cntrl.mlc_stream_buffer_init_num_entries = options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries
@@ -544,6 +553,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.neighbor_migration_valve_type = options.gem_forge_stream_engine_mc_neighbor_migration_valve_type
         dir_cntrl.enable_stream_float_mem = options.gem_forge_stream_engine_enable_float_mem
         dir_cntrl.reuse_buffer_lines_per_core = options.gem_forge_stream_engine_mc_reuse_buffer_lines_per_core
+        dir_cntrl.stream_reuse_tile_elems = options.gem_forge_stream_reuse_tile_elems
         dir_cntrl.ind_stream_max_inqueue_req = options.gem_forge_stream_engine_llc_max_ind_req_inqueue_per_stream
         dir_cntrl.ind_stream_req_max_per_multicast_msg = options.gem_forge_stream_engine_llc_multicast_max_ind_req_per_message
         dir_cntrl.ind_stream_req_multicast_group_size = options.gem_forge_stream_engine_llc_multicast_ind_req_bank_group_size

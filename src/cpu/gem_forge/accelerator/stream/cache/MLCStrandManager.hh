@@ -152,6 +152,11 @@ private:
                              CacheStreamConfigureVec &strands);
 
   /**
+   * Recognize reuse with distance more than 1.
+   */
+  void recognizeReusedTile(StrandSplitContext &context, ConfigPtr strand);
+
+  /**
    * Configure a single stream.
    * It will insert an configure message into the
    * message buffer to configure the correct LLC bank.

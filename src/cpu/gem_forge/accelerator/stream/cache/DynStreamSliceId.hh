@@ -23,9 +23,10 @@ namespace gem5 {
 struct DynStreamSliceId {
   DynStrandElementRangeId elementRange;
   /**
-   * Hack: This is element vaddr for indirect streams,
-   * but line vaddr for direct sliced streams.
-   * TODO: Fix this.
+   * Hack: This is abused for many things:
+   * 1. Element vaddr for indirect streams.
+   * 2. Line vaddr for direct sliced streams.
+   * 3. Line **paddr** distinguish multicast receiving streams.
    */
   Addr vaddr;
   int size;

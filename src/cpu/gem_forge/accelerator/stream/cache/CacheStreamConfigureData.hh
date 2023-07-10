@@ -203,6 +203,7 @@ public:
      * "b" would record BaseOn "a" with REUSE 1.
      */
     int reuse;
+    int reuseTileSize = 1;
     int skip;
     DepEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse,
             int _skip)
@@ -234,6 +235,7 @@ public:
     DynStreamId dynStreamId;
     CacheStreamConfigureDataWeakPtr data;
     int reuse;
+    int reuseTileSize = 1;
     int skip;
     /**
      * Whether this SendTo is simply based on Strand. No need to translate to
@@ -300,9 +302,9 @@ public:
   void addPredBy(CacheStreamConfigureDataPtr &data, int reuse, int skip,
                  int predFuncId, bool predValue);
   static uint64_t convertBaseToDepElemIdx(uint64_t baseElemIdx, int reuse,
-                                          int skip);
+                                          int reuseTileSize, int skip);
   static uint64_t convertDepToBaseElemIdx(uint64_t depElemIdx, int reuse,
-                                          int skip);
+                                          int reuseTileSize, int skip);
   /**
    * Check whether this stream or any indirect stream sends to inner-loop stream
    * Used to force fine-grained control flow on the outer-loop stream to avoid

@@ -112,6 +112,40 @@ void extractStrideAndTripFromAffinePatternParams(
   assert(!trips.empty());
 }
 
+DynStreamFormalParamV
+constructFormalParamsFromStrideAndTrip(int64_t start,
+                                       const std::vector<int64_t> &strides,
+                                       const std::vector<int64_t> &trips) {
+
+  DynStreamFormalParamV params(strides.size() * 2 + 1);
+
+#define setTrip(dim, t)                                                        \
+  {                                                                            \
+    params.at((dim)*2 + 1).isInvariant = true;                                 \
+    params.at((dim)*2 + 1).invariant.uint64() = t;                             \
+  }
+#define setStride(dim, t)                                                      \
+  {                                                                            \
+    params.at((dim)*2).isInvariant = true;                                     \
+    params.at((dim)*2).invariant.uint64() = t;                                 \
+  }
+#define setStart(t)                                                            \
+  {                                                                            \
+    params.back().isInvariant = true;                                          \
+    params.back().invariant.uint64() = t;                                      \
+  }
+
+  auto accTrip = 1;
+  for (int i = 0; i < strides.size(); ++i) {
+    setStride(i, strides.at(i));
+    accTrip *= trips.at(i);
+    setTrip(i, accTrip);
+  }
+  setStart(start);
+
+  return params;
+}
+
 StreamValue GetSingleStreamValue::operator()(uint64_t streamId) const {
   assert(this->streamId == streamId && "Invalid base stream.");
   return this->streamValue;
@@ -252,10 +286,8 @@ uint64_t LinearAddrGenCallback::getFirstElementForAddr(
   return (addr - startAddr) / stride0 + 1;
 }
 
-bool LinearAddrGenCallback::estimateReuse(const DynStreamFormalParamV &params,
-                                          uint64_t elementSize,
-                                          uint64_t &reuseFootprint,
-                                          uint64_t &reuseCount) {
+int LinearAddrGenCallback::getFirstReuseDim(
+    const DynStreamFormalParamV &params) {
   assert(params.size() >= 2);
   auto hasTotalTripCount = params.size() % 2 == 1;
   // We search for 0 stride.
@@ -264,16 +296,24 @@ bool LinearAddrGenCallback::estimateReuse(const DynStreamFormalParamV &params,
   // Reuse stride index is the first zero stride index, when we fall back to
   // StartAddr.
   int reuseStrideIdx = -1;
-  for (int strideIdx = 0; strideIdx < strideEnd; ++strideIdx) {
+  for (int strideIdx = 0; strideIdx < strideEnd; strideIdx += 2) {
     const auto &param = params.at(strideIdx);
     assert(param.isInvariant && "Variant param for LinearAddrGenCallback.");
     auto stride = param.invariant.uint64();
     if (stride == 0) {
       // We found 0 stride -- we are back to StartVAddr, so reuse happens.
-      reuseStrideIdx = strideIdx;
+      reuseStrideIdx = strideIdx / 2;
       break;
     }
   }
+  return reuseStrideIdx;
+}
+
+bool LinearAddrGenCallback::estimateReuse(const DynStreamFormalParamV &params,
+                                          uint64_t elementSize,
+                                          uint64_t &reuseFootprint,
+                                          uint64_t &reuseCount) {
+  int reuseStrideIdx = this->getFirstReuseDim(params) * 2;
 
   if (reuseStrideIdx == -1) {
     // No reuse found within this stream.
