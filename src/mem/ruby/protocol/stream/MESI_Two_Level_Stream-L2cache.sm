@@ -1401,6 +1401,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   transition(IS, Mem_Data, SS) {
     m_writeDataToCache;
+    net_notifyStreamEngineFromTBE;
     e_sendDataToGetSRequestors;
     s_deallocateTBE;
     o_popIncomingResponseQueue;
