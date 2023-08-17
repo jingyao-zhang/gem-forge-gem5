@@ -112,6 +112,8 @@ class RubyStreamAwareController(RubyController):
     enable_stream_subline = Param.Bool(False, "Whether to enable stream float subline transmission.")
     enable_stream_partial_config = Param.Bool(False, "Whether to enable partial StreamConfig.")
     enable_stream_idea_ack = Param.Bool(False, "Whether to enable immediate StreamAck.")
+    enable_stream_idea_ack_for_pred_off_elem = \
+        Param.Bool(False, "Whether to enable immediate StreamAck for PredOff Elem.")
     enable_stream_idea_end = Param.Bool(False, "Whether to enable immediate StreamEnd.")
     enable_stream_idea_flow = Param.Bool(False, "Whether to enable immediate stream flow control.")
     enable_stream_idea_store = Param.Bool(False, "Whether to enable immediate stream store.")

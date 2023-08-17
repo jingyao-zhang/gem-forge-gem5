@@ -293,6 +293,11 @@ struct StreamElement {
   bool isLastElement() const;
 
   /**
+   * Return true if we are 100% sure that this element is beyond the trip count.
+   */
+  bool isBeyondTripCount() const;
+
+  /**
    * Return true if the DynStream has known trip count and this is the second
    * element of the InnerMostLoop, e.g., Elem N + 1.
    */

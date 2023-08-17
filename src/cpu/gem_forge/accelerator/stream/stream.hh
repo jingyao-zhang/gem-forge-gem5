@@ -155,6 +155,9 @@ public:
   bool isTripCountFixed() const {
     return this->info.static_info().is_trip_count_fixed();
   }
+  bool hasMaxTripCount() const {
+    return this->info.static_info().has_max_trip_count();
+  }
 
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
@@ -582,7 +585,7 @@ public:
   /**
    * This is used to record offloaded stream's progress.
    */
-  void incrementOffloadedStepped();
+  void incrementOffloadedStepped(const DynStreamId &dynId);
 
   /**
    * Manage SkipAllocDynS Count.
@@ -691,6 +694,8 @@ public:
   T get##Name() const { return this->primeLogical->get##Name(); }
 #define Is(Name)                                                               \
   bool is##Name() const { return this->primeLogical->is##Name(); }
+#define Has(Name)                                                              \
+  bool has##Name() const { return this->primeLogical->has##Name(); }
 
   Get(StreamInfoType, StreamType);
   Get(uint32_t, LoopLevel);
@@ -714,6 +719,7 @@ public:
   Is(InnerFinalValueUsedByCore);
   Is(InnerSecondFinalValueUsedByCore);
   Is(TripCountFixed);
+  Has(MaxTripCount);
 
   /**
    * Get the coalesce base stream and offset.
@@ -725,6 +731,7 @@ public:
 
 #undef Get
 #undef Is
+#undef Has
 
   bool isReductionDistributable() const;
 

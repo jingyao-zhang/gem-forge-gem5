@@ -247,6 +247,13 @@ public:
   }
   int64_t getInnerTripCount() const { return this->innerTripCount; }
   void setInnerTripCount(int64_t innerTripCount);
+  bool hasMaxTripCount() const {
+    return this->maxTripCount != InvalidTripCount;
+  }
+  int64_t getMaxTripCount() const { return this->maxTripCount; }
+  void setMaxTripCount(int64_t maxTripCount) {
+    this->maxTripCount = maxTripCount;
+  }
 
   /**
    * Return true if the DynStream has known trip count and this is the second
@@ -476,6 +483,10 @@ private:
    * Set by Stepper.
    */
   int64_t innerTripCount = InvalidTripCount;
+  /**
+   * Optional MaxTripCount.
+   */
+  int64_t maxTripCount = InvalidTripCount;
 
   /**
    * Some statistics for this stream.

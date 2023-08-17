@@ -285,7 +285,8 @@ MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
     assert((m_max_size == 0) ||
            ((m_prio_heap.size() + m_stall_map_size) <= m_max_size));
 
-    DPRINTF(RubyQueue, "Enqueue arrival_time: %lld, Message: %s\n",
+    DPRINTF(RubyQueue, "Enqueue #Msg=%llu arrival_time: %lld, Message: %s\n",
+            m_prio_heap.size(),
             arrival_time, *(message.get()));
 
     // Schedule the wakeup
@@ -308,7 +309,8 @@ MessageBuffer::dequeue(Tick current_time, bool decrement_messages)
 
     // get MsgPtr of the message about to be dequeued
     MsgPtr message = m_prio_heap.front();
-    DPRINTF(RubyQueue, "Popping: %s\n", *message);
+    DPRINTF(RubyQueue, "Popping #Msg=%llu: %s\n",
+        m_prio_heap.size() - 1, *message);
 
     // get the delay cycles
     message->updateDelayedTicks(current_time);

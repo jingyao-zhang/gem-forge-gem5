@@ -1462,8 +1462,12 @@ IEW::writebackInsts()
         DynInstPtr inst = toCommit->insts[inst_num];
         ThreadID tid = inst->threadNumber;
 
-        DPRINTF(IEW, "Sending instructions to commit, [sn:%lli] PC %s.\n",
-                inst->seqNum, inst->pcState());
+        DPRINTF(IEW, "Sending instructions to commit, [sn:%lli] PC %s "
+            "Squashed %d Executed %d %s.\n",
+                inst->seqNum, inst->pcState(),
+                inst->isSquashed(), inst->isExecuted(),
+                inst->getFault() == NoFault ?
+                    "NoFault" : inst->getFault()->name());
 
         iewStats.instsToCommit[tid]++;
         // Notify potential listeners that execution is complete for this

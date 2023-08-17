@@ -7,7 +7,8 @@
 #include "debug/StreamAlias.hh"
 
 #define INST_DPRINTF(inst, format, args...)                                    \
-  DPRINTF(O3CPUDelegator, "[%s]: " format, *(inst), ##args)
+  DPRINTF(O3CPUDelegator, "%s.delegator: %s: " format, cpuName(), *(inst),     \
+          ##args)
 #define INST_PANIC(inst, format, args...)                                      \
   panic("[%s]: " format, *(inst), ##args)
 
@@ -49,6 +50,8 @@ public:
    * This is used for squashing.
    */
   std::unordered_map<InstSeqNum, GFLoadReq *> inLSQ;
+
+  std::string cpuName() const { return this->cpu->name(); }
 
   Process *getProcess() {
     assert(this->cpu->thread.size() == 1 &&
@@ -181,6 +184,8 @@ void O3CPUDelegator::regStats() {
   scalar(statCoreCommitMicroOpsGemForge,
          "Accumulated core committed GemForge micro ops.");
 }
+
+std::string O3CPUDelegator::cpuName() const { return pimpl->cpuName(); }
 
 /*********************************************************************
  * Interface to GemForge.

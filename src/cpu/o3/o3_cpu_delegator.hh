@@ -70,6 +70,8 @@ public:
 
   void regStats();
 
+  std::string cpuName() const;
+
   const std::string &getTraceExtraFolder() const override;
   bool translateVAddrOracle(Addr vaddr, Addr &paddr) override;
   void sendRequest(PacketPtr pkt) override;

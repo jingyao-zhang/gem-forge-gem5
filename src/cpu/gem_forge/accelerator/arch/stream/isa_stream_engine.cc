@@ -130,7 +130,7 @@ void ISAStreamEngine::executeStreamConfig(const GemForgeDynInstInfo &dynInfo,
   }
   auto &configInfo = instInfo.configInfo;
   DYN_INST_DPRINTF(
-      "[dispatch] StreamConfig Dispatched %d Executed %d ConfigIdx %llu, %s.\n",
+      "[execute] StreamConfig Dispatched %d Executed %d ConfigIdx %llu, %s.\n",
       configInfo.dynStreamRegionInfo->numDispatchedInsts,
       configInfo.dynStreamRegionInfo->numExecutedInsts + 1, configIdx,
       infoRelativePath);
@@ -149,6 +149,8 @@ void ISAStreamEngine::commitStreamConfig(const GemForgeDynInstInfo &dynInfo) {
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   auto infoRelativePath = this->getRelativePath(configIdx);
   auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
+  DYN_INST_DPRINTF("[commit] StreamConfig %llu, %s.\n", configIdx,
+                   infoRelativePath);
   if (instInfo.mustBeMisspeculated) {
     panic("[commit] MustMisspeculated StreamConfig %llu, %s, Reason %s.",
           configIdx, infoRelativePath,
@@ -291,6 +293,9 @@ void ISAStreamEngine::commitStreamInput(const GemForgeDynInstInfo &dynInfo) {
   if (instInfo.mustBeMisspeculated) {
     panic("[commit] MustMisspeculated StreamInput.\n");
   }
+  auto &inputInfo = instInfo.inputInfo;
+  DYN_INST_DPRINTF("[commit] StreamInput StreamId %llu #%d.\n",
+                   inputInfo.translatedStreamId, inputInfo.inputIdx);
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 

@@ -165,6 +165,9 @@ parser.add_argument("--gem-forge-stream-engine-enable-float-subline", action="st
 parser.add_argument("--gem-forge-stream-engine-enable-float-idea-ack", action="store",
                   default=0, type=int,
                   help="Enable idea (instant, no NoC) StreamAck in stream float.")
+parser.add_argument("--gem-forge-stream-engine-enable-float-idea-ack-for-pred-off-elem",
+                    action="store", default=1, type=int,
+                    help="Enable idea (instant, no NoC) StreamAck for PredicateOff Elem.")
 parser.add_argument("--gem-forge-stream-engine-enable-float-idea-fwd", action="store",
                   default=0, type=int,
                   help="Enable idea (instant, no NoC) StreamForward in near-stream computing.")

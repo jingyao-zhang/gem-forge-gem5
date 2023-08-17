@@ -4383,7 +4383,7 @@ void MLCPUMManager::reportProgress(int64_t contextId) {
     // Record that we have made some progress.
     const auto &config = group.computeConfig;
     auto S = config->stream;
-    S->incrementOffloadedStepped();
+    S->incrementOffloadedStepped(config->dynamicId);
   }
 }
 
@@ -4404,7 +4404,7 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
     const auto &config = group.computeConfig;
     auto S = config->stream;
     // Record that we have made some progress.
-    S->incrementOffloadedStepped();
+    S->incrementOffloadedStepped(config->dynamicId);
     auto dynS = S->getDynStream(config->dynamicId);
     if (!dynS) {
       MLC_S_PANIC_NO_DUMP(config->dynamicId, "No CoreDynS.");

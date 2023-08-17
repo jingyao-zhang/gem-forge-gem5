@@ -3448,7 +3448,9 @@ void LLCStreamEngine::predicateOffElem(LLCDynStreamPtr dynS,
     elemSliceId.getDynStrandId() = dynS->getDynStrandId();
     elemSliceId.getStartIdx() = elem->idx;
     elemSliceId.getEndIdx() = elem->idx + 1;
-    this->issueStreamAckToMLC(elemSliceId, true /* forceIdea */);
+    bool forceIdea =
+        this->controller->myParams->enable_stream_idea_ack_for_pred_off_elem;
+    this->issueStreamAckToMLC(elemSliceId, forceIdea);
     if (dynS->isIndirect() && S->isStoreComputeStream()) {
       elem->setIndirectStoreAcked();
     }

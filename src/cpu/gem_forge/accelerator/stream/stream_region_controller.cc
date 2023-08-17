@@ -387,6 +387,12 @@ bool StreamRegionController::canSkipToStreamEnd(
         return false;
       }
     }
+    if (dynS.hasMaxTripCount() && dynS.getMaxTripCount() < 256 &&
+        S->getStreamName().find("bfs_pull.v.ld") != std::string::npos) {
+      DYN_S_DPRINTF(dynS.dynStreamId,
+                    "[Region] NoSkipToEnd: Disable short BFS pull.\n");
+      return false;
+    }
   }
   return true;
 }
@@ -426,6 +432,20 @@ std::ostream &operator<<(std::ostream &os,
 
   os << "---- DynRegion ConfigSeq " << dynRegion.seqNum;
   os << " Instance " << streamInstance;
+  if (dynRegion.nestParentDynConfig) {
+    auto dynParentRegion = dynRegion.nestParentDynConfig;
+    auto staticParentRegion = dynParentRegion->staticRegion;
+    os << "\n NestParent SE "
+       << dynRegion.nestParentSE->getCPUDelegator()->cpuId() << ' '
+       << staticParentRegion->region.region();
+  }
+  for (const auto &dynNestConfig : dynRegion.nestConfigs) {
+    for (const auto &dynNestRegion : dynNestConfig.nestDynRegions) {
+      os << "\n    NestRegion " << dynNestConfig.staticRegion->region.region()
+         << " ConfigSeq " << dynNestRegion.configSeqNum << " SE "
+         << dynNestRegion.configSE->getCPUDelegator()->cpuId();
+    }
+  }
 
   if (staticRegion.region.is_loop_bound()) {
     os << "\n LoopBound " << dynRegion.loopBound;

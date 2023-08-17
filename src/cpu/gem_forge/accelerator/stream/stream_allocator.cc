@@ -337,6 +337,7 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
          targetSize <= maxAllocSize && se->hasFreeElement() &&
          allocated < MaxAllocationPerCycle;
          ++targetSize) {
+      auto oldAllocated = allocated;
       for (auto allocatingDynS : stepDynStreams) {
         auto &dynS = *allocatingDynS;
         auto S = dynS.stream;
@@ -379,6 +380,9 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
                       dynS.allocSize + 1);
         se->allocateElement(dynS);
         allocated++;
+      }
+      if (allocated == oldAllocated) {
+        break;
       }
     }
 

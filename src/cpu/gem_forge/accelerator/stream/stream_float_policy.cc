@@ -420,6 +420,11 @@ StreamFloatPolicy::shouldFloatStreamSmart(DynStream &dynS) {
     if (S->hasBackDepReductionStream) {
       floatCompute = true;
     }
+    if (dynS.hasMaxTripCount() && dynS.getMaxTripCount() < 256 &&
+        S->getStreamName().find("bfs_pull.v.ld") != std::string::npos) {
+      logS(dynS) << "[Not Float] Disable short bfs pull.\n" << std::flush;
+      return FloatDecision(false);
+    }
     if (floatCompute) {
       S_DPRINTF(S, "[Float] always float computation.\n");
       logS(dynS) << "[Float] always float computation.\n" << std::flush;

@@ -201,6 +201,17 @@ bool StreamElement::isLastElement() const {
          this->FIFOIdx.entryIdx == this->dynS->getTotalTripCount();
 }
 
+bool StreamElement::isBeyondTripCount() const {
+  assert(this->dynS && "This element has not been allocated.");
+  assert(this->dynS->configExecuted && "The DynS has not be configured.");
+  if (this->dynS->hasTotalTripCount()) {
+    return this->FIFOIdx.entryIdx >= this->dynS->getTotalTripCount();
+  } else if (this->dynS->hasMaxTripCount()) {
+    return this->FIFOIdx.entryIdx >= this->dynS->getMaxTripCount();
+  }
+  return false;
+}
+
 bool StreamElement::isInnerSecondElem() const {
   assert(this->dynS && "This element has not been allocated.");
   return this->dynS->isInnerSecondElem(this->FIFOIdx.entryIdx);
@@ -232,8 +243,8 @@ bool StreamElement::shouldIssue() const {
       return false;
     }
   }
-  if (this->isLastElement()) {
-    // Last element should never be issued.
+  if (this->isBeyondTripCount()) {
+    // Element beyond trip count should never be issued.
     return false;
   }
   return true;

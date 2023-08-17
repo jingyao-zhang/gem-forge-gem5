@@ -1230,8 +1230,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     }
 
     if (inst_fault != NoFault) {
-        DPRINTF(Commit, "Inst [tid:%i] [sn:%llu] PC %s has a fault\n",
-                tid, head_inst->seqNum, head_inst->pcState());
+        DPRINTF(Commit, "Inst [tid:%i] [sn:%llu] PC %s Fault %s\n",
+                tid, head_inst->seqNum, head_inst->pcState(),
+                inst_fault->name());
 
         if (iewStage->hasStoresToWB(tid) || inst_num > 0) {
             DPRINTF(Commit,

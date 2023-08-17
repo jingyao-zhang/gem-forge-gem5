@@ -393,8 +393,10 @@ void StreamRegionController::configureNestStream(
   auto nestSE = this->se;
   if (dynNestConfig.isRemoteConfig) {
     int remoteBank = -1;
+    int numFloatLoadStreams = 0;
     for (auto baseE : baseElems) {
       if (baseE->isFloatElem() && baseE->stream->isLoadStream()) {
+        numFloatLoadStreams++;
         if (baseE->hasRemoteBank()) {
           auto elemRemoteBank = baseE->getRemoteBank();
           S_ELEMENT_DPRINTF(baseE, "[Nest] RemoteBank %d.\n", elemRemoteBank);
@@ -414,13 +416,16 @@ void StreamRegionController::configureNestStream(
       }
     }
     if (remoteBank == -1) {
-      SE_PANIC("No RemoteBank for %s.", staticNestRegion.region.region());
+      if (numFloatLoadStreams == 0) {
+        // No float load stream. Use myself as the remote bank.
+        remoteBank = this->se->getCPUDelegator()->cpuId();
+      } else {
+        SE_PANIC("No RemoteBank for %s.", staticNestRegion.region.region());
+      }
     }
     assert(remoteBank >= 0);
     assert(remoteBank < StreamEngine::GlobalStreamEngines.size() &&
            "[Nest] Overflow RemoteBank.");
-    // auto selected = rand() % numSEs;
-    // auto selected = 1;
     auto selected = remoteBank;
     nestSE = StreamEngine::GlobalStreamEngines.at(selected);
     SE_DPRINTF("[Nest] RemoteConfig at CPU %d.\n",

@@ -967,7 +967,7 @@ void LLCDynStream::eraseElem(IdxToElementMapT::iterator elemIter) {
                       this->idxToElementMap.size() - 1,
                       LLCStreamElement::getAliveElems());
   auto S = this->getStaticS();
-  S->incrementOffloadedStepped();
+  S->incrementOffloadedStepped(this->getDynStreamId());
   if (this->hasLoopBound() && !elem->isLoopBoundDone()) {
     /**
      * We erased an element without LoopBound evaluated.

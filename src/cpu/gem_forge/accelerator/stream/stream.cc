@@ -1,6 +1,7 @@
 #include "stream.hh"
 #include "insts.hh"
 #include "stream_engine.hh"
+#include "stream_region_controller.hh"
 
 #include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
 
@@ -699,6 +700,17 @@ void Stream::extractExtraInputValues(DynStream &dynS,
 
   int inputIdx = 0;
 
+  // Get the maximal trip count.
+  if (this->hasMaxTripCount()) {
+    assert(inputIdx < inputVec->size() && "Missing MaxTripCount.");
+    dynS.setMaxTripCount(inputVec->front().uint64());
+    inputVec->erase(inputVec->begin());
+    inputIdx++;
+
+    DYN_S_DPRINTF(dynS.dynStreamId, "[MaxTrip] Set MaxTripCount %ld.\n",
+                  dynS.getMaxTripCount());
+  }
+
   if (predicatedStreams.size() > 0) {
     // Initialize the PredCallbacks.
     if (this->predCallbacks.empty()) {
@@ -1303,8 +1315,30 @@ void Stream::sampleStatistic() {
   this->statistic.numDynStreams += this->dynamicStreams.size();
 }
 
-void Stream::incrementOffloadedStepped() {
-  this->se->numOffloadedSteppedSinceLastCheck++;
+void Stream::incrementOffloadedStepped(const DynStreamId &dynId) {
+  /**
+   * It is possible that this is some nest stream. We need to register
+   * offloaded progress for all SE on the chain. Otherwise we may falsely
+   * report deadlock.
+   */
+  auto S = this;
+  while (true) {
+    S->se->numOffloadedSteppedSinceLastCheck++;
+    auto dynS = S->getDynStream(dynId);
+    if (!dynS) {
+      // This one has already released. Assume it's here.
+      break;
+    }
+    const auto &dynRegion = S->se->regionController->getDynRegion(
+        "IncOffloadStep", dynS->configSeqNum);
+    if (!dynRegion.nestParentDynConfig) {
+      // This is the top one.
+      break;
+    }
+    const auto &parentStreams = dynRegion.nestParentDynConfig->baseStreams;
+    assert(!parentStreams.empty() && "No Stream in ParentRegion?");
+    S = *parentStreams.begin();
+  }
 }
 
 std::string Stream::dumpString() const {
