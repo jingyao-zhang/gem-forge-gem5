@@ -953,6 +953,13 @@ void LLCStreamEngine::wakeup() {
   this->issueStreamRangesToMLC();
   this->findMigratingStreams();
   this->migrateStreams();
+  /**
+   * We call completeComputation() twice:
+   * 1. Before startComputation() so that we can back-to-back issue.
+   * 2. After startComputation() so that we can complete zero-cycle fake computation.
+   * TODO: This should be improved.
+   */
+  this->completeComputation();
   this->startComputation();
   this->completeComputation();
   this->processSlices();
