@@ -114,6 +114,8 @@ private:
                             const ConfigVec &configs) const;
   bool chooseSplitDimIntrlvMMOuter(StrandSplitContext &context,
                                    const ConfigVec &configs) const;
+  bool chooseSplitDimIntrlvByUser(StrandSplitContext &context,
+                                  const ConfigVec &configs) const;
   bool chooseSplitDimIntrlv(StrandSplitContext &context,
                             ConfigPtr config) const;
   bool fixSplitDimIntrlv(StrandSplitContext &context,
@@ -142,6 +144,8 @@ private:
                           int64_t splitIntrlv, int splitCnt, int strandIdx);
   void fixReusedSendTo(StrandSplitContext &context, ConfigVec &streamConfigs,
                        ConfigVec &strandConfigs);
+  int64_t computeSplitInnerTrip(StrandSplitContext &context,
+                                const ConfigPtr &config) const;
 
   /**
    * Recognize the broadcast opportunities between

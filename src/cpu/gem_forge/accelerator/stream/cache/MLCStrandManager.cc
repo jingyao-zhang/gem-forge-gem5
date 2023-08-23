@@ -526,6 +526,11 @@ bool MLCStrandManager::chooseSplitDimIntrlv(StrandSplitContext &context,
     return true;
   }
 
+  // Check if the split dim is defined by user.
+  if (this->chooseSplitDimIntrlvByUser(context, configs)) {
+    return true;
+  }
+
   for (const auto &config : configs) {
     if (!this->chooseSplitDimIntrlv(context, config)) {
       return false;
@@ -621,6 +626,83 @@ bool MLCStrandManager::chooseSplitDimIntrlvMMOuter(
   // A is split on the first dimension (which is the outer loop, with 1
   // interleave).
   pscA.splitDims.emplace_back(0, 8, 1);
+
+  return true;
+}
+
+bool MLCStrandManager::chooseSplitDimIntrlvByUser(
+    StrandSplitContext &context, const ConfigVec &configs) const {
+
+  ConfigPtr configWithUserDefinedStrandSplit = nullptr;
+  for (auto &config : configs) {
+    auto S = config->stream;
+    if (!S->getUserDefinedStrandSplit().empty()) {
+      configWithUserDefinedStrandSplit = config;
+      break;
+    }
+  }
+
+  if (!configWithUserDefinedStrandSplit) {
+    return false;
+  }
+
+  /**
+   * We assume that:
+   * 1. All split dimensions has interleave 1.
+   * 2. The total strands is reasonable (<= 64) so far.
+   */
+  const auto &userDefinedStrandSplitDims =
+      configWithUserDefinedStrandSplit->stream->getUserDefinedStrandSplit();
+  {
+    std::stringstream ss;
+    for (auto splitLoop : userDefinedStrandSplitDims) {
+      ss << splitLoop << ' ';
+    }
+    STRAND_LOG_(MLCRubyStrandSplit, configWithUserDefinedStrandSplit->dynamicId,
+                "[Strand] UserStrandSplit with Dims %s.\n", ss.str());
+  }
+
+  context.totalStrands = 64;
+  context.skipSanityCheck = true;
+
+  for (auto &config : configs) {
+    STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+                "[Strand] Handling %s.\n",
+                printAffinePatternParams(config->addrGenFormalParams));
+
+    auto &psc = context.perStreamContext.at(config->dynamicId);
+    extractStrideAndTripFromAffinePatternParams(config->addrGenFormalParams,
+                                                psc.strides, psc.trips);
+
+    auto totalStrands = 1;
+
+    // Be careful that strides and trips are ordered from inner to outer.
+    // We process the split loop also from inner to outer.
+    for (auto splitLevelIter = userDefinedStrandSplitDims.rbegin(),
+              splitLevelEnd = userDefinedStrandSplitDims.rend();
+         splitLevelIter != splitLevelEnd; ++splitLevelIter) {
+
+      const auto &splitLevel = *splitLevelIter;
+
+      if (splitLevel >= psc.trips.size()) {
+        MLC_S_PANIC_NO_DUMP(
+            config->dynamicId, "Overflown SplitLevel %d >= %s.", splitLevel,
+            printAffinePatternParams(config->addrGenFormalParams));
+      }
+
+      auto splitLevelTrip = *(psc.trips.rbegin() + splitLevel);
+      totalStrands *= splitLevelTrip;
+
+      const int splitInterleave = 1;
+      // SplitDims in PSC is ordered from inner to outer.
+      psc.splitDims.emplace_back(psc.trips.size() - splitLevel - 1,
+                                 splitLevelTrip, splitInterleave);
+
+      STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+                  "[Strand] SplitAt %d Trip %ld TotalSplit %ld.\n", splitLevel,
+                  splitLevelTrip, totalStrands);
+    }
+  }
 
   return true;
 }
@@ -930,8 +1012,8 @@ void MLCStrandManager::splitIntoStrands(StrandSplitContext &context,
     STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
                 "---------------Split Strands\n");
     for (const auto &strand : strands) {
-      STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId, "Strand %s %s.\n",
-                  strand->getStrandId(),
+      STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId, "Strand %3d %s.\n",
+                  strand->getStrandId().strandIdx,
                   printAffinePatternParams(strand->addrGenFormalParams));
     }
   }
@@ -1196,10 +1278,28 @@ void MLCStrandManager::mergeBroadcastStrands(
                   "[NoBroadcast] Has NonSendTo DepEdge.\n");
       return;
     }
-    if (dep.skip != 0 || dep.reuse != 1) {
+    if (dep.skip != 0) {
       STRAND_LOG_(MLCRubyStrandSplit, firstStrand->dynamicId,
-                  "[NoBroadcast] Has SendTo R/S %d/%d.\n", dep.reuse, dep.skip);
+                  "[NoBroadcast] Has SendTo Skip %d.\n", dep.skip);
       return;
+    }
+    if (dep.reuse != 1) {
+      // We support broadcast with reuse if the reuse is smaller than
+      // SplitInnerTrip, which means the reuse is not splited.
+      const auto &depDynId = dep.data->dynamicId;
+      auto depInnerTrip = this->computeSplitInnerTrip(context, dep.data);
+
+      if (dep.reuse <= depInnerTrip) {
+        STRAND_LOG_(MLCRubyStrandSplit, firstStrand->dynamicId,
+                    "[Broadcast] Reuse %d <= DepInnerTrip %ld of %s.\n",
+                    dep.reuse, depInnerTrip, depDynId);
+
+      } else {
+        STRAND_LOG_(MLCRubyStrandSplit, firstStrand->dynamicId,
+                    "[NoBroadcast] Reuse %d > DepInnerTrip %ld of %s.\n",
+                    dep.reuse, depInnerTrip, depDynId);
+        return;
+      }
     }
   }
 
@@ -1270,7 +1370,8 @@ void MLCStrandManager::mergeBroadcastStrands(
         auto recvS = recvStream->stream;
 
         int loopDiff = recvS->getLoopLevel() - S->getLoopLevel();
-        if (loopDiff != 0) {
+        if (loopDiff < 0) {
+          // So far we don't broadcast for LoopDiff < 0, which should be Skip.
           fixedDepEdges.push_back(dep);
           continue;
         }
@@ -1300,7 +1401,7 @@ void MLCStrandManager::mergeBroadcastStrands(
             fixedDep.data = recvStrand;
 
             STRAND_LOG_(MLCRubyStrandSplit, strandI->getStrandId(),
-                        "[MergeBroadcast] Merged %d -> %s R/S %d/%d!\n",
+                        "[MergeBroadcast] Merged %3d -> %s R/S %d/%d!\n",
                         strandJ->strandIdx, recvStrand->getStrandId(),
                         fixedDep.reuse, fixedDep.skip);
             fixedDepEdges.push_back(fixedDep);
@@ -1526,6 +1627,21 @@ DynStreamFormalParamV MLCStrandManager::splitAffinePatternAtDim(
   return strandParams;
 }
 
+int64_t MLCStrandManager::computeSplitInnerTrip(StrandSplitContext &context,
+                                                const ConfigPtr &config) const {
+  // We support broadcast with reuse if the reuse is smaller than
+  // SplitInnerTrip, which means the reuse is not splited.
+  const auto &psc = context.perStreamContext.at(config->dynamicId);
+
+  auto firstSplitDim = psc.trips.size();
+  if (!psc.splitDims.empty()) {
+    firstSplitDim = psc.splitDims.front().dim;
+  }
+  auto splitInnerTrip = AffinePattern::reduce_mul(
+      psc.trips.begin(), psc.trips.begin() + firstSplitDim, 1);
+  return splitInnerTrip;
+}
+
 void MLCStrandManager::fixReusedSendTo(StrandSplitContext &context,
                                        ConfigVec &streamConfigs,
                                        ConfigVec &strandConfigs) {
@@ -1542,6 +1658,12 @@ void MLCStrandManager::fixReusedSendTo(StrandSplitContext &context,
         continue;
       }
       if (dep.reuse == 1) {
+        fixedDepEdges.push_back(dep);
+        continue;
+      }
+      auto depSplitInnerTrip = this->computeSplitInnerTrip(context, dep.data);
+      if (dep.reuse <= depSplitInnerTrip) {
+        // The reuse is not splitted.
         fixedDepEdges.push_back(dep);
         continue;
       }
@@ -1674,7 +1796,8 @@ void MLCStrandManager::recognizeReusedTile(StrandSplitContext &context,
   assert(strides.at(reuseDim) == 0);
 
   auto reuseDimEnd = reuseDim + 1;
-  while (reuseDimEnd < strides.size() && strides.at(reuseDimEnd) == 0) {
+  while (reuseDimEnd < strides.size() &&
+         (strides.at(reuseDimEnd) == 0 || trips.at(reuseDimEnd) == 1)) {
     reuseDimEnd++;
   }
 

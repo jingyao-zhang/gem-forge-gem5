@@ -4442,8 +4442,8 @@ bool LLCStreamEngine::tryPostProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
   }
   const auto &sliceId = slice->getSliceId();
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-    auto element = dynS->getElemPanic(idx, "Process UpdateStream");
-    if (!element->isComputationDone()) {
+    auto elem = dynS->getElemPanic(idx, "Process UpdateStream");
+    if (!elem->isComputationDone()) {
       return false;
     }
   }

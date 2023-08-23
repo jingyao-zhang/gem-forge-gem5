@@ -102,6 +102,7 @@ void extractStrideAndTripFromAffinePatternParams(
     const auto &p = params.at(i);
     assert(p.isInvariant);
     auto trip = p.invariant.uint64();
+    assert(prevTrip > 0);
     trips.push_back(trip / prevTrip);
     prevTrip = trip;
     const auto &s = params.at(i - 1);

@@ -158,6 +158,9 @@ public:
   bool hasMaxTripCount() const {
     return this->info.static_info().has_max_trip_count();
   }
+  const auto &getUserDefinedStrandSplit() const {
+    return this->info.static_info().user_strand_split_loop_level();
+  }
 
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
@@ -849,6 +852,10 @@ public:
   PredFuncInfoVec predFuncInfos;
   const ExecFuncInfo &getPredicateFuncInfo(PredFuncId predFuncId) const {
     return *this->predFuncInfos.at(predFuncId);
+  }
+
+  const auto &getUserDefinedStrandSplit() const {
+    return this->primeLogical->getUserDefinedStrandSplit();
   }
 };
 

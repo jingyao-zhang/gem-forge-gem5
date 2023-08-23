@@ -131,7 +131,8 @@ uint64_t CacheStreamConfigureData::convertDepToBaseElemIdx(uint64_t depElemIdx,
   if (reuse != 1) {
     assert(skip == 0);
     auto tileOffset = depElemIdx % reuseTileSize;
-    baseElemIdx = depElemIdx / (reuse * reuseTileSize) + tileOffset;
+    baseElemIdx =
+        depElemIdx / (reuse * reuseTileSize) * reuseTileSize + tileOffset;
   }
   if (skip != 0) {
     assert(reuse == 1);

@@ -136,7 +136,7 @@ parser.add_argument("--gem-forge-stream-engine-elim-nest-stream-instances", acti
                   default="8", type=int, help="""number of elim nested stream instances""")
 parser.add_argument("--gem-forge-stream-engine-elim-nest-outer-stream-elems", action="store",
                   default="16", type=int, help="""number of elim nested outer stream elems""")
-parser.add_argument("--gem-forge-stream-engine-yield-core-when-blocked", action="store_true",
+parser.add_argument("--gem-forge-stream-engine-yield-core-when-blocked", action="store", type=bool,
                   default=False, help="""yield the core when blocked by stream engine""")
 
 # Stream Float options.

@@ -134,18 +134,7 @@ protected:
 
   bool matchLLCSliceId(const DynStreamSliceId &mlc,
                        const DynStreamSliceId &llc) const {
-    if (this->config->isPointerChase ||
-        !this->config->shouldBeSlicedToCacheLines) {
-      return mlc.getStartIdx() == llc.getStartIdx() && mlc.vaddr == llc.vaddr;
-    } else {
-      /**
-       * I used to only match the VAddr maybe because I am afraid that LLC and
-       * MLC are sliced differently? But now I think they should always be
-       * sliced in the same way. Try to enforce the check.
-       */
-      // return mlc.vaddr == llc.vaddr;
-      return mlc.getStartIdx() == llc.getStartIdx() && mlc.vaddr == llc.vaddr;
-    }
+    return mlc.getStartIdx() == llc.getStartIdx() && mlc.vaddr == llc.vaddr;
   }
 
   bool matchCoreSliceId(const DynStreamSliceId &mlc,

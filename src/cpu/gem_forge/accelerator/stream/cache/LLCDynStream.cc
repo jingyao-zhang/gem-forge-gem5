@@ -1065,8 +1065,8 @@ void LLCDynStream::recvStreamForward(LLCStreamEngine *se, int offset,
       if (baseElem->vaddr == 0) {
         baseElem->vaddr = sliceId.vaddr;
       }
-      LLC_S_DPRINTF(
-          this->getDynStrandId(),
+      LLC_ELEMENT_DPRINTF(
+          recvElem,
           "[Fwd] Extract BaseElem %s%lu VAddr %#x Size %d SliceVAddr %#x.\n",
           baseElem->strandId, baseElem->idx, baseElem->vaddr, baseElem->size,
           sliceId.vaddr);
@@ -1512,8 +1512,7 @@ StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &elem) {
       }
       ss << "\n  -> " << elem->strandId << elem->idx << ": " << newReduceVal;
       LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, elem,
-                           "[Lat %llu] Do reduction %s.\n", latency,
-                           ss.str());
+                           "[Lat %llu] Do reduction %s.\n", latency, ss.str());
     }
 
     return newReduceVal;
@@ -1536,8 +1535,8 @@ StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &elem) {
     auto loadComputeValue = config->loadCallback->invoke(params);
 
     LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, elem,
-                         "[Lat %llu] Compute LoadComputeValue %s.\n",
-                         latency, loadComputeValue);
+                         "[Lat %llu] Compute LoadComputeValue %s.\n", latency,
+                         loadComputeValue);
     return loadComputeValue;
 
   } else if (S->isUpdateStream()) {
@@ -1548,8 +1547,8 @@ StreamValue LLCDynStream::computeElemValue(const LLCStreamElementPtr &elem) {
     auto storeValue = config->storeCallback->invoke(params);
 
     LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, elem,
-                         "[Lat %llu] Compute StoreComputeValue %s.\n",
-                         latency, storeValue);
+                         "[Lat %llu] Compute StoreComputeValue %s.\n", latency,
+                         storeValue);
     return storeValue;
 
   } else if (S->isAtomicComputeStream()) {
