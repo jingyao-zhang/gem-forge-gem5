@@ -50,6 +50,21 @@ def macroop SSP_STREAM_STEP_I
     ssp_stream_step imm
 };
 
+def macroop SSP_STREAM_STEP_AMNT_R_I
+{
+    ssp_stream_step_amnt reg, imm
+};
+
+def macroop SSP_STREAM_STEP_AMNT_M_I
+{
+    panic "SSP_STREAM_STEP_AMNT with memory operand in R/M."
+};
+
+def macroop SSP_STREAM_STEP_AMNT_P_I
+{
+    panic "SSP_STREAM_STEP_AMNT with P operand in R/M."
+};
+
 def macroop SSP_STREAM_STORE_I
 {
     ssp_stream_store imm

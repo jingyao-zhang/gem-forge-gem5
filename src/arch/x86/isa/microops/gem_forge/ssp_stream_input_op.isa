@@ -130,6 +130,37 @@ let {{
             return allocator
 
     microopClasses["ssp_stream_input"] = SSPStreamInputOp
+
+    class SSPStreamStepAmntOp(X86Microop):
+        op_class = "No_OpClass"
+        def __init__(self, src, imm, dataSize="env.dataSize"):
+            self.className = "SSPStreamStepAmnt"
+            self.mnemonic = "ssp.stream.step_amnt"
+            # ! GemForge
+            # Get rid of the type and just use the index
+            self.src = "((%s).index)" % src
+            if isinstance(imm, int):
+                imm = "ULL(%d)" % imm
+            self.imm = imm
+            self.dataSize = dataSize
+
+        def getAllocator(self, microFlags):
+            allocString = '''
+                (StaticInstPtr)(new %(class_name)s(machInst,
+                    macrocodeBlock, %(flags)s, %(src)s, %(imm)s,
+                    %(dataSize)s))
+            '''
+            allocator = allocString % {
+                "class_name" : self.className,
+                "mnemonic" : self.mnemonic,
+                "flags" : self.microFlagsText(microFlags),
+                "src" : self.src,
+                "imm" : self.imm,
+                "dataSize" : self.dataSize
+            }
+            return allocator
+
+    microopClasses["ssp_stream_step_amnt"] = SSPStreamStepAmntOp
 }};
 
 let {{
@@ -137,6 +168,15 @@ let {{
         InstObjParams(
             "ssp_stream_input",
             "SSPStreamInput",
+            'GemForgeMicroopBase',
+            {
+                'code' : '',
+            },
+            ['No_OpClass', 'IsGemForge']
+        ),
+        InstObjParams(
+            "ssp_stream_step_amnt",
+            "SSPStreamStepAmnt",
             'GemForgeMicroopBase',
             {
                 'code' : '',

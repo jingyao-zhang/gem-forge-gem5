@@ -120,6 +120,7 @@
                 0x40: SSP_STREAM_ATOMIC(Ev, Ib);
                 0x41: SSP_STREAM_ATOMIC(WSSPd, Ib);
                 0x42: SSP_STREAM_ATOMIC(WSSPq, Ib);
+                0x45: SSP_STREAM_STEP_AMNT(Ev, Ib);
             }
             default: Inst::UD2();
         }
