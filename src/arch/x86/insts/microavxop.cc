@@ -56,6 +56,43 @@ namespace gem5
                 setDestRegIdx(i, floatRegClass[dest + i]);
                 _numTypedDestRegs[floatRegClass.type()]++;
             }
+            if (this->zeroHighRegs) {
+                this->addAVXZeroHighDestRegs();
+            }
+        }
+
+        void AVXOpBase::addAVXZeroHighDestRegs()
+        {
+            // Add MAXVL-1:VL to destination.
+            auto vRegs = destVL / sizeof(uint64_t);
+            assert(vRegs <= NumXMMSubRegs && "VL overflow.");
+            assert(NumXMMSubRegs == 8 && "We assume 8 xmm sub regs.");
+            auto numDestHigherRegs = NumXMMSubRegs - vRegs;
+            _numDestRegs += numDestHigherRegs;
+            assert(_numDestRegs <= MaxInstDestRegs && "DestRegs overflow.");
+            for (int i = 0; i < numDestHigherRegs; i++) {
+                /**
+                 * Be careful here:
+                 * destI is the index into the array of dest regs.
+                 * We also need to adjust dest + i + vRegs to correctly
+                 * get the higher regs.
+                 */
+                auto destI = i + _numDestRegs - numDestHigherRegs;
+                auto highRegI = dest + vRegs + i;
+                setDestRegIdx(destI, floatRegClass[highRegI]);
+                _numTypedDestRegs[floatRegClass.type()]++;
+            }
+        }
+
+        void AVXOpBase::zeroAVXHighRegs(ExecContext *xc) const
+        {
+            RegVal zero = 0;
+            auto vRegs = destVL / sizeof(uint64_t);
+            auto numDestHigherRegs = NumXMMSubRegs - vRegs;
+            for (int i = 0; i < numDestHigherRegs; i++) {
+                auto destI = i + _numDestRegs - numDestHigherRegs;
+                xc->setRegOperand(this, destI, zero);
+            }
         }
 
         void AVXOpBase::addAVXDestAsSrcRegs()

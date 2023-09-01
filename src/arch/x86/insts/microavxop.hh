@@ -34,6 +34,7 @@ protected:
   const uint8_t imm8;
   const uint8_t ext;
   const RegIndex mask;
+  const bool zeroHighRegs;
 
   /**
    * Now that src/dest reg arrays are declared internall in each static inst,
@@ -49,12 +50,12 @@ protected:
             FpRegIndex _dest, FpRegIndex _src1, FpRegIndex _src2,
             FpRegIndex _src3, uint8_t _destSize, uint8_t _destVL,
             uint8_t _srcSize, uint8_t _srcVL, uint8_t _imm8, uint8_t _ext,
-            GpRegIndex _mask)
+            GpRegIndex _mask, bool _zeroHighRegs)
       : X86MicroopBase(_machInst, _mnem, _instMnem, _setFlags, _opClass),
         srcType(_srcType), dest(_dest.index), src1(_src1.index),
         src2(_src2.index), src3(_src3.index), destSize(_destSize),
         destVL(_destVL), srcSize(_srcSize), srcVL(_srcVL), imm8(_imm8),
-        ext(_ext), mask(_mask.index) {
+        ext(_ext), mask(_mask.index), zeroHighRegs(_zeroHighRegs) {
     assert((destVL % sizeof(uint64_t) == 0) && "Invalid destVL.\n");
     assert((srcVL % sizeof(uint64_t) == 0) && "Invalid srcVL.\n");
 
@@ -181,6 +182,12 @@ protected:
 
   // A helper function to add dest regs.
   void addAVXDestRegs();
+
+  // A helper function to add higher dest regs to be zeroed.
+  void addAVXZeroHighDestRegs();
+
+  // A helper function to zero out higher regs.
+  void zeroAVXHighRegs(ExecContext *xc) const;
 
   // A helper function to add dest regs as src regs.
   void addAVXDestAsSrcRegs();

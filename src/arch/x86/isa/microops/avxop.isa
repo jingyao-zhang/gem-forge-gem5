@@ -9,6 +9,11 @@ def template AVXOpExecute {{
 
             %(code)s;
 
+            if (this->zeroHighRegs)
+            {
+                this->zeroAVXHighRegs(xc);
+            }
+
             //Write the resulting state to the execution context
             if(fault == NoFault)
             {
@@ -31,7 +36,8 @@ def template AVXOpDeclare {{
                   uint8_t _destSize, uint8_t _destVL,
                   uint8_t _srcSize, uint8_t _srcVL,
                   uint8_t _imm8, uint8_t _ext,
-                  GpRegIndex _mask);
+                  GpRegIndex _mask,
+                  bool _zeroHighRegs);
 
         Fault execute(ExecContext *, trace::InstRecord *) const;
     };
@@ -48,11 +54,12 @@ def template AVXOpConstructor {{
         uint8_t _destSize, uint8_t _destVL,
         uint8_t _srcSize, uint8_t _srcVL,
         uint8_t _imm8, uint8_t _ext,
-        GpRegIndex _mask)
+        GpRegIndex _mask,
+        bool _zeroHighRegs)
         : %(base_class)s(_machInst, "%(mnemonic)s", _instMnem, _setFlags,
         %(op_class)s, _srcType, _dest, _src1, _src2, _src3,
         _destSize, _destVL, _srcSize, _srcVL,
-        _imm8, _ext, _mask)
+        _imm8, _ext, _mask, _zeroHighRegs)
     {
         %(constructor)s;
         %(constructorCode)s;
@@ -150,7 +157,8 @@ let {{
             srcVL=16,
             imm8=0,
             ext=0,
-            mask='GpRegIndex(int_reg::K0)'):
+            mask='GpRegIndex(int_reg::K0)',
+            zeroHighRegs=0):
             self.dest = dest
             self.src1 = src1
             self.src2 = src2
@@ -162,6 +170,7 @@ let {{
             self.imm8 = imm8
             self.ext = ext
             self.mask = mask
+            self.zeroHighRegs = zeroHighRegs
 
         def getAllocator(self, microFlags):
             className = self.className
@@ -170,7 +179,8 @@ let {{
                     %(src1)s, %(src2)s, %(src3)s,
                     %(destSize)s, %(destVL)s, %(srcSize)s, %(srcVL)s,
                     %(imm8)s, %(ext)s,
-                    %(mask)s)''' % {
+                    %(mask)s,
+                    %(zeroHighRegs)s)''' % {
                 "class_name" : className,
                 "flags" : self.microFlagsText(microFlags),
                 "srcType": self.srcType,
@@ -184,7 +194,8 @@ let {{
                 "destVL": self.destVL,
                 "imm8": self.imm8,
                 "ext" : self.ext,
-                "mask": self.mask}
+                "mask": self.mask,
+                "zeroHighRegs": self.zeroHighRegs}
             return allocator
 
     class Vclear(AVXOp):
@@ -381,10 +392,13 @@ let {{
         # Used in packed arithmetic ops with three operands, e.g. vfmaddps
         # dest = (src1 op1 src2) op2 src3
         abstract = True
-        def __init__(self, dest, src1, src2, src3, size, VL):
+        def __init__(self, dest, src1, src2, src3, size, VL,
+                     zeroHighRegs=0,
+                    ):
             super(Vfused, self).__init__(
                 dest=dest, src1=src1, src2=src2, src3=src3,
-                destSize=size, destVL=VL, srcSize=size, srcVL=VL
+                destSize=size, destVL=VL, srcSize=size, srcVL=VL,
+                zeroHighRegs=zeroHighRegs,
             )
         srcType = 'AVXOpBase::SrcType::RegRegReg'
         constructorCode = '''
@@ -478,9 +492,12 @@ let {{
         '''
 
     class Vbroadcast(AVXOp):
-        def __init__(self, dest, src, srcSize, destVL):
+        def __init__(self, dest, src, srcSize, destVL,
+                     zeroHighRegs=0
+                    ):
             super(Vbroadcast, self).__init__(
-                dest=dest, src1=src, srcSize=srcSize, destVL=destVL
+                dest=dest, src1=src, srcSize=srcSize, destVL=destVL,
+                zeroHighRegs=zeroHighRegs,
             )
         srcType = 'AVXOpBase::SrcType::Reg'
         constructorCode = '''

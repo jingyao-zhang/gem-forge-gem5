@@ -524,6 +524,16 @@ let {{
         FpData2_uqw = Mem_u4qw[2];
         FpData3_uqw = Mem_u4qw[3];
     ''', big = False)
+    defineMicroLoadOp('Ldfp256zero512', is_float=True, code='''
+        FpData0_uqw = Mem_u4qw[0];
+        FpData1_uqw = Mem_u4qw[1];
+        FpData2_uqw = Mem_u4qw[2];
+        FpData3_uqw = Mem_u4qw[3];
+        FpData4_uqw = 0;
+        FpData5_uqw = 0;
+        FpData6_uqw = 0;
+        FpData7_uqw = 0;
+    ''', big = False)
     defineMicroLoadOp('Ldfp512', is_float=True, code='''
         FpData0_uqw = Mem_u8qw[0];
         FpData1_uqw = Mem_u8qw[1];
@@ -533,6 +543,30 @@ let {{
         FpData5_uqw = Mem_u8qw[5];
         FpData6_uqw = Mem_u8qw[6];
         FpData7_uqw = Mem_u8qw[7];
+    ''', big = False)
+    defineMicroLoadOp('Ldfp32To256Zero512', is_float=True, code='''
+        RegVal data32 = Mem & 0xffffffff;
+        RegVal data64 = (data32 << 32) | data32;
+        FpData0_uqw = data64;
+        FpData1_uqw = data64;
+        FpData2_uqw = data64;
+        FpData3_uqw = data64;
+        FpData4_uqw = 0;
+        FpData5_uqw = 0;
+        FpData6_uqw = 0;
+        FpData7_uqw = 0;
+    ''', big = False)
+    defineMicroLoadOp('Ldfp32To512', is_float=True, code='''
+        RegVal data32 = Mem & 0xffffffff;
+        RegVal data64 = (data32 << 32) | data32;
+        FpData0_uqw = data64;
+        FpData1_uqw = data64;
+        FpData2_uqw = data64;
+        FpData3_uqw = data64;
+        FpData4_uqw = data64;
+        FpData5_uqw = data64;
+        FpData6_uqw = data64;
+        FpData7_uqw = data64;
     ''', big = False)
 
     defineMicroLoadOp('Ldfp87', code='''

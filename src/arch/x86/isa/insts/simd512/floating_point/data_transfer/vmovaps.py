@@ -31,14 +31,12 @@ def macroop VMOVAPS_YMM_YMM {
 };
 
 def macroop VMOVAPS_YMM_M {
-    ldfp256 xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=32
-    vclear dest=xmm4, destVL=32
+    ldfp256zero512 xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=32
 };
 
 def macroop VMOVAPS_YMM_P {
     rdip t7
-    ldfp256 xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=32
-    vclear dest=xmm4, destVL=32
+    ldfp256zero512 xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=32
 };
 
 def macroop VMOVAPS_M_YMM {

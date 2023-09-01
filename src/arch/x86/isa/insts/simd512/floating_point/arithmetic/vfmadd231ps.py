@@ -18,21 +18,18 @@ def macroop VFMADD231PS_XMM_P {
 };
 
 def macroop VFMADD231PS_YMM_YMM {
-    vfmaddf dest=xmm0, src1=xmm0v, src2=xmm0m, src3=xmm0, size=4, VL=32
-    vclear dest=xmm4, destVL=32
+    vfmaddf dest=xmm0, src1=xmm0v, src2=xmm0m, src3=xmm0, size=4, VL=32, zeroHighRegs=1
 };
 
 def macroop VFMADD231PS_YMM_M {
     ldfp256 ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=32
-    vfmaddf dest=xmm0, src1=xmm0v, src2=ufp1, src3=xmm0, size=4, VL=32
-    vclear dest=xmm4, destVL=32
+    vfmaddf dest=xmm0, src1=xmm0v, src2=ufp1, src3=xmm0, size=4, VL=32, zeroHighRegs=1
 };
 
 def macroop VFMADD231PS_YMM_P {
     rdip t7
     ldfp256 ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=32
-    vfmaddf dest=xmm0, src1=xmm0v, src2=ufp1, src3=xmm0, size=4, VL=32
-    vclear dest=xmm4, destVL=32
+    vfmaddf dest=xmm0, src1=xmm0v, src2=ufp1, src3=xmm0, size=4, VL=32, zeroHighRegs=1
 };
 
 def macroop VFMADD231PS_ZMM_ZMM {
