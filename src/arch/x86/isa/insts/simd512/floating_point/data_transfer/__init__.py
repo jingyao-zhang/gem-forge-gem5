@@ -49,6 +49,7 @@ categories = [
     "vmovlhps",
     "vmovq",
     "vmovhpd",
+    "vmovlpd",
     "vmovdqa",
     "vmovddup",
     "vmovdqu",

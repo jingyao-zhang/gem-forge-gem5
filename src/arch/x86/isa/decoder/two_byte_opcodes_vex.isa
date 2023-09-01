@@ -35,8 +35,14 @@
                     0x1: VMOVUPD(WYdo, VYdo);
                     0x0: VMOVUPD(Wo, Vo);
                 }
+                0x3: decode EVEX_L {
+                    0x0: VMOVLPD(Mq, Vo);
+                }
                 0x6: decode EVEX_L {
                     0x0: VMOVHPD(Vo, Mq);
+                }
+                0x7: decode EVEX_L {
+                    0x0: VMOVHPD(Mq, Vo);
                 }
             }
             // 0xF3

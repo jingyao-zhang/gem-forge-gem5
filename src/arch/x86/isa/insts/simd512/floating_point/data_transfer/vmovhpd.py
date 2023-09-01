@@ -13,4 +13,14 @@ def macroop VMOVHPD_XMM_P {
     vclear dest=xmm2, destVL=16
 };
 
+def macroop VMOVHPD_M_XMM {
+    stfp xmm1, seg, sib, disp, dataSize=8
+};
+
+def macroop VMOVHPD_P_XMM {
+    rdip t7
+    stfp xmm1, seg, riprel, disp, dataSize=8
+};
+
+
 """
