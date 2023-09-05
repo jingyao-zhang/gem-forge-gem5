@@ -53,6 +53,9 @@ class RubyPrefetcher(SimObject):
     nonunit_filter = Param.UInt32(
         8, "Number of entries in the non-unit filter array"
     )
+    prefetch_inst = Param.Bool(False, "Whether prefetch instruction.")
+    observe_hit = Param.Bool(False, "Whether train prefetcher on hit.")
+    filter_dup = Param.Bool(False, "Whether filter out duplicate stream.")
     train_misses = Param.UInt32(4, "")
     num_startup_pfs = Param.UInt32(1, "")
     cross_page = Param.Bool(

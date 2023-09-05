@@ -67,11 +67,23 @@ parser.add_argument("--gem-forge-prefetcher", type=str, default="none",
                   help="Type of L1 prefetcher we are using.")
 parser.add_argument("--gem-forge-prefetch-dist", action="store", type=int,
                   help="L1 prefetcher distance", default="8")
+parser.add_argument("--gem-forge-prefetch-cross-page", action="store", type=int,
+                  help="Prefetcher can cross pages", default="1")
+parser.add_argument("--gem-forge-prefetch-on-hit", action="store", type=int,
+                  help="Prefetcher observe hits", default="0")
+parser.add_argument("--gem-forge-prefetch-inst", action="store", type=int,
+                  help="Prefetcher works for inst cache", default="1")
+parser.add_argument("--gem-forge-prefetch-filter-dup", action="store", type=int,
+                  help="Prefetcher filters out duplicate stream", default="0")
 parser.add_argument("--gem-forge-l2-prefetcher", type=str, default="none",
                   choices=['none', 'stride'],
                   help="Type of L2 prefetcher we are using.")
 parser.add_argument("--gem-forge-l2-prefetch-dist", action="store", type=int,
                   help="L2 prefetcher distance", default="8")
+parser.add_argument("--gem-forge-l2-prefetch-cross-page", action="store", type=int,
+                  help="L2 prefetcher can cross pages", default="1")
+parser.add_argument("--gem-forge-l2-prefetch-on-hit", action="store", type=int,
+                  help="L2 prefetcher observe hits", default="0")
 parser.add_argument("--gem-forge-l2-bulk-prefetch-size", action="store", type=int,
                   help="Bulk prefetch size at L2.", default=1)
 parser.add_argument("--gem-forge-prefetch-on-access", action="store_true",
@@ -136,8 +148,8 @@ parser.add_argument("--gem-forge-stream-engine-elim-nest-stream-instances", acti
                   default="8", type=int, help="""number of elim nested stream instances""")
 parser.add_argument("--gem-forge-stream-engine-elim-nest-outer-stream-elems", action="store",
                   default="16", type=int, help="""number of elim nested outer stream elems""")
-parser.add_argument("--gem-forge-stream-engine-yield-core-when-blocked", action="store", type=bool,
-                  default=False, help="""yield the core when blocked by stream engine""")
+parser.add_argument("--gem-forge-stream-engine-yield-core-when-blocked", action="store", type=int,
+                  default="0", help="""yield the core when blocked by stream engine""")
 
 # Stream Float options.
 parser.add_argument("--gem-forge-stream-engine-enable-float", action="store_true", default=False,
@@ -266,6 +278,8 @@ parser.add_argument("--gem-forge-stream-engine-mlc-generate-direct-range", actio
 parser.add_argument("--gem-forge-enable-stream-zero-compute-latency", action="store_true",
                   default="False",
                   help="Core/LLC StreamEngine compute done in 0 cycle latency.")
+parser.add_argument("--gem-forge-enable-llc-stream-engine-trace", action="store", type=int,
+                  default="0", help="Trace LLC StreamEngine.")
 parser.add_argument("--gem-forge-enable-stream-range-sync", action="store_true",
                   default="False",
                   help="Range-based synchronization between Core/LLC StreamEngine.")

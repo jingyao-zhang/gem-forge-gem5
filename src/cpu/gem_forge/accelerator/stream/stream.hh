@@ -161,6 +161,9 @@ public:
   const auto &getUserDefinedStrandSplit() const {
     return this->info.static_info().user_strand_split_loop_level();
   }
+  bool getUserSpatialPin() const {
+    return this->info.static_info().user_spatial_pin();
+  }
 
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
@@ -856,6 +859,9 @@ public:
 
   const auto &getUserDefinedStrandSplit() const {
     return this->primeLogical->getUserDefinedStrandSplit();
+  }
+  bool getUserSpatialPin() const {
+    return this->primeLogical->getUserSpatialPin();
   }
 };
 

@@ -956,7 +956,8 @@ void LLCStreamEngine::wakeup() {
   /**
    * We call completeComputation() twice:
    * 1. Before startComputation() so that we can back-to-back issue.
-   * 2. After startComputation() so that we can complete zero-cycle fake computation.
+   * 2. After startComputation() so that we can complete zero-cycle fake
+   * computation.
    * TODO: This should be improved.
    */
   this->completeComputation();
@@ -4940,7 +4941,9 @@ void LLCStreamEngine::sampleLLCStreams() {
 
 void LLCStreamEngine::traceEvent(
     Cycles cycle, ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType event) {
-  this->seTracer.traceEvent(cycle, this->controller->getMachineID(), event);
+  if (this->controller->myParams->enable_llc_se_trace) {
+    this->seTracer.traceEvent(cycle, this->controller->getMachineID(), event);
+  }
 }
 
 void LLCStreamEngine::traceEvent(

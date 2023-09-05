@@ -118,7 +118,10 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 nonunit_filter=256,
                 train_misses=5,
                 num_startup_pfs=options.gem_forge_prefetch_dist,
-                cross_page=True
+                cross_page=options.gem_forge_prefetch_cross_page,
+                observe_hit=options.gem_forge_prefetch_on_hit,
+                prefetch_inst=options.gem_forge_prefetch_inst,
+                filter_dup=options.gem_forge_prefetch_filter_dup,
             )
 
             bingo_prefetcher = RubyBingoPrefetcher(
@@ -220,7 +223,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 nonunit_filter=256,
                 train_misses=5,
                 num_startup_pfs=options.gem_forge_l2_prefetch_dist,
-                cross_page=True,
+                cross_page=options.gem_forge_l2_prefetch_cross_page,
+                observe_hit=options.gem_forge_l2_prefetch_on_hit,
                 bulk_prefetch_size=options.gem_forge_l2_bulk_prefetch_size,
             )
 
@@ -429,6 +433,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_mlc_generate_direct_range,
                 enable_llc_stream_zero_compute_latency=\
                     options.gem_forge_enable_stream_zero_compute_latency,
+                enable_llc_se_trace=\
+                    options.gem_forge_enable_llc_stream_engine_trace,
                 enable_stream_range_sync=\
                     options.gem_forge_enable_stream_range_sync,
                 stream_atomic_lock_type=\
@@ -553,6 +559,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.mlc_generate_direct_range = options.gem_forge_stream_engine_mlc_generate_direct_range
         dir_cntrl.has_scalar_alu=options.gem_forge_stream_engine_has_scalar_alu
         dir_cntrl.enable_llc_stream_zero_compute_latency = options.gem_forge_enable_stream_zero_compute_latency
+        dir_cntrl.enable_llc_se_trace = options.gem_forge_enable_llc_stream_engine_trace
         dir_cntrl.enable_stream_range_sync = options.gem_forge_enable_stream_range_sync
         dir_cntrl.stream_atomic_lock_type = options.gem_forge_stream_atomic_lock_type
         dir_cntrl.neighbor_stream_threshold = options.gem_forge_stream_engine_mc_neighbor_stream_threshold
@@ -565,6 +572,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.ind_stream_req_max_per_multicast_msg = options.gem_forge_stream_engine_llc_multicast_max_ind_req_per_message
         dir_cntrl.ind_stream_req_multicast_group_size = options.gem_forge_stream_engine_llc_multicast_ind_req_bank_group_size
         dir_cntrl.enable_distributed_indirect_reduce = options.gem_forge_enable_stream_float_distributed_indirect_reduction
+
+        print(options.gem_forge_enable_llc_stream_engine_trace)
 
     for i, dma_port in enumerate(dma_ports):
         #

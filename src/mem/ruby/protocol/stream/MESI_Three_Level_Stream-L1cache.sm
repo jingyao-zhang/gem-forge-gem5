@@ -1152,6 +1152,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
       cache.deallocate(address);
     }
     if (is_valid(cache_entry)) {
+      if (enable_prefetch && cache_entry.isPrefetch) {
+        prefetcher.observePfEvictUnused(address);
+      }
       cache.profileDealloc();
       // If this is dirty then we considered it has been reused.
       bool reused := cache_entry.Reused || cache_entry.Dirty;
@@ -1221,6 +1224,12 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
          desc="Inform the prefetcher about the partial miss") {
     if (enable_prefetch) {
       prefetcher.observePfMiss(address);
+    }
+  }
+  action(pph_observePfCached, "\pph",
+         desc="Inform the prefetcher about the already cached pf req") {
+    if (enable_prefetch) {
+      prefetcher.observePfAlreadyCached(address);
     }
   }
   action(mp_markPrefetched, "mp", desc="Set the isPrefetch flag") {
@@ -1822,7 +1831,12 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     z2_stallAndWaitL2Queue;
   }
 
-  transition({S,SS,E,EE,M,MM,IS,PF_IS,IU,IM,SM,IS_I,PF_IS_I,M_I,SINK_WB_ACK,S_IL0,E_IL0,M_IL0,MM_IL0,SM_IL0},
+  transition({S,SS,E,EE,M,MM}, {PF_Load}) {
+    pph_observePfCached;
+    kp_popPrefetchQueue;
+  }
+
+  transition({IS,PF_IS,IU,IM,SM,IS_I,PF_IS_I,M_I,SINK_WB_ACK,S_IL0,E_IL0,M_IL0,MM_IL0,SM_IL0},
              {PF_Load}) {
     kp_popPrefetchQueue;
   }

@@ -104,6 +104,7 @@ public:
     static constexpr int MaxElementSize = 64;
     using Value = std::array<uint8_t, MaxElementSize>;
     using ValueVec = std::vector<Value>;
+    using ValueSizeVec = std::vector<int>;
     uint64_t seqNum;
     Addr pc;
     const std::vector<uint64_t> &usedStreamIds;
@@ -112,11 +113,15 @@ public:
     // Used to return the stream values.
     // Only used in executeStreamUser().
     ValueVec *values;
+    // Used to return the size of stream values.
+    // Only used in executeStreamUser().
+    ValueSizeVec *valueSizes;
     StreamUserArgs(uint64_t _seqNum, Addr _pc,
                    const std::vector<uint64_t> &_usedStreamIds,
-                   bool _isStore = false, ValueVec *_values = nullptr)
+                   bool _isStore = false, ValueVec *_values = nullptr,
+                   ValueSizeVec *_valueSizes = nullptr)
         : seqNum(_seqNum), pc(_pc), usedStreamIds(_usedStreamIds),
-          isStore(_isStore), values(_values) {}
+          isStore(_isStore), values(_values), valueSizes(_valueSizes) {}
   };
 
   int getStreamUserLQEntries(const StreamUserArgs &args) const;

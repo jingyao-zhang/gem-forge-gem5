@@ -128,12 +128,6 @@ private:
   SeqNumToPktMapT configSeqNumToMidwayFloatPktMap;
 
   /**
-   * Check if there is an aliased StoreStream for this LoadStream, but
-   * is not promoted into an UpdateStream.
-   */
-  bool checkAliasedUnpromotedStoreStream(DynStream *dynS);
-
-  /**
    * Determine the FirstOffloadedElementIdx for LoopBound.
    */
   void setLoopBoundFirstOffloadedElemIdx(const Args &args);

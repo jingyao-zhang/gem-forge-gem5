@@ -803,15 +803,35 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
   };
   StreamEngine::StreamUserArgs::ValueVec values;
   values.reserve(usedStreamIds.size());
+  StreamEngine::StreamUserArgs::ValueSizeVec valueSizes;
+  valueSizes.reserve(usedStreamIds.size());
   StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.instAddr(),
-                                    usedStreamIds, false, &values);
+                                    usedStreamIds, false, &values, &valueSizes);
   auto se = this->getStreamEngine();
   se->executeStreamUser(args);
-  DYN_INST_DPRINTF("Execute StreamLoad StreamId %llu destRegs %d.\n",
-                   userInfo.translatedUsedStreamIds.at(0),
-                   dynInfo.staticInst->numDestRegs());
-  if (dynInfo.staticInst->numDestRegs() == 0) {
+  const auto numDestRegs = dynInfo.staticInst->numDestRegs();
+  DYN_INST_DPRINTF("[execute] StreamLoad StreamId %llu destRegs %d.\n",
+                   userInfo.translatedUsedStreamIds.at(0), numDestRegs);
+  if (numDestRegs == 0) {
     panic("No DestRegs for StreamLoad at PC %#x.\n", dynInfo.pc.instAddr());
+  }
+
+  /**
+   * Handle the broadcast semantics when value size is less than destination.
+   * Only do this for 512-bit.
+   * NOTE: ValueSize returned by SE is bits.
+   */
+  auto valueSize = valueSizes.front() / 8;
+  const auto destSize = numDestRegs * sizeof(RegVal);
+  if (destSize > valueSize && destSize == 64 && valueSize == 4) {
+    uint32_t *ptr = reinterpret_cast<uint32_t *>(values.at(0).data());
+    auto N = StreamEngine::StreamUserArgs::MaxElementSize / sizeof(uint32_t);
+    DYN_INST_DPRINTF("[%llu] Broadcast loaded values %d -> %d.\n",
+                     userInfo.translatedUsedStreamIds.at(0), valueSize,
+                     destSize);
+    for (int i = 1; i < N; ++i) {
+      ptr[i] = ptr[0];
+    }
   }
 
   /**
@@ -819,8 +839,7 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
    * registers.
    */
   RegVal *loadedPtr = reinterpret_cast<uint64_t *>(values.at(0).data());
-  for (int destIdx = 0; destIdx < dynInfo.staticInst->numDestRegs();
-       ++destIdx, loadedPtr++) {
+  for (int destIdx = 0; destIdx < numDestRegs; ++destIdx, loadedPtr++) {
     assert(destIdx <
                StreamEngine::StreamUserArgs::MaxElementSize / sizeof(RegVal) &&
            "Too many destination registers.");

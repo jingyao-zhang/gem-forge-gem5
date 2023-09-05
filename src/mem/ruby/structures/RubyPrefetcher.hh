@@ -56,7 +56,7 @@
 #include "params/RubyPrefetcher.hh"
 #include "sim/sim_object.hh"
 
-#define MAX_PF_INFLIGHT 16
+#define MAX_PF_INFLIGHT 256
 
 namespace gem5
 {
@@ -119,11 +119,31 @@ class RubyPrefetcher : public SimObject
         void observePfMiss(Addr address);
 
         /**
+         * Observe a prefetched cache block being evicted unused.
+         */
+        void observePfEvictUnused(Addr paddr);
+
+        /**
+         * Observe a prefetched block already cached.
+         */
+        void observePfAlreadyCached(Addr paddr);
+
+        /**
          * Observe a memory miss from the cache.
          *
          * @param address   The physical address that missed out of the cache.
+         * @param type The type of the miss.
+         * @param pc The pc of the inst causing the miss. 0 means invalid.
          */
-        void observeMiss(Addr address, const RubyRequestType& type);
+        void observeMissWithPC(Addr address, const RubyRequestType& type, Addr pc);
+        void observeMiss(Addr address, const RubyRequestType& type) {
+            observeMissWithPC(address, type, 0);
+        }
+
+        void observeHitWithPC(Addr address, const RubyRequestType& type, Addr pc);
+        void observeHit(Addr address, const RubyRequestType& type) {
+            observeHitWithPC(address, type, 0);
+        }
 
         /**
          * Print out some statistics
@@ -257,9 +277,17 @@ class RubyPrefetcher : public SimObject
             //! Count of prefetch requests made
             statistics::Scalar numPrefetchRequested;
             //! Count of successful prefetches
-            statistics::Scalar numHits;
+            statistics::Scalar numPrefetchedHits;
+            //! Count of unprefetched hits
+            statistics::Scalar numUnprefetchedHits;
             //! Count of partial successful prefetches
             statistics::Scalar numPartialHits;
+            //! Count of prefetched but unaccessed blocks. 
+            statistics::Scalar numUnusedPrefetchedBlocks;
+            //! Count of prefetched already cached blocks. 
+            statistics::Scalar numPrefetchAlreadyCachedBlocks;
+            //! Count of try prefetch next but streams released
+            statistics::Scalar numPrefetchNextButStreamReleased;
             //! Count of pages crossed
             statistics::Scalar numPagesCrossed;
             //! Count of misses incurred for blocks that were prefetched

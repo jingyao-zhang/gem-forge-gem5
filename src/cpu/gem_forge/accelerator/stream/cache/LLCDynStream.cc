@@ -2221,8 +2221,8 @@ bool LLCDynStream::isSliceDoneForLoopBound(
   return true;
 }
 
-LLCStreamElementPtr LLCDynStream::getElem(uint64_t elementIdx) const {
-  auto iter = this->idxToElementMap.find(elementIdx);
+LLCStreamElementPtr LLCDynStream::getElem(uint64_t elemIdx) const {
+  auto iter = this->idxToElementMap.find(elemIdx);
   if (iter == this->idxToElementMap.end()) {
     return nullptr;
   }

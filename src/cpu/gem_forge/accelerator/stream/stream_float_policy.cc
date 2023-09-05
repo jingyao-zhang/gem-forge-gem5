@@ -386,19 +386,48 @@ bool StreamFloatPolicy::checkAggregateHistory(DynStream &dynS) {
   return true;
 }
 
+bool StreamFloatPolicy::checkAliasedUnpromotedStoreStream(DynStream *dynS) {
+  auto S = dynS->stream;
+  StreamFloatPolicy::logS(*dynS)
+      << "HasAliasedStore " << S->aliasBaseStream->hasAliasedStoreStream
+      << " IsLoad " << S->isLoadStream() << " IsUpdate " << S->isUpdateStream()
+      << ".\n"
+      << std::flush;
+  if (S->aliasBaseStream->hasAliasedStoreStream && S->isLoadStream() &&
+      !S->isUpdateStream()) {
+    // Unless the aliased store stream is spatial pinned by user.
+    bool foundStoreS = false;
+    for (auto aliasS : S->aliasBaseStream->aliasedStreams) {
+      if (aliasS->isStoreStream()) {
+        foundStoreS = true;
+        if (!aliasS->getUserSpatialPin()) {
+          StreamFloatPolicy::logS(*dynS)
+              << "[Not Float] due to aliased store stream "
+              << aliasS->streamName << ".\n"
+              << std::flush;
+          return true;
+        }
+      }
+    }
+    if (!foundStoreS) {
+      // The store stream may not be configured. Still disable offloading.
+      StreamFloatPolicy::logS(*dynS)
+          << "[Not Float] due to unconfigured aliased store stream.\n"
+          << std::flush;
+      return true;
+    }
+  }
+  return false;
+}
+
 StreamFloatPolicy::FloatDecision
 StreamFloatPolicy::shouldFloatStreamSmart(DynStream &dynS) {
   /**
    * 1. Check if there are aliased store stream.
    */
   auto S = dynS.stream;
-  if (S->isLoadStream() && S->aliasBaseStream->hasAliasedStoreStream) {
-    // Unless I have been promoted as an UpdateStream.
-    if (!S->isUpdateStream()) {
-      S_DPRINTF(S, "[Not Float] due to aliased store stream.\n");
-      logS(dynS) << "[Not Float] due to aliased store stream.\n" << std::flush;
-      return FloatDecision();
-    }
+  if (this->checkAliasedUnpromotedStoreStream(&dynS)) {
+    return FloatDecision();
   }
 
   /**

@@ -156,6 +156,7 @@ class RubyStreamAwareController(RubyController):
     llc_stream_engine_max_infly_computation = \
         Param.UInt32(32, "Max num of infly computation in LLCStreamEngine.")
     enable_llc_stream_zero_compute_latency = Param.Bool(False, "Whether to enable zero compute latency.")
+    enable_llc_se_trace = Param.Bool(False, "Whether to enable LLC SE trace.")
     enable_stream_range_sync = Param.Bool(False, "Whether to enable stream range synchronization.")
     stream_atomic_lock_type = Param.String("none", "StreamAtomicLockType of none, single, multi-reader.")
     llc_access_core_simd_delay = Param.UInt32(4, "Latency to access core simd unit.")

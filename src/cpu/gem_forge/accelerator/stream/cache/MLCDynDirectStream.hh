@@ -137,6 +137,8 @@ protected:
     return mlc.getStartIdx() == llc.getStartIdx() && mlc.vaddr == llc.vaddr;
   }
 
+  SliceIter findSliceForLLC(const DynStreamSliceId &llc);
+
   bool matchCoreSliceId(const DynStreamSliceId &mlc,
                         const DynStreamSliceId &core) const {
     /**

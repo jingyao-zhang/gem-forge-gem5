@@ -177,8 +177,8 @@ protected:
     static std::string convertCoreStatusToString(CoreStatusE status);
   };
 
-  std::list<MLCStreamSlice> slices;
-  using SliceIter = std::list<MLCStreamSlice>::iterator;
+  std::deque<MLCStreamSlice> slices;
+  using SliceIter = std::deque<MLCStreamSlice>::iterator;
   // Slice index of allocated [head, tail).
   uint64_t headSliceIdx;
   uint64_t tailSliceIdx;

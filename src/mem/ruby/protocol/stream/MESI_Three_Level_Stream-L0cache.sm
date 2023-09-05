@@ -909,6 +909,11 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
          desc="Deallocate L1 cache block.") {
     if (Dcache.isTagPresent(address)) {
       Dcache.deallocate(address);
+      if (is_valid(cache_entry)) {
+        if (enable_prefetch && cache_entry.isPrefetch) {
+          prefetcher.observePfEvictUnused(address);
+        }
+      }
       /**
        * ! GemForge
        * Although it's called observeFill, BingoPrefetcher only
@@ -985,6 +990,14 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
         if (bingoPrefetcher.isEnabled()) {
           bingoPrefetcher.observePfHit(req_address);
         }
+      } else if (enable_prefetch) {
+        // Inform the prefetcher about non-prefetched hit.
+        if (hasPC(in_msg.pkt)) {
+          Addr pc := getPC(in_msg.pkt);
+          prefetcher.observeHitWithPC(req_address, in_msg.Type, pc);
+        } else {
+          prefetcher.observeHit(req_address, in_msg.Type);
+        }
       }
       if (bingoPrefetcher.isEnabled() && hasPC(in_msg.pkt)) {
         Addr pc := getPC(in_msg.pkt);
@@ -993,12 +1006,24 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     }
   }
 
+  action(pph_observePfCached, "\pph",
+         desc="Inform the prefetcher about the already cached pf req") {
+    if (enable_prefetch) {
+      prefetcher.observePfAlreadyCached(address);
+    }
+  }
+
   action(pm_observeMiss, "\po", desc="Inform the prefetcher about the miss") {
     peek(mandatoryQueue_in, RubyRequest) {
       Addr req_address := in_msg.LineAddress;
       RubyRequestType type := in_msg.Type;
       if (enable_prefetch) {
-        prefetcher.observeMiss(req_address, in_msg.Type);
+        if (hasPC(in_msg.pkt)) {
+          Addr pc := getPC(in_msg.pkt);
+          prefetcher.observeMissWithPC(req_address, in_msg.Type, pc);
+        } else {
+          prefetcher.observeMiss(req_address, in_msg.Type);
+        }
       }
       if (bingoPrefetcher.isEnabled() && hasPC(in_msg.pkt)) {
         Addr pc := getPC(in_msg.pkt);
@@ -1138,7 +1163,12 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     z_stallAndWaitPrefetchQueue;
   }
 
-  transition({S, E, M, IS, Inst_IS, IM, SM, PF_Inst_IS, PF_IS, PF_IM},
+  transition({S, E, M}, {PF_Load, PF_Store, PF_Ifetch}) {
+    pph_observePfCached;
+    pq_popPrefetchQueue;
+  }
+
+  transition({IS, Inst_IS, IM, SM, PF_Inst_IS, PF_IS, PF_IM},
              {PF_Load, PF_Store, PF_Ifetch}) {
     pq_popPrefetchQueue;
   }

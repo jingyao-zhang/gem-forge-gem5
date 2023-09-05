@@ -771,47 +771,39 @@ void MLCDynDirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
    * Find the correct stream slice and insert the data there.
    * Here we reversely search for it to save time.
    */
-  for (auto slice = this->slices.rbegin(), end = this->slices.rend();
-       slice != end; ++slice) {
-    if (this->matchLLCSliceId(slice->sliceId, sliceId)) {
-      // Found the slice.
-      if (slice->sliceId.getNumElements() != numElements) {
-        // Also consider llc stream being cut.
-        if (this->llcCutLineVAddr > 0 &&
-            slice->sliceId.vaddr < this->llcCutLineVAddr) {
-          MLC_S_PANIC(this->strandId,
-                      "Mismatch numElements, incoming %d, slice %d.\n",
-                      numElements, slice->sliceId.getNumElements());
-        }
-      }
-      if (slice->dataReady) {
-        // Must be from reuse.
-      } else {
-        slice->setData(dataBlock, this->controller->curCycle());
-      }
-
-      MLC_SLICE_DPRINTF(
-          sliceId, "Found matched slice %s, core status %s.\n", slice->sliceId,
-          MLCStreamSlice::convertCoreStatusToString(slice->coreStatus));
-      if (slice->coreStatus == MLCStreamSlice::CoreStatusE::WAIT_DATA) {
-        this->makeResponse(*slice);
-      } else if (slice->coreStatus == MLCStreamSlice::CoreStatusE::WAIT_ACK) {
-        // Ack the stream element.
-        // TODO: Send the packet back via normal message buffer.
-        // hack("Indirect slices acked element %llu size %llu header %llu.\n",
-        //      sliceId.getStartIdx(), this->slices.size(),
-        //      this->slices.front().sliceId.getStartIdx());
-        this->makeAck(*slice);
-      } else if (slice->coreStatus == MLCStreamSlice::CoreStatusE::ACK_READY) {
-        MLC_SLICE_PANIC(sliceId, "Received multiple acks.");
-      }
-      this->advanceStream();
-      return;
+  auto slice = this->findSliceForLLC(sliceId);
+  if (slice->sliceId.getNumElements() != numElements) {
+    // Also consider llc stream being cut.
+    if (this->llcCutLineVAddr > 0 &&
+        slice->sliceId.vaddr < this->llcCutLineVAddr) {
+      MLC_S_PANIC(this->strandId,
+                  "Mismatch numElements, incoming %d, slice %d.\n", numElements,
+                  slice->sliceId.getNumElements());
     }
   }
+  if (slice->dataReady) {
+    // Must be from reuse.
+  } else {
+    slice->setData(dataBlock, this->controller->curCycle());
+  }
 
-  MLC_SLICE_PANIC(sliceId, "Fail to find the slice. Tail %lu.\n",
-                  this->tailSliceIdx);
+  MLC_SLICE_DPRINTF(
+      sliceId, "Found matched slice %s, core status %s.\n", slice->sliceId,
+      MLCStreamSlice::convertCoreStatusToString(slice->coreStatus));
+  if (slice->coreStatus == MLCStreamSlice::CoreStatusE::WAIT_DATA) {
+    this->makeResponse(*slice);
+  } else if (slice->coreStatus == MLCStreamSlice::CoreStatusE::WAIT_ACK) {
+    // Ack the stream element.
+    // TODO: Send the packet back via normal message buffer.
+    // hack("Indirect slices acked element %llu size %llu header %llu.\n",
+    //      sliceId.getStartIdx(), this->slices.size(),
+    //      this->slices.front().sliceId.getStartIdx());
+    this->makeAck(*slice);
+  } else if (slice->coreStatus == MLCStreamSlice::CoreStatusE::ACK_READY) {
+    MLC_SLICE_PANIC(sliceId, "Received multiple acks.");
+  }
+  this->advanceStream();
+  return;
 }
 
 void MLCDynDirectStream::notifyIndStreams(const MLCStreamSlice &slice) {
@@ -937,6 +929,42 @@ void MLCDynDirectStream::notifyIndStreams(const MLCStreamSlice &slice) {
       dynIS->receiveBaseStreamData(elemIdx, getBaseData, !isInConstructor);
     }
   }
+}
+
+MLCDynDirectStream::SliceIter
+MLCDynDirectStream::findSliceForLLC(const DynStreamSliceId &llc) {
+
+  /**
+   * A quick path to estimate where the slice is.
+   */
+  if (!this->slices.empty()) {
+    auto startSliceElemIdx = this->slices.front().sliceId.getStartIdx();
+    auto llcSliceElemIdx = llc.getStartIdx();
+    auto elemPerSlice =
+        static_cast<int64_t>(this->slicedStream.getElemPerSlice());
+
+    auto estimatedSliceOffset = (llcSliceElemIdx - startSliceElemIdx) / elemPerSlice;
+    if (estimatedSliceOffset < this->slices.size()) {
+      auto sliceIter = this->slices.begin() + estimatedSliceOffset;
+      if (this->matchLLCSliceId(sliceIter->sliceId, llc)) {
+        // Found it.
+        return sliceIter;
+      }
+    }
+  }
+
+  /**
+   * Find the correct stream slice.
+   * Here we reversely search for it to save time.
+   */
+  for (auto slice = this->slices.rbegin(), end = this->slices.rend();
+       slice != end; ++slice) {
+    if (this->matchLLCSliceId(slice->sliceId, llc)) {
+      return (slice + 1).base();
+    }
+  }
+  MLC_SLICE_PANIC(llc, "Fail to find the slice. Tail %lu.\n",
+                  this->tailSliceIdx);
 }
 
 MLCDynDirectStream::SliceIter

@@ -957,7 +957,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
       L1Dcache.profileDemandHit();
   }
 
-  action(po_observeHit, "\ph", desc="Inform the prefetcher about the hit") {
+  action(ph_observeHit, "\ph", desc="Inform the prefetcher about the hit") {
       peek(mandatoryQueue_in, RubyRequest) {
           if (cache_entry.isPrefetch) {
               prefetcher.observePfHit(in_msg.LineAddress);

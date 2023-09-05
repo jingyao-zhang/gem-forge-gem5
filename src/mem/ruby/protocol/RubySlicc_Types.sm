@@ -268,8 +268,13 @@ structure (TimerTable, inport="yes", external = "yes") {
 
 structure (RubyPrefetcher, external = "yes") {
     void observeMiss(Addr, RubyRequestType);
+    void observeMissWithPC(Addr, RubyRequestType, Addr);
+    void observeHit(Addr, RubyRequestType);
+    void observeHitWithPC(Addr, RubyRequestType, Addr);
     void observePfHit(Addr);
     void observePfMiss(Addr);
+    void observePfEvictUnused(Addr);
+    void observePfAlreadyCached(Addr);
 }
 
 structure (RubyBingoPrefetcher, external = "yes") {

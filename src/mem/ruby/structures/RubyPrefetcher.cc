@@ -78,10 +78,18 @@ RubyPrefetcherStats::RubyPrefetcherStats(statistics::Group *parent)
       ADD_STAT(numAllocatedStreams, "Number of streams allocated for "
                                     "prefetching"),
       ADD_STAT(numPrefetchRequested, "Number of prefetch requests made"),
-      ADD_STAT(numHits, "Number of prefetched blocks accessed "
+      ADD_STAT(numPrefetchedHits, "Number of prefetched blocks accessed "
                         "(for the first time)"),
+      ADD_STAT(numUnprefetchedHits,
+        "Number of hits on blocks that is not prefetched."),
       ADD_STAT(numPartialHits, "Number of misses observed for a block being "
                                "prefetched"),
+      ADD_STAT(numUnusedPrefetchedBlocks,
+        "Num of prefetched but evicted as unused blocks"),
+      ADD_STAT(numPrefetchAlreadyCachedBlocks,
+        "Num of prefetched but already cached blocks"),
+      ADD_STAT(numPrefetchNextButStreamReleased,
+        "Num of prefetch next but the stream already released."),
       ADD_STAT(numPagesCrossed, "Number of prefetches across pages"),
       ADD_STAT(numMissedPrefetchedBlocks, "Number of misses for blocks that "
                                           "were prefetched, yet missed")
@@ -89,9 +97,15 @@ RubyPrefetcherStats::RubyPrefetcherStats(statistics::Group *parent)
 }
 
 void
-RubyPrefetcher::observeMiss(Addr address, const RubyRequestType& type)
+RubyPrefetcher::observeMissWithPC(
+    Addr address, const RubyRequestType& type, Addr pc)
 {
-    DPRINTF(RubyPrefetcher, "Observed miss for %#x\n", address);
+    if (type == RubyRequestType::RubyRequestType_IFETCH
+        && !params().prefetch_inst) {
+        return;
+    }
+    DPRINTF(RubyPrefetcher, "ObserveMiss for %#x pc %#x %s\n",
+        address, pc, RubyRequestType_to_string(type));
     Addr line_addr = makeLineAddress(address);
     rubyPrefetcherStats.numMissObserved++;
 
@@ -108,7 +122,6 @@ RubyPrefetcher::observeMiss(Addr address, const RubyRequestType& type)
             } else {
                 // The controller has issued the prefetch request,
                 // but the request for the block arrived earlier.
-                rubyPrefetcherStats.numPartialHits++;
                 observePfMiss(line_addr);
                 return;
             }
@@ -121,17 +134,55 @@ RubyPrefetcher::observeMiss(Addr address, const RubyRequestType& type)
 
     // Check if address is in any of the stride filters
     if (accessUnitFilter(&unitFilter, line_addr, 1, type)) {
-        DPRINTF(RubyPrefetcher, "  *** hit in unit stride buffer\n");
         return;
     }
     if (accessUnitFilter(&negativeFilter, line_addr, -1, type)) {
-        DPRINTF(RubyPrefetcher, "  *** hit in unit negative unit buffer\n");
         return;
     }
     if (accessNonunitFilter(line_addr, type)) {
-        DPRINTF(RubyPrefetcher, "  *** hit in non-unit stride buffer\n");
         return;
     }
+}
+
+void
+RubyPrefetcher::observeHitWithPC(
+    Addr address, const RubyRequestType& type, Addr pc)
+{
+    if (type == RubyRequestType::RubyRequestType_IFETCH
+        && !params().prefetch_inst) {
+        return;
+    }
+    DPRINTF(RubyPrefetcher, "ObserveHit for %#x pc %#x %s\n",
+        address, pc, RubyRequestType_to_string(type));
+    rubyPrefetcherStats.numUnprefetchedHits++;
+
+    if (!this->params().observe_hit) {
+        // Do not enable prefetch on hits.
+        return;
+    }
+
+    Addr line_addr = makeLineAddress(address);
+
+    // check to see if we have already issued a prefetch for this block
+    uint32_t index = 0;
+    PrefetchEntry *pfEntry = getPrefetchEntry(line_addr, index);
+    if (pfEntry != NULL) {
+        // We have an allocated stream. Try to issue next one.
+        issueNextPrefetch(line_addr, pfEntry);
+        return;
+    }
+
+    // Check if address is in any of the stride filters
+    if (accessUnitFilter(&unitFilter, line_addr, 1, type)) {
+        return;
+    }
+    if (accessUnitFilter(&negativeFilter, line_addr, -1, type)) {
+        return;
+    }
+    if (accessNonunitFilter(line_addr, type)) {
+        return;
+    }
+
 }
 
 void
@@ -145,9 +196,23 @@ RubyPrefetcher::observePfMiss(Addr address)
 void
 RubyPrefetcher::observePfHit(Addr address)
 {
-    rubyPrefetcherStats.numHits++;
+    rubyPrefetcherStats.numPrefetchedHits++;
     DPRINTF(RubyPrefetcher, "Observed hit for %#x\n", address);
     issueNextPrefetch(address, NULL);
+}
+
+void
+RubyPrefetcher::observePfEvictUnused(Addr paddr)
+{
+    rubyPrefetcherStats.numUnusedPrefetchedBlocks++;
+    DPRINTF(RubyPrefetcher, "Observed evict unused pf for %#x\n", paddr);
+}
+
+void
+RubyPrefetcher::observePfAlreadyCached(Addr paddr)
+{
+    rubyPrefetcherStats.numPrefetchAlreadyCachedBlocks++;
+    DPRINTF(RubyPrefetcher, "Observed already cached pf for %#x\n", paddr);
 }
 
 void
@@ -162,6 +227,7 @@ RubyPrefetcher::issueNextPrefetch(Addr address, PrefetchEntry *stream)
     // if (for some reason), this stream is unallocated, return.
     if (stream == NULL) {
         DPRINTF(RubyPrefetcher, "Unallocated stream, returning\n");
+        rubyPrefetcherStats.numPrefetchNextButStreamReleased++;
         return;
     }
 
@@ -247,9 +313,61 @@ void
 RubyPrefetcher::initializeStream(Addr address, int stride,
      uint32_t index, const RubyRequestType& type)
 {
+
     DPRINTF(RubyPrefetcher,
-        "Initialize stream, line %#x, page %#x, stride %d, index %u.\n",
+        "Initialize stream, line %#x, page %#x, stride %d, LRU pos %u.\n",
         makeLineAddress(address), pageAddress(address), stride, index);
+    if (Debug::RubyPrefetcher) {
+        for (int i = 0; i < m_array.size(); ++i) {
+            const auto &stream = m_array[i];
+            if (!stream.m_is_valid) {
+                continue;
+            }
+            DPRINTF(RubyPrefetcher,
+                "[CurStrm] %3d page %#x line %#x stride %3d\n",
+                i,
+                pageAddress(stream.m_address),
+                makeLineAddress(stream.m_address),
+                stream.m_stride);
+        }
+    }
+    if (params().filter_dup) {
+        /**
+         * We first deduplicate streams.
+         * Then check if the new stream is also duplicated.
+         */
+        for (int i = 1; i < m_array.size(); ++i) {
+            auto &si= m_array[i];
+            if (!si.m_is_valid) {
+                continue;
+            }
+            for (int j = 0; j < i; ++j) {
+                const auto &sj = m_array[j];
+                if (!sj.m_is_valid) {
+                    continue;
+                }
+                if (si.m_stride == sj.m_stride &&
+                    si.m_address == sj.m_address &&
+                    si.m_type == sj.m_type) {
+                    DPRINTF(RubyPrefetcher,
+                        "Dedup stream %d.\n", i);
+                    si.m_is_valid = false; 
+                    break;
+                }
+            }
+        }
+        for (int i = 0; i < m_array.size(); ++i) {
+            const auto &stream = m_array[i];
+            if (stream.m_is_valid &&
+                pageAddress(address) == pageAddress(stream.m_address) &&
+                stride == stream.m_stride &&
+                type == stream.m_type) {
+                DPRINTF(RubyPrefetcher, "Filtered duplicated stream.\n");
+                return;
+            }
+        }
+    }
+
     rubyPrefetcherStats.numAllocatedStreams++;
 
     // initialize the stream prefetcher
@@ -316,9 +434,6 @@ RubyPrefetcher::getPrefetchEntry(Addr address, uint32_t &index)
                     return &stream;
                 }
             }
-            DPRINTF(RubyPrefetcher,
-                "Unmatch Stream %#x, Stride %d, Addr %#x.\n",
-                stream.m_address, stream.m_stride, address);
         }
     }
     return NULL;
@@ -332,6 +447,8 @@ RubyPrefetcher::accessUnitFilter(CircularQueue<UnitFilterEntry>* const filter,
         if (entry.addr == line_addr) {
             entry.addr = makeNextStrideAddress(entry.addr, stride);
             entry.hits++;
+            DPRINTF(RubyPrefetcher, "  *** hit %d in unit stride %d buffer\n",
+                entry.hits, stride);
             if (entry.hits >= m_train_misses) {
                 // Allocate a new prefetch stream
                 initializeStream(line_addr, stride, getLRUindex(), type);
@@ -363,9 +480,13 @@ RubyPrefetcher::accessNonunitFilter(Addr line_addr,
             if (delta != 0) {
                 // no zero stride prefetches
                 // check that the stride matches (for the last N times)
+                DPRINTF(RubyPrefetcher,
+                    "  *** hit in non-unit stride buffer. "
+                    "hits %d stride %ld delta %ld\n",
+                    entry.hits, entry.stride, delta);
                 if (delta == entry.stride) {
                     // -> stride hit
-                    // increment count (if > 2) allocate stream
+                    // increment count (if > m_train_misses) allocate stream
                     entry.hits++;
                     if (entry.hits > m_train_misses) {
                         // This stride HAS to be the multiplicative constant of

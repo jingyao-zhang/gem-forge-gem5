@@ -535,8 +535,8 @@ public:
   void registerElemPostReleaseCallback(uint64_t elementIdx,
                                        ElementCallback callback);
   uint64_t getNextUnreleasedElemIdx() const;
-  LLCStreamElementPtr getElem(uint64_t elementIdx) const;
-  LLCStreamElementPtr getElemPanic(uint64_t elementIdx,
+  LLCStreamElementPtr getElem(uint64_t elemIdx) const;
+  LLCStreamElementPtr getElemPanic(uint64_t elemIdx,
                                    const char *errMsg = nullptr) const;
 
   /**

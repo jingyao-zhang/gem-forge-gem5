@@ -1194,7 +1194,9 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
      */
     auto S = this->getStream(streamId);
     auto elem = streamToElementMap.at(S);
+    auto size = S->getCoreElementSize();
     args.values->emplace_back();
+    args.valueSizes->emplace_back(size);
     /**
      * Make sure we zero out the data.
      */
@@ -1224,7 +1226,6 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
       elem->getValueByStreamId(streamId, args.values->back().data(),
                                StreamUserArgs::MaxElementSize);
     }
-    auto size = S->getCoreElementSize();
     S_ELEMENT_DPRINTF(
         elem, "Execute StreamUser %lu, Value %s.\n", seqNum,
         GemForgeUtils::dataToString(args.values->back().data(), size));

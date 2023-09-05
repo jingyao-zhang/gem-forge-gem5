@@ -461,7 +461,7 @@ void StreamFloatController::floatPointerChaseStreams(const Args &args) {
       }
     }
     // Check aliased store.
-    if (this->checkAliasedUnpromotedStoreStream(dynS)) {
+    if (this->policy->checkAliasedUnpromotedStoreStream(dynS)) {
       continue;
     }
     // Only dependent on this direct stream.
@@ -1428,23 +1428,6 @@ void StreamFloatController::floatMultiLevelIndirectStoreComputeStream(
       break;
     }
   }
-}
-
-bool StreamFloatController::checkAliasedUnpromotedStoreStream(DynStream *dynS) {
-  auto S = dynS->stream;
-  StreamFloatPolicy::logS(*dynS)
-      << "HasAliasedStore " << S->aliasBaseStream->hasAliasedStoreStream
-      << " IsLoad " << S->isLoadStream() << " IsUpdate " << S->isUpdateStream()
-      << ".\n"
-      << std::flush;
-  if (S->aliasBaseStream->hasAliasedStoreStream && S->isLoadStream() &&
-      !S->isUpdateStream()) {
-    StreamFloatPolicy::logS(*dynS)
-        << "[Not Float] due to aliased store stream.\n"
-        << std::flush;
-    return true;
-  }
-  return false;
 }
 
 void StreamFloatController::floatEliminatedLoop(const Args &args) {
