@@ -49,4 +49,7 @@ def initializeO3CPU(args, o3cpu):
         o3cpu.numIQEntries = 64
         o3cpu.LQEntries = 72
         o3cpu.SQEntries = 56
+        # So far float regs are used to model avx512.
+        # And it should be around 256 (Intel's Golden Cove)
+        o3cpu.numPhysFloatRegs = 2048
         o3cpu.fuPool = GemForgeO8FUPool()
