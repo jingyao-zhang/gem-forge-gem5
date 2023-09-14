@@ -176,7 +176,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   structure(L0StreamEngine, external="yes", desc="Stream Engine at L0") {
     void receiveStreamConfigure(PacketPtr);
     void receiveStreamEnd(PacketPtr);
-    bool isStreamAccess(PacketPtr);
+    bool isStreamFloatAccess(PacketPtr);
     bool shouldCache(PacketPtr);
     bool shouldForward(PacketPtr);
     bool mustServedByMLCSE(PacketPtr);
@@ -434,7 +434,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
           /*************************************************************
            * ! Sean: StreamAwareCache.
            *************************************************************/
-          if (se.isStreamAccess(in_msg.pkt)) {
+          if (se.isStreamFloatAccess(in_msg.pkt)) {
             // Stream access.
             if (se.mustServedByMLCSE(in_msg.pkt)) {
               // This message must be forwarded to MLC SE, no matter what.
@@ -510,6 +510,15 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
                       Icache_entry, TBEs[in_msg.LineAddress]);
             }
 
+            /**
+             * Miss. We still check if we are going go cache it or not.
+             * This is to support bypassed access for unfloated stream.
+             */
+            if (!se.shouldCache(in_msg.pkt)) {
+              // Not cache it. Send the request.
+              trigger(Event:LoadUncache, in_msg.LineAddress,
+                      Dcache_entry, TBEs[in_msg.LineAddress]);
+            }
             if (Dcache.cacheAvail(in_msg.LineAddress)) {
               // L1 does't have the line, but we have space for it
               // in the L0 let's see if the L1 has it
@@ -1201,8 +1210,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   transition(I, LoadUncache, IU) {
     iu_allocateTBENoCacheBlock;
     au_issueGETU;
-    uu_profileDataMiss;
-    ur_profileDataReq;
+    // Uncache load does not count to miss rate.
     k_popMandatoryQueue;
   }
 

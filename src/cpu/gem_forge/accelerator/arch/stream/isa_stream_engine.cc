@@ -834,6 +834,10 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
     }
   }
 
+  if (destSize < valueSize && valueSize == 1024) {
+    warn_once("STREAM_TILE_LOAD so far only loads 64B data.\n");
+  }
+
   /**
    * We handle wider registers by checking the number of destination
    * registers.

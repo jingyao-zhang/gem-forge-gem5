@@ -1341,6 +1341,20 @@ void Stream::incrementOffloadedStepped(const DynStreamId &dynId) {
   }
 }
 
+bool Stream::shouldBypassL1() const {
+  if (this->memorizedBypassL1 == -1) {
+    bool bypassL1 = false;
+    for (const auto &bypass : this->getUserBypassLevel()) {
+      if (bypass == "L1") {
+        bypassL1 = true;
+        break;
+      }
+    }
+    this->memorizedBypassL1 = bypassL1;
+  }
+  return this->memorizedBypassL1 > 0;
+}
+
 std::string Stream::dumpString() const {
   std::stringstream ss;
   ss << "============ ";

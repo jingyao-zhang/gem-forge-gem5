@@ -1339,6 +1339,13 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     ppm_observePfMiss;
     k_popL0RequestQueue;
   }
+  transition(PF_IS, LoadV, IS) {
+    tu_setTBEForGetU;
+    trs_copyReqStatToTBE;
+    uu_profileMiss;
+    ppm_observePfMiss;
+    k_popL0RequestQueue;
+  }
   transition(PF_IS_I, Load, IS_I) {
     trs_copyReqStatToTBE;
     uu_profileMiss;

@@ -695,6 +695,9 @@ Cycles ExecFunc::estimateOneInstLat(const StaticInstPtr &staticInst) const {
   case enums::OpClass::SimdSqrt:
     lat = 20;
     break;
+  case enums::OpClass::SimdMatrix:
+    lat = 16;
+    break;
   case enums::OpClass::SimdFloatAdd:
   case enums::OpClass::SimdFloatAlu:
   case enums::OpClass::SimdFloatCmp:

@@ -101,7 +101,8 @@ public:
   void rewindStreamStep(const StreamStepArgs &args);
 
   struct StreamUserArgs {
-    static constexpr int MaxElementSize = 64;
+    // Extend to 1kB for AMX tile registers.
+    static constexpr int MaxElementSize = 1024;
     using Value = std::array<uint8_t, MaxElementSize>;
     using ValueVec = std::vector<Value>;
     using ValueSizeVec = std::vector<int>;

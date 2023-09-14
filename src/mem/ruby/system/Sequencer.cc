@@ -887,14 +887,6 @@ Sequencer::makeRequest(PacketPtr pkt)
         return RequestStatus_Issued;
     }
 
-    // HTM abort signals must be allowed to reach the Sequencer
-    // the same cycle they are issued. They cannot be retried.
-    if ((m_outstanding_inst_count >= m_max_outstanding_inst_requests ||
-         m_outstanding_data_count >= m_max_outstanding_data_requests) &&
-        !pkt->req->isHTMAbort()) {
-        return RequestStatus_BufferFull;
-    }
-
     RubyRequestType primary_type = RubyRequestType_NULL;
     RubyRequestType secondary_type = RubyRequestType_NULL;
 
@@ -977,6 +969,20 @@ Sequencer::makeRequest(PacketPtr pkt)
           primary_type = secondary_type = RubyRequestType_FLUSH;
         } else {
             panic("Unsupported ruby packet type\n");
+        }
+    }
+
+    // HTM abort signals must be allowed to reach the Sequencer
+    // the same cycle they are issued. They cannot be retried.
+    if (pkt->req->isHTMAbort()) {
+    } else if (primary_type == RubyRequestType_IFETCH) {
+        // Inst Fetch is bounded by m_max_outstanding_inst_requests
+        if (m_outstanding_inst_count >= m_max_outstanding_inst_requests) {
+            return RequestStatus_BufferFull;
+        }
+    } else {
+        if (m_outstanding_data_count >= m_max_outstanding_data_requests) {
+            return RequestStatus_BufferFull;
         }
     }
 

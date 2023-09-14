@@ -90,7 +90,7 @@ void L0StreamEngine::receiveStreamEnd(PacketPtr pkt) {
   }
 }
 
-bool L0StreamEngine::isStreamAccess(PacketPtr pkt) const {
+bool L0StreamEngine::isStreamFloatAccess(PacketPtr pkt) const {
   auto streamMemAccess = this->getStreamMemAccessFromPacket(pkt);
   if (streamMemAccess == nullptr) {
     return false;
@@ -132,7 +132,7 @@ bool L0StreamEngine::isStreamAccess(PacketPtr pkt) const {
 }
 
 DynStreamSliceId L0StreamEngine::getSliceId(PacketPtr pkt) const {
-  if (!this->isStreamAccess(pkt)) {
+  if (!this->isStreamFloatAccess(pkt)) {
     // Do not pass along the slice id if this is not offloaded stream.
     return DynStreamSliceId();
   }
@@ -144,7 +144,21 @@ DynStreamSliceId L0StreamEngine::getSliceId(PacketPtr pkt) const {
 }
 
 bool L0StreamEngine::shouldCache(PacketPtr pkt) {
-  assert(this->isStreamAccess(pkt) && "Should only handle stream access.");
+  /**
+   * Two possible cases:
+   * 1. If this is a StreamFloatAccess, check if stream float is enabled.
+   * 2. If not, check if the stream want to bypass L1.
+   */
+  if (!this->isStreamFloatAccess(pkt)) {
+    if (auto streamAcc = this->getStreamMemAccessFromPacket(pkt)) {
+      auto stream = streamAcc->getStream();
+      if (stream->shouldBypassL1()) {
+        return false;
+      }
+    }
+    // Normal case should be cached.
+    return true;
+  }
   if (!this->controller->isStreamFloatEnabled()) {
     return true;
   }
@@ -152,7 +166,7 @@ bool L0StreamEngine::shouldCache(PacketPtr pkt) {
 }
 
 bool L0StreamEngine::shouldForward(PacketPtr pkt) {
-  assert(this->isStreamAccess(pkt) && "Should only handle stream access.");
+  assert(this->isStreamFloatAccess(pkt) && "Should only handle stream access.");
   if (!this->controller->isStreamFloatEnabled()) {
     return false;
   }

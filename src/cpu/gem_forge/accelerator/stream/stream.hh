@@ -164,6 +164,9 @@ public:
   bool getUserSpatialPin() const {
     return this->info.static_info().user_spatial_pin();
   }
+  const auto &getUserBypassLevel() const {
+    return this->info.static_info().user_bypass_level();
+  }
 
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
@@ -863,6 +866,19 @@ public:
   bool getUserSpatialPin() const {
     return this->primeLogical->getUserSpatialPin();
   }
+
+  /**
+   * Accessors to query whether we should bypass certain cache level.
+   */
+private:
+  mutable int memorizedBypassL1 = -1;
+
+public:
+  const auto &getUserBypassLevel() const {
+    return this->primeLogical->getUserBypassLevel();
+  }
+
+  bool shouldBypassL1() const;
 };
 
 struct GetCoalescedStreamValue {

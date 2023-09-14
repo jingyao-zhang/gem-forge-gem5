@@ -62,7 +62,7 @@ public:
   L0StreamEngine(ruby::AbstractStreamAwareController *_controller);
   ~L0StreamEngine();
 
-  bool isStreamAccess(PacketPtr pkt) const;
+  bool isStreamFloatAccess(PacketPtr pkt) const;
   void receiveStreamConfigure(PacketPtr pkt);
   void receiveStreamEnd(PacketPtr pkt);
   bool shouldForward(PacketPtr pkt);
