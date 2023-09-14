@@ -321,7 +321,7 @@ operator << (std::ostream &os, const ExtMachInst &emi)
                  "immediate = %#x,\n\tdisplacement = %#x\n\t"
                  "dispSize = %d}\n",
                  (uint8_t)emi.legacy, (uint8_t)emi.rex,
-                 (uint8_t)emi.evex,
+                 (uint16_t)emi.evex,
                  opcodeTypeToStr(emi.opcode.type), (uint8_t)emi.opcode.op,
                  (uint8_t)emi.modRM, (uint8_t)emi.sib,
                  emi.immediate, emi.displacement, emi.dispSize);

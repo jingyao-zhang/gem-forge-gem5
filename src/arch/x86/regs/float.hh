@@ -117,7 +117,62 @@ enum FloatRegIndex
     FLOATREG_XMM_IDX(31),
 #undef FLOATREG_XMM_IDX
 
-    MicrofpBase = XmmBase + NumXMMSubRegs * NumXMMRegs,
+    TmmBase = XmmBase + NumXMMSubRegs * NumXMMRegs,
+
+#define FLOATREG_TMM_IDX_DIGIT(i, Digit) \
+    _Tmm ## i ## _ ## Digit ## 0Idx = TmmBase + i * NumTMMSubRegs + Digit ## 0, \
+    _Tmm ## i ## _ ## Digit ## 1Idx = TmmBase + i * NumTMMSubRegs + Digit ## 1, \
+    _Tmm ## i ## _ ## Digit ## 2Idx = TmmBase + i * NumTMMSubRegs + Digit ## 2, \
+    _Tmm ## i ## _ ## Digit ## 3Idx = TmmBase + i * NumTMMSubRegs + Digit ## 3, \
+    _Tmm ## i ## _ ## Digit ## 4Idx = TmmBase + i * NumTMMSubRegs + Digit ## 4, \
+    _Tmm ## i ## _ ## Digit ## 5Idx = TmmBase + i * NumTMMSubRegs + Digit ## 5, \
+    _Tmm ## i ## _ ## Digit ## 6Idx = TmmBase + i * NumTMMSubRegs + Digit ## 6, \
+    _Tmm ## i ## _ ## Digit ## 7Idx = TmmBase + i * NumTMMSubRegs + Digit ## 7, \
+    _Tmm ## i ## _ ## Digit ## 8Idx = TmmBase + i * NumTMMSubRegs + Digit ## 8, \
+    _Tmm ## i ## _ ## Digit ## 9Idx = TmmBase + i * NumTMMSubRegs + Digit ## 9
+
+#define FLOATREG_TMM_IDX(i) \
+    _Tmm ## i ## _0Idx = TmmBase + i * NumTMMSubRegs + 0, \
+    _Tmm ## i ## _1Idx = TmmBase + i * NumTMMSubRegs + 1, \
+    _Tmm ## i ## _2Idx = TmmBase + i * NumTMMSubRegs + 2, \
+    _Tmm ## i ## _3Idx = TmmBase + i * NumTMMSubRegs + 3, \
+    _Tmm ## i ## _4Idx = TmmBase + i * NumTMMSubRegs + 4, \
+    _Tmm ## i ## _5Idx = TmmBase + i * NumTMMSubRegs + 5, \
+    _Tmm ## i ## _6Idx = TmmBase + i * NumTMMSubRegs + 6, \
+    _Tmm ## i ## _7Idx = TmmBase + i * NumTMMSubRegs + 7, \
+    _Tmm ## i ## _8Idx = TmmBase + i * NumTMMSubRegs + 8, \
+    _Tmm ## i ## _9Idx = TmmBase + i * NumTMMSubRegs + 9, \
+    FLOATREG_TMM_IDX_DIGIT(i, 1), \
+    FLOATREG_TMM_IDX_DIGIT(i, 2), \
+    FLOATREG_TMM_IDX_DIGIT(i, 3), \
+    FLOATREG_TMM_IDX_DIGIT(i, 4), \
+    FLOATREG_TMM_IDX_DIGIT(i, 5), \
+    FLOATREG_TMM_IDX_DIGIT(i, 6), \
+    FLOATREG_TMM_IDX_DIGIT(i, 7), \
+    FLOATREG_TMM_IDX_DIGIT(i, 8), \
+    FLOATREG_TMM_IDX_DIGIT(i, 9), \
+    FLOATREG_TMM_IDX_DIGIT(i, 10), \
+    FLOATREG_TMM_IDX_DIGIT(i, 11), \
+    _Tmm ## i ## _120Idx = TmmBase + i * NumTMMSubRegs + 120, \
+    _Tmm ## i ## _121Idx = TmmBase + i * NumTMMSubRegs + 121, \
+    _Tmm ## i ## _122Idx = TmmBase + i * NumTMMSubRegs + 122, \
+    _Tmm ## i ## _123Idx = TmmBase + i * NumTMMSubRegs + 123, \
+    _Tmm ## i ## _124Idx = TmmBase + i * NumTMMSubRegs + 124, \
+    _Tmm ## i ## _125Idx = TmmBase + i * NumTMMSubRegs + 125, \
+    _Tmm ## i ## _126Idx = TmmBase + i * NumTMMSubRegs + 126, \
+    _Tmm ## i ## _127Idx = TmmBase + i * NumTMMSubRegs + 127
+    FLOATREG_TMM_IDX(0),
+    FLOATREG_TMM_IDX(1),
+    FLOATREG_TMM_IDX(2),
+    FLOATREG_TMM_IDX(3),
+    FLOATREG_TMM_IDX(4),
+    FLOATREG_TMM_IDX(5),
+    FLOATREG_TMM_IDX(6),
+    FLOATREG_TMM_IDX(7),
+#undef FLOATREG_TMM_IDX
+
+
+    MicrofpBase = TmmBase + NumTMMSubRegs * NumTMMRegs,
     _Microfp0Idx = MicrofpBase,
     _Microfp1Idx,
     _Microfp2Idx,
@@ -202,6 +257,12 @@ static inline RegId
 xmmIdx(int index, int sub_idx)
 {
     return floatRegClass[XmmBase + NumXMMSubRegs * index + sub_idx];
+}
+
+static inline RegId
+tmmIdx(int index, int sub_idx)
+{
+    return floatRegClass[TmmBase + NumTMMSubRegs * index + sub_idx];
 }
 
 static inline RegId

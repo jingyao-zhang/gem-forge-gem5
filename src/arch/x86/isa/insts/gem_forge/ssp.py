@@ -100,6 +100,21 @@ def macroop SSP_STREAM_LOAD_ZMM_I
     ssp_stream_fload xmm0, imm, dataSize=64, isFloat=True
 };
 
+def macroop SSP_STREAM_TILE_LOAD_ZMM_I
+{
+    ssp_stream_fload tmm0, imm, dataSize=64, isFloat=True
+};
+
+def macroop SSP_STREAM_TILE_LOAD_M_I
+{
+    panic "SSP_STREAM_TILE_LOAD with memory operand in R/M."
+};
+
+def macroop SSP_STREAM_TILE_LOAD_P_I
+{
+    panic "SSP_STREAM_TILE_LOAD with P operand in R/M."
+};
+
 def macroop SSP_STREAM_ATOMIC_R_I
 {
     ssp_stream_atomic reg, imm, isAtomic=True

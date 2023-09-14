@@ -54,6 +54,12 @@ parser.add_argument("--gem-forge-empty-mem", action="store_true",
 parser.add_argument("--gem-forge-ideal-ruby", action="store_true",
                   help="""simulate with ideal ruby cache (see Sequencer).""",
                   default=False)
+parser.add_argument("--gem-forge-ruby-max-infly-data-req", action="store", type=int,
+                  help="""Max inflight data reqs (see Sequencer).""",
+                  default=16)
+parser.add_argument("--gem-forge-ruby-max-infly-inst-req", action="store", type=int,
+                  help="""Max inflight inst reqs (see Sequencer).""",
+                  default=16)
 parser.add_argument("--gem-forge-cold-cache", action="store_true",
                   help="""start simulation without warming up the cache.""", default=False)
 parser.add_argument("--llvm-standalone", action="store_true",
@@ -90,6 +96,9 @@ parser.add_argument("--gem-forge-prefetch-on-access", action="store_true",
                   help="""whether to prefetch on every access""", default=False)
 parser.add_argument("--llvm-trace-file", type=parse_tdg_files,
                   help="""llvm trace file input LLVMTraceCPU""", default=[])
+parser.add_argument("--gem-forge-core-pipeline", type=str,
+                  choices=['none', 'sapphire-rapids'],
+                  help="""core uarch details""", default="none")
 parser.add_argument("--llvm-issue-width", action="store", type=int,
                   help="""llvm issue width""", default="8")
 parser.add_argument("--llvm-store-queue-size", action="store",

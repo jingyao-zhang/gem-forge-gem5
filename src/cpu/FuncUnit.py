@@ -96,6 +96,7 @@ class OpClass(Enum):
         "IprAccess",
         "InstPrefetch",
         "Accelerator",
+        "SimdMatrix",
     ]
 
 

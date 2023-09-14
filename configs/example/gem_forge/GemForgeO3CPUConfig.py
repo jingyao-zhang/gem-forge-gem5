@@ -26,7 +26,24 @@ def initializeO3CPU(args, o3cpu):
     o3cpu.LQEntries = args.llvm_load_queue_size
     # Check LSQ at 4 byte granularity.
     o3cpu.LSQDepCheckShift = 2
-    if args.llvm_issue_width == 2:
+
+    if args.gem_forge_core_pipeline == 'sapphire-rapids':
+        o3cpu.fetchWidth = 8
+        o3cpu.decodeWidth = 8
+        o3cpu.renameWidth = 8
+        o3cpu.dispatchWidth = 8
+        o3cpu.issueWidth = 8
+        o3cpu.wbWidth = 8
+        o3cpu.commitWidth = 8
+        o3cpu.numROBEntries = 512
+        o3cpu.numIQEntries = 128
+        o3cpu.LQEntries = 128
+        o3cpu.SQEntries = 128
+        # So far float regs are used to model avx512.
+        # And it should be around 256 (Intel's Golden Cove)
+        o3cpu.numPhysFloatRegs = 2048
+        o3cpu.fuPool = GemForgeO8FUPool()
+    elif args.llvm_issue_width == 2:
         o3cpu.numROBEntries = 64
         o3cpu.numIQEntries = 16
         o3cpu.LQEntries = 16

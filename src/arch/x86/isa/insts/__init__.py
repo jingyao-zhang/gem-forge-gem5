@@ -37,6 +37,7 @@ categories = [
     "romutil",
     "general_purpose",
     "gem_forge",
+    "amx",
     "simd512",
     "simd128",
     "simd64",

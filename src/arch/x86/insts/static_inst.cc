@@ -269,6 +269,12 @@ X86StaticInst::printReg(std::ostream &os, RegId reg, int size)
             return;
         }
         reg_idx -= NumXMMRegs * NumXMMSubRegs;
+        if (reg_idx < NumTMMRegs * NumTMMSubRegs) {
+            ccprintf(os, "%%tmm%d_%d(%d)", reg_idx / NumTMMSubRegs,
+                     reg_idx % NumTMMSubRegs, size);
+            return;
+        }
+        reg_idx -= NumTMMRegs * NumTMMSubRegs;
         if (reg_idx < NumMicroFpRegs) {
             ccprintf(os, "%%ufp%d", reg_idx);
             return;

@@ -76,14 +76,20 @@ class GemForgeFpSIMDUnit(FUDesc):
                OpDesc(opLat=2, pipelined=False, opClass='SimdFloatReduceCmp') ]
     count = 2
 
+class SIMDMatrixUnit(FUDesc):
+    opList = [ OpDesc(opLat=16, pipelined=False, opClass='SimdMatrix') ]
+    count = 1
+
 class GemForgeO4FUPool(FUPool):
     FUList = [ IntALU(), IntMultDiv(), FP_ALU(), FP_MultDiv(), ReadPort(),
                GemForgeIntSIMDUnit(), GemForgeFpSIMDUnit(),
+               SIMDMatrixUnit(),
                PredALU(), WritePort(), RdWrPort(), IprPort() ]
 
 class GemForgeO8FUPool(FUPool):
     FUList = [ IntALU(), IntMultDiv(), FP_ALU(), FP_MultDiv(), ReadPort(),
                GemForgeIntSIMDUnit(), GemForgeFpSIMDUnit(),
+               SIMDMatrixUnit(),
                PredALU(), WritePort(), RdWrPort(), IprPort() ]
     FUList[0].count = 8
     FUList[1].count = 4

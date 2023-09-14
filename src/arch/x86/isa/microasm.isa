@@ -169,6 +169,20 @@ let {{
     assembler.symbols["riprel"] = \
         ["1", assembler.symbols["t0"], assembler.symbols["t7"]]
 
+    # Short hand for tileloadd that scale.
+    for i in range(16):
+        assembler.symbols[f'sib_tile_row{i}'] = \
+            [f"env.scale * {i}", symbols["index"], symbols["base"]]
+
+    # Add all tmm registers from 0 to 128
+    for i in range(128):
+        assembler.symbols[f'tmm{i}'] = \
+            fpRegIdx(f"float_reg::tmmIdx(env.reg, {i})")
+        assembler.symbols[f'tmm{i}m'] = \
+            fpRegIdx(f"float_reg::tmmIdx(env.regm, {i})")
+        assembler.symbols[f'tmm{i}v'] = \
+            fpRegIdx(f"float_reg::tmmIdx(machInst.evex.v_extend, {i})")
+
     # This segment selects an internal address space mapped to MSRs,
     # CPUID info, etc.
     assembler.symbols["intseg"] = segRegIdx("segment_idx::Ms")

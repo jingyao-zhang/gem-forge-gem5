@@ -58,6 +58,13 @@ namespace X86ISA
     const int NumXMMSubRegs = 8;
     const int NumMicroFpRegs = 16;
 
+    /**
+     * So far we only support 8kB tile register files,
+     * and which is broken into 8 1kB tmm registers.
+     */
+    const int NumTMMSubRegs = 128;
+    const int NumTMMRegs = 8;
+
     const int NumCRegs = 16;
     const int NumDRegs = 8;
 
