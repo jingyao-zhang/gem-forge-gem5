@@ -153,12 +153,13 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
 
   // TBE fields
   structure(TBE, desc="...") {
-    Addr addr,              desc="Physical address for this TBE";
-    State TBEState,        desc="Transient state";
+    Addr addr,                        desc="Physical address for this TBE";
+    State TBEState,                   desc="Transient state";
     DataBlock DataBlk,                desc="Buffer for the data block";
-    bool Dirty, default="false",   desc="data is dirty";
+    bool Dirty, default="false",      desc="data is dirty";
     bool isPrefetch, default="false", desc="Set if this was caused by a prefetch";
-    int pendingAcks, default="0", desc="number of pending acks";
+    int pendingAcks, default="0",     desc="number of pending acks";
+    ExplicitReuseState explicitReuse, desc="Support GemForge Explicit";
   }
 
   structure(TBETable, external="yes") {
@@ -181,6 +182,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     bool shouldForward(PacketPtr);
     bool mustServedByMLCSE(PacketPtr);
     DynStreamSliceId getSliceId(PacketPtr);
+    int  getExplicitReuseCount(PacketPtr);
   }
 
   L0StreamEngine se, constructor="this";
@@ -682,6 +684,21 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
         out_msg.slice := se.getSliceId(in_msg.pkt);
       }
     }
+  }
+
+  action(er_recordExplicitReuseTBE, "er", desc="Remeber ExplicitReuse in TBE") {
+    peek(mandatoryQueue_in, RubyRequest) {
+      tbe.explicitReuse.setTotal(se.getExplicitReuseCount(in_msg.pkt));
+      // Miss is counted as first time usage.
+      if (tbe.explicitReuse.isValid()) {
+        tbe.explicitReuse.setCurrent(0);
+      }
+    }
+  }
+  action(ec_recordExplicitReuseCache, "ec", desc="Remeber ExplicitReuse in Cache") {
+    assert(is_valid(tbe));
+    assert(is_valid(cache_entry));
+    cache_entry.setExplicitReuseState(tbe.explicitReuse);
   }
 
   action(b_issueGETX, "b", desc="Issue GETX") {
@@ -1186,6 +1203,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   transition(I, Load, IS) {
     oo_allocateDCacheBlock;
     i_allocateTBE;
+    er_recordExplicitReuseTBE;
     a_issueGETS;
     uu_profileDataMiss;
     pm_observeMiss;
@@ -1385,6 +1403,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
 
   transition(IS, Data, S) {
     u_writeDataToCache;
+    ec_recordExplicitReuseCache;
     hx_load_hit;
     s_deallocateTBE;
     o_popIncomingResponseQueue;
@@ -1401,6 +1420,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
 
   transition(IS, Data_Exclusive, E) {
     u_writeDataToCache;
+    ec_recordExplicitReuseCache;
     hx_load_hit;
     s_deallocateTBE;
     o_popIncomingResponseQueue;

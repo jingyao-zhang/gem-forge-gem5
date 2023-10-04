@@ -95,6 +95,14 @@ structure (Set, external = "yes", non_obj="yes") {
   NodeID smallestElement();
 }
 
+structure (ExplicitReuseState, external = "yes", non_obj="yes") {
+  void setTotal(int);
+  void setCurrent(int);
+  int getTotal();
+  int getCurrent();
+  bool isValid();
+}
+
 structure (NetDest, external = "yes", non_obj="yes") {
   void setSize(int);
   void setSize(int, int);
@@ -200,6 +208,7 @@ structure(RubyRequest, desc="...", interface="Message", external="yes") {
 
 structure(AbstractCacheEntry, primitive="yes", external = "yes") {
   void changePermission(AccessPermission);
+  void setExplicitReuseState(ExplicitReuseState);
 }
 
 structure (DirectoryMemory, external = "yes") {

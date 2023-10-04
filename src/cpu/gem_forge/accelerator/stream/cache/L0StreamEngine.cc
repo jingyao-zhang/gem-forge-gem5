@@ -175,6 +175,20 @@ bool L0StreamEngine::shouldForward(PacketPtr pkt) {
   return true;
 }
 
+int L0StreamEngine::getExplicitReuseCount(PacketPtr pkt) {
+  auto reuseCnt = ExplicitReuseState::UnknownReuse;
+  if (auto streamAcc = this->getStreamMemAccessFromPacket(pkt)) {
+    auto stream = streamAcc->getStream();
+    reuseCnt = stream->getReuseAt(RequestStatistic::HitPlaceE::L1_CACHE);
+    L0_SLICE_DPRINTF(streamAcc->getSliceId(),
+                     "[ExplicitReuse] %#x TotalCnt %d.\n", pkt->getAddr(),
+                     reuseCnt);
+    if (reuseCnt != ExplicitReuseState::UnknownReuse) {
+    }
+  }
+  return reuseCnt;
+}
+
 bool L0StreamEngine::mustServedByMLCSE(PacketPtr pkt) {
   auto memAccess = this->getStreamMemAccessFromPacket(pkt);
   auto S = memAccess->getStream();

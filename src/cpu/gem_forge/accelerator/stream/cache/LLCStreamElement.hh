@@ -285,7 +285,7 @@ private:
   mutable Cycles issueCycle = Cycles(0);
   mutable Cycles predicatedCycle = Cycles(0);
 
-  static constexpr int MAX_SLICES_PER_ELEMENT = 3;
+  static constexpr int MAX_SLICES_PER_ELEMENT = 16;
   std::array<LLCStreamSlicePtr, MAX_SLICES_PER_ELEMENT> slices;
   int numSlices = 0;
   int numSliceBytes = 0;

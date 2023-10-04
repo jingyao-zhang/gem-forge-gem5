@@ -50,18 +50,18 @@ void StreamComputeEngine::completeComputation() {
   auto curCycle = this->se->curCycle();
   while (!this->inflyComputations.empty()) {
     auto &computation = this->inflyComputations.front();
-    auto element = computation->element;
-    auto S = element->stream;
+    auto elem = computation->element;
+    auto S = elem->stream;
     if (computation->readyCycle > curCycle) {
       S_ELEMENT_DPRINTF(
-          element,
+          elem,
           "Cannot complete computation, readyCycle %llu, curCycle %llu.\n",
           computation->readyCycle, curCycle);
       break;
     }
-    S_ELEMENT_DPRINTF(element, "Complete computation.\n");
-    element->receiveComputeResult(computation->result);
-    element->scheduledComputation = false;
+    S_ELEMENT_DPRINTF(elem, "Complete computation.\n");
+    elem->receiveComputeResult(computation->result);
+    elem->scheduledComputation = false;
 
     this->recordCompletedStats(S);
 

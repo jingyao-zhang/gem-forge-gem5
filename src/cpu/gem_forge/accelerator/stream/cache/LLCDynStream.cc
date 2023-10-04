@@ -335,7 +335,7 @@ void LLCDynStream::updateIssueClearCycle() {
       const uint64_t IssueClearThreshold = 1024;
       LLC_S_DPRINTF(this->getDynStrandId(),
                     "Update IssueClearCycle %lu -> %lu (%lu), avgEleTurn %lu, "
-                    "avgSliceTurn %lu, avgLateEle %d, elementPerSlice %f.\n",
+                    "avgSliceTurn %lu, avgLateEle %d, elemPerSlice %f.\n",
                     this->issueClearCycle, newIssueClearCycle,
                     IssueClearThreshold, avgTurnAroundCycle,
                     avgSliceTurnAroundCycle, avgLateElements,

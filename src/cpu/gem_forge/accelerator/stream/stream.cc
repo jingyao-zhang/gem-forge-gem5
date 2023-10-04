@@ -1355,6 +1355,30 @@ bool Stream::shouldBypassL1() const {
   return this->memorizedBypassL1 > 0;
 }
 
+int Stream::getReuseAt(HitPlaceE cacheLevel) const {
+  if (this->reuseMap.empty()) {
+    for (const auto &reuse : this->primeLogical->getUserReuse()) {
+      auto equalPos = reuse.find('=');
+      if (equalPos == std::string::npos) {
+        S_PANIC(this, "Illegal Reuse %s.", reuse);
+      }
+      auto level = reuse.substr(0, equalPos);
+      auto count = std::stoi(reuse.substr(equalPos + 1));
+      if (level == "L1") {
+        this->reuseMap.emplace(HitPlaceE::L1_CACHE, count);
+      } else {
+        S_PANIC(this, "Unrecognized Reuse %s.", reuse);
+      }
+    }
+  }
+  auto iter = this->reuseMap.find(cacheLevel);
+  if (iter == this->reuseMap.end()) {
+    return UnknownReuse;
+  } else {
+    return iter->second;
+  }
+}
+
 std::string Stream::dumpString() const {
   std::stringstream ss;
   ss << "============ ";

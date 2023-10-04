@@ -26,7 +26,7 @@ public:
   /**
    * We make the register value large enough to hold AVX-512.
    */
-  static constexpr int MaxRegisterValueSize = 8;
+  static constexpr int MaxRegisterValueSize = 128;
   using DataType = ::LLVM::TDG::DataType;
   class RegisterValue : public std::array<uint64_t, MaxRegisterValueSize> {
   public:
@@ -36,11 +36,11 @@ public:
     std::string print(const DataType &type) const;
     std::string print() const;
     uint8_t *uint8Ptr(int offset = 0) {
-      assert(offset < 64);
+      assert(offset < MaxRegisterValueSize * sizeof(uint64_t));
       return reinterpret_cast<uint8_t *>(&this->front()) + offset;
     }
     const uint8_t *uint8Ptr(int offset = 0) const {
-      assert(offset < 64);
+      assert(offset < MaxRegisterValueSize * sizeof(uint64_t));
       return reinterpret_cast<const uint8_t *>(&this->front()) + offset;
     }
     const uint64_t &uint64(int offset = 0) const {

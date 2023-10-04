@@ -116,8 +116,10 @@ void AbstractCacheEntry::clearLockedRMW() {
 }
 
 bool AbstractCacheEntry::isLockedRMW() const {
-    DPRINTF(RubyCache, "Testing LockedRMW for addr: %#llx cur %d\n",
-            m_Address, m_lockedRMW);
+    if (m_lockedRMW) {
+        DPRINTF(RubyCache, "Testing LockedRMW for addr: %#llx cur %d\n",
+                m_Address, m_lockedRMW);
+    }
     return m_lockedRMW;
 }
 
@@ -143,6 +145,18 @@ bool
 AbstractCacheEntry::getInHtmWriteSet() const
 {
     return m_htmInWriteSet;
+}
+
+void
+AbstractCacheEntry::setLastAccess(Tick tick)
+{
+  m_last_touch_tick = tick;
+  if (this->explicitReuseState.isValid()) 
+  {
+    this->explicitReuseState.current++;
+    DPRINTF(RubyCache, "[ExplicitReuse] %#x Cnt++ %s.\n",
+            m_Address, this->explicitReuseState);
+  }
 }
 
 } // namespace ruby

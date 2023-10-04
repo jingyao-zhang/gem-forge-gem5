@@ -36,6 +36,7 @@ SimObject('Controller.py', sim_objects=[
     'RubyStreamAwareController',
     ])
 
+Source('ExplicitReuseState.cc')
 Source('AbstractController.cc')
 Source('AbstractStreamAwareController.cc')
 Source('AbstractCacheEntry.cc')

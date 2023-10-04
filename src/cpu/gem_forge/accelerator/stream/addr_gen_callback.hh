@@ -10,6 +10,8 @@
 
 namespace gem5 {
 
+static constexpr int MaxStreamValueSize =
+    TheISA::ExecFunc::MaxRegisterValueSize * sizeof(uint64_t);
 using StreamValue = TheISA::ExecFunc::RegisterValue;
 using DynStreamParamV = std::vector<StreamValue>;
 using GetStreamValueFunc = std::function<StreamValue(uint64_t)>;

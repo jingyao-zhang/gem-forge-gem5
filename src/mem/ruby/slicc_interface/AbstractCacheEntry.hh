@@ -52,6 +52,7 @@
 #include "mem/ruby/common/Address.hh"
 #include "mem/ruby/common/DataBlock.hh"
 #include "mem/ruby/protocol/AccessPermission.hh"
+#include "mem/ruby/slicc_interface/ExplicitReuseState.hh"
 
 namespace gem5
 {
@@ -118,11 +119,17 @@ class AbstractCacheEntry : public ReplaceableEntry
     AccessPermission m_Permission; // Access permission for this
                                    // block, required by CacheMemory
 
+    ExplicitReuseState explicitReuseState;
+    void setExplicitReuseState(const ExplicitReuseState &state)
+    {
+        this->explicitReuseState = state;
+    }
+
     // Get the last access Tick.
     Tick getLastAccess() { return m_last_touch_tick; }
 
     // Set the last access Tick.
-    void setLastAccess(Tick tick) { m_last_touch_tick = tick; }
+    void setLastAccess(Tick tick);
 
     // hardware transactional memory
     void setInHtmReadSet(bool val);

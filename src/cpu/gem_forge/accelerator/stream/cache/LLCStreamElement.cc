@@ -90,10 +90,10 @@ const char *LLCStreamElement::curRemoteMachineType() const {
 }
 
 StreamValue LLCStreamElement::getValue(int offset, int size) const {
-  if (this->size < offset + size) {
-    LLC_ELEMENT_PANIC(this,
-                      "Try to get Value (offset %d size %d) for Elem size %d.",
-                      offset, size, this->size);
+  if (this->size < offset + size || size > MaxStreamValueSize) {
+    LLC_ELEMENT_PANIC(
+        this, "Try getValue (%d, +%d) for Elem size %d, StreamVal size %d.",
+        offset, size, this->size, MaxStreamValueSize);
   }
   StreamValue v;
   memcpy(v.uint8Ptr(), this->getUInt8Ptr(offset), size);

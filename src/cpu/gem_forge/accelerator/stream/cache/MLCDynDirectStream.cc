@@ -250,14 +250,14 @@ void MLCDynDirectStream::advanceStream() {
       maxISElems = ISElems;
     }
   }
-  uint64_t indirectSlicesThreshold =
+  uint64_t indSlicesThreshold =
       2 * this->maxNumSlices *
       std::max(static_cast<uint64_t>(1),
                static_cast<uint64_t>(this->slicedStream.getElemPerSlice()));
   MLC_S_DPRINTF(this->strandId, "MaxISElems %llu Threshold %llu.\n", maxISElems,
-                indirectSlicesThreshold);
+                indSlicesThreshold);
   // Of course we need to allocate more slices.
-  if (maxISElems < indirectSlicesThreshold) {
+  if (maxISElems < indSlicesThreshold) {
 
     /**
      * If we require range-sync, we can only release the slice after the segment
@@ -942,13 +942,16 @@ MLCDynDirectStream::findSliceForLLC(const DynStreamSliceId &llc) {
     auto llcSliceElemIdx = llc.getStartIdx();
     auto elemPerSlice =
         static_cast<int64_t>(this->slicedStream.getElemPerSlice());
-
-    auto estimatedSliceOffset = (llcSliceElemIdx - startSliceElemIdx) / elemPerSlice;
-    if (estimatedSliceOffset < this->slices.size()) {
-      auto sliceIter = this->slices.begin() + estimatedSliceOffset;
-      if (this->matchLLCSliceId(sliceIter->sliceId, llc)) {
-        // Found it.
-        return sliceIter;
+    if (elemPerSlice >= 1) {
+      // For huge elements, we can not estimate.
+      auto estimatedSliceOffset =
+          (llcSliceElemIdx - startSliceElemIdx) / elemPerSlice;
+      if (estimatedSliceOffset < this->slices.size()) {
+        auto sliceIter = this->slices.begin() + estimatedSliceOffset;
+        if (this->matchLLCSliceId(sliceIter->sliceId, llc)) {
+          // Found it.
+          return sliceIter;
+        }
       }
     }
   }

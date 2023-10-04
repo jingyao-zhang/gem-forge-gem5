@@ -84,6 +84,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     IS_I, AccessPermission:Busy, desc="L1 idle, issued GETS, saw Inv before data because directory doesn't block on GETS hit";
     M_I, AccessPermission:Busy, desc="L1 replacing, waiting for ACK";
     SINK_WB_ACK, AccessPermission:Busy, desc="This is to sink WB_Acks from L2";
+    ISS, AccessPermission:Busy, desc="L1 idle, issued GETS, have not seen response yet, not cached above.";
 
     // For all of the following states, invalidate
     // message has been sent to L0 cache. The response
@@ -95,8 +96,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     SM_IL0, AccessPermission:Busy;
 
     // Transient states in which block is being prefetched.
-    PF_IS, AccessPermission:Busy, desc="Issued GETS, have not seen response yet";
-    PF_IS_I, AccessPermission:Busy, desc="Issued GETS, saw INV before data";
+    PF_ISS, AccessPermission:Busy, desc="Issued GETS, have not seen response yet";
+    PF_ISS_I, AccessPermission:Busy, desc="Issued GETS, saw INV before data";
   }
 
   // EVENTS
@@ -134,9 +135,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     Fwd_GETX,   desc="GETX from other processor";
     Fwd_GETS,   desc="GETS from other processor";
 
-    Data,       desc="Data for processor";
+    Data,                 desc="Data for processor";
     Data_Exclusive,       desc="Data for processor";
-    Data_ExclusiveV,      desc="Data for processor no cache";
     DataS_fromL1,         desc="data for GETS request, need to unblock directory";
     Data_all_Acks,        desc="Data for processor, all acks";
 
@@ -177,7 +177,6 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     DataBlock DataBlk,                  desc="Buffer for the data block";
     bool Dirty, default="false",        desc="data is dirty";
     int pendingAcks, default="0",       desc="number of pending acks";
-    bool cachedUpper, default="true",   desc="whether the upper level want to cache it";
     RequestStatisticPtr ReqStat, default="nullptr", desc="stats of init req for data";
   }
 
@@ -379,18 +378,13 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
             assert(multicast_test);
             trigger(Event:Data_Exclusive, in_msg.addr, cache_entry, tbe);
           }
-          if (tbe.cachedUpper) {
-            trigger(Event:Data_Exclusive, in_msg.addr, cache_entry, tbe);
-          } else {
-            // ! Sean: StreamAwareCache.
-            // This data will not be cached above.
-            trigger(Event:Data_ExclusiveV, in_msg.addr, cache_entry, tbe);
-          }
+          trigger(Event:Data_Exclusive, in_msg.addr, cache_entry, tbe);
         } else if(in_msg.Type == CoherenceResponseType:DATA) {
           if ((getState(tbe, cache_entry, in_msg.addr) == State:IS ||
                getState(tbe, cache_entry, in_msg.addr) == State:IS_I ||
-               getState(tbe, cache_entry, in_msg.addr) == State:PF_IS ||
-               getState(tbe, cache_entry, in_msg.addr) == State:PF_IS_I) &&
+               getState(tbe, cache_entry, in_msg.addr) == State:ISS ||
+               getState(tbe, cache_entry, in_msg.addr) == State:PF_ISS ||
+               getState(tbe, cache_entry, in_msg.addr) == State:PF_ISS_I) &&
               machineIDToMachineType(in_msg.Sender) == MachineType:L1Cache) {
 
               trigger(Event:DataS_fromL1, in_msg.addr, cache_entry, tbe);
@@ -1047,14 +1041,6 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     tbe.Dirty := false;
   }
 
-  action(tu_setTBEForGetU, "tu", desc="Set TBE entry for GetU request") {
-    peek(messageBufferFromL0_in, CoherenceMsg) {
-      assert(is_valid(tbe));
-      assert(in_msg.Class == CoherenceClass:GETU);
-      tbe.cachedUpper := false;
-    }
-  }
-
   action(trs_copyReqStatToTBE, "trs", desc="Copy ReqStat to TBE") {
     peek(messageBufferFromL0_in, CoherenceMsg) {
       assert(is_valid(tbe));
@@ -1309,10 +1295,10 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
              {Load, LoadV, HitStreamLoadV, LoadU, Store, L1_Replacement}) {
     z0_stallAndWaitL0Queue;
   }
-  transition({PF_IS,PF_IS_I}, {Store, L1_Replacement}) {
+  transition({PF_ISS,PF_ISS_I}, {Store, L1_Replacement}) {
     z0_stallAndWaitL0Queue;
   }
-  transition({IS,IM,IS_I,M_I,SM,SINK_WB_ACK,S_IL0,M_IL0,E_IL0,MM_IL0,PF_IS,PF_IS_I},
+  transition({IS,IM,IS_I,M_I,SM,SINK_WB_ACK,S_IL0,M_IL0,E_IL0,MM_IL0,PF_ISS,PF_ISS_I},
              PF_L1_Replacement) {
     zp_stallAndWaitPrefetchQueue;
   }
@@ -1327,36 +1313,34 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     k_popL0RequestQueue;
   }
 
-  transition(I, PF_Load, PF_IS) {
+  transition(I, PF_Load, PF_ISS) {
     oo_allocateCacheBlock;
     i_allocateTBE;
     ap_issuePfGETS;
     kp_popPrefetchQueue;
   }
-  transition(PF_IS, Load, IS) {
+  transition(PF_ISS, Load, IS) {
     trs_copyReqStatToTBE;
     uu_profileMiss,
     ppm_observePfMiss;
     k_popL0RequestQueue;
   }
-  transition(PF_IS, LoadV, IS) {
-    tu_setTBEForGetU;
+  transition(PF_ISS, LoadV, ISS) {
     trs_copyReqStatToTBE;
     uu_profileMiss;
     ppm_observePfMiss;
     k_popL0RequestQueue;
   }
-  transition(PF_IS_I, Load, IS_I) {
+  transition(PF_ISS_I, Load, IS_I) {
     trs_copyReqStatToTBE;
     uu_profileMiss;
     ppm_observePfMiss;
     k_popL0RequestQueue;
   }
 
-  transition(I, LoadV, IS) {
+  transition(I, LoadV, ISS) {
     oo_allocateCacheBlock;
     i_allocateTBE;
-    tu_setTBEForGetU;
     trs_copyReqStatToTBE;
     a_issueGETS;
     uu_profileMiss;
@@ -1366,7 +1350,6 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
   transition(I, LoadU, IU) {
     iu_allocateTBEUncache;
-    tu_setTBEForGetU;
     trs_copyReqStatToTBE;
     au_issueGETU;
     uu_profileMiss;
@@ -1606,7 +1589,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     l_popL2RequestQueue;
   }
   
-  transition({PF_IS, PF_IS_I}, Inv, PF_IS_I) {
+  transition({PF_ISS, PF_ISS_I}, Inv, PF_ISS_I) {
     fi_sendInvAck;
     l_popL2RequestQueue;
   }
@@ -1620,7 +1603,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     kd_wakeUpDependents;
   }
 
-  transition(PF_IS, Data_all_Acks, SS) {
+  transition(PF_ISS, Data_all_Acks, SS) {
     u_writeDataFromL2Response;
     s_deallocateTBE;
     mp_markPrefetched;
@@ -1638,7 +1621,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     kd_wakeUpDependents;
   }
 
-  transition(PF_IS_I, Data_all_Acks, I) {
+  transition(PF_ISS_I, Data_all_Acks, I) {
     s_deallocateTBE;
     ff_deallocateCacheBlock;
     o_popL2ResponseQueue;
@@ -1657,7 +1640,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     kd_wakeUpDependents;
   }
 
-  transition(PF_IS, DataS_fromL1, SS) {
+  transition(PF_ISS, DataS_fromL1, SS) {
     u_writeDataFromL2Response;
     mp_markPrefetched;
     j_sendUnblock;
@@ -1681,7 +1664,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     kd_wakeUpDependents;
   }
 
-  transition(PF_IS_I, DataS_fromL1, I) {
+  transition(PF_ISS_I, DataS_fromL1, I) {
     j_sendUnblock;
     // Unblock is also a control message.
     drsc_addNoCCtrlMsgToCacheEntry;
@@ -1705,7 +1688,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   }
 
   // directory is blocked when sending exclusive data
-  transition({PF_IS,PF_IS_I}, Data_Exclusive, EE) {
+  transition({PF_ISS,PF_ISS_I}, Data_Exclusive, EE) {
     u_writeDataFromL2Response;
     mp_markPrefetched;
     jj_sendExclusiveUnblock;
@@ -1717,7 +1700,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   }
 
   // The data will not be cached at upper level.
-  transition({IS, IS_I}, Data_ExclusiveV, EE) {
+  transition(ISS, Data_Exclusive, EE) {
     u_writeDataFromL2Response;
     hh_xdata_to_l0;
     jj_sendExclusiveUnblock;
@@ -1728,9 +1711,28 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     o_popL2ResponseQueue;
     kd_wakeUpDependents;
   }
+  transition(ISS, DataS_fromL1, SS) {
+    u_writeDataFromL2Response;
+    j_sendUnblock;
+    hh_xdata_to_l0;
+    crs_copyReqStatFromTBEToCacheEntry;
+    // Unblock is also a control message.
+    drsc_addNoCCtrlMsgToCacheEntry;
+    s_deallocateTBE;
+    o_popL2ResponseQueue;
+    kd_wakeUpDependents;
+  }
+  transition(ISS, Data_all_Acks, SS) {
+    u_writeDataFromL2Response;
+    hh_xdata_to_l0;
+    crs_copyReqStatFromTBEToCacheEntry;
+    s_deallocateTBE;
+    o_popL2ResponseQueue;
+    kd_wakeUpDependents;
+  }
 
   // Lower level is not expecting an ExclusiveUnblock.
-  transition(IU, Data_ExclusiveV, I) {
+  transition(IU, Data_Exclusive, I) {
     u_writeDataFromL2ResponseToTBE;
     hu_xdata_to_l0;
     s_deallocateTBE;
@@ -1843,7 +1845,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     kp_popPrefetchQueue;
   }
 
-  transition({IS,PF_IS,IU,IM,SM,IS_I,PF_IS_I,M_I,SINK_WB_ACK,S_IL0,E_IL0,M_IL0,MM_IL0,SM_IL0},
+  transition({IS,ISS,PF_ISS,IU,IM,SM,IS_I,PF_ISS_I,M_I,SINK_WB_ACK,S_IL0,E_IL0,M_IL0,MM_IL0,SM_IL0},
              {PF_Load}) {
     kp_popPrefetchQueue;
   }

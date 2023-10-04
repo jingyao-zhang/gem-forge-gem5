@@ -382,6 +382,29 @@ CacheMemory::cacheProbe(Addr address) const
     assert(!cacheAvail(address));
 
     int64_t cacheSet = addressToCacheSet(address);
+
+    if (Debug::RubyCache) {
+        for (int i = 0; i < m_cache_assoc; i++) {
+            const auto &entry = m_cache[cacheSet][i];
+            DPRINTF(RubyCache, "[Probe] way %2d addr %#x %s.\n",
+                i, 
+                entry->m_Address,
+                entry->explicitReuseState);
+        }
+    }
+
+    // Collect some information.
+    bool hasNonExplicitReuseLine = false;
+    for (int i = 0; i < m_cache_assoc; i++) {
+        if (m_cache[cacheSet][i]->isLockedRMW()) {
+            continue;
+        }
+        if (!m_cache[cacheSet][i]->explicitReuseState.isValid()) {
+            hasNonExplicitReuseLine = true;
+            break;
+        }
+    }
+
     std::vector<ReplaceableEntry*> candidates;
     for (int i = 0; i < m_cache_assoc; i++) {
         // ! GemForge
@@ -392,11 +415,31 @@ CacheMemory::cacheProbe(Addr address) const
             continue;
         }
 
+        // ! GemForge
+        const auto &reuseState = m_cache[cacheSet][i]->explicitReuseState;
+        if (reuseState.isValid()) {
+            // Explicit reuse. Direct evict if one line reached the reuse cnt.
+            if (reuseState.getCurrent() >= reuseState.getTotal()) {
+                DPRINTF(RubyCache, "[Probe] Evict way %2d %#x by %s.\n",
+                    i, m_cache[cacheSet][i]->m_Address, reuseState);
+                return m_cache[cacheSet][i]->m_Address;
+            }
+            // Prioritize those without explicit reuse (if any).
+            if (hasNonExplicitReuseLine) {
+                continue;
+            }
+        }
+
         candidates.push_back(static_cast<ReplaceableEntry*>(
                                                        m_cache[cacheSet][i]));
     }
-    return m_cache[cacheSet][m_replacementPolicy_ptr->
-                        getVictim(candidates)->getWay()]->m_Address;
+    auto victim = m_replacementPolicy_ptr->getVictim(candidates);
+    const auto &victimEntry = m_cache[cacheSet][victim->getWay()];
+    DPRINTF(RubyCache, "[Probe] Evict way %2d %#x %s.\n",
+        victim->getWay(),
+        victimEntry->m_Address,
+        victimEntry->explicitReuseState);
+    return victimEntry->m_Address;
 }
 
 // looks an address up in the cache

@@ -69,6 +69,8 @@ public:
   bool shouldCache(PacketPtr pkt);
   bool mustServedByMLCSE(PacketPtr pkt);
 
+  int getExplicitReuseCount(PacketPtr pkt);
+
   DynStreamSliceId getSliceId(PacketPtr pkt) const;
 
 private:

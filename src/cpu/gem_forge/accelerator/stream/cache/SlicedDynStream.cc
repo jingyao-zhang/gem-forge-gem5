@@ -42,7 +42,7 @@ SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
                 std::min(static_cast<int64_t>(this->elemSize), innerStride));
         DYN_S_DPRINTF(
             this->strandId,
-            "innerStride %lu elementSize %lu block %lu elementPerSlice %f.\n",
+            "innerStride %lu elemSize %lu block %lu elemPerSlice %f.\n",
             innerStride, elemSize, blockBytes, this->elemPerSlice);
       }
     }
@@ -51,8 +51,13 @@ SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
   if (this->isPtChase || !_configData->shouldBeSlicedToCacheLines) {
     DYN_S_DPRINTF(this->strandId, "[Sliced] Disabled slicing.\n");
     this->coalesceContinuousElements = false;
-    this->elemPerSlice = 1.0f;
-    assert(this->elemSize <= 64 && "Huge Non-Sliced StreamElem.");
+    if (this->elemSize <= 64) {
+      this->elemPerSlice = 1.0f;
+    } else {
+      assert(this->elemSize % 64 == 0 &&
+             "Unaligned Huge Non-Sliced StreamElem.");
+      this->elemPerSlice = 64.0f / static_cast<float>(this->elemSize);
+    }
   }
 
   if (_configData->floatPlan.getFirstFloatElementIdx() > 0) {

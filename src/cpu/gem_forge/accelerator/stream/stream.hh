@@ -167,6 +167,9 @@ public:
   const auto &getUserBypassLevel() const {
     return this->info.static_info().user_bypass_level();
   }
+  const auto &getUserReuse() const {
+    return this->info.static_info().user_reuse();
+  }
 
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
@@ -868,10 +871,14 @@ public:
   }
 
   /**
-   * Accessors to query whether we should bypass certain cache level.
+   * Accessors to query whether we should bypass certain cache level,
+   * and reuse at certain cache level.
    */
 private:
   mutable int memorizedBypassL1 = -1;
+
+  using HitPlaceE = RequestStatistic::HitPlaceE;
+  mutable std::map<HitPlaceE, int> reuseMap;
 
 public:
   const auto &getUserBypassLevel() const {
@@ -879,6 +886,9 @@ public:
   }
 
   bool shouldBypassL1() const;
+
+  static constexpr int UnknownReuse = -1;
+  int getReuseAt(HitPlaceE cacheLevel) const;
 };
 
 struct GetCoalescedStreamValue {

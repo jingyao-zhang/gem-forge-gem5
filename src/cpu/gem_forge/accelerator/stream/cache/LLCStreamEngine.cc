@@ -4864,7 +4864,7 @@ void LLCStreamEngine::startComputation() {
         result.fill(0);
       } else {
         LLC_SE_ELEM_DPRINTF(
-            elem, "Start computation. Lat %llu (ZeroLat %d) Vectorized %d.\n",
+            elem, "Start compute. Lat %llu (ZeroLat %d) Vec %d.\n",
             latency, forceZeroLat, elem->isComputationVectorized());
         result = dynS->computeElemValue(elem);
       }
