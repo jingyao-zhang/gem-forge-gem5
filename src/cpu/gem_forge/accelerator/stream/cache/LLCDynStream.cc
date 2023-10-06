@@ -1798,16 +1798,19 @@ void LLCDynStream::completeFinalReduce(LLCStreamEngine *se, uint64_t elemIdx) {
   auto finalReductionValue = finalReduceElem->getValueByStreamId(S->staticId);
 
   Addr paddrLine = 0;
-  int dataSize = sizeof(finalReductionValue);
+  int dataSize =
+      std::min(sizeof(finalReductionValue),
+               static_cast<size_t>(ruby::RubySystem::getBlockSizeBytes()));
   int payloadSize = finalReduceElem->size;
   int lineOffset = 0;
   bool forceIdea = false;
 
   if (this->configData->finalValueNeededByCore) {
+    LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReduceElem,
+                         "[Reduce] Send result back to core PayloadSize %d.\n",
+                         payloadSize);
     se->issueStreamDataToMLC(sliceId, paddrLine, finalReductionValue.uint8Ptr(),
                              dataSize, payloadSize, lineOffset, forceIdea);
-    LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReduceElem,
-                         "[Reduce] Send result back to core.\n");
   }
 
   // We also want to forward to any consuming streams.
