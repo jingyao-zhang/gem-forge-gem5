@@ -66,7 +66,8 @@ public:
    * We query the DirectStream for TotalTripCount.
    */
   int64_t getTotalTripCount() const override {
-    return this->baseStream->getTotalTripCount() * this->getBaseStreamReuse();
+    return this->baseStream->getTotalTripCount() *
+           this->getBaseStreamReuseInfo().getTotalReuse();
   }
   bool hasTotalTripCount() const override {
     return this->baseStream->hasTotalTripCount();
@@ -78,8 +79,9 @@ public:
     return this->baseStream->hasInnerTripCount();
   }
   void breakOutLoop(int64_t totalTripCount) override;
-  int getBaseStreamReuse() const { return this->baseStreamReuse; }
-  int getBaseStreamReuseTileSize() const { return 1; }
+  const StreamReuseInfo &getBaseStreamReuseInfo() const {
+    return this->baseStreamReuseInfo;
+  }
   int getBaseStreamSkip() const { return 0; }
 
   /**
@@ -104,7 +106,7 @@ private:
   AddrGenCallbackPtr addrGenCallback;
   const int32_t elementSize;
   MLCDynStream *baseStream = nullptr;
-  int baseStreamReuse = 1;
+  StreamReuseInfo baseStreamReuseInfo;
 
   // Remember if this indirect stream is behind one iteration.
   bool isOneIterationBehind;

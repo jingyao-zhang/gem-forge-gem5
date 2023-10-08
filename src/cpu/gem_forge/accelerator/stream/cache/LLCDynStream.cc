@@ -54,10 +54,10 @@ LLCDynStream::LLCDynStream(ruby::AbstractStreamAwareController *_mlcController,
   for (auto &baseEdge : this->configData->baseEdges) {
     // Acquire the shared ptr of the configuration.
     this->baseOnConfigs.emplace_back(baseEdge.data.lock());
-    this->reusedBaseStreams.emplace_back(baseEdge.reuse);
-    if (baseEdge.reuse <= 0) {
-      LLC_S_PANIC(this->strandId, "Illegal Reuse Count %d on %s.",
-                  baseEdge.reuse, baseEdge.data.lock()->dynamicId);
+    this->reusedBaseStreams.emplace_back(baseEdge.reuseInfo.getTotalReuse());
+    if (baseEdge.reuseInfo.getTotalReuse() <= 0) {
+      LLC_S_PANIC(this->strandId, "Illegal Reuse %s on %s.", baseEdge.reuseInfo,
+                  baseEdge.data.lock()->dynamicId);
     }
     assert(this->baseOnConfigs.back() && "BaseStreamConfig already released?");
     LLC_S_DPRINTF(this->getDynStrandId(), "Add BaseOnConfig %s.\n",
@@ -190,8 +190,8 @@ void LLCDynStream::setTotalTripCount(int64_t totalTripCount) {
   this->slicedStream.setTotalAndInnerTripCount(totalTripCount);
   this->rangeBuilder->receiveLoopBoundRet(totalTripCount);
   for (auto dynIS : this->indirectStreams) {
-    dynIS->rangeBuilder->receiveLoopBoundRet(totalTripCount *
-                                             dynIS->baseStreamReuse);
+    dynIS->rangeBuilder->receiveLoopBoundRet(
+        totalTripCount * dynIS->baseStreamReuseInfo.getTotalReuse());
   }
   // Set for myself and all indirect streams.
   this->totalTripCount = this->slicedStream.getTotalTripCount();
@@ -635,13 +635,13 @@ void LLCDynStream::initNextElem(Addr vaddr) {
       assert(!this->isOneIterationBehind());
       baseStrandId = baseConfig->getStrandId();
       baseStrandElemIdx = CacheStreamConfigureData::convertDepToBaseElemIdx(
-          strandElemIdx, baseEdge.reuse, baseEdge.reuseTileSize, baseEdge.skip);
+          strandElemIdx, baseEdge.reuseInfo, baseEdge.skip);
       baseStreamElemIdx = baseConfig->getStreamElemIdxFromStrandElemIdx(
           baseStrandId, baseStrandElemIdx);
 
       LLC_ELEMENT_DPRINTF(
-          elem, "Add R/S %ld/%ld -> BaseStrnd %s%lu -> BaseStrm %lu.\n",
-          baseEdge.reuse, baseEdge.skip, baseStrandId, baseStrandElemIdx,
+          elem, "Add R/S %s/%ld -> BaseStrnd %s%lu -> BaseStrm %lu.\n",
+          baseEdge.reuseInfo, baseEdge.skip, baseStrandId, baseStrandElemIdx,
           baseStreamElemIdx);
 
     } else {
@@ -654,8 +654,7 @@ void LLCDynStream::initNextElem(Addr vaddr) {
       }
 
       baseStreamElemIdx = CacheStreamConfigureData::convertDepToBaseElemIdx(
-          depStreamElemIdx, baseEdge.reuse, baseEdge.reuseTileSize,
-          baseEdge.skip);
+          depStreamElemIdx, baseEdge.reuseInfo, baseEdge.skip);
 
       baseStrandId =
           baseConfig->getStrandIdFromStreamElemIdx(baseStreamElemIdx);
@@ -663,10 +662,9 @@ void LLCDynStream::initNextElem(Addr vaddr) {
           baseConfig->getStrandElemIdxFromStreamElemIdx(baseStreamElemIdx);
 
       LLC_ELEMENT_DPRINTF(
-          elem,
-          "Add DepStrm %lu R/S %ld/%ld -> BaseStrm %lu BaseStrnd %s%lu.\n",
-          depStreamElemIdx, baseEdge.reuse, baseEdge.skip, baseStreamElemIdx,
-          baseStrandId, baseStrandElemIdx);
+          elem, "Add DepStrm %lu R/S %s/%ld -> BaseStrm %lu BaseStrnd %s%lu.\n",
+          depStreamElemIdx, baseEdge.reuseInfo, baseEdge.skip,
+          baseStreamElemIdx, baseStrandId, baseStrandElemIdx);
     }
 
     return std::make_tuple(baseStrandId, baseStrandElemIdx, baseStreamElemIdx);
@@ -720,7 +718,7 @@ void LLCDynStream::initNextElem(Addr vaddr) {
         }
         auto baseStrandElemIdxOffset = this->isOneIterationBehind() ? 1 : 0;
         if (baseStrandElemIdx + baseStrandElemIdxOffset !=
-            strandElemIdx / baseEdge.reuse) {
+            strandElemIdx / baseEdge.reuseInfo.getTotalReuse()) {
           LLC_ELEMENT_PANIC(
               elem,
               "Mismatch IndStrandElemIdx with BaseStrandId %s%lu Offset %lu.",
@@ -877,7 +875,7 @@ void LLCDynStream::initNextElem(Addr vaddr) {
    * Take care with possible reuse.
    */
   for (auto indS : this->getIndStreams()) {
-    auto reuse = indS->baseStreamReuse;
+    auto reuse = indS->baseStreamReuseInfo.getTotalReuse();
     for (auto j = 0; j < reuse; ++j) {
       indS->initNextElem(0);
     }
@@ -1037,9 +1035,9 @@ void LLCDynStream::recvStreamForward(LLCStreamEngine *se, int offset,
       }
 
       LLC_S_DPRINTF(this->getDynStrandId(),
-                    "[Fwd] Recv Send %s%lu by R/S %d/%d = Recv %lu.\n",
-                    sliceId.getDynStrandId(), sendStrandElemIdx, baseEdge.reuse,
-                    baseEdge.skip, recvStrandElemIdx);
+                    "[Fwd] Recv Send %s%lu by R/S %s/%d = Recv %lu.\n",
+                    sliceId.getDynStrandId(), sendStrandElemIdx,
+                    baseEdge.reuseInfo, baseEdge.skip, recvStrandElemIdx);
 
       found = true;
       break;
@@ -1385,8 +1383,8 @@ LLCDynStreamPtr LLCDynStream::allocateLLCStream(
         ISConfig->initCreditedIdx = config->initCreditedIdx;
         auto IS = new LLCDynStream(mlcController, llcController, ISConfig);
         // Can not handle reused tile for IndS for now.
-        assert(edge.reuseTileSize == 1);
-        IS->setBaseStream(curS, edge.reuse);
+        assert(!edge.reuseInfo.isReuseTiled());
+        IS->setBaseStream(curS, edge.reuseInfo);
         configStack.push_back(ISConfig);
       }
     }
@@ -1402,12 +1400,13 @@ LLCDynStreamPtr LLCDynStream::allocateLLCStream(
   return S;
 }
 
-void LLCDynStream::setBaseStream(LLCDynStreamPtr baseS, int reuse) {
+void LLCDynStream::setBaseStream(LLCDynStreamPtr baseS,
+                                 const StreamReuseInfo &reuseInfo) {
   if (this->baseStream) {
     LLC_S_PANIC(this->getDynStrandId(), "Set multiple base LLCDynStream.");
   }
   this->baseStream = baseS;
-  this->baseStreamReuse = reuse;
+  this->baseStreamReuseInfo = reuseInfo;
   this->rootStream = baseS->rootStream ? baseS->rootStream : baseS;
   baseS->indirectStreams.push_back(this);
   baseS->allIndirectStreams.push_back(this);
@@ -1856,7 +1855,7 @@ bool LLCDynStream::isNextIdeaAck() const {
   }
   if (this->isIndirect()) {
     // IndirectS can ack at reuse granularity.
-    if ((this->streamAckedSlices % this->baseStreamReuse) != 0) {
+    if (this->streamAckedSlices % this->baseStreamReuseInfo.getTotalReuse()) {
       return true;
     }
   } else {

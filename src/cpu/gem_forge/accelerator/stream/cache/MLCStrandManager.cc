@@ -29,7 +29,13 @@
 namespace gem5 {
 
 MLCStrandManager::MLCStrandManager(MLCStreamEngine *_mlcSE)
-    : mlcSE(_mlcSE), controller(_mlcSE->controller) {}
+    : mlcSE(_mlcSE), controller(_mlcSE->controller) {
+  {
+    std::ostringstream s;
+    ccprintf(s, "[MLC_Reuse%d]", this->controller->getMachineID().num);
+    this->reuseAnalyzer = std::make_unique<StreamReuseAnalyzer>(s.str());
+  }
+}
 
 MLCStrandManager::~MLCStrandManager() {
   for (auto &idStream : this->strandMap) {
@@ -1100,7 +1106,7 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
      *********************************************************************/
     for (const auto &base : config->baseEdges) {
       if (base.isUsedBy) {
-        if (base.reuse > 1) {
+        if (base.reuseInfo.hasReuse()) {
           panic("Split on IndReuse is not supported yet: %s.",
                 config->dynamicId);
           // strandSplit.setInnerTrip(strandSplit.getInnerTrip() * base.reuse);
@@ -1175,7 +1181,7 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
     strand->depEdges.clear();
     for (auto &dep : config->depEdges) {
       if (dep.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
-        strand->addSendTo(dep.data, dep.reuse, dep.skip);
+        strand->addSendTo(dep.data, dep.reuseInfo, dep.skip);
       }
       if (dep.type == CacheStreamConfigureData::DepEdge::Type::PUMSendTo) {
         strand->addPUMSendTo(dep.data, dep.broadcastPat, dep.recvPat,
@@ -1192,12 +1198,12 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
         continue;
       }
       if (base.isUsedAffineIV) {
-        strand->addBaseAffineIV(baseConfig, base.reuse, base.skip);
+        strand->addBaseAffineIV(baseConfig, base.reuseInfo, base.skip);
       } else if (base.isPredBy) {
-        strand->addPredBy(baseConfig, base.reuse, base.skip, base.predId,
+        strand->addPredBy(baseConfig, base.reuseInfo, base.skip, base.predId,
                           base.predValue);
       } else {
-        strand->addBaseOn(baseConfig, base.reuse, base.skip);
+        strand->addBaseOn(baseConfig, base.reuseInfo, base.skip);
       }
     }
   }
@@ -1241,8 +1247,9 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
     for (int strandIdx = 0; strandIdx < depStrands.size(); ++strandIdx) {
       auto strand = strands.at(strandIdx);
       auto depStrand = depStrands.at(strandIdx);
-      strand->addUsedBy(depStrand, dep.reuse, isPredBy, predId, predValue);
-      depStrand->totalTripCount = strand->getTotalTripCount() * dep.reuse;
+      strand->addUsedBy(depStrand, dep.reuseInfo, isPredBy, predId, predValue);
+      depStrand->totalTripCount =
+          strand->getTotalTripCount() * dep.reuseInfo.getTotalReuse();
     }
   }
 
@@ -1283,21 +1290,21 @@ void MLCStrandManager::mergeBroadcastStrands(
                   "[NoBroadcast] Has SendTo Skip %d.\n", dep.skip);
       return;
     }
-    if (dep.reuse != 1) {
+    if (dep.reuseInfo.hasReuse()) {
       // We support broadcast with reuse if the reuse is smaller than
       // SplitInnerTrip, which means the reuse is not splited.
       const auto &depDynId = dep.data->dynamicId;
       auto depInnerTrip = this->computeSplitInnerTrip(context, dep.data);
 
-      if (dep.reuse <= depInnerTrip) {
+      if (dep.reuseInfo.getTotalReuse() <= depInnerTrip) {
         STRAND_LOG_(MLCRubyStrandSplit, firstStrand->dynamicId,
-                    "[Broadcast] Reuse %d <= DepInnerTrip %ld of %s.\n",
-                    dep.reuse, depInnerTrip, depDynId);
+                    "[Broadcast] Reuse %s <= DepInnerTrip %ld of %s.\n",
+                    dep.reuseInfo, depInnerTrip, depDynId);
 
       } else {
         STRAND_LOG_(MLCRubyStrandSplit, firstStrand->dynamicId,
-                    "[NoBroadcast] Reuse %d > DepInnerTrip %ld of %s.\n",
-                    dep.reuse, depInnerTrip, depDynId);
+                    "[NoBroadcast] Reuse %s > DepInnerTrip %ld of %s.\n",
+                    dep.reuseInfo, depInnerTrip, depDynId);
         return;
       }
     }
@@ -1401,18 +1408,18 @@ void MLCStrandManager::mergeBroadcastStrands(
             fixedDep.data = recvStrand;
 
             STRAND_LOG_(MLCRubyStrandSplit, strandI->getStrandId(),
-                        "[MergeBroadcast] Merged %3d -> %s R/S %d/%d!\n",
+                        "[MergeBroadcast] Merged %3d -> %s R/S %s/%d!\n",
                         strandJ->strandIdx, recvStrand->getStrandId(),
-                        fixedDep.reuse, fixedDep.skip);
+                        fixedDep.reuseInfo, fixedDep.skip);
             fixedDepEdges.push_back(fixedDep);
 
             // Also fix the recv strand's reuse.
             __attribute__((unused)) bool fixedRecvReuse = false;
             for (auto &base : recvStrand->baseEdges) {
               if (base.dynStreamId == strandI->dynamicId) {
-                assert(base.reuse == dep.reuse);
+                assert(base.reuseInfo == dep.reuseInfo);
                 base.data = strandI;
-                base.reuse = dep.reuse;
+                base.reuseInfo = dep.reuseInfo;
                 base.isStrandSendTo = true;
                 fixedRecvReuse = true;
                 break;
@@ -1546,13 +1553,13 @@ DynStreamFormalParamV MLCStrandManager::splitAffinePatternAtDim(
 
 #define setTrip(dim, t)                                                        \
   {                                                                            \
-    strandParams.at((dim)*2 + 1).isInvariant = true;                           \
-    strandParams.at((dim)*2 + 1).invariant.uint64() = t;                       \
+    strandParams.at((dim) * 2 + 1).isInvariant = true;                         \
+    strandParams.at((dim) * 2 + 1).invariant.uint64() = t;                     \
   }
 #define setStride(dim, t)                                                      \
   {                                                                            \
-    strandParams.at((dim)*2).isInvariant = true;                               \
-    strandParams.at((dim)*2).invariant.uint64() = t;                           \
+    strandParams.at((dim) * 2).isInvariant = true;                             \
+    strandParams.at((dim) * 2).invariant.uint64() = t;                         \
   }
 #define setStart(t)                                                            \
   {                                                                            \
@@ -1657,12 +1664,12 @@ void MLCStrandManager::fixReusedSendTo(StrandSplitContext &context,
         fixedDepEdges.push_back(dep);
         continue;
       }
-      if (dep.reuse == 1) {
+      if (!dep.reuseInfo.hasReuse()) {
         fixedDepEdges.push_back(dep);
         continue;
       }
       auto depSplitInnerTrip = this->computeSplitInnerTrip(context, dep.data);
-      if (dep.reuse <= depSplitInnerTrip) {
+      if (dep.reuseInfo.getTotalReuse() <= depSplitInnerTrip) {
         // The reuse is not splitted.
         fixedDepEdges.push_back(dep);
         continue;
@@ -1693,7 +1700,7 @@ void MLCStrandManager::fixReusedSendTo(StrandSplitContext &context,
 
       // We need to split the SendTo to each Strand.
       STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
-                  "[ReuseSendTo] R/S %ld/%ld -> %s.\n", dep.reuse, dep.skip,
+                  "[ReuseSendTo] R/S %s/%ld -> %s.\n", dep.reuseInfo, dep.skip,
                   recvStream->getStrandId());
 
       for (auto &recvStrand : strandConfigs) {
@@ -1715,21 +1722,22 @@ void MLCStrandManager::fixReusedSendTo(StrandSplitContext &context,
 
         // Dupliate the DepEdge and fix the reuse.
         auto fixedDep = dep;
-        fixedDep.reuse = fixedReuse;
+        fixedDep.reuseInfo = StreamReuseInfo(fixedReuse);
         fixedDep.data = recvStrand;
 
         STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
-                    "[ReuseSendTo] Fixed R/S %ld/%ld -> %s.\n", fixedDep.reuse,
-                    fixedDep.skip, recvStrand->getStrandId());
+                    "[ReuseSendTo] Fixed R/S %s/%ld -> %s.\n",
+                    fixedDep.reuseInfo, fixedDep.skip,
+                    recvStrand->getStrandId());
         fixedDepEdges.push_back(fixedDep);
 
         // Also fix the recv strand's reuse.
         __attribute__((unused)) bool fixedRecvReuse = false;
         for (auto &base : recvStrand->baseEdges) {
           if (base.dynStreamId == strand->dynamicId) {
-            assert(base.reuse == dep.reuse);
+            assert(base.reuseInfo == dep.reuseInfo);
             base.data = strand;
-            base.reuse = fixedReuse;
+            base.reuseInfo = fixedDep.reuseInfo;
             base.isStrandSendTo = true;
             fixedRecvReuse = true;
             break;
@@ -1769,10 +1777,16 @@ void MLCStrandManager::recognizeReusedTile(StrandSplitContext &context,
       // This one has indirect stream. Can not handle reused tile.
       return;
     }
-    if (dep.reuse != 1 || dep.reuseTileSize != 1) {
+    if (dep.reuseInfo.hasReuse()) {
       return;
     }
   }
+
+  auto reuseInfo = this->reuseAnalyzer->analyzeReuse(strand);
+  if (!reuseInfo.hasReuse()) {
+    return;
+  }
+
   auto linearAddrGen =
       std::dynamic_pointer_cast<LinearAddrGenCallback>(strand->addrGenCallback);
   if (!linearAddrGen) {
@@ -1783,41 +1797,19 @@ void MLCStrandManager::recognizeReusedTile(StrandSplitContext &context,
     return;
   }
 
-  auto reuseDim = linearAddrGen->getFirstReuseDim(strand->addrGenFormalParams);
-  if (reuseDim < 0) {
-    return;
-  }
+  auto reuseCount = reuseInfo.getTotalReuse();
 
   std::vector<int64_t> strides;
   std::vector<int64_t> trips;
-
   extractStrideAndTripFromAffinePatternParams(strand->addrGenFormalParams,
                                               strides, trips);
-  assert(strides.at(reuseDim) == 0);
-
-  auto reuseDimEnd = reuseDim + 1;
-  while (reuseDimEnd < strides.size() &&
-         (strides.at(reuseDimEnd) == 0 || trips.at(reuseDimEnd) == 1)) {
-    reuseDimEnd++;
-  }
-
-  auto reuseCount = AffinePattern::reduce_mul(trips.begin() + reuseDim,
-                                              trips.begin() + reuseDimEnd, 1);
-  auto reuseTileSize =
-      AffinePattern::reduce_mul(trips.begin(), trips.begin() + reuseDim, 1);
 
   auto totalTrip = AffinePattern::reduce_mul(trips.begin(), trips.end(), 1);
   auto newTrip = totalTrip / reuseCount;
 
-  STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
-              "[ReuseTile] At Dim %d Size %ld Count %ld %s.\n", reuseDim,
-              reuseTileSize, reuseCount,
-              printAffinePatternParams(strand->addrGenFormalParams));
-
   // Change all send to edges.
   for (auto &dep : strand->depEdges) {
-    dep.reuse = reuseCount;
-    dep.reuseTileSize = reuseTileSize;
+    dep.reuseInfo = reuseInfo;
     auto &recvConfig = dep.data;
     bool __attribute__((unused)) foundBaseEdge = false;
     STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
@@ -1825,8 +1817,7 @@ void MLCStrandManager::recognizeReusedTile(StrandSplitContext &context,
     for (auto &base : recvConfig->baseEdges) {
       if (base.dynStreamId == strand->dynamicId) {
         assert(base.isStrandSendTo);
-        base.reuse = reuseCount;
-        base.reuseTileSize = reuseTileSize;
+        base.reuseInfo = reuseInfo;
         foundBaseEdge = true;
         break;
       }
@@ -1835,8 +1826,7 @@ void MLCStrandManager::recognizeReusedTile(StrandSplitContext &context,
   }
 
   // Erase the resued dim.
-  trips.erase(trips.begin() + reuseDim, trips.begin() + reuseDimEnd);
-  strides.erase(strides.begin() + reuseDim, strides.begin() + reuseDimEnd);
+  reuseInfo.transformStrideAndTrip(strides, trips);
   auto startVAddr = strand->addrGenFormalParams.back().invariant.front();
   strand->addrGenFormalParams =
       constructFormalParamsFromStrideAndTrip(startVAddr, strides, trips);

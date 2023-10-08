@@ -389,7 +389,7 @@ public:
   /**
    * Remember the base stream.
    */
-  void setBaseStream(LLCDynStreamPtr baseS, int reuse);
+  void setBaseStream(LLCDynStreamPtr baseS, const StreamReuseInfo &reuseInfo);
 
   const std::vector<LLCDynStreamPtr> &getIndStreams() const {
     return this->indirectStreams;
@@ -451,8 +451,7 @@ public:
 
   // Base stream with reuse.
   LLCDynStream *baseStream = nullptr;
-  int baseStreamReuse = 1;
-  int baseStreamReuseTileSize = 1;
+  StreamReuseInfo baseStreamReuseInfo;
 
   // Root stream.
   LLCDynStream *rootStream = nullptr;

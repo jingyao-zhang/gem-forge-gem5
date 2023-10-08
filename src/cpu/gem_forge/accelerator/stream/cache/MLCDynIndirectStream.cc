@@ -42,7 +42,7 @@ void MLCDynIndirectStream::setBaseStream(MLCDynStream *baseStream) {
       //                       baseStream->getDynStrandId());
       // }
       assert(edge.skip == 0 && "IndirectS with Non-Zero skip.");
-      this->baseStreamReuse = edge.reuse;
+      this->baseStreamReuseInfo = edge.reuseInfo;
       break;
     }
   }
@@ -254,14 +254,13 @@ void MLCDynIndirectStream::mapBaseElemToMyElemIdxRange(
     DynStrandId &strandIdLhs, uint64_t &streamElemIdxRhs,
     uint64_t &strandElemIdxRhs, DynStrandId &strandIdRhs) const {
 
-  auto reuse = this->getBaseStreamReuse();
-  auto reuseTileSize = this->getBaseStreamReuseTileSize();
+  const auto &reuseInfo = this->getBaseStreamReuseInfo();
   auto skip = this->getBaseStreamSkip();
 
-  streamElemIdxLhs = this->config->convertBaseToDepElemIdx(
-      baseStreamElemIdx, reuse, reuseTileSize, skip);
+  streamElemIdxLhs =
+      this->config->convertBaseToDepElemIdx(baseStreamElemIdx, reuseInfo, skip);
   streamElemIdxRhs = this->config->convertBaseToDepElemIdx(
-      baseStreamElemIdx + 1, reuse, reuseTileSize, skip);
+      baseStreamElemIdx + 1, reuseInfo, skip);
 
   // Decrement Rhs to make sure it's within the same strand.
   assert(streamElemIdxRhs > streamElemIdxLhs);
@@ -276,10 +275,10 @@ void MLCDynIndirectStream::mapBaseElemToMyElemIdxRange(
   strandIdRhs = this->config->getStrandIdFromStreamElemIdx(streamElemIdxRhs);
 
   MLC_S_DPRINTF(this->strandId,
-                "IndS MapBase %d-%lu(%lu) Reuse %d My Lhs %d-%lu(%lu) Rhs "
+                "IndS MapBase %d-%lu(%lu) Reuse %s My Lhs %d-%lu(%lu) Rhs "
                 "%d-%lu(%lu).\n",
                 this->baseStream->getDynStrandId().strandIdx, baseStrandElemIdx,
-                baseStreamElemIdx, reuse, strandIdLhs.strandIdx,
+                baseStreamElemIdx, reuseInfo, strandIdLhs.strandIdx,
                 strandElemIdxLhs, streamElemIdxLhs, strandIdRhs.strandIdx,
                 strandElemIdxRhs, streamElemIdxRhs);
 
@@ -434,15 +433,16 @@ Addr MLCDynIndirectStream::genElemVAddr(uint64_t strandElemIdx,
       auto streamElemIdx =
           this->getConfig()->getStreamElemIdxFromStrandElemIdx(strandElemIdx);
       auto baseStreamElemIdx = this->getConfig()->convertDepToBaseElemIdx(
-          streamElemIdx, edge.reuse, edge.reuseTileSize, edge.skip);
+          streamElemIdx, edge.reuseInfo, edge.skip);
       auto value = affineIVConfig->addrGenCallback->genAddr(
           baseStreamElemIdx, affineIVConfig->addrGenFormalParams,
           getStreamValueFail);
 
       MLC_S_DPRINTF(this->getDynStrandId(),
-                    "Gen AffineIV %s %lu/%lu R/S %d/%d -> %lu Value %lu.\n",
-                    edge.dynStreamId, strandElemIdx, streamElemIdx, edge.reuse,
-                    edge.skip, baseStreamElemIdx, value.uint64());
+                    "Gen AffineIV %s %lu/%lu R/S %s/%d -> %lu Value %lu.\n",
+                    edge.dynStreamId, strandElemIdx, streamElemIdx,
+                    edge.reuseInfo, edge.skip, baseStreamElemIdx,
+                    value.uint64());
       return value;
     }
 

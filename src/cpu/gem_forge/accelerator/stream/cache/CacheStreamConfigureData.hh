@@ -3,6 +3,7 @@
 
 #include "StrandSplitInfo.hh"
 #include "StreamFloatPlan.hh"
+#include "StreamReuseInfo.hh"
 #include "cpu/gem_forge/accelerator/stream/dyn_stream.hh"
 #include "pum/AffinePattern.hh"
 
@@ -202,12 +203,11 @@ public:
      * "a" would record SendTo "index" with SKIP M,
      * "b" would record BaseOn "a" with REUSE 1.
      */
-    int reuse;
-    int reuseTileSize = 1;
+    StreamReuseInfo reuseInfo;
     int skip;
-    DepEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse,
-            int _skip)
-        : type(_type), data(_data), reuse(_reuse), skip(_skip) {}
+    DepEdge(Type _type, const CacheStreamConfigureDataPtr &_data,
+            const StreamReuseInfo &_reuseInfo, int _skip)
+        : type(_type), data(_data), reuseInfo(_reuseInfo), skip(_skip) {}
 
     /**
      * Fields for PUMSendTo relationship.
@@ -234,8 +234,7 @@ public:
     Type type;
     DynStreamId dynStreamId;
     CacheStreamConfigureDataWeakPtr data;
-    int reuse;
-    int reuseTileSize = 1;
+    StreamReuseInfo reuseInfo;
     int skip;
     /**
      * Whether this SendTo is simply based on Strand. No need to translate to
@@ -261,27 +260,30 @@ public:
     int predId = 0;
     bool predValue = false;
 
-    BaseEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse,
-             int _skip, bool _isUsedBy = false)
+    BaseEdge(Type _type, const CacheStreamConfigureDataPtr &_data,
+             const StreamReuseInfo &_reuseInfo, int _skip,
+             bool _isUsedBy = false)
         : type(_type), dynStreamId(_data->dynamicId), data(_data),
-          reuse(_reuse), skip(_skip), isUsedBy(_isUsedBy) {}
+          reuseInfo(_reuseInfo), skip(_skip), isUsedBy(_isUsedBy) {}
 
     /**
      * Used to construct an UsedAffineIV edge.
      */
-    BaseEdge(const CacheStreamConfigureDataPtr &_data, int _reuse, int _skip)
+    BaseEdge(const CacheStreamConfigureDataPtr &_data,
+             const StreamReuseInfo &_reuseInfo, int _skip)
         : type(Type::BaseOn), dynStreamId(_data->dynamicId), data(_data),
-          reuse(_reuse), skip(_skip), isUsedAffineIV(true),
+          reuseInfo(_reuseInfo), skip(_skip), isUsedAffineIV(true),
           usedAffineIV(_data) {}
 
     /**
      * Used to construct a PredBy edge.
      */
-    BaseEdge(const CacheStreamConfigureDataPtr &_data, int _reuse, int _skip,
-             bool _predValue, int _predFuncId)
+    BaseEdge(const CacheStreamConfigureDataPtr &_data,
+             const StreamReuseInfo &_reuseInfo, int _skip, bool _predValue,
+             int _predFuncId)
         : type(Type::BaseOn), dynStreamId(_data->dynamicId), data(_data),
-          reuse(_reuse), skip(_skip), isPredBy(true), predId(_predFuncId),
-          predValue(_predValue) {}
+          reuseInfo(_reuseInfo), skip(_skip), isPredBy(true),
+          predId(_predFuncId), predValue(_predValue) {}
   };
   std::vector<DepEdge> depEdges;
   std::vector<BaseEdge> baseEdges;
@@ -292,19 +294,33 @@ public:
   CacheStreamConfigureDataPtr getUsedByBaseConfig();
   void addUsedBy(CacheStreamConfigureDataPtr &data, int reuse = 1,
                  bool predBy = false, int predId = 0, bool predValue = false);
+  void addUsedBy(CacheStreamConfigureDataPtr &data,
+                 const StreamReuseInfo &reuseInfo, bool predBy = false,
+                 int predId = 0, bool predValue = false);
   void addSendTo(CacheStreamConfigureDataPtr &data, int reuse, int skip);
+  void addSendTo(CacheStreamConfigureDataPtr &data,
+                 const StreamReuseInfo &reuseInfo, int skip);
   void addPUMSendTo(const CacheStreamConfigureDataPtr &data,
                     const AffinePattern &broadcastPat,
                     const AffinePattern &recvPat,
                     const AffinePattern &recvTile);
   void addBaseOn(CacheStreamConfigureDataPtr &data, int reuse, int skip);
+  void addBaseOn(CacheStreamConfigureDataPtr &data,
+                 const StreamReuseInfo &reuseInfo, int skip);
   void addBaseAffineIV(CacheStreamConfigureDataPtr &data, int reuse, int skip);
+  void addBaseAffineIV(CacheStreamConfigureDataPtr &data,
+                       const StreamReuseInfo &reuseInfo, int skip);
   void addPredBy(CacheStreamConfigureDataPtr &data, int reuse, int skip,
                  int predFuncId, bool predValue);
-  static uint64_t convertBaseToDepElemIdx(uint64_t baseElemIdx, int reuse,
-                                          int reuseTileSize, int skip);
-  static uint64_t convertDepToBaseElemIdx(uint64_t depElemIdx, int reuse,
-                                          int reuseTileSize, int skip);
+  void addPredBy(CacheStreamConfigureDataPtr &data,
+                 const StreamReuseInfo &reuseInfo, int skip, int predFuncId,
+                 bool predValue);
+  static uint64_t convertBaseToDepElemIdx(uint64_t baseElemIdx,
+                                          const StreamReuseInfo &reuseInfo,
+                                          int skip);
+  static uint64_t convertDepToBaseElemIdx(uint64_t depElemIdx,
+                                          const StreamReuseInfo &reuseInfo,
+                                          int skip);
   /**
    * Check whether this stream or any indirect stream sends to inner-loop stream
    * Used to force fine-grained control flow on the outer-loop stream to avoid

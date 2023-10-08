@@ -99,7 +99,7 @@ MLCDynDirectStream::MLCDynDirectStream(
       auto sendToMemElementSize = sendToConfig->stream->getMemElementSize();
 
       // Adjust for the reuse.
-      sendToMemElementSize *= sendToEdge.reuse;
+      sendToMemElementSize *= sendToEdge.reuseInfo.getTotalReuse();
 
       auto ratio = sendToMemElementSize / memElementSize;
       maxRatio = std::max(maxRatio, ratio);
@@ -239,7 +239,7 @@ void MLCDynDirectStream::advanceStream() {
     assert(dynIS->getTailSliceIdx() >= dynIS->getHeadSliceIdx() &&
            "Illegal Head/TailSliceIdx.\n");
     // Adjust effective ISElems based on IS reuse.
-    auto reuse = dynIS->getBaseStreamReuse();
+    auto reuse = dynIS->getBaseStreamReuseInfo().getTotalReuse();
     auto ISElems =
         (dynIS->getTailSliceIdx() - dynIS->getHeadSliceIdx()) / reuse;
     if (ISElems > maxISElems) {
@@ -617,8 +617,7 @@ bool MLCDynDirectStream::checkWaitForLLCRecvS(
       const auto &sendToConfig = sendToEdge.data;
       auto recvStreamElemIdx =
           CacheStreamConfigureData::convertBaseToDepElemIdx(
-              indStreamElemIdxRhs, sendToEdge.reuse, sendToEdge.reuseTileSize,
-              sendToEdge.skip);
+              indStreamElemIdxRhs, sendToEdge.reuseInfo, sendToEdge.skip);
 
       auto recvStrandId =
           sendToConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);

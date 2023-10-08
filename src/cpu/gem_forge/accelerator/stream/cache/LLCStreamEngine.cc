@@ -3601,9 +3601,6 @@ void LLCStreamEngine::triggerIndElems(LLCDynStreamPtr dynS,
    * ready. It would be triggered by Elem 0 of DirS.
    */
   for (auto IS : dynS->getAllIndStreams()) {
-    auto reuse = IS->baseStreamReuse;
-    auto reuseTileSize = IS->baseStreamReuseTileSize;
-
     /**
      * Two possible cases (can only be one of them).
      *
@@ -3613,19 +3610,19 @@ void LLCStreamEngine::triggerIndElems(LLCDynStreamPtr dynS,
      *
      * If the IndS has reuse > 1, then we need to trigger multiple IndElems.
      */
-    if (reuse > 1 && IS->isOneIterationBehind()) {
-      LLC_S_PANIC(IS, "IndReuse %d > 1 && OneIterBehind.", reuse);
+    if (IS->baseStreamReuseInfo.hasReuse() && IS->isOneIterationBehind()) {
+      LLC_S_PANIC(IS, "IndReuse %s && OneIterBehind.", IS->baseStreamReuseInfo);
     }
 
     auto skip = 0;
     auto indElemIdxLhs = IS->configData->convertBaseToDepElemIdx(
-        idx, reuse, reuseTileSize, skip);
+        idx, IS->baseStreamReuseInfo, skip);
     auto indElemIdxRhs = IS->configData->convertBaseToDepElemIdx(
-        idx + 1, reuse, reuseTileSize, skip);
+        idx + 1, IS->baseStreamReuseInfo, skip);
 
-    LLC_SE_ELEM_DPRINTF(elem, "Trigger IndS %s Reuse %d Elems [%lu, %lu).\n",
-                        IS->getDynStrandId(), reuse, indElemIdxLhs,
-                        indElemIdxRhs);
+    LLC_SE_ELEM_DPRINTF(elem, "Trigger IndS %s Reuse %s Elems [%lu, %lu).\n",
+                        IS->getDynStrandId(), IS->baseStreamReuseInfo,
+                        indElemIdxLhs, indElemIdxRhs);
 
     for (auto indElemIdx = indElemIdxLhs; indElemIdx < indElemIdxRhs;
          ++indElemIdx) {
@@ -4864,8 +4861,8 @@ void LLCStreamEngine::startComputation() {
         result.fill(0);
       } else {
         LLC_SE_ELEM_DPRINTF(
-            elem, "Start compute. Lat %llu (ZeroLat %d) Vec %d.\n",
-            latency, forceZeroLat, elem->isComputationVectorized());
+            elem, "Start compute. Lat %llu (ZeroLat %d) Vec %d.\n", latency,
+            forceZeroLat, elem->isComputationVectorized());
         result = dynS->computeElemValue(elem);
       }
     }

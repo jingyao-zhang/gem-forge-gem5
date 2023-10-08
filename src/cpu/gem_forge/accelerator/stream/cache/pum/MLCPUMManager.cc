@@ -2975,7 +2975,7 @@ MLCPUMManager::generatePUMPrefetchStreams(PUMComputeStreamGroup &group) {
 
 #define ADD_PREFETCH_STREAM(stream)                                            \
   {                                                                            \
-    auto pStream = this->generatePrefetchStream(stream);                       \
+    auto pStream = this -> generatePrefetchStream(stream);                     \
     if (pStream != nullptr) {                                                  \
       configs.emplace_back(pStream);                                           \
     }                                                                          \
@@ -3325,11 +3325,11 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
     assert(dep.type == CacheStreamConfigureData::DepEdge::Type::SendTo);
     auto recvConfig = dep.data;
     assert(recvConfig);
-    assert(dep.reuse == 1);
+    assert(!dep.reuseInfo.hasReuse());
     assert(dep.skip == directConfig->innerTripCount);
 
     auto newSkip = newReduceConfig->innerTripCount;
-    newReduceConfig->addSendTo(recvConfig, dep.reuse, newSkip);
+    newReduceConfig->addSendTo(recvConfig, dep.reuseInfo, newSkip);
 
     // Also replace the edge in RecvConfig.
     bool replacedBaseEdge = false;
@@ -4759,7 +4759,7 @@ void MLCPUMManager::sendOneReductionResult(PUMContext &context,
 
     const auto &recvConfig = edge.data;
     auto recvElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
-        result.elemIdx, edge.reuse, edge.reuseTileSize, edge.skip);
+        result.elemIdx, edge.reuseInfo, edge.skip);
 
     MLC_S_DPRINTF(dynId,
                   "[PUM] Send ReductionResult ElemIdx %ld Value %s To %s "

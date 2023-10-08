@@ -2,6 +2,7 @@
 #define __CPU_GEM_FORGE_MLC_STRAND_MANAGER_HH__
 
 #include "MLCStreamEngine.hh"
+#include "StreamReuseAnalyzer.hh"
 
 namespace gem5 {
 
@@ -57,6 +58,7 @@ public:
 private:
   MLCStreamEngine *mlcSE;
   ruby::AbstractStreamAwareController *controller;
+  std::unique_ptr<StreamReuseAnalyzer> reuseAnalyzer;
 
   std::unordered_map<DynStrandId, MLCDynStream *, DynStrandIdHasher> strandMap;
 

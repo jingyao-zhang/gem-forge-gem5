@@ -41,10 +41,18 @@ CacheStreamConfigureDataPtr CacheStreamConfigureData::getUsedByBaseConfig() {
 void CacheStreamConfigureData::addUsedBy(CacheStreamConfigureDataPtr &data,
                                          int reuse, bool predBy, int predId,
                                          bool predValue) {
+  StreamReuseInfo reuseInfo(reuse);
+  this->addUsedBy(data, reuseInfo, predBy, predId, predValue);
+}
+
+void CacheStreamConfigureData::addUsedBy(CacheStreamConfigureDataPtr &data,
+                                         const StreamReuseInfo &reuseInfo,
+                                         bool predBy, int predId,
+                                         bool predValue) {
   int skip = 0;
-  this->depEdges.emplace_back(DepEdge::Type::UsedBy, data, reuse, skip);
+  this->depEdges.emplace_back(DepEdge::Type::UsedBy, data, reuseInfo, skip);
   data->baseEdges.emplace_back(BaseEdge::Type::BaseOn, this->shared_from_this(),
-                               reuse, skip, true /* isUsedBy */);
+                               reuseInfo, skip, true /* isUsedBy */);
   if (predBy) {
     data->baseEdges.back().isPredBy = true;
     data->baseEdges.back().predId = predId;
@@ -54,22 +62,30 @@ void CacheStreamConfigureData::addUsedBy(CacheStreamConfigureDataPtr &data,
 
 void CacheStreamConfigureData::addSendTo(CacheStreamConfigureDataPtr &data,
                                          int reuse, int skip) {
+  StreamReuseInfo reuseInfo(reuse);
+  this->addSendTo(data, reuseInfo, skip);
+}
+
+void CacheStreamConfigureData::addSendTo(CacheStreamConfigureDataPtr &data,
+                                         const StreamReuseInfo &reuseInfo,
+                                         int skip) {
   for (const auto &edge : this->depEdges) {
     if (edge.type == DepEdge::Type::SendTo && edge.data == data) {
       // This is already here.
-      assert(edge.reuse == reuse && "Mismatch Reuse in SendTo.");
+      assert(edge.reuseInfo == reuseInfo && "Mismatch Reuse in SendTo.");
       assert(edge.skip == skip && "Mismatch Skip in SendTo.");
       return;
     }
   }
-  this->depEdges.emplace_back(DepEdge::Type::SendTo, data, reuse, skip);
+  this->depEdges.emplace_back(DepEdge::Type::SendTo, data, reuseInfo, skip);
 }
 
 void CacheStreamConfigureData::addPUMSendTo(
     const CacheStreamConfigureDataPtr &data, const AffinePattern &broadcastPat,
     const AffinePattern &recvPat, const AffinePattern &recvTile) {
+  StreamReuseInfo reuseInfo;
   this->depEdges.emplace_back(
-      CacheStreamConfigureData::DepEdge::Type::PUMSendTo, data, 1 /* reuse */,
+      CacheStreamConfigureData::DepEdge::Type::PUMSendTo, data, reuseInfo,
       0 /* skip */);
   this->depEdges.back().broadcastPat = broadcastPat;
   this->depEdges.back().recvPat = recvPat;
@@ -78,65 +94,77 @@ void CacheStreamConfigureData::addPUMSendTo(
 
 void CacheStreamConfigureData::addBaseOn(CacheStreamConfigureDataPtr &data,
                                          int reuse, int skip) {
-  if (reuse <= 0 || skip < 0) {
-    panic("Illegal BaseOn Reuse %d Skip %d This %s -> Base %s.", reuse, skip,
-          this->dynamicId, data->dynamicId);
+  StreamReuseInfo reuseInfo(reuse);
+  this->addBaseOn(data, reuseInfo, skip);
+}
+
+void CacheStreamConfigureData::addBaseOn(CacheStreamConfigureDataPtr &data,
+                                         const StreamReuseInfo &reuseInfo,
+                                         int skip) {
+  if (reuseInfo.getTotalReuse() <= 0 || skip < 0) {
+    panic("Illegal BaseOn Reuse %s Skip %d This %s -> Base %s.", reuseInfo,
+          skip, this->dynamicId, data->dynamicId);
   }
-  this->baseEdges.emplace_back(BaseEdge::Type::BaseOn, data, reuse, skip);
+  this->baseEdges.emplace_back(BaseEdge::Type::BaseOn, data, reuseInfo, skip);
 }
 
 void CacheStreamConfigureData::addBaseAffineIV(
     CacheStreamConfigureDataPtr &data, int reuse, int skip) {
-  if (reuse <= 0 || skip < 0) {
-    panic("Illegal BaseAffineIV Reuse %d Skip %d This %s -> Base %s.", reuse,
-          skip, this->dynamicId, data->dynamicId);
+  StreamReuseInfo reuseInfo(reuse);
+  this->addBaseAffineIV(data, reuseInfo, skip);
+}
+
+void CacheStreamConfigureData::addBaseAffineIV(
+    CacheStreamConfigureDataPtr &data, const StreamReuseInfo &reuseInfo,
+    int skip) {
+  if (reuseInfo.getTotalReuse() <= 0 || skip < 0) {
+    panic("Illegal BaseAffineIV Reuse %s Skip %d This %s -> Base %s.",
+          reuseInfo, skip, this->dynamicId, data->dynamicId);
   }
-  this->baseEdges.emplace_back(data, reuse, skip);
+  this->baseEdges.emplace_back(data, reuseInfo, skip);
 }
 
 void CacheStreamConfigureData::addPredBy(CacheStreamConfigureDataPtr &data,
                                          int reuse, int skip, int predFuncId,
                                          bool predValue) {
-  if (reuse <= 0 || skip < 0) {
-    panic("Illegal PredBy Reuse %d Skip %d This %s -> Base %s.", reuse, skip,
-          this->dynamicId, data->dynamicId);
-  }
-  this->baseEdges.emplace_back(data, reuse, skip, predValue, predFuncId);
+  StreamReuseInfo reuseInfo(reuse);
+  this->addPredBy(data, reuseInfo, skip, predFuncId, predValue);
 }
 
-uint64_t CacheStreamConfigureData::convertBaseToDepElemIdx(uint64_t baseElemIdx,
-                                                           int reuse,
-                                                           int reuseTileSize,
-                                                           int skip) {
+void CacheStreamConfigureData::addPredBy(CacheStreamConfigureDataPtr &data,
+                                         const StreamReuseInfo &reuseInfo,
+                                         int skip, int predFuncId,
+                                         bool predValue) {
+  if (reuseInfo.getTotalReuse() <= 0 || skip < 0) {
+    panic("Illegal PredBy Reuse %s Skip %d This %s -> Base %s.", reuseInfo,
+          skip, this->dynamicId, data->dynamicId);
+  }
+  this->baseEdges.emplace_back(data, reuseInfo, skip, predValue, predFuncId);
+}
+
+uint64_t CacheStreamConfigureData::convertBaseToDepElemIdx(
+    uint64_t baseElemIdx, const StreamReuseInfo &reuseInfo, int skip) {
   auto depElemIdx = baseElemIdx;
-  if (reuse != 1) {
+  if (reuseInfo.hasReuse()) {
     assert(skip == 0);
-    auto tileOffset = baseElemIdx % reuseTileSize;
-    auto tileIdx = baseElemIdx / reuseTileSize;
-    depElemIdx = tileIdx * reuseTileSize * reuse + tileOffset;
+    depElemIdx = reuseInfo.convertBaseToDepElemIdx(baseElemIdx);
   }
   if (skip != 0) {
-    assert(reuse == 1);
-    assert(reuseTileSize == 1);
+    assert(!reuseInfo.hasReuse());
     depElemIdx = baseElemIdx / skip;
   }
   return depElemIdx;
 }
 
-uint64_t CacheStreamConfigureData::convertDepToBaseElemIdx(uint64_t depElemIdx,
-                                                           int reuse,
-                                                           int reuseTileSize,
-                                                           int skip) {
+uint64_t CacheStreamConfigureData::convertDepToBaseElemIdx(
+    uint64_t depElemIdx, const StreamReuseInfo &reuseInfo, int skip) {
   auto baseElemIdx = depElemIdx;
-  if (reuse != 1) {
+  if (reuseInfo.hasReuse()) {
     assert(skip == 0);
-    auto tileOffset = depElemIdx % reuseTileSize;
-    baseElemIdx =
-        depElemIdx / (reuse * reuseTileSize) * reuseTileSize + tileOffset;
+    baseElemIdx = reuseInfo.convertDepToBaseElemIdx(depElemIdx);
   }
   if (skip != 0) {
-    assert(reuse == 1);
-    assert(reuseTileSize == 1);
+    assert(!reuseInfo.hasReuse());
     baseElemIdx = depElemIdx * skip;
   }
   return baseElemIdx;
@@ -261,13 +289,13 @@ DynStreamFormalParamV CacheStreamConfigureData::splitAffinePatternByElem(
 
 #define setTrip(dim, t)                                                        \
   {                                                                            \
-    strandParams.at((dim)*2 + 1).isInvariant = true;                           \
-    strandParams.at((dim)*2 + 1).invariant.uint64() = t;                       \
+    strandParams.at((dim) * 2 + 1).isInvariant = true;                         \
+    strandParams.at((dim) * 2 + 1).invariant.uint64() = t;                     \
   }
 #define setStride(dim, t)                                                      \
   {                                                                            \
-    strandParams.at((dim)*2).isInvariant = true;                               \
-    strandParams.at((dim)*2).invariant.uint64() = t;                           \
+    strandParams.at((dim) * 2).isInvariant = true;                             \
+    strandParams.at((dim) * 2).invariant.uint64() = t;                         \
   }
 #define setStart(t)                                                            \
   {                                                                            \
@@ -363,13 +391,13 @@ DynStreamFormalParamV CacheStreamConfigureData::splitAffinePatternAtDim(
 
 #define setTrip(dim, t)                                                        \
   {                                                                            \
-    strandParams.at((dim)*2 + 1).isInvariant = true;                           \
-    strandParams.at((dim)*2 + 1).invariant.uint64() = t;                       \
+    strandParams.at((dim) * 2 + 1).isInvariant = true;                         \
+    strandParams.at((dim) * 2 + 1).invariant.uint64() = t;                     \
   }
 #define setStride(dim, t)                                                      \
   {                                                                            \
-    strandParams.at((dim)*2).isInvariant = true;                               \
-    strandParams.at((dim)*2).invariant.uint64() = t;                           \
+    strandParams.at((dim) * 2).isInvariant = true;                             \
+    strandParams.at((dim) * 2).invariant.uint64() = t;                         \
   }
 #define setStart(t)                                                            \
   {                                                                            \
@@ -526,8 +554,7 @@ CacheStreamConfigureData::translateSendToRecv(
 
     // SendStreamElemIdx -> RecvStreamElemIdx.
     auto recvStreamElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
-        sendStreamElemIdx, sendToEdge.reuse, sendToEdge.reuseTileSize,
-        sendToEdge.skip);
+        sendStreamElemIdx, sendToEdge.reuseInfo, sendToEdge.skip);
 
     // RecvStreamElemIdx -> RecvStrandElemIdx.
     auto recvStrandId =
@@ -546,9 +573,9 @@ CacheStreamConfigureData::translateSendToRecv(
         recvConfig->floatPlan.getMachineTypeAtElem(recvStreamElemIdx);
 
     DYN_S_DPRINTF_(LLCRubyStreamBase, sendConfig->getStrandId(),
-                   "[Fwd] SendStrnd %lu -> SendStrm %lu R/S %ld/%ld -> "
+                   "[Fwd] SendStrnd %lu -> SendStrm %lu R/S %s/%ld -> "
                    "RecvStrm %lu -> RecvStrnd %s%lu %s.\n",
-                   sendStrandElemIdx, sendStreamElemIdx, sendToEdge.reuse,
+                   sendStrandElemIdx, sendStreamElemIdx, sendToEdge.reuseInfo,
                    sendToEdge.skip, recvStreamElemIdx, recvStrandId,
                    recvStrandElemIdx, recvElemMachineType);
 
@@ -558,8 +585,7 @@ CacheStreamConfigureData::translateSendToRecv(
     // The RecvConfig is StrandConfig, we skip the stream part.
     auto recvStrandId = recvConfig->getStrandId();
     auto recvStrandElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
-        sendStrandElemIdx, sendToEdge.reuse, sendToEdge.reuseTileSize,
-        sendToEdge.skip);
+        sendStrandElemIdx, sendToEdge.reuseInfo, sendToEdge.skip);
 
     // Get the VAddr.
     auto recvElemVAddr =
@@ -574,11 +600,10 @@ CacheStreamConfigureData::translateSendToRecv(
         recvConfig->streamConfig->floatPlan.getMachineTypeAtElem(
             recvStreamElemIdx);
 
-    DYN_S_DPRINTF_(
-        LLCRubyStreamBase, sendConfig->getStrandId(),
-        "[LLCFwd] SendStrnd %lu R/S %ld/%ld -> RecvStrnd %s%lu %s.\n",
-        sendStrandElemIdx, sendToEdge.reuse, sendToEdge.skip, recvStrandId,
-        recvStrandElemIdx, recvElemMachineType);
+    DYN_S_DPRINTF_(LLCRubyStreamBase, sendConfig->getStrandId(),
+                   "[LLCFwd] SendStrnd %lu R/S %s/%ld -> RecvStrnd %s%lu %s.\n",
+                   sendStrandElemIdx, sendToEdge.reuseInfo, sendToEdge.skip,
+                   recvStrandId, recvStrandElemIdx, recvElemMachineType);
 
     return std::make_tuple(recvStrandId, recvStrandElemIdx, recvElemVAddr,
                            recvElemMachineType);
