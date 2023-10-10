@@ -197,7 +197,8 @@ void MLCDynStream::recvCoreReqHit(const DynStreamSliceId &sliceId) {
 
 bool MLCDynStream::checkRecvDynSForPop(const DynStreamSliceId &sliceId) {
 
-  auto strandElemIdx = sliceId.getEndIdx();
+  assert(sliceId.getEndIdx() > 0 && "Impossible.");
+  auto strandElemIdx = sliceId.getEndIdx() - 1;
 
   // Handle merged broadcast including myself.
   auto broadcastStrands = this->config->broadcastStrands;

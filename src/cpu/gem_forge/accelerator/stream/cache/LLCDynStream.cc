@@ -750,6 +750,8 @@ void LLCDynStream::initNextElem(Addr vaddr) {
       if (reusedBaseS.reuse > 1 && reusedBaseS.hasElem(baseStreamElemIdx)) {
         // We can reuse.
         baseElem = reusedBaseS.reuseElem(baseStreamElemIdx);
+        LLC_ELEMENT_DPRINTF(elem, "Reuse BaseElem %s%llu VAddr %#x.\n",
+                            baseElem->strandId, baseElem->idx, baseElem->vaddr);
       } else {
 
         Addr baseElemVAddr = 0;
@@ -767,10 +769,10 @@ void LLCDynStream::initNextElem(Addr vaddr) {
                   ->genAddr(addrGenBaseElemIdx, baseConfig->addrGenFormalParams,
                             getStreamValueFail)
                   .front();
-          LLC_ELEMENT_DPRINTF(elem, "BaseStrandElem %s%llu VAddr %#x.\n",
-                              baseStrandId, baseStrandElemIdx, baseElemVAddr);
         }
 
+        LLC_ELEMENT_DPRINTF(elem, "Create BaseElem %s%llu VAddr %#x.\n",
+                            baseStrandId, baseStrandElemIdx, baseElemVAddr);
         baseElem = std::make_shared<LLCStreamElement>(
             baseS, this->mlcController, baseStrandId, baseStrandElemIdx,
             baseElemVAddr, baseS->getMemElementSize(),

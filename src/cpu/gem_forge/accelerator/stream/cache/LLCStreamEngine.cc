@@ -2641,7 +2641,8 @@ void LLCStreamEngine::issueStreamDataToLLC(
 
     auto recvConfig = sendToEdge.data;
 
-    LLC_SLICE_DPRINTF(sliceId, "[Fwd] -> %s.\n", recvConfig->getStrandId());
+    LLC_SLICE_DPRINTF(sliceId, "[Fwd] VAddr %#x -> %s.\n", sliceId.vaddr,
+                      recvConfig->getStrandId());
 
     /**
      * Unlike sending data to MLC, we have to calculate the virtual

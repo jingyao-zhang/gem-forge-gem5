@@ -32,7 +32,7 @@ public:
    * Allow the user to manually set some property of the region.
    */
   enum RegionProperty {
-    // Manually overrite the interleaving (in elements).
+    // Manually overrite the interleaving (in bytes).
     INTERLEAVE = 0,
     USE_PUM,
     PUM_NO_INIT,

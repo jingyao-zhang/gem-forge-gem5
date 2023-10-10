@@ -218,7 +218,7 @@ parser.add_argument("--gem-forge-stream-engine-enable-float-advance-migrate", ac
                   help="Enable advance migrate in stream float.")
 parser.add_argument("--gem-forge-stream-engine-enable-float-multicast", action="store_true",
                   default=False,
-                  help="Enable multicast transimission in stream float.")
+                  help="Enable multicast transmission in stream float.")
 parser.add_argument("--gem-forge-stream-engine-enable-float-multicast-forward", action="store_true",
                   default=False,
                   help="Enable multicast forwarding in stream float.")

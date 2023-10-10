@@ -58,6 +58,39 @@ StreamReuseInfo StreamReuseAnalyzer::analyzeReuse(ConfigPtr strand) const {
       AffinePattern::reduce_mul(trips.begin(), trips.begin() + reuseDim, 1);
 
   info = StreamReuseInfo(reuseDim, reuseDimEnd, reuseCount, reuseTileSize);
+
+  /**
+   * We try to recognize reuse tile hierarchy.
+   */
+  for (int dim = reuseDimEnd; dim < strides.size(); ++dim) {
+    if (strides[dim] != 0) {
+      // Not reused.
+      continue;
+    }
+    // Found more reuse, expand until we reach the end of this reuse level.
+    auto newReuseDim = dim;
+    auto newReuseDimEnd = dim + 1;
+    while (newReuseDimEnd < strides.size() &&
+           (strides.at(newReuseDimEnd) == 0 || trips.at(newReuseDimEnd) == 1)) {
+      newReuseDimEnd++;
+      dim++;
+    }
+
+    auto newReuseCount = AffinePattern::reduce_mul(
+        trips.begin() + newReuseDim, trips.begin() + newReuseDimEnd, 1);
+    // The tile size need to be accumulated.
+    auto newReuseTileSize =
+        AffinePattern::reduce_mul(trips.begin() + reuseDimEnd,
+                                  trips.begin() + newReuseDim, reuseTileSize);
+    info.addTile(newReuseDim, newReuseDimEnd, newReuseCount, newReuseTileSize);
+
+    reuseDim = newReuseDim;
+    reuseDimEnd = newReuseDimEnd;
+    reuseTileSize = newReuseTileSize;
+  }
+
+  STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
+              "[ReuseTile] Analyzed %s.\n", info);
   return info;
 }
 } // namespace gem5

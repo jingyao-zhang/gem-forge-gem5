@@ -1778,13 +1778,10 @@ void MLCStrandManager::recognizeReusedTile(StrandSplitContext &context,
       return;
     }
     if (dep.reuseInfo.hasReuse()) {
-      return;
+      if (!dep.reuseInfo.isInnerLoopReuse()) {
+        return;
+      }
     }
-  }
-
-  auto reuseInfo = this->reuseAnalyzer->analyzeReuse(strand);
-  if (!reuseInfo.hasReuse()) {
-    return;
   }
 
   auto linearAddrGen =
@@ -1794,6 +1791,11 @@ void MLCStrandManager::recognizeReusedTile(StrandSplitContext &context,
   }
   if (strand->addrGenFormalParams.size() % 2 != 1) {
     // Missing final trip.
+    return;
+  }
+
+  auto reuseInfo = this->reuseAnalyzer->analyzeReuse(strand);
+  if (!reuseInfo.hasReuse()) {
     return;
   }
 
@@ -1809,15 +1811,17 @@ void MLCStrandManager::recognizeReusedTile(StrandSplitContext &context,
 
   // Change all send to edges.
   for (auto &dep : strand->depEdges) {
-    dep.reuseInfo = reuseInfo;
+    auto finalReuseInfo = reuseInfo.mergeInnerLoopReuse(dep.reuseInfo);
+    dep.reuseInfo = finalReuseInfo;
     auto &recvConfig = dep.data;
     bool __attribute__((unused)) foundBaseEdge = false;
     STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
-                "[ReuseTile] Fix -> %s.\n", recvConfig->getStrandId());
+                "[ReuseTile] Fix %s -> %s.\n", finalReuseInfo,
+                recvConfig->getStrandId());
     for (auto &base : recvConfig->baseEdges) {
       if (base.dynStreamId == strand->dynamicId) {
         assert(base.isStrandSendTo);
-        base.reuseInfo = reuseInfo;
+        base.reuseInfo = finalReuseInfo;
         foundBaseEdge = true;
         break;
       }

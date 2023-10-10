@@ -183,7 +183,7 @@ void m5_stream_nuca_align(const void *A, const void *B, int64_t elementOffset);
  * Such a long name to avoid polluting C global scope.
  */
 enum StreamNUCARegionProperty {
-  // Manually overrite the interleaving (in elements).
+  // Manually overrite the interleaving (in bytes).
   STREAM_NUCA_REGION_PROPERTY_INTERLEAVE = 0,
   // Manually set if the region is used as PUM.
   STREAM_NUCA_REGION_PROPERTY_USE_PUM,
