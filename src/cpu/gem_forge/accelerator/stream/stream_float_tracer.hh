@@ -34,7 +34,7 @@ public:
   void write() const;
 
   // This will clear all results, including previous trace.
-  void reset() const;
+  void resetFloatTrace() const;
 
 private:
   void initialize() const;

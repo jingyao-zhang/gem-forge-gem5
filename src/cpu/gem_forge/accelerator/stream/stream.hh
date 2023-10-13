@@ -560,6 +560,9 @@ public:
   bool isSIMDComputation() const {
     return this->getComputeCallback()->hasSIMD();
   }
+  bool isSIMDMatrixComputation() const {
+    return this->getComputeCallback()->hasSIMDMatrix();
+  }
   enum ComputationType {
     UnknownComputationType = 0,
     LoadCompute,

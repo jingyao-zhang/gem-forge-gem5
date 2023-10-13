@@ -140,6 +140,9 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
                         microop->disassemble(pc.pc()));
       this->instructions.push_back(microop);
       this->pcs.push_back(pc);
+      if (microop->opClass() == enums::OpClass::SimdMatrix) {
+        this->isSIMDMatrix = true;
+      }
     }
 
     // Advance to the next pc.

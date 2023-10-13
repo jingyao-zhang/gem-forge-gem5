@@ -1051,7 +1051,8 @@ void MLCStrandManager::splitIntoStrands(StrandSplitContext &context,
 
   // Recognize reused tile.
   for (auto strand : configs) {
-    this->recognizeReusedTile(context, strand);
+    this->reuseLoadTile(context, strand);
+    this->reuseStoreTile(context, strand);
   }
 }
 
@@ -1751,8 +1752,8 @@ void MLCStrandManager::fixReusedSendTo(StrandSplitContext &context,
   }
 }
 
-void MLCStrandManager::recognizeReusedTile(StrandSplitContext &context,
-                                           ConfigPtr strand) {
+void MLCStrandManager::reuseLoadTile(StrandSplitContext &context,
+                                     ConfigPtr strand) {
 
   /**
    * We try to recognize reused tile for DirectLoadS that:
@@ -1839,6 +1840,56 @@ void MLCStrandManager::recognizeReusedTile(StrandSplitContext &context,
               newTrip, printAffinePatternParams(strand->addrGenFormalParams));
   strand->totalTripCount = newTrip;
   strand->innerTripCount = newTrip;
+}
+
+void MLCStrandManager::reuseStoreTile(StrandSplitContext &context,
+                                      ConfigPtr strand) {
+  /**
+   * We try to recognize reused tile for DirectStoreComputeS that:
+   * 1. Has no indirect stream.
+   * 2. Reused tile size is smaller than the threshold.
+   */
+  if (this->controller->myParams->stream_reuse_tile_elems == 0) {
+    return;
+  }
+  auto S = strand->stream;
+  if (!S->isDirectStoreStream() || !S->isStoreComputeStream()) {
+    STRAND_LOG_(
+        MLCRubyStrandSplit, strand->getStrandId(),
+        "[ReuseTile] No StoreTile: Not DirectStore %d StoreCompute %d.\n",
+        S->isDirectStoreStream(), S->isStoreComputeStream());
+    return;
+  }
+
+  if (!strand->depEdges.empty()) {
+    // What? StoreS with DepS?
+    STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
+                "[ReuseTile] No StoreTile: Has DepEdge.\n");
+    return;
+  }
+
+  auto linearAddrGen =
+      std::dynamic_pointer_cast<LinearAddrGenCallback>(strand->addrGenCallback);
+  if (!linearAddrGen) {
+    STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
+                "[ReuseTile] No StoreTile: Not LinearAddrGen.\n");
+    return;
+  }
+  if (strand->addrGenFormalParams.size() % 2 != 1) {
+    // Missing final trip.
+    STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
+                "[ReuseTile] No StoreTile: No TotalTripCount.\n");
+    return;
+  }
+
+  auto reuseInfo = this->reuseAnalyzer->analyzeReuse(strand);
+  STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
+              "[ReuseTile] StoreTile %s.\n", reuseInfo);
+  if (!reuseInfo.hasReuse()) {
+    return;
+  }
+
+  strand->storeReuseInfo = reuseInfo;
 }
 
 void MLCStrandManager::configureStream(ConfigPtr config,

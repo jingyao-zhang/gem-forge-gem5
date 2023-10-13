@@ -34,6 +34,8 @@ LLCDynStream::LLCDynStream(ruby::AbstractStreamAwareController *_mlcController,
       configData(_configData), slicedStream(_configData),
       strandId(_configData->dynamicId, _configData->strandIdx,
                _configData->totalStrands),
+      storeReuseInfo(_configData->storeReuseInfo),
+      reusedStoreStream(_configData->storeReuseInfo.getTotalReuse()),
       initializedCycle(_mlcController->curCycle()), creditedSliceIdx(0) {
 
   // Allocate the range builder.
@@ -62,6 +64,12 @@ LLCDynStream::LLCDynStream(ruby::AbstractStreamAwareController *_mlcController,
     assert(this->baseOnConfigs.back() && "BaseStreamConfig already released?");
     LLC_S_DPRINTF(this->getDynStrandId(), "Add BaseOnConfig %s.\n",
                   this->baseOnConfigs.back()->dynamicId);
+  }
+
+  // Set the store reuse.
+  if (this->storeReuseInfo.hasReuse()) {
+    LLC_S_DPRINTF(this->getDynStrandId(), "Setup StoreReuse %s.\n",
+                  this->storeReuseInfo);
   }
 
   if (this->isPointerChase()) {
@@ -1589,6 +1597,23 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
     this->incompleteComputations--;
     assert(this->incompleteComputations >= 0 &&
            "Negative incomplete computations.");
+  }
+
+  /**
+   * Remember if this is a StoreComputeS and has reuse.
+   */
+  if (this->storeReuseInfo.hasReuse()) {
+    auto baseElemIdx = this->storeReuseInfo.convertDepToBaseElemIdx(elem->idx);
+    if (this->reusedStoreStream.hasElem(baseElemIdx)) {
+      LLC_ELEMENT_DPRINTF(elem, "[StoreReuse] Reuse %s -> Base %lu.\n",
+                          this->storeReuseInfo, baseElemIdx);
+      this->reusedStoreStream.reuseElem(baseElemIdx);
+      elem->setStoreReused();
+    } else {
+      LLC_ELEMENT_DPRINTF(elem, "[StoreReuse] Create %s -> Base %lu.\n",
+                          this->storeReuseInfo, baseElemIdx);
+      this->reusedStoreStream.addElem(baseElemIdx, elem);
+    }
   }
 
   const auto seMachineID = se->controller->getMachineID();

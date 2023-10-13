@@ -2400,6 +2400,39 @@ void LLCStreamEngine::issueStreamReqToRemoteBank(const LLCStreamRequest &req) {
     }
   }
 
+  /**
+   * Check if the StoreReq is reused.
+   */
+  if (req.requestType == ruby::CoherenceRequestType_STREAM_STORE &&
+      req.S->isStoreComputeStream()) {
+    if (auto dynS = LLCDynStream::getLLCStream(sliceId.getDynStrandId())) {
+      if (dynS->storeReuseInfo.hasReuse()) {
+        bool isReused = true;
+        for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx();
+             ++idx) {
+          auto elem = dynS->getElemPanic(idx, "checkStoreReuse");
+          if (!elem->isStoreReused()) {
+            isReused = false;
+            break;
+          }
+        }
+        if (isReused) {
+          LLC_SLICE_DPRINTF(sliceId, "[StoreReuse] Reused.\n");
+          req.S->statistic.numRemoteReuseSlice++;
+          // Charge some fake delay.
+          Cycles reuseDelayCycles(1);
+          DynStreamSliceIdVec sliceIds;
+          sliceIds.add(sliceId);
+          ruby::DataBlock fakeStoreValueBlock;
+          this->receiveStreamDataVecFromReuse(reuseDelayCycles, paddrLine,
+                                              sliceIds, fakeStoreValueBlock,
+                                              fakeStoreValueBlock);
+          return;
+        }
+      }
+    }
+  }
+
   if (Debug::LLCRubyStreamMulticast && !req.multicastSliceIds.empty()) {
     std::stringstream ss;
     for (const auto &multicastSliceId : req.multicastSliceIds.sliceIds) {
@@ -3124,7 +3157,7 @@ bool LLCStreamEngine::isPAddrHandledByMe(Addr paddr,
 
 void LLCStreamEngine::print(std::ostream &out) const {}
 
-void LLCStreamEngine::resetStats() { this->seTracer.reset(); }
+void LLCStreamEngine::resetStats() { this->seTracer.resetFloatTrace(); }
 
 void LLCStreamEngine::receiveStreamIndirectReq(const ruby::RequestMsg &req) {
 
@@ -4745,6 +4778,9 @@ void LLCStreamEngine::pushInflyComputation(LLCStreamElementPtr &elem,
     this->traceEvent(::LLVM::TDG::StreamFloatEvent::CMP_START);
 
     this->numInflyRealCmps++;
+    if (S->isSIMDMatrixComputation()) {
+      this->numInflyMatrixCmps++;
+    }
   }
 
   Cycles readyCycle = this->curCycle() + latency;
@@ -4800,7 +4836,8 @@ void LLCStreamEngine::startComputation() {
       this->controller->myParams->llc_stream_engine_max_infly_computation;
   while (startedComputation < computationWidth &&
          !this->readyComputations.empty() &&
-         this->numInflyRealCmps < maxInflyComputation) {
+         this->numInflyRealCmps < maxInflyComputation &&
+         this->numInflyMatrixCmps < this->maxInflyMatrixCmps) {
     auto &elem = this->readyComputations.front();
     auto S = elem->S;
 
@@ -4906,6 +4943,10 @@ void LLCStreamEngine::completeComputation() {
       this->traceEvent(::LLVM::TDG::StreamFloatEvent::CMP_DONE);
 
       this->numInflyRealCmps--;
+      if (elem->S->isSIMDMatrixComputation()) {
+        assert(this->numInflyMatrixCmps > 0 && "Negaive Infly Matrix Cmp.");
+        this->numInflyMatrixCmps--;
+      }
     }
     this->inflyComputations.pop_front();
   }

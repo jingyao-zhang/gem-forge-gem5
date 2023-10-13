@@ -378,6 +378,14 @@ private:
 
 public:
   static uint64_t getAliveElems() { return aliveElems; }
+
+  // Remember if this is a StoreS being reused.
+  bool storeReused = false;
+  bool isStoreReused() const { return this->storeReused; }
+  void setStoreReused() {
+    assert(!this->storeReused && "Store already reused.");
+    this->storeReused = true;
+  }
 };
 
 } // namespace gem5

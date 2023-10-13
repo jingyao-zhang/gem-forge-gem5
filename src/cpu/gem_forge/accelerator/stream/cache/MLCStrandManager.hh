@@ -158,9 +158,15 @@ private:
                              CacheStreamConfigureVec &strands);
 
   /**
-   * Recognize reuse with distance more than 1.
+   * Recognize load reuse with distance more than 1.
    */
-  void recognizeReusedTile(StrandSplitContext &context, ConfigPtr strand);
+  void reuseLoadTile(StrandSplitContext &context, ConfigPtr strand);
+
+  /**
+   * Recognize store reuse with distance more thatn 1.
+   * This is the symmetric case to reusing load tile.
+   */
+  void reuseStoreTile(StrandSplitContext &context, ConfigPtr strand);
 
   /**
    * Configure a single stream.

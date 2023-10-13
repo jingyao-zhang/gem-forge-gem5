@@ -291,6 +291,8 @@ public:
     this->baseEdges.clear();
     this->depEdges.clear();
   }
+  // Remember the reuse store tile.
+  StreamReuseInfo storeReuseInfo;
   CacheStreamConfigureDataPtr getUsedByBaseConfig();
   void addUsedBy(CacheStreamConfigureDataPtr &data, int reuse = 1,
                  bool predBy = false, int predId = 0, bool predValue = false);

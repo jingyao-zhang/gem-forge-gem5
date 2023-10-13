@@ -61,7 +61,7 @@ void StreamFloatTracer::write() const {
   this->used = 0;
 }
 
-void StreamFloatTracer::reset() const {
+void StreamFloatTracer::resetFloatTrace() const {
   if (this->buffer.empty()) {
     // Not initialized yet.
     return;

@@ -423,6 +423,7 @@ public:
   struct ReusedBaseStream {
     const int reuse = 1;
     std::map<uint64_t, ReusedBaseElement> elems;
+    ReusedBaseStream() = default;
     ReusedBaseStream(int _reuse) : reuse(_reuse) {}
 
     bool hasElem(uint64_t streamElemIdx) const {
@@ -452,6 +453,10 @@ public:
   // Base stream with reuse.
   LLCDynStream *baseStream = nullptr;
   StreamReuseInfo baseStreamReuseInfo;
+
+  // Used to track store reuse.
+  StreamReuseInfo storeReuseInfo;
+  ReusedBaseStream reusedStoreStream;
 
   // Root stream.
   LLCDynStream *rootStream = nullptr;

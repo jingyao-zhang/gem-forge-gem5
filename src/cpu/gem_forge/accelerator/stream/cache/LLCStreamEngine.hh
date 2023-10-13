@@ -580,7 +580,9 @@ private:
                      const StreamValue &_result, Cycles _readyCycle)
         : elem(_elem), result(_result), readyCycle(_readyCycle) {}
   };
-  int64_t numInflyRealCmps = 0;
+  int numInflyRealCmps = 0;
+  int numInflyMatrixCmps = 0;
+  static constexpr int maxInflyMatrixCmps = 1;
   std::list<InflyComputation> inflyComputations;
   void tryVectorizeElem(LLCStreamElementPtr &elem, bool tryVectorize);
   void pushReadyComputation(LLCStreamElementPtr &elem,

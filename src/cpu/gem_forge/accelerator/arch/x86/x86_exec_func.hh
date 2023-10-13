@@ -83,6 +83,7 @@ public:
   Cycles getEstimatedLatency() const { return this->estimatedLatency; }
   const ::LLVM::TDG::ExecFuncInfo &getFuncInfo() const { return this->func; }
   bool hasSIMD() const { return this->isSIMD; }
+  bool hasSIMDMatrix() const { return this->isSIMDMatrix; }
 
   int getNumInstructions() const { return this->instructions.size(); }
   int getNumInstsBeforeStreamConfig() const {
@@ -103,6 +104,7 @@ private:
   // All the types are integer.
   bool isPureInteger;
   bool isSIMD = false;
+  bool isSIMDMatrix = false;
   Cycles estimatedLatency;
 
   int numInstsBeforeStreamConfig = 0;
