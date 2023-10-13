@@ -68,23 +68,47 @@ Group::~Group()
 void
 Group::regStats()
 {
+    if (debug::Stats) {
+        M5_VAR_USED const Named *named = dynamic_cast<const Named *>(this);
+        DPRINTF(Stats, "%#x %s: regStats\n",
+                this, named ? named->name() : "?");
+        for (auto &g : mergedStatGroups) {
+            DPRINTF(Stats, "  %#x %s: MergeGroup %#x\n",
+                    this, named ? named->name() : "?", g);
+        }
+        for (auto &g : statGroups) {
+            DPRINTF(Stats, "  %#x %s: Group %s %#x\n",
+                    this, named ? named->name() : "?",
+                    g.first, g.second);
+        }
+        for (auto &s : stats) {
+            DPRINTF(Stats, "  %s.\n", s->name);
+        }
+    }
     for (auto &g : mergedStatGroups)
         g->regStats();
 
-    for (auto &g : statGroups) {
-        if (debug::Stats) {
-            M5_VAR_USED const Named *named = dynamic_cast<const Named *>(this);
-            DPRINTF(Stats, "%s: regStats in group %s\n",
-                    named ? named->name() : "?",
-                    g.first);
-        }
+    for (auto &g : statGroups)
         g.second->regStats();
-    }
 }
 
 void
 Group::resetStats()
 {
+    if (debug::Stats) {
+        M5_VAR_USED const Named *named = dynamic_cast<const Named *>(this);
+        DPRINTF(Stats, "%#x %s: resetStats\n",
+                this, named ? named->name() : "?");
+        for (auto &g : mergedStatGroups) {
+            DPRINTF(Stats, "  %#x %s: MergeGroup %#x\n",
+                    this, named ? named->name() : "?", g);
+        }
+        for (auto &g : statGroups) {
+            DPRINTF(Stats, "  %#x %s: Group %s %#x\n",
+                    this, named ? named->name() : "?",
+                    g.first, g.second);
+        }
+    }
     for (auto &s : stats)
         s->reset();
 

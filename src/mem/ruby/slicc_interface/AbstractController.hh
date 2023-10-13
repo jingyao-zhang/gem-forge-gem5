@@ -105,7 +105,7 @@ class AbstractController : public ClockedObject, public Consumer
 
     virtual void print(std::ostream & out) const = 0;
     virtual void wakeup() = 0;
-    virtual void resetStats() = 0;
+    void resetStats() override;
     virtual void regStats();
 
     virtual void recordCacheTrace(int cntrl, CacheRecorder* tr) = 0;

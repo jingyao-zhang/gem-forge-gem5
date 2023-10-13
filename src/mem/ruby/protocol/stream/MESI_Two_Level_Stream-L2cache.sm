@@ -118,7 +118,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     L1_GET_INSTR,            desc="a L1I GET INSTR request for a block maped to us";
     L1_GETS,                 desc="a L1D GETS request for a block maped to us";
     L1_GETV,                 desc="a volatile load that will not be cached at upper";
-    L1_GETH,                 desc="a load brings the data to L2 and no response";
+    L2_GETH,                 desc="a load brings the data to L2 and no response";
     L1_GETX,                 desc="a L1D GETX request for a block maped to us";
     L1_UPGRADE,              desc="a L1D GETX request for a block maped to us";
 
@@ -362,7 +362,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     } else if (type == CoherenceRequestType:GETU) {
       return Event:L1_GETV;
     } else if (type == CoherenceRequestType:GETH) {
-      return Event:L1_GETH;
+      return Event:L2_GETH;
     } else if (type == CoherenceRequestType:GET_INSTR) {
       return Event:L1_GET_INSTR;
     } else if (type == CoherenceRequestType:GETX) {
@@ -1290,11 +1290,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
 
-  transition({SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_VVB, MT_IB, MT_SB, MT_VB}, {L1_GETS, L1_GETV, L1_GETH, STREAM_STORE, L1_GET_INSTR, L1_GETX, L1_UPGRADE}) {
+  transition({SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_VVB, MT_IB, MT_SB, MT_VB}, {L1_GETS, L1_GETV, L2_GETH, STREAM_STORE, L1_GET_INSTR, L1_GETX, L1_UPGRADE}) {
     zz_stallAndWaitL1RequestQueue;
   }
 
-  transition({MCT_I, M_I, MT_I}, {L1_GETV, L1_GETH, STREAM_STORE}) {
+  transition({MCT_I, M_I, MT_I}, {L1_GETV, L2_GETH, STREAM_STORE}) {
     // Should only happen when the LLC stream engine request the data unknown that this line is being evicted.
     zz_stallAndWaitL1RequestQueue;
   }
@@ -1321,7 +1321,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     ur_profileReq;
     jj_popL1RequestQueue;
   }
-  transition(NP, L1_GETH, IVV) {
+  transition(NP, L2_GETH, IVV) {
     // The only difference is do not record requestor id.
     qq_allocateL2CacheBlock;
     ll_clearSharers;
@@ -1435,12 +1435,12 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     zz_stallAndWaitL1RequestQueue;
   }
 
-  transition({IVV, ISS, IS}, {L1_GETV, L1_GETH, STREAM_STORE} ) {
+  transition({IVV, ISS, IS}, {L1_GETV, L2_GETH, STREAM_STORE} ) {
     // Stall the uncache request when there is a infly request to that line.
     zz_stallAndWaitL1RequestQueue;
   }
 
-  transition({IM, NP_M}, {L1_GETV, L1_GETX, STREAM_STORE, L1_GETH, L1_GETS, L1_GET_INSTR}) {
+  transition({IM, NP_M}, {L1_GETV, L1_GETX, STREAM_STORE, L2_GETH, L1_GETS, L1_GET_INSTR}) {
     zz_stallAndWaitL1RequestQueue;
   }
 
@@ -1502,7 +1502,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     ur_profileReq;
     jj_popL1RequestQueue;
   }
-  transition(SS, L1_GETH, SS) {
+  transition(SS, L2_GETH, SS) {
     ner_notifyStreamEngineFromL1Req;
     set_setMRU;
     uu_profileHit;
@@ -1574,7 +1574,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     ur_profileReq;
     jj_popL1RequestQueue;
   }
-  transition(M, L1_GETH, M) {
+  transition(M, L2_GETH, M) {
     ner_notifyStreamEngineFromL1Req;
     set_setMRU;
     uu_profileHit;
@@ -1629,8 +1629,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     set_setMRU;
     jj_popL1RequestQueue;
   }
-  transition(MT, L1_GETH, MT_M) {
-    // For L1_GETH at MT state, we treate it the same as STREAM_STORE.
+  transition(MT, L2_GETH, MT_M) {
+    // For L2_GETH at MT state, we treate it the same as STREAM_STORE.
     i_allocateTBE;
     css_copyStreamSliceId;
     f_sendInvToSharers;

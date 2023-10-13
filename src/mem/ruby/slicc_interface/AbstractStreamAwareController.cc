@@ -70,6 +70,7 @@ void AbstractStreamAwareController::init() {
 }
 
 void AbstractStreamAwareController::resetStats() {
+  AbstractController::resetStats();
   if (this->llcSE) {
     this->llcSE->resetStats();
   }
