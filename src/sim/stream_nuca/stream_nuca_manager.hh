@@ -44,7 +44,8 @@ public:
     BANK_COLS,
     START_BANK,
     START_VADDR,
-    END_VADDR
+    END_VADDR,
+    TRANSPOSE_BANK,
   };
   void setProperty(ThreadContext *tc, Addr start, uint64_t property,
                    uint64_t value);

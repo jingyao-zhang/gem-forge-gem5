@@ -127,6 +127,7 @@ public:
     uint64_t totalInterleave = 0;
     int startBank = -1;
     int startSet = -1;
+    bool transposeBank = false;
     /**
      * StreamPUM mapping.
      */
@@ -139,10 +140,10 @@ public:
 
     RangeMap(Addr _startPAddr, Addr _endPAddr,
              const std::vector<uint64_t> &_interleaves, int _startBank,
-             int _startSet)
+             int _startSet, bool _transposeBank)
         : startPAddr(_startPAddr), endPAddr(_endPAddr), isStreamPUM(false),
-          interleaves(_interleaves), startBank(_startBank),
-          startSet(_startSet) {
+          interleaves(_interleaves), startBank(_startBank), startSet(_startSet),
+          transposeBank(_transposeBank) {
       this->totalInterleave = 0;
       for (auto intrlv : this->interleaves) {
         this->totalInterleave += intrlv;
@@ -162,7 +163,8 @@ public:
   // Remap a region with customized interleave.
   static void addRangeMap(Addr startPAddr, Addr endPAddr,
                           const std::vector<uint64_t> &interleaves,
-                          int startBank, int startSet);
+                          int startBank, int startSet,
+                          bool transposeBank);
   // Remap a region with PUM
   static void addRangeMap(Addr startPAddr, Addr endPAddr,
                           const AffinePattern &pumTile, int elementBits,

@@ -223,6 +223,7 @@ void StreamNUCAManager::setProperty(ThreadContext *tc, Addr start,
     CASE(PUM_TILE_SIZE_DIM0);
     CASE(REDUCE_DIM);
     CASE(BROADCAST_DIM);
+    CASE(TRANSPOSE_BANK);
 
 #undef CASE
   }
@@ -581,22 +582,30 @@ void StreamNUCAManager::remapDirectRegionNUCA(StreamRegion &region) {
   int startBank = this->determineStartBank(region, interleave.front());
   int startSet = 0;
 
+  // Get if we want to transpose the bank.
+  bool transposeBank = false;
+  if (region.properties.count(RegionProperty::TRANSPOSE_BANK)) {
+    transposeBank = region.properties.at(RegionProperty::TRANSPOSE_BANK);
+  }
+
   // Remember the interleave and start bank.
   region.properties.emplace(RegionProperty::START_BANK, startBank);
 
   StreamNUCAMap::addRangeMap(startPAddr, endPAddr, interleave, startBank,
-                             startSet);
+                             startSet, transposeBank);
   if (interleave.size() == 1) {
     // Uniform interleave.
     region.properties.emplace(RegionProperty::INTERLEAVE, interleave.front());
-    DPRINTF(StreamNUCAManager,
-            "[StreamNUCA] Map %s %#x %lux%lu PAddr %#x Intrlv %lu Bank %d.\n",
-            region.name, startVAddr, region.elementSize, region.numElement,
-            startPAddr, interleave.front(), startBank);
-    ccprintf(*log->stream(),
-             "[StreamNUCA] Map %s %#x %lux%lu PAddr %#x Intrlv %lu Bank %d.\n",
-             region.name, startVAddr, region.elementSize, region.numElement,
-             startPAddr, interleave.front(), startBank);
+    DPRINTF(
+        StreamNUCAManager,
+        "[StreamNUCA] Map %s %#x %lux%lu PAddr %#x Intrlv %lu Bank %d T%d.\n",
+        region.name, startVAddr, region.elementSize, region.numElement,
+        startPAddr, interleave.front(), startBank, transposeBank);
+    ccprintf(
+        *log->stream(),
+        "[StreamNUCA] Map %s %#x %lux%lu PAddr %#x Intrlv %lu Bank %d T%d.\n",
+        region.name, startVAddr, region.elementSize, region.numElement,
+        startPAddr, interleave.front(), startBank, transposeBank);
   } else {
     DPRINTF(StreamNUCAManager,
             "[StreamNUCA] Map %s %#x %lux%lu PAddr %#x Bank %d NonUniIntrlv.\n",

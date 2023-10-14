@@ -207,6 +207,8 @@ enum StreamNUCARegionProperty {
   STREAM_NUCA_REGION_PROPERTY_START_VADDR,
   // End vaddr.
   STREAM_NUCA_REGION_PROPERTY_END_VADDR,
+  // Transpose the mesh topology of LLC banks.
+  STREAM_NUCA_REGION_PROPERTY_TRANSPOSE_BANK,
 };
 void m5_stream_nuca_set_property(const void *buffer,
                                  enum StreamNUCARegionProperty property,
