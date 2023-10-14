@@ -794,9 +794,6 @@ void MLCDynDirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
   } else if (slice->coreStatus == MLCStreamSlice::CoreStatusE::WAIT_ACK) {
     // Ack the stream element.
     // TODO: Send the packet back via normal message buffer.
-    // hack("Indirect slices acked element %llu size %llu header %llu.\n",
-    //      sliceId.getStartIdx(), this->slices.size(),
-    //      this->slices.front().sliceId.getStartIdx());
     this->makeAck(*slice);
   } else if (slice->coreStatus == MLCStreamSlice::CoreStatusE::ACK_READY) {
     MLC_SLICE_PANIC(sliceId, "Received multiple acks.");

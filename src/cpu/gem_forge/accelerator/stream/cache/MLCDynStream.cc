@@ -473,13 +473,15 @@ void MLCDynStream::makeAck(MLCStreamSlice &slice) {
                         this->slices.front().coreStatus));
   // Send back ack.
   auto dynS = this->getCoreDynS();
-  for (auto &ackSlice : this->slices) {
-    if (ackSlice.coreStatus == MLCStreamSlice::CoreStatusE::DONE) {
-      continue;
-    }
-    if (ackSlice.coreStatus != MLCStreamSlice::CoreStatusE::ACK_READY) {
-      continue;
-    }
+  // for (auto &ackSlice : this->slices) {
+  //   if (ackSlice.coreStatus == MLCStreamSlice::CoreStatusE::DONE) {
+  //     continue;
+  //   }
+  //   if (ackSlice.coreStatus != MLCStreamSlice::CoreStatusE::ACK_READY) {
+  //     continue;
+  //   }
+  {
+    auto &ackSlice = slice;
     const auto &ackSliceId = ackSlice.sliceId;
     // Set the core status to DONE.
     ackSlice.coreStatus = MLCStreamSlice::CoreStatusE::DONE;
