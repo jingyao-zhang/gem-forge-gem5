@@ -457,6 +457,7 @@ public:
   // Used to track store reuse.
   StreamReuseInfo storeReuseInfo;
   ReusedBaseStream reusedStoreStream;
+  void checkStoreReuse(LLCStreamElementPtr elem);
 
   // Root stream.
   LLCDynStream *rootStream = nullptr;

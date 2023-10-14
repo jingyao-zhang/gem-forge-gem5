@@ -1842,9 +1842,7 @@ void LLCStreamEngine::issueStreamDirect(LLCDynStream *dynS) {
        * used anymore.
        */
       for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-        assert(dynS->idxToElementMap.count(idx) &&
-               "Missing element for StoreStream.");
-        const auto &elem = dynS->idxToElementMap.at(idx);
+        auto elem = dynS->getElemPanic(idx, "IssueStoreS");
         assert(elem->isReady() && "StoreElement is not ready.");
 
         // Compute the overlap and set the data.
@@ -1860,6 +1858,14 @@ void LLCStreamEngine::issueStreamDirect(LLCDynStream *dynS) {
                            "elemOffset %#x.\n",
                            elem->idx, sliceId.vaddr + sliceOffset, overlapSize,
                            elemOffset);
+      }
+    }
+
+    // Check store reuse.
+    if (dynS->storeReuseInfo.hasReuse()) {
+      for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
+        auto elem = dynS->getElemPanic(idx, "IssueStoreS");
+        dynS->checkStoreReuse(elem);
       }
     }
 
@@ -2404,7 +2410,7 @@ void LLCStreamEngine::issueStreamReqToRemoteBank(const LLCStreamRequest &req) {
    * Check if the StoreReq is reused.
    */
   if (req.requestType == ruby::CoherenceRequestType_STREAM_STORE &&
-      req.S->isStoreComputeStream()) {
+      (req.S->isStoreComputeStream() || req.S->isUpdateStream())) {
     if (auto dynS = LLCDynStream::getLLCStream(sliceId.getDynStrandId())) {
       if (dynS->storeReuseInfo.hasReuse()) {
         bool isReused = true;

@@ -380,11 +380,14 @@ public:
   static uint64_t getAliveElems() { return aliveElems; }
 
   // Remember if this is a StoreS being reused.
+  bool storeReuseChecked = false;
   bool storeReused = false;
+  bool isStoreReuseChecked() const { return this->storeReuseChecked; }
   bool isStoreReused() const { return this->storeReused; }
-  void setStoreReused() {
-    assert(!this->storeReused && "Store already reused.");
-    this->storeReused = true;
+  void setStoreReused(bool storeReused) {
+    assert(!this->storeReuseChecked && "StoreReuse already checked.");
+    this->storeReuseChecked = true;
+    this->storeReused = storeReused;
   }
 };
 

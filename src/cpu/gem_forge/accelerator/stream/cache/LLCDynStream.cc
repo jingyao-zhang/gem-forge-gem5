@@ -1599,23 +1599,6 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
            "Negative incomplete computations.");
   }
 
-  /**
-   * Remember if this is a StoreComputeS and has reuse.
-   */
-  if (this->storeReuseInfo.hasReuse()) {
-    auto baseElemIdx = this->storeReuseInfo.convertDepToBaseElemIdx(elem->idx);
-    if (this->reusedStoreStream.hasElem(baseElemIdx)) {
-      LLC_ELEMENT_DPRINTF(elem, "[StoreReuse] Reuse %s -> Base %lu.\n",
-                          this->storeReuseInfo, baseElemIdx);
-      this->reusedStoreStream.reuseElem(baseElemIdx);
-      elem->setStoreReused();
-    } else {
-      LLC_ELEMENT_DPRINTF(elem, "[StoreReuse] Create %s -> Base %lu.\n",
-                          this->storeReuseInfo, baseElemIdx);
-      this->reusedStoreStream.addElem(baseElemIdx, elem);
-    }
-  }
-
   const auto seMachineID = se->controller->getMachineID();
   auto floatMachineType = this->getFloatMachineTypeAtElem(elem->idx);
   if (seMachineID.getType() != floatMachineType) {
@@ -2266,6 +2249,26 @@ LLCStreamElementPtr LLCDynStream::getElemPanic(uint64_t elemIdx,
                 elemIdx, errMsg);
   }
   return elem;
+}
+
+void LLCDynStream::checkStoreReuse(LLCStreamElementPtr elem) {
+  /**
+   * We should only check StoreReuse for once for every element.
+   */
+  if (this->storeReuseInfo.hasReuse() && !elem->isStoreReuseChecked()) {
+    auto baseElemIdx = this->storeReuseInfo.convertDepToBaseElemIdx(elem->idx);
+    if (this->reusedStoreStream.hasElem(baseElemIdx)) {
+      LLC_ELEMENT_DPRINTF(elem, "[StoreReuse] Reuse %s -> Base %lu.\n",
+                          this->storeReuseInfo, baseElemIdx);
+      this->reusedStoreStream.reuseElem(baseElemIdx);
+      elem->setStoreReused(true);
+    } else {
+      LLC_ELEMENT_DPRINTF(elem, "[StoreReuse] Create %s -> Base %lu.\n",
+                          this->storeReuseInfo, baseElemIdx);
+      this->reusedStoreStream.addElem(baseElemIdx, elem);
+      elem->setStoreReused(false);
+    }
+  }
 }
 
 void LLCDynStream::sample() {

@@ -1853,11 +1853,15 @@ void MLCStrandManager::reuseStoreTile(StrandSplitContext &context,
     return;
   }
   auto S = strand->stream;
-  if (!S->isDirectStoreStream() || !S->isStoreComputeStream()) {
-    STRAND_LOG_(
-        MLCRubyStrandSplit, strand->getStrandId(),
-        "[ReuseTile] No StoreTile: Not DirectStore %d StoreCompute %d.\n",
-        S->isDirectStoreStream(), S->isStoreComputeStream());
+  if (!S->isDirectMemStream()) {
+    STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
+                "[ReuseTile] No StoreTile: Not DirectMemS.\n");
+    return;
+  }
+  if (!S->isUpdateStream() && !S->isStoreComputeStream()) {
+    STRAND_LOG_(MLCRubyStrandSplit, strand->getStrandId(),
+                "[ReuseTile] No StoreTile: Not Update %d StoreCompute %d.\n",
+                S->isUpdateStream(), S->isStoreComputeStream());
     return;
   }
 
