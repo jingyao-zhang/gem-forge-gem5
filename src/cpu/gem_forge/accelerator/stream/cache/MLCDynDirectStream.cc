@@ -934,20 +934,28 @@ MLCDynDirectStream::findSliceForLLC(const DynStreamSliceId &llc) {
    * A quick path to estimate where the slice is.
    */
   if (!this->slices.empty()) {
-    auto startSliceElemIdx = this->slices.front().sliceId.getStartIdx();
-    auto llcSliceElemIdx = llc.getStartIdx();
     auto elemPerSlice =
         static_cast<int64_t>(this->slicedStream.getElemPerSlice());
+    int64_t estimatedSliceOffset = -1;
     if (elemPerSlice >= 1) {
-      // For huge elements, we can not estimate.
-      auto estimatedSliceOffset =
+      // Estimate via element offset.
+      auto startSliceElemIdx = this->slices.front().sliceId.getStartIdx();
+      auto llcSliceElemIdx = llc.getStartIdx();
+      estimatedSliceOffset =
           (llcSliceElemIdx - startSliceElemIdx) / elemPerSlice;
-      if (estimatedSliceOffset < this->slices.size()) {
-        auto sliceIter = this->slices.begin() + estimatedSliceOffset;
-        if (this->matchLLCSliceId(sliceIter->sliceId, llc)) {
-          // Found it.
-          return sliceIter;
-        }
+    } else {
+      // Estimate via vaddr offset. This only works for continuous stream.
+      auto startSliceVAddr = this->slices.front().sliceId.vaddr;
+      auto llcSliceVAddr = llc.vaddr;
+      estimatedSliceOffset = (llcSliceVAddr - startSliceVAddr) /
+                             ruby::RubySystem::getBlockSizeBytes();
+    }
+    if (estimatedSliceOffset >= 0 &&
+        estimatedSliceOffset < this->slices.size()) {
+      auto sliceIter = this->slices.begin() + estimatedSliceOffset;
+      if (this->matchLLCSliceId(sliceIter->sliceId, llc)) {
+        // Found it.
+        return sliceIter;
       }
     }
   }
