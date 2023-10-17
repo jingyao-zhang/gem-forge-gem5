@@ -69,6 +69,16 @@ CrossbarSwitch::wakeup()
             "at time: %lld\n",
             m_router->get_id(), m_router->curCycle());
 
+    /**
+     * First clear last trace assuming one cycle delay.
+     */
+    while (this->lastTraceEvents > 0) {
+        m_router->traceEvent(
+            this->lastTraceCycle + Cycles(1),
+            ::LLVM::TDG::StreamFloatEvent::ROUTER_XBAR_DONE);
+        this->lastTraceEvents--;
+    }
+
     for (auto& switch_buffer : switchBuffers) {
         if (!switch_buffer.isReady(curTick())) {
             continue;
@@ -91,6 +101,11 @@ CrossbarSwitch::wakeup()
 
             DPRINTF(RubyNetwork, "CrossbarSwitch[%d] move flit %d of %s.\n",
                 m_router->get_id(), t_flit->get_id(), *(t_flit->get_msg_ptr()));
+
+            m_router->traceEvent(
+                ::LLVM::TDG::StreamFloatEvent::ROUTER_XBAR_START);
+            this->lastTraceEvents++;
+            this->lastTraceCycle = m_router->curCycle();
         }
     }
 }

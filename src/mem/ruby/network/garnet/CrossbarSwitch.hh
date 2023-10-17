@@ -76,6 +76,10 @@ class CrossbarSwitch : public Consumer
     int m_num_vcs;
     double m_crossbar_activity;
     std::vector<flitBuffer> switchBuffers;
+
+    // Remember last time trace event.
+    Cycles lastTraceCycle = Cycles(0);
+    int lastTraceEvents = 0;
 };
 
 } // namespace garnet

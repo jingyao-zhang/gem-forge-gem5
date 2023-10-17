@@ -86,3 +86,4 @@ class GarnetRouter(BasicRouter):
     width = Param.UInt32(
         Parent.ni_flit_size, "bit width supported by the router"
     )
+    enable_trace = Param.Bool(False, "enable trace")

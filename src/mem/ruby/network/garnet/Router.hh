@@ -47,6 +47,8 @@
 #include "mem/ruby/network/garnet/flit.hh"
 #include "params/GarnetRouter.hh"
 
+#include "cpu/gem_forge/accelerator/stream/stream_float_tracer.hh"
+
 namespace gem5
 {
 
@@ -66,7 +68,7 @@ class OutputUnit;
 class Router : public BasicRouter, public Consumer
 {
   public:
-    typedef GarnetRouterParams Params;
+    PARAMS(GarnetRouter);
     Router(const Params &p);
 
     ~Router() = default;
@@ -172,6 +174,18 @@ class Router : public BasicRouter, public Consumer
     statistics::Scalar m_input_sched;
     statistics::Scalar m_output_sched;
     statistics::Scalar m_switch_sched;
+
+  private:
+    /**
+     * Reuse the StreamFloatTracer to track the activity of router.
+     */
+    StreamFloatTracer tracer;
+
+  public:
+    void traceEvent(
+        ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType event);
+    void traceEvent(
+        Cycles cycle, ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType event);
 };
 
 } // namespace garnet

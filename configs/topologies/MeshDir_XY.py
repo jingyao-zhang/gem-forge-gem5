@@ -267,6 +267,9 @@ class MeshDir_XY(SimpleTopology):
         # Create the routers in the mesh
         routers = [Router(router_id=i, latency = router_latency) \
             for i in range(self.num_routers)]
+        # Set the enable trace flag.
+        for router in routers:
+            router.enable_trace = options.gem_forge_enable_llc_stream_engine_trace
         network.routers = routers
 
         # link counter to set unique link ids

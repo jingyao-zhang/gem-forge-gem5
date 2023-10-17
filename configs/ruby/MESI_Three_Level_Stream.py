@@ -575,8 +575,6 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.ind_stream_req_multicast_group_size = options.gem_forge_stream_engine_llc_multicast_ind_req_bank_group_size
         dir_cntrl.enable_distributed_indirect_reduce = options.gem_forge_enable_stream_float_distributed_indirect_reduction
 
-        print(options.gem_forge_enable_llc_stream_engine_trace)
-
     for i, dma_port in enumerate(dma_ports):
         #
         # Create the Ruby objects associated with the dma controller
