@@ -49,6 +49,7 @@ namespace garnet
 {
 
 class Router;
+class OutputUnit;
 
 class CrossbarSwitch : public Consumer
 {
@@ -78,8 +79,14 @@ class CrossbarSwitch : public Consumer
     std::vector<flitBuffer> switchBuffers;
 
     // Remember last time trace event.
-    Cycles lastTraceCycle = Cycles(0);
-    int lastTraceEvents = 0;
+    using TraceEvent = int;
+    struct TraceState {
+      Cycles lastTraceCycle = Cycles(0);
+      std::vector<TraceEvent> lastTraceEvents;
+    };
+    TraceState traceState;
+    void finishLastTrace();
+    void trace(flit *f, OutputUnit *out);
 };
 
 } // namespace garnet
