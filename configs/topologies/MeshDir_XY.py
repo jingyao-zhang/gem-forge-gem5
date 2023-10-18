@@ -368,8 +368,8 @@ class MeshDir_XY(SimpleTopology):
                     int_links.append(IntLink(link_id=self.link_count,
                                              src_node=routers[north_out],
                                              dst_node=routers[south_in],
-                                             src_outport="North",
-                                             dst_inport="South",
+                                             src_outport="South",
+                                             dst_inport="North",
                                              latency=self.link_latency,
                                              weight=weightY))
                     self.link_count += 1
@@ -383,8 +383,8 @@ class MeshDir_XY(SimpleTopology):
                     int_links.append(IntLink(link_id=self.link_count,
                                              src_node=routers[south_out],
                                              dst_node=routers[north_in],
-                                             src_outport="South",
-                                             dst_inport="North",
+                                             src_outport="North",
+                                             dst_inport="South",
                                              latency=self.link_latency,
                                              weight=weightY))
                     self.link_count += 1
