@@ -277,6 +277,12 @@ void InputUnit::allocateMulticastBuffer(flit *f) {
         if (group.second.size() > selectGroupSize) {
             selectOutport = group.first;
             selectGroupSize = group.second.size();
+        } else if (group.second.size() == selectGroupSize) {
+            // Heuristic to deprioritize the one going to myself.
+            if (m_router->getOutportDirection(group.first) != "Local") {
+                selectOutport = group.first;
+                selectGroupSize = group.second.size();
+            }
         }
     }
     DPRINTF(RubyMulticast, "InputUnit[%d][%s][%d] Select outport %s.\n",
@@ -403,35 +409,52 @@ void InputUnit::duplicateMulticastMsgToNetworkInterface(
     auto f = buffer.peek();
     auto msg = f->get_msg_ptr();
 
-    // Get the Local NetworkInterface.
-    // ! This assumes one router per node.
-    auto senderNI = m_router->get_net_ptr()->getNetworkInterface(f->get_route().src_ni);
-    auto senderNodeId = senderNI->get_node_id();
-    auto senderMachineId = MachineID::getMachineIDFromRawNodeID(senderNodeId);
-    auto senderMachineType = senderMachineId.getType();
-    /**
-     * Try to get the LocalMachineId. Here I assume all routers are connected to the L2 cache.
-     */
-    auto localMachineType = MachineType_NULL;
-    if (senderMachineType == MachineType_Directory ||
-        senderMachineType == MachineType_L2Cache) {
-        localMachineType = MachineType_L2Cache;
-    } else if (senderMachineType == MachineType_L1Cache) {
-        localMachineType = MachineType_L1Cache;
+    bool duplicateToInput = true;
+    // Bypass logic for if the message is for local machine id.
+    if (m_router->get_net_ptr()->isMulticastLocalBypassEnabled() &&
+        msg->getDestination().count() == 1 &&
+        f->get_route().dest_router == this->m_router->get_id()) {
+        auto destMachineId = msg->getDestination().singleElement();
+        auto destNodeId = destMachineId.getRawNodeID();
+        auto destNI = m_router->get_net_ptr()->getNetworkInterface(destNodeId);
+        destNI->injectMsgToOutput(msg);
+        duplicateToInput = false;
+    } else {
+        // Get the Local NetworkInterface.
+        // ! This assumes one router per node.
+        auto senderNI = m_router->get_net_ptr()
+            ->getNetworkInterface(f->get_route().src_ni);
+        auto senderNodeId = senderNI->get_node_id();
+        auto senderMachineId = MachineID::getMachineIDFromRawNodeID(
+            senderNodeId);
+        auto senderMachineType = senderMachineId.getType();
+        /**
+         * Try to get the LocalMachineId. Here I assume all
+         * routers are connected to the L2 cache.
+         */
+        auto localMachineType = MachineType_NULL;
+        if (senderMachineType == MachineType_Directory ||
+            senderMachineType == MachineType_L2Cache) {
+            localMachineType = MachineType_L2Cache;
+        } else if (senderMachineType == MachineType_L1Cache) {
+            localMachineType = MachineType_L1Cache;
+        }
+        if (localMachineType == MachineType::MachineType_NULL) {
+            panic("Multicast from Machine %s -> %s: %s.",
+                senderMachineId, msg->getDestination(), *msg);
+        }
+        auto localMachineId = MachineID(localMachineType, m_router->get_id());
+        if (localMachineId.getNum() >= MachineType_base_count(
+            localMachineType)) {
+            panic("Local MachineId %s Overflow. Total %d.",
+                  localMachineId, MachineType_base_count(localMachineType));
+        }
+        auto localNodeId = localMachineId.getRawNodeID();
+        auto localNI = m_router->get_net_ptr()->getNetworkInterface(
+            localNodeId);
+        // Inject the message.
+        localNI->injectMsgToInput(msg);
     }
-    if (localMachineType == MachineType::MachineType_NULL) {
-        panic("Multicast from Machine %s -> %s: %s.",
-            senderMachineId, msg->getDestination(), *msg);
-    }
-    auto localMachineId = MachineID(localMachineType, m_router->get_id());
-    if (localMachineId.getNum() >= MachineType_base_count(localMachineType)) {
-        panic("Local MachineId %s Overflow. Total %d.",
-              localMachineId, MachineType_base_count(localMachineType));
-    }
-    auto localNodeId = localMachineId.getRawNodeID();
-    auto localNI = m_router->get_net_ptr()->getNetworkInterface(localNodeId);
-    // Inject the message.
-    localNI->injectMsgToInput(msg);
 
     if (Debug::RubyMulticast) {
         std::stringstream ss;
@@ -439,11 +462,12 @@ void InputUnit::duplicateMulticastMsgToNetworkInterface(
             auto destMachineId = MachineID::getMachineIDFromRawNodeID(destNodeId);
             ss << ' ' << destMachineId;
         }
-        DPRINTF(RubyMulticast, "InputUnit[%d][%s] Inject Duplicated Multicast from %s to %s.\n",
+        DPRINTF(RubyMulticast, "InputUnit[%d][%s] "
+            "Duplicated Multicast to %s msg %s.\n",
             m_router->get_id(),
             m_router->getPortDirectionName(this->get_direction()),
-            senderMachineId,
-            msg->getDestination());
+            duplicateToInput ? "Input" : "Output",
+            *msg);
     }
 
     // Release all flits.

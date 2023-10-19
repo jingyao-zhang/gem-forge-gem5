@@ -77,6 +77,7 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     if (m_enable_fault_model)
         fault_model = p.fault_model;
     m_enable_multicast = p.enable_multicast;
+    m_enable_multicast_local_bypass = p.enable_multicast_local_bypass;
     m_ideal_noc_hops = p.ideal_noc_hops;
     m_ideal_noc_msg = p.ideal_noc_msg;
     m_ideal_noc_msg_all = m_ideal_noc_msg == "all";
