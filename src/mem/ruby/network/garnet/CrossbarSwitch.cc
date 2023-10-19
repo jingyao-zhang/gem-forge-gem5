@@ -110,10 +110,6 @@ void CrossbarSwitch::trace(flit *f, OutputUnit *out) {
 void
 CrossbarSwitch::wakeup()
 {
-    DPRINTF(RubyNetwork, "CrossbarSwitch at Router %d woke up "
-            "at time: %lld\n",
-            m_router->get_id(), m_router->curCycle());
-
     this->finishLastTrace();
 
     for (auto& switch_buffer : switchBuffers) {
@@ -122,7 +118,7 @@ CrossbarSwitch::wakeup()
         }
 
         flit *t_flit = switch_buffer.peekTopFlit();
-        DPRINTF(RubyNetwork, "  Peek flit %s.\n", *t_flit);
+        DPRINTF(RubyNetwork, "XBar-%d peek flit %s.\n", *t_flit);
         if (t_flit->is_stage(ST_, curTick())) {
             int outport = t_flit->get_outport();
 
@@ -136,8 +132,10 @@ CrossbarSwitch::wakeup()
             switch_buffer.getTopFlit();
             m_crossbar_activity++;
 
-            DPRINTF(RubyNetwork, "CrossbarSwitch[%d] move flit %d of %s.\n",
-                m_router->get_id(), t_flit->get_id(), *(t_flit->get_msg_ptr()));
+            DPRINTF(RubyNetwork, "XBar-%d move %s flit %d of %s.\n",
+                m_router->get_id(),
+                m_router->getOutputUnit(outport)->get_direction(),
+                t_flit->get_id(), *(t_flit->get_msg_ptr()));
 
             this->trace(t_flit, m_router->getOutputUnit(outport));
         }

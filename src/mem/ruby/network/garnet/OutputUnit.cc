@@ -61,7 +61,7 @@ OutputUnit::OutputUnit(int id, PortDirection direction, Router *router,
 void
 OutputUnit::decrement_credit(int out_vc)
 {
-    DPRINTF(RubyNetwork, "Router %d OutputUnit %s decrementing credit:%d for "
+    DPRINTF(RubyNetwork, "OutU-%d-%s credit--:%d for "
             "outvc %d at time: %lld for %s\n", m_router->get_id(),
             m_router->getPortDirectionName(get_direction()),
             outVcState[out_vc].get_credit_count(),
@@ -73,7 +73,7 @@ OutputUnit::decrement_credit(int out_vc)
 void
 OutputUnit::increment_credit(int out_vc)
 {
-    DPRINTF(RubyNetwork, "Router %d OutputUnit %s incrementing credit:%d for "
+    DPRINTF(RubyNetwork, "OutU-%d-%s credit++:%d for "
             "outvc %d at time: %lld from:%s\n", m_router->get_id(),
             m_router->getPortDirectionName(get_direction()),
             outVcState[out_vc].get_credit_count(),

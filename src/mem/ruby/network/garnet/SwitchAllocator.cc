@@ -144,11 +144,15 @@ SwitchAllocator::arbitrate_inports()
                     m_vc_winners[inport] = invc;
                     m_out_port_requests[outport]++;
 
-                    DPRINTF(RubyNetwork, "SA[%d] Arbitrate inport [%s][%d] -> [%s][%d].\n",
+                    DPRINTF(RubyNetwork,
+                        "SA-%d Arbitrate "
+                        "InputUnit-%s-%d -> OutputUnit-%s-%d\n",
                         m_router->get_id(),
-                        m_router->getPortDirectionName(input_unit->get_direction()),
+                        m_router->getPortDirectionName(
+                            input_unit->get_direction()),
                         invc,
-                        m_router->getPortDirectionName(output_unit->get_direction()),
+                        m_router->getPortDirectionName(
+                            output_unit->get_direction()),
                         outvc);
 
                     break; // got one vc winner for this port
@@ -211,7 +215,7 @@ SwitchAllocator::arbitrate_outports()
                 flit *t_flit = input_unit->getTopSAFlit(invc);
 
                 DPRINTF(RubyNetwork,
-                    "SA[%d] Grant %s/%d -> %s/%d to %s at %lld, %d of %s.\n",
+                    "SA-%d Grant %s-%d -> %s-%d to %s at %lld, %d of %s.\n",
                         m_router->get_id(),
                         m_router->getPortDirectionName(
                             input_unit->get_direction()),
@@ -339,12 +343,14 @@ SwitchAllocator::send_allowed(InputUnit *input_unit, OutputUnit *output_unit,
 
     // cannot send if no outvc or no credit.
     if (!has_outvc || !has_credit) {
-        DPRINTF(RubyNetwork, "SA[%d] Decline [%s][%d] -> [%s][%d] "
+        DPRINTF(RubyNetwork, "SA-%d Decline %s-%d -> %s-%d "
             "has_outvc %d has_credit %d.\n",
             m_router->get_id(),
-            m_router->getPortDirectionName(input_unit->get_direction()),
+            m_router->getPortDirectionName(
+                input_unit->get_direction()),
             invc,
-            m_router->getPortDirectionName(output_unit->get_direction()),
+            m_router->getPortDirectionName(
+                output_unit->get_direction()),
             outvc,
             has_outvc,
             has_credit
@@ -367,15 +373,18 @@ SwitchAllocator::send_allowed(InputUnit *input_unit, OutputUnit *output_unit,
             if (input_unit->needSAStage(temp_vc, curTick()) &&
                (input_unit->get_outport(temp_vc) == outport) &&
                (input_unit->get_enqueue_time(temp_vc) < t_enqueue_time)) {
-                DPRINTF(RubyNetwork, "SA[%d] Decline [%s][%d] -> [%s][%d] "
+                DPRINTF(RubyNetwork, "SA-%d Decline %s-%d -> %s-%d "
                     "due to order violation from [%s][%d], enqueue time"
                     "%lu < %lu.\n",
                     m_router->get_id(),
-                    m_router->getPortDirectionName(input_unit->get_direction()),
+                    m_router->getPortDirectionName(
+                        input_unit->get_direction()),
                     invc,
-                    m_router->getPortDirectionName(output_unit->get_direction()),
+                    m_router->getPortDirectionName(
+                        output_unit->get_direction()),
                     outvc,
-                    m_router->getPortDirectionName(input_unit->get_direction()),
+                    m_router->getPortDirectionName(
+                        input_unit->get_direction()),
                     temp_vc,
                     input_unit->get_enqueue_time(temp_vc),
                     t_enqueue_time

@@ -86,9 +86,11 @@ InputUnit::wakeup()
 {
     if (m_in_link->isReady(curTick())) {
         flit *t_flit = m_in_link->consumeLink();
-        DPRINTF(RubyNetwork, "Router[%d] Consuming:%s Width: %d Flit:%s\n",
-                m_router->get_id(), m_in_link->name(),
-                m_router->getBitWidth(), *t_flit);
+        DPRINTF(RubyNetwork, "InU-%d-%s "
+            "Consuming:%s Width: %d Flit:%s\n",
+            this->get_direction(),
+            m_router->get_id(), m_in_link->name(),
+            m_router->getBitWidth(), *t_flit);
 
         int vc = t_flit->get_vc();
         t_flit->increment_hops(); // for stats
@@ -121,7 +123,7 @@ InputUnit::wakeup()
         }
 
 
-        DPRINTF(RubyNetwork, "InputUnit[%d][%s][%d] size %d flit %d of %s.\n",
+        DPRINTF(RubyNetwork, "InU-%d-%s-%d size %d flit %d of %s.\n",
             m_router->get_id(),
             m_router->getPortDirectionName(this->get_direction()),
             vc,
@@ -164,8 +166,9 @@ InputUnit::wakeup()
 void
 InputUnit::increment_credit(int in_vc, bool free_signal, Tick curTime)
 {
-    DPRINTF(RubyNetwork, "Router[%d]: Sending a credit vc:%d free:%d to %s\n",
-    m_router->get_id(), in_vc, free_signal, m_credit_link->name());
+    DPRINTF(RubyNetwork, "InU-%d%s credit++ vc:%d free:%d to %s\n",
+    m_router->get_id(), this->get_direction(),
+    in_vc, free_signal, m_credit_link->name());
     Credit *t_credit = new Credit(in_vc, free_signal, curTime);
     creditQueue.insert(t_credit);
     m_credit_link->scheduleEventAbsolute(m_router->clockEdge(Cycles(1)));
@@ -236,7 +239,7 @@ InputUnit::PortToDestinationMap InputUnit::groupDestinationByRouting(
                 ss << ' ' << destMachineID;
             }
         }
-        DPRINTF(RubyMulticast, "InputUnit[%d][%s] Multicast to %s\n",
+        DPRINTF(RubyMulticast, "InU-%d-%s Multicast to %s\n",
             m_router->get_id(),
             m_router->getPortDirectionName(this->get_direction()),
             ss.str());
@@ -285,7 +288,7 @@ void InputUnit::allocateMulticastBuffer(flit *f) {
             }
         }
     }
-    DPRINTF(RubyMulticast, "InputUnit[%d][%s][%d] Select outport %s.\n",
+    DPRINTF(RubyMulticast, "InU-%d-%s-%d Select outport %s.\n",
         m_router->get_id(),
         m_router->getPortDirectionName(this->get_direction()),
         vc,
@@ -352,7 +355,7 @@ void InputUnit::duplicateMulticastFlit(flit *f) {
         f->m_width,
         m_router->curCycle());
     multicastBuffer.push(remainFlit);
-    DPRINTF(RubyMulticast, "InputUnit[%d][%s][%d] "
+    DPRINTF(RubyMulticast, "InU-%d-%s-%d "
         "MulticastBuffer Push Flit %d.\n",
         m_router->get_id(),
         m_router->getPortDirectionName(this->get_direction()),
@@ -462,7 +465,7 @@ void InputUnit::duplicateMulticastMsgToNetworkInterface(
             auto destMachineId = MachineID::getMachineIDFromRawNodeID(destNodeId);
             ss << ' ' << destMachineId;
         }
-        DPRINTF(RubyMulticast, "InputUnit[%d][%s] "
+        DPRINTF(RubyMulticast, "InU-%d-%s "
             "Duplicated Multicast to %s msg %s.\n",
             m_router->get_id(),
             m_router->getPortDirectionName(this->get_direction()),
