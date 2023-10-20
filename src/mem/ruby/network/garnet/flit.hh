@@ -111,13 +111,6 @@ class flit
     bool functionalRead(Packet *pkt, WriteMask &mask);
     bool functionalWrite(Packet *pkt);
 
-    bool isMulticastDuplicate() const {
-        return this->multicastDuplicate;
-    }
-    void setMulticastDuplicate(bool multicastDuplicate) {
-        this->multicastDuplicate = multicastDuplicate;
-    }
-
     virtual flit* serialize(int ser_id, int parts, uint32_t bWidth);
     virtual flit* deserialize(int des_id, int num_flits, uint32_t bWidth);
 
@@ -137,13 +130,6 @@ class flit
     int m_outport;
     Tick src_delay;
     std::pair<flit_stage, Tick> m_stage;
-    /**
-     * Set by InputUnit when duplicate a flit, and cleared
-     * after SwitchAllocator processed it. This is needed
-     * to avoid SwitchAllocator sending back credit for
-     * duplicated flits.
-     */
-    bool multicastDuplicate = false;
 };
 
 inline std::ostream&

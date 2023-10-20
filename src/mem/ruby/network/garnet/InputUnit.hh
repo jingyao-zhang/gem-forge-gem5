@@ -212,8 +212,6 @@ class InputUnit : public Consumer
         }
         void push(flit *f) {
             assert(this->state == Buffering);
-            // Set the flag indicating this is a duplicate flit.
-            f->setMulticastDuplicate(true);
             this->flits.push_back(f);
             auto type = f->get_type();
             if (type == TAIL_ || type == HEAD_TAIL_) {
