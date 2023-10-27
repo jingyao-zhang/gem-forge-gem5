@@ -76,7 +76,15 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_enable_fault_model = p.enable_fault_model;
     if (m_enable_fault_model)
         fault_model = p.fault_model;
-    m_enable_multicast = p.enable_multicast;
+    if (p.multicast_mode == "unicast") {
+        m_multicast_mode = MulticastModeE::UNICAST;
+    } else if (p.multicast_mode == "duplicate") {
+        m_multicast_mode = MulticastModeE::DUPLICATE_MSG_AT_FORK;
+    } else if (p.multicast_mode == "fanout") {
+        m_multicast_mode = MulticastModeE::FANOUT_FLIT_AT_FORK;
+    } else {
+        panic("Invalid Multicast Mode %s.", p.multicast_mode);
+    }
     m_enable_multicast_local_bypass = p.enable_multicast_local_bypass;
     m_ideal_noc_hops = p.ideal_noc_hops;
     m_ideal_noc_msg = p.ideal_noc_msg;

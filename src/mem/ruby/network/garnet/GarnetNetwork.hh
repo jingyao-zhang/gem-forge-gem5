@@ -84,7 +84,12 @@ class GarnetNetwork : public Network
     bool isFaultModelEnabled() const { return m_enable_fault_model; }
     FaultModel* fault_model;
 
-    bool isMulticastEnabled() const { return m_enable_multicast; }
+    enum MulticastModeE {
+        UNICAST,
+        DUPLICATE_MSG_AT_FORK,
+        FANOUT_FLIT_AT_FORK,
+    };
+    MulticastModeE getMulticastMode() const { return m_multicast_mode; }
     bool isMulticastLocalBypassEnabled() const {
         return m_enable_multicast_local_bypass;
     }
@@ -185,7 +190,7 @@ class GarnetNetwork : public Network
     uint32_t m_buffers_per_data_vc;
     int m_routing_algorithm;
     bool m_enable_fault_model;
-    bool m_enable_multicast;
+    MulticastModeE m_multicast_mode;
     bool m_enable_multicast_local_bypass;
     int m_ideal_noc_hops;
     std::string m_ideal_noc_msg = "none";

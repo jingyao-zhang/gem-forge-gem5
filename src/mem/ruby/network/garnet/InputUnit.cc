@@ -84,6 +84,12 @@ InputUnit::InputUnit(int id, PortDirection direction, Router *router)
 void
 InputUnit::wakeup()
 {
+    if (this->isMulticastFanoutInPort()) {
+        // This is a duplicated fanout InPort.
+        assert(m_router->get_net_ptr()->getMulticastMode() ==
+            GarnetNetwork::MulticastModeE::FANOUT_FLIT_AT_FORK);
+        return;
+    }
     if (m_in_link->isReady(curTick())) {
         flit *t_flit = m_in_link->consumeLink();
         DPRINTF(RubyNetwork, "InU-%d-%s "
@@ -92,72 +98,73 @@ InputUnit::wakeup()
             m_router->get_id(), m_in_link->name(),
             m_router->getBitWidth(), *t_flit);
 
-        int vc = t_flit->get_vc();
-        t_flit->increment_hops(); // for stats
+        this->handleMulticastFlit(t_flit);
 
-        if ((t_flit->get_type() == HEAD_) ||
-            (t_flit->get_type() == HEAD_TAIL_)) {
-
-            assert(virtualChannels[vc].get_state() == IDLE_);
-            set_vc_active(vc, curTick());
-        } else {
-            assert(virtualChannels[vc].get_state() == ACTIVE_);
-        }
-
-        this->allocateMulticastBuffer(t_flit);
-        this->duplicateMulticastFlit(t_flit);
-
-        auto flitType = t_flit->get_type();
-        if ((flitType == HEAD_) || (flitType == HEAD_TAIL_)) {
-            // Route computation for this vc
-            int outport = m_router->route_compute(t_flit->get_route(),
-                m_id, m_direction);
-
-            // Update output port in VC
-            // All flits in this packet will use this output port
-            // The output port field in the flit is updated after it wins SA
-            grant_outport(vc, outport);
-
-        } else {
-            assert(virtualChannels[vc].get_state() == ACTIVE_);
-        }
-
-
-        DPRINTF(RubyNetwork, "InU-%d-%s-%d size %d flit %d of %s.\n",
-            m_router->get_id(),
-            m_router->getPortDirectionName(this->get_direction()),
-            vc,
-            virtualChannels[vc].getSize(),
-            t_flit->get_id(), *(t_flit->get_msg_ptr()));
-
-        int vnet = vc/m_vc_per_vnet;
-        // number of writes same as reads
-        // any flit that is written will be read only once
-        m_num_buffer_writes[vnet]++;
-        m_num_buffer_reads[vnet]++;
-
-        Cycles pipe_stages = m_router->get_pipe_stages();
-        if (pipe_stages == 1) {
-            // 1-cycle router
-            // Flit goes for SA directly
-            insertSAFlit(vc, t_flit, curTick());
-        } else {
-            assert(pipe_stages > 1);
-            // Router delay is modeled by making flit wait in buffer for
-            // (pipe_stages cycles - 1) cycles before going for SA
-
-            Cycles wait_time = pipe_stages - Cycles(1);
-            insertSAFlit(vc, t_flit, m_router->clockEdge(wait_time));
-
-            // Wakeup the router in that cycle to perform SA
-            m_router->schedule_wakeup(Cycles(wait_time));
-            this->m_router->m_input_sched++;
-        }
-
+        this->addFlit(t_flit);
     }
 
     if (m_in_link->isReady(curTick())) {
         this->m_router->schedule_wakeup(Cycles(1));
+    }
+}
+
+void
+InputUnit::addFlit(flit *t_flit)
+{
+
+    int vc = t_flit->get_vc();
+
+    t_flit->increment_hops(); // for stats
+
+    auto flitType = t_flit->get_type();
+    if ((flitType == HEAD_) || (flitType == HEAD_TAIL_)) {
+
+        assert(virtualChannels[vc].get_state() == IDLE_);
+        set_vc_active(vc, curTick());
+
+        // Route computation for this vc
+        int outport = m_router->route_compute(t_flit->get_route(),
+            m_id, m_direction);
+
+        // Update output port in VC
+        // All flits in this packet will use this output port
+        // The output port field in the flit is updated after it wins SA
+        grant_outport(vc, outport);
+
+    } else {
+        assert(virtualChannels[vc].get_state() == ACTIVE_);
+    }
+
+
+    DPRINTF(RubyNetwork, "InU-%d-%s-%d size %d flit %d of %s.\n",
+        m_router->get_id(),
+        m_router->getPortDirectionName(this->get_direction()),
+        vc,
+        virtualChannels[vc].getSize(),
+        t_flit->get_id(), *(t_flit->get_msg_ptr()));
+
+    int vnet = vc/m_vc_per_vnet;
+    // number of writes same as reads
+    // any flit that is written will be read only once
+    m_num_buffer_writes[vnet]++;
+    m_num_buffer_reads[vnet]++;
+
+    Cycles pipe_stages = m_router->get_pipe_stages();
+    if (pipe_stages == 1) {
+        // 1-cycle router
+        // Flit goes for SA directly
+        insertSAFlit(vc, t_flit, curTick());
+    } else {
+        assert(pipe_stages > 1);
+        // Router delay is modeled by making flit wait in buffer for
+        // (pipe_stages cycles - 1) cycles before going for SA
+
+        Cycles wait_time = pipe_stages - Cycles(1);
+        insertSAFlit(vc, t_flit, m_router->clockEdge(wait_time));
+
+        // Wakeup the router in that cycle to perform SA
+        m_router->schedule_wakeup(Cycles(wait_time));
+        this->m_router->m_input_sched++;
     }
 }
 
@@ -166,9 +173,67 @@ InputUnit::wakeup()
 void
 InputUnit::increment_credit(int in_vc, bool free_signal, Tick curTime)
 {
-    DPRINTF(RubyNetwork, "InU-%d%s credit++ vc:%d free:%d to %s\n",
-    m_router->get_id(), this->get_direction(),
-    in_vc, free_signal, m_credit_link->name());
+    DPRINTF(RubyNetwork, "InU-%d-%s credit++ vc:%d free:%d\n",
+        m_router->get_id(), this->get_direction(),
+        in_vc, free_signal);
+
+    if (this->isMulticastFanoutInPort()) {
+        // We only care about free_signal.
+        // And no need to send back any credit.
+        if (free_signal) {
+            auto mainInputUnit = m_router->getInputUnit(
+                this->mainInPortNum);
+            mainInputUnit->fanoutVCFreed(in_vc, curTime);
+            return;
+        }
+    } else {
+        // This is main input unit.
+        if (free_signal) {
+            auto &multicastBuffer = this->multicastBuffers.at(in_vc);
+            if (multicastBuffer.isBuffering()) {
+                if (m_router->get_net_ptr()->getMulticastMode() ==
+                    GarnetNetwork::MulticastModeE::FANOUT_FLIT_AT_FORK) {
+                    // We need to check if we have all fanout vcs freed.
+                    this->fanoutVCFreed(in_vc, curTime);
+                    return;
+                }
+            }
+        }
+        // Otherwise, just send back the 
+        sendCredit(in_vc, free_signal, curTime);
+    }
+}
+
+void
+InputUnit::fanoutVCFreed(int in_vc, Tick curTime)
+{
+    auto &multicastBuffer = this->multicastBuffers.at(in_vc);
+    assert(multicastBuffer.isBuffering());
+    assert(m_router->get_net_ptr()->getMulticastMode() ==
+        GarnetNetwork::MulticastModeE::FANOUT_FLIT_AT_FORK);
+    assert(!this->isMulticastFanoutInPort());
+
+    multicastBuffer.fanoutVCFreed++;
+    assert(multicastBuffer.fanoutVCFreed <=
+        multicastBuffer.routes.size() + 1);
+
+    DPRINTF(RubyMulticast, "InU-%d-%s-%d fanout VC freed %d routes %d\n",
+        m_router->get_id(), this->get_direction(), in_vc,
+        multicastBuffer.fanoutVCFreed,
+        multicastBuffer.routes.size());
+    
+    if (multicastBuffer.fanoutVCFreed ==
+        multicastBuffer.routes.size() + 1) {
+        // Every all multicast flit is done.
+        // We can send back the free credit.
+        this->sendCredit(in_vc, true, curTime);
+        multicastBuffer.clear();
+    }
+}
+
+void
+InputUnit::sendCredit(int in_vc, bool free_signal, Tick curTime)
+{
     Credit *t_credit = new Credit(in_vc, free_signal, curTime);
     creditQueue.insert(t_credit);
     m_credit_link->scheduleEventAbsolute(m_router->clockEdge(Cycles(1)));
@@ -234,7 +299,7 @@ InputUnit::PortToDestinationMap InputUnit::groupDestinationByRouting(
         for (const auto &group : grouped) {
             auto outport = group.first;
             auto outDirection = m_router->getOutportDirection(outport);
-            ss << " [" << m_router->getPortDirectionName(outDirection) << ']';
+            ss << " [" << outDirection << ']';
             for (const auto &destMachineID : group.second) {
                 ss << ' ' << destMachineID;
             }
@@ -248,27 +313,37 @@ InputUnit::PortToDestinationMap InputUnit::groupDestinationByRouting(
     return grouped;
 }
 
-void InputUnit::allocateMulticastBuffer(flit *f) {
+void InputUnit::handleMulticastFlit(flit *f) {
+    auto &destination = f->get_route().net_dest;
+    if (destination.count() == 1) {
+        return;
+    }
+    switch (m_router->get_net_ptr()->getMulticastMode()) {
+    case GarnetNetwork::MulticastModeE::DUPLICATE_MSG_AT_FORK:
+        this->allocateMulticastBuffer(f, false /* fanout */);
+        this->cloneMulticastFlitAsMsg(f);
+        break;
+    case GarnetNetwork::MulticastModeE::FANOUT_FLIT_AT_FORK:
+        this->allocateMulticastBuffer(f, true /* fanout */);
+        this->fanoutMulticastFlit(f);
+        break;
+    default:
+        panic("Cannot handle MulticastMode.");
+        break;
+    }
+}
+
+void InputUnit::allocateMulticastBuffer(flit *f, bool fanout) {
     auto flitType = f->get_type();
     if (flitType != HEAD_ && flitType != HEAD_TAIL_) {
         return;
     }
     auto &destination = f->get_route().net_dest;
-    if (destination.count() == 1) {
-        return;
-    }
 
     int vc = f->get_vc();
     auto &multicastBuffer = this->multicastBuffers.at(vc);
 
-    std::vector<NodeID> destRawNodeIDs = destination.getAllDest();
-    std::vector<MachineID> destMachineIDs;
-    for (auto &destRawNodeID : destRawNodeIDs) {
-        destMachineIDs.push_back(
-            MachineID::getMachineIDFromRawNodeID(destRawNodeID));
-    }
-    assert(m_router->get_net_ptr()->isMulticastEnabled() &&
-        "Message with multiple destinations received when Multicast disabled.");
+    std::vector<MachineID> destMachineIDs = destination.getAllDestMachineID();
 
     /**
      * Group destination by routing out port. We prioritize the largest group.
@@ -304,36 +379,53 @@ void InputUnit::allocateMulticastBuffer(flit *f) {
      * If there is remaining destinations, duplicate the flits.
      */
     const auto &route = f->get_route();
+    std::vector<RouteInfo> remainRoutes;
+    RouteInfo *remainRoute = nullptr;
+
     int remainDestRawNodeId = -1;
-    RouteInfo remainRoute;
-    remainRoute.vnet = route.vnet;
     for (const auto &group : destGroups) {
         if (group.first == selectOutport) {
             continue;
         }
+
+        if (remainRoutes.empty() || fanout) {
+            // Add new route.
+            remainRoutes.emplace_back();
+            remainRoute = &remainRoutes.back();
+            remainRoute->vnet = route.vnet;
+            remainRoute->src_ni = route.src_ni;
+            remainRoute->src_router = route.src_router;
+            // Clear the hop count of the new route.
+            remainRoute->hops_traversed = -1;
+            // Clear the remainDestRawNodeId.
+            remainDestRawNodeId = -1;
+        }
+
         for (const auto &dest : group.second) {
+            remainRoute->net_dest.add(dest);
             if (remainDestRawNodeId == -1) {
                 remainDestRawNodeId = dest.getRawNodeID();
+                remainRoute->dest_ni = remainDestRawNodeId;
+                remainRoute->dest_router = m_router->get_net_ptr()
+                    ->get_router_id(remainDestRawNodeId, route.vnet);
             }
-            remainRoute.net_dest.add(dest);
         }
     }
-    remainRoute.src_ni = route.src_ni;
-    remainRoute.src_router = route.src_router;
-    remainRoute.dest_ni = remainDestRawNodeId;
-    remainRoute.dest_router = m_router->get_net_ptr()->get_router_id(
-        remainDestRawNodeId, route.vnet);
-    // Clear the hop count of the new route.
-    remainRoute.hops_traversed = -1;
 
-    auto remainMsg = f->get_msg_ptr()->clone();
-    remainMsg->getDestination() = remainRoute.net_dest;
-    remainMsg->setVnet(f->get_vnet());
-    // Allocate the MulticastDuplicateBuffer.
-    multicastBuffer.allocate(remainRoute, remainMsg);
+    std::vector<MsgPtr> remainMsgs;
+    for (const auto &remainRoute : remainRoutes) {
+        auto remainMsg = f->get_msg_ptr()->clone();
+        remainMsg->getDestination() = remainRoute.net_dest;
+        remainMsg->setVnet(f->get_vnet());
+        remainMsgs.push_back(remainMsg);
+    }
+
+    // Allocate the MulticastBuffer.
+    multicastBuffer.allocate(
+        std::move(remainRoutes), std::move(remainMsgs));
 }
 
-void InputUnit::duplicateMulticastFlit(flit *f) {
+void InputUnit::cloneMulticastFlitAsMsg(flit *f) {
 
     /**
      * We may need to duplicate the message if it's multicast.
@@ -343,80 +435,53 @@ void InputUnit::duplicateMulticastFlit(flit *f) {
     if (!multicastBuffer.isBuffering()) {
         return;
     }
-    auto remainFlit = new flit(
-        f->getPacketID(),
-        f->get_id(),
-        f->get_vc(),
-        f->get_vnet(),
-        multicastBuffer.route,
-        f->get_size(),
-        multicastBuffer.msg,
-        f->msgSize,
-        f->m_width,
-        m_router->curCycle());
-    multicastBuffer.push(remainFlit);
-    DPRINTF(RubyMulticast, "InU-%d-%s-%d "
-        "MulticastBuffer Push Flit %d.\n",
-        m_router->get_id(),
-        m_router->getPortDirectionName(this->get_direction()),
-        vc,
-        remainFlit->get_id());
-    std::vector<MachineID> destMachineIDs;
-    {
-        // Compute the all destinations.
-        auto &destination = f->get_route().net_dest;
-        std::vector<NodeID> destRawNodeIDs = destination.getAllDest();
-        for (auto &destRawNodeID : destRawNodeIDs) {
-            destMachineIDs.push_back(
-                MachineID::getMachineIDFromRawNodeID(destRawNodeID));
-        }
-    }
+
     // Modify the original flit to subtract these destinations.
-    auto &route = f->get_route();
-    int selectDestRawNodeID = -1;
-    route.net_dest.clear();
-    for (const auto &dest : destMachineIDs) {
-        if (multicastBuffer.route.net_dest.isElement(dest)) {
-            continue;
-        }
-        if (selectDestRawNodeID == -1) {
-            selectDestRawNodeID = dest.getRawNodeID();
-        }
-        route.net_dest.add(dest);
+    this->removeMulticastDestFromFlit(f, multicastBuffer);
+
+    auto flitType = f->get_type();
+    if (flitType == TAIL_ || flitType == HEAD_TAIL_) {
+        // We can duplicate msg to network interface,
+        // and release multicast buffer.
+        this->duplicateMulticastMsgToNetworkInterface(multicastBuffer);
+        multicastBuffer.clear();
     }
+}
+
+void
+InputUnit::removeMulticastDestFromFlit(flit *f, MulticastBuffer &buffer) {
+    auto &route = f->get_route();
+    for (const auto &remainRoute : buffer.routes) {
+        route.net_dest.removeNetDest(remainRoute.net_dest);
+    }
+
+    assert(!route.net_dest.isEmpty() && "No dest.");
+    auto selectDestRawNodeID = route.net_dest.smallestElement().getRawNodeID();
     route.dest_ni = selectDestRawNodeID;
     route.dest_router = m_router->get_net_ptr()->get_router_id(
         selectDestRawNodeID, route.vnet);
     f->get_msg_ptr()->getDestination() = route.net_dest;
 }
 
-int InputUnit::calculateVCForMulticastDuplicateFlit(int vnet) {
-    for (int i = 0; i < m_vc_per_vnet; i++) {
-        auto vc = vnet * m_vc_per_vnet + i;
-        if (virtualChannels[vc].get_state() == IDLE_) {
-            m_vnet_busy_count[vnet] = 0;
-            return vc;
-        }
+void InputUnit::duplicateMulticastMsgToNetworkInterface(
+    MulticastBuffer &buffer) {
+
+    for (int i = 0; i < buffer.msgs.size(); ++i) {
+        auto msg = buffer.msgs.at(i);
+        const auto &route = buffer.routes.at(i);
+        this->duplicateMulticastMsgToNetworkInterface(msg, route);
     }
-
-    m_vnet_busy_count[vnet]++;
-    panic_if(m_vnet_busy_count[vnet] > 50000,
-        "%s: Possible network deadlock in vnet: %d at time: %llu \n",
-        name(), vnet, curTick());
-
-    return -1;
 }
 
-void InputUnit::duplicateMulticastMsgToNetworkInterface(
-    MulticastDuplicateBuffer &buffer) {
-    auto f = buffer.peek();
-    auto msg = f->get_msg_ptr();
-
+void
+InputUnit::duplicateMulticastMsgToNetworkInterface(
+    MsgPtr &msg, const RouteInfo &route) {
+    
     bool duplicateToInput = true;
     // Bypass logic for if the message is for local machine id.
     if (m_router->get_net_ptr()->isMulticastLocalBypassEnabled() &&
         msg->getDestination().count() == 1 &&
-        f->get_route().dest_router == this->m_router->get_id()) {
+        route.dest_router == this->m_router->get_id()) {
         auto destMachineId = msg->getDestination().singleElement();
         auto destNodeId = destMachineId.getRawNodeID();
         auto destNI = m_router->get_net_ptr()->getNetworkInterface(destNodeId);
@@ -426,7 +491,7 @@ void InputUnit::duplicateMulticastMsgToNetworkInterface(
         // Get the Local NetworkInterface.
         // ! This assumes one router per node.
         auto senderNI = m_router->get_net_ptr()
-            ->getNetworkInterface(f->get_route().src_ni);
+            ->getNetworkInterface(route.src_ni);
         auto senderNodeId = senderNI->get_node_id();
         auto senderMachineId = MachineID::getMachineIDFromRawNodeID(
             senderNodeId);
@@ -472,14 +537,47 @@ void InputUnit::duplicateMulticastMsgToNetworkInterface(
             duplicateToInput ? "Input" : "Output",
             *msg);
     }
-
-    // Release all flits.
-    auto size = f->get_size();
-    for (int i = 0; i < size; ++i) {
-        delete buffer.pop();
-    }
-    assert(this->totalReadyMulitcastFlits == 0);
 }
+
+void InputUnit::fanoutMulticastFlit(flit *f) {
+
+    /**
+     * We may need to duplicate the message if it's multicast.
+     */
+    int vc = f->get_vc();
+    auto &multicastBuffer = this->multicastBuffers.at(vc);
+    if (!multicastBuffer.isBuffering()) {
+        return;
+    }
+
+    for (int i = 0; i < multicastBuffer.routes.size(); ++i) {
+        auto &msg = multicastBuffer.msgs.at(i);
+        const auto &route = multicastBuffer.routes.at(i);
+        auto remainFlit = new flit(
+            f->getPacketID(),
+            f->get_id(),
+            f->get_vc(),
+            f->get_vnet(),
+            route,
+            f->get_size(),
+            msg,
+            f->msgSize,
+            f->m_width,
+            m_router->curCycle());
+
+        if (i >= this->fanoutInPortNums.size()) {
+            panic("Multicast Fanout Overflow.");
+        }
+        auto fanoutInPortNum = this->fanoutInPortNums.at(i);
+        auto fanoutInputUnit = m_router->getInputUnit(fanoutInPortNum);
+        
+        fanoutInputUnit->addFlit(remainFlit);
+    }
+
+    // Modify the original flit to subtract these destinations.
+    this->removeMulticastDestFromFlit(f, multicastBuffer);
+}
+
 } // namespace garnet
 } // namespace ruby
 } // namespace gem5

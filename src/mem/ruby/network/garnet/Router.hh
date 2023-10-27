@@ -157,6 +157,13 @@ class Router : public BasicRouter, public Consumer
     SwitchAllocator switchAllocator;
     CrossbarSwitch crossbarSwitch;
 
+    /**
+     * Create the duplicate fanout InputUnit for multicast.
+     * These InputUnits have no upstream links, and are used to model
+     * an idealized fanout implementation for multicast.
+     */
+    void addMulticastFanoutInPort();
+
     std::vector<std::shared_ptr<InputUnit>> m_input_unit;
     std::vector<std::shared_ptr<OutputUnit>> m_output_unit;
 

@@ -51,9 +51,10 @@ class GarnetNetwork(RubyNetwork):
     garnet_deadlock_threshold = Param.UInt32(
         50000, "network-level deadlock threshold"
     )
-    enable_multicast = Param.Bool(False, "enable multicast")
+    multicast_mode = Param.String("unicast",
+        "How to handle multicast msg: unicast, duplicate, fanout")
     enable_multicast_local_bypass = Param.Bool(True,
-        "enable multicast local bypass")
+        "enable multicast local bypass, only work in duplicate mode")
     ideal_noc_hops = Param.Int(-1, "ideal NoC hops (-1 to disable)")
     ideal_noc_msg = Param.String("all", "ideal NoC on message")
 

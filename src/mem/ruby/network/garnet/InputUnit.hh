@@ -163,6 +163,13 @@ class InputUnit : public Consumer
     bool functionalRead(Packet *pkt, WriteMask &mask);
     uint32_t functionalWrite(Packet *pkt);
 
+    void addFanoutInPortNum(int inport) {
+        this->fanoutInPortNums.push_back(inport);
+    }
+    void setFanoutMainInPortNum(int inport) {
+        this->mainInPortNum = inport;
+    }
+
     void resetStats();
 
   private:
@@ -171,8 +178,8 @@ class InputUnit : public Consumer
     PortDirection m_direction;
     int m_vc_per_vnet;
     std::vector<int> m_vnet_busy_count;
-    NetworkLink *m_in_link;
-    CreditLink *m_credit_link;
+    NetworkLink *m_in_link = nullptr;
+    CreditLink *m_credit_link = nullptr;
     flitBuffer creditQueue;
 
     // Input Virtual channels
@@ -185,94 +192,72 @@ class InputUnit : public Consumer
     std::vector<double> m_num_buffer_writes;
     std::vector<double> m_num_buffer_reads;
 
+    bool isMulticastFanoutInPort() const {
+        return m_in_link == nullptr;
+    }
+
+    void addFlit(flit *t_flit);
+
     void insertSAFlit(int vc, flit *t_flit, Tick time)
     {
         virtualChannels[vc].insertSAFlit(t_flit, time);
         m_SA_flits++;
     }
 
-    struct MulticastDuplicateBuffer {
+    struct MulticastBuffer {
         enum StateE {
             Invalid,
             Buffering,
         };
         InputUnit *inputUnit;
         StateE state = Invalid;
-        RouteInfo route;
-        MsgPtr msg = nullptr;
-        int readyFlits = 0;
-        std::deque<flit *> flits;
-        MulticastDuplicateBuffer(InputUnit *_inputUnit)
+        std::vector<RouteInfo> routes;
+        std::vector<MsgPtr> msgs;
+        int fanoutVCFreed = 0;
+        MulticastBuffer(InputUnit *_inputUnit)
             : inputUnit(_inputUnit) {}
-        void allocate(const RouteInfo &route, MsgPtr msg) {
+        void allocate(std::vector<RouteInfo> routes,
+            std::vector<MsgPtr> msgs) {
             assert(this->state == Invalid);
-            this->route = route;
-            this->msg = msg;
+            this->routes = std::move(routes);
+            this->msgs = std::move(msgs);
             this->state = Buffering;
         }
-        void push(flit *f) {
-            assert(this->state == Buffering);
-            this->flits.push_back(f);
-            auto type = f->get_type();
-            if (type == TAIL_ || type == HEAD_TAIL_) {
-                this->readyFlits += f->get_size();
-                this->inputUnit->totalReadyMulitcastFlits += f->get_size();
-                assert(this->readyFlits == this->flits.size());
-                this->state = Invalid;
-                inputUnit->duplicateMulticastMsgToNetworkInterface(*this);
-            }
-        }
-        flit *peek() {
-            assert(this->isReady());
-            auto f = this->flits.front();
-            return f;
-        }
-        flit *pop() {
-            assert(this->isReady());
-            auto f = this->flits.front();
-            this->flits.pop_front();
-            this->readyFlits--;
-            this->inputUnit->totalReadyMulitcastFlits--;
-            return f;
-        }
-        void setVCForFrontMsg(int vc) {
-            assert(this->isReady());
-            [[maybe_unused]] auto frontFlitType = this->flits.front()->get_type();
-            assert(frontFlitType == HEAD_ || frontFlitType == HEAD_TAIL_);
-            assert(this->readyFlits >= this->flits.front()->get_size());
-            int i = 0;
-            int n = this->flits.front()->get_size();
-            auto iter = this->flits.begin();
-            while (i < n) {
-                assert(iter != this->flits.end());
-                (*iter)->set_vc(vc);
-                ++i;
-                ++iter;
-            }
-        }
-        bool isReady() const {
-            return this->readyFlits > 0;
+        void clear() {
+            this->state = Invalid;
+            this->msgs.clear();
+            this->routes.clear();
+            this->fanoutVCFreed = 0;
         }
         bool isBuffering() const {
             return this->state == Buffering;
         }
     };
 
-    std::vector<MulticastDuplicateBuffer> multicastBuffers;
-    int totalReadyMulitcastFlits = 0;
-    // Used for round robin.
-    int currMulticastBufferIdx = 0;
+    std::vector<MulticastBuffer> multicastBuffers;
 
     // Group destination by routing out port.
     using PortToDestinationMap = std::map<int, std::vector<MachineID>>;
     PortToDestinationMap groupDestinationByRouting(
         flit* inflyFlit,
         const std::vector<MachineID> &destMachineIDs);
-    void allocateMulticastBuffer(flit *f);
-    void duplicateMulticastFlit(flit *f);
-    int calculateVCForMulticastDuplicateFlit(int vnet);
+
+    void handleMulticastFlit(flit *f);
+
+    void allocateMulticastBuffer(flit *f, bool fanout);
+    void cloneMulticastFlitAsMsg(flit *f);
+    void removeMulticastDestFromFlit(flit *f, MulticastBuffer &buffer);
     void duplicateMulticastMsgToNetworkInterface(
-        MulticastDuplicateBuffer &buffer);
+        MulticastBuffer &buffer);
+    void duplicateMulticastMsgToNetworkInterface(
+        MsgPtr &msg, const RouteInfo &route);
+
+    int mainInPortNum = -1;
+    std::vector<int> fanoutInPortNums;
+    void fanoutMulticastFlit(flit *f);
+    void fanoutVCFreed(int in_vc, Tick curTime);
+
+    void sendCredit(int in_vc, bool free_signal, Tick curTime);
 };
 
 } // namespace garnet

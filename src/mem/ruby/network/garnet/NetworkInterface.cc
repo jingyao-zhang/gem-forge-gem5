@@ -400,7 +400,9 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
         MachineID destMachineID = MachineID::getMachineIDFromRawNodeID(destID);
 
         Message *new_net_msg_ptr = new_msg_ptr.get();
-        if (dest_nodes.size() > 1 && !m_net_ptr->isMulticastEnabled()) {
+        if (dest_nodes.size() > 1 &&
+            m_net_ptr->getMulticastMode() ==
+                GarnetNetwork::MulticastModeE::UNICAST) {
             NetDest personal_dest;
             for (int m = 0; m < (int) MachineType_NUM; m++) {
                 if ((destID >= MachineType_base_number((MachineType) m)) &&
@@ -471,7 +473,8 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
         m_ni_out_vcs_enqueue_time[vc] = curTick();
         outVcState[vc].setState(ACTIVE_, curTick());
 
-        if (m_net_ptr->isMulticastEnabled()) {
+        if (m_net_ptr->getMulticastMode() !=
+            GarnetNetwork::MulticastModeE::UNICAST) {
             // No need to go on, as we have multicast support.
             break;
         }

@@ -65,6 +65,9 @@ Router::init()
 {
     BasicRouter::init();
 
+    // Duplicate Fanout InPort must happen before SA init.
+    this->addMulticastFanoutInPort();
+
     switchAllocator.init();
     crossbarSwitch.init();
 }
@@ -120,6 +123,38 @@ Router::addInPort(PortDirection inport_dirn,
     m_input_unit.push_back(std::shared_ptr<InputUnit>(input_unit));
 
     routingUnit.addInDirection(inport_dirn, port_num);
+}
+
+void
+Router::addMulticastFanoutInPort()
+{
+
+    if (m_network_ptr->getMulticastMode() !=
+        GarnetNetwork::MulticastModeE::FANOUT_FLIT_AT_FORK) {
+        return;
+    }
+
+    auto num_real_inports = m_input_unit.size();
+    auto num_real_outports = m_output_unit.size();
+    auto duplicate_count = num_real_outports - 1;
+
+    for (auto i = 0; i < num_real_inports; ++i) {
+
+        const auto &inport_dirn = this->getInportDirection(i);
+        auto inport = this->getInputUnit(i);
+
+        for (auto j = 0; j < duplicate_count; ++j) {
+
+            int port_num = m_input_unit.size();
+            m_input_unit.push_back(
+                std::make_shared<InputUnit>(port_num, inport_dirn, this)
+            );
+            m_input_unit.back()->setFanoutMainInPortNum(i);
+            inport->addFanoutInPortNum(port_num);
+
+            // No need to add to RoutingUnit?
+        }
+    }
 }
 
 void
