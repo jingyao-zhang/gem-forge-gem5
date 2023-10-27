@@ -196,6 +196,52 @@ class MeshDir_XY(SimpleTopology):
             print(f'[MeshDirTile] NUMA Router {router_row}x{router_col} -> Dir {tile_row}x{tile_col}.')
             self.numa_nodes[dir_idx].append(i)
 
+    def makeDirEastWestEdgeTopology(self, ExtLink, dir_nodes, routers, ext_links):
+        num_dir_columns = 2
+        num_dir_rows = len(dir_nodes) // num_dir_columns
+        assert(num_dir_rows * num_dir_columns == len(dir_nodes))
+        assert(num_dir_rows == self.num_rows)
+        assert(num_dir_columns <= self.num_columns)
+
+        """
+        Connect the dir nodes in east and west edges, 8x8 mesh:
+        [XX]  01   02   03   04   05   06   [XX]
+        [XX]  09   0A   0B   0C   0D   0E   [XX]
+        [XX]  11   12   13   14   15   16   [XX]
+        [XX]  19   1A   1B   1C   1D   1E   [XX]
+        [XX]  21   22   23   24   25   26   [XX]
+        [XX]  29   2A   2B   2C   2D   2E   [XX]
+        [XX]  31   32   33   34   35   36   [XX]
+        [XX]  39   3A   3B   3C   3D   3E   [XX]
+        """
+        for i in range(num_dir_rows):
+            for j in range(num_dir_columns):
+                dir_idx = i * num_dir_columns + j
+                tile_row = i 
+                tile_col = j * self.num_columns - 1
+                router_idx = tile_row * self.num_columns + tile_col
+                print(f'[MeshDirTile] Dir {i}x{j} -> Router {tile_row}x{tile_col}.')
+                dir_nodes[dir_idx].router_id = router_idx
+                ext_links.append(
+                    ExtLink(
+                        link_id=self.link_count,
+                        ext_node=dir_nodes[dir_idx],
+                        int_node=routers[router_idx],
+                        latency=self.link_latency))
+                self.link_count += 1
+
+        # NUMA Node for routers in the tile.
+        self.numa_nodes = []
+        for i in range(len(dir_nodes)):
+            self.numa_nodes.append(list())
+        for i in range(self.num_routers):
+            router_row, router_col = divmod(i, self.num_columns)
+            tile_row = router_row 
+            tile_col = (router_col + 1) // self.num_columns 
+            dir_idx = tile_row * num_dir_columns + tile_col
+            print(f'[MeshDirTile] NUMA Router {router_row}x{router_col} -> Dir {tile_row}x{tile_col}.')
+            self.numa_nodes[dir_idx].append(i)
+
     def makeDirDiagTopology(self, ExtLink, dir_nodes, routers, ext_links):
         num_dirs = len(dir_nodes)
         assert(num_dirs == self.num_rows)
@@ -303,6 +349,8 @@ class MeshDir_XY(SimpleTopology):
             self.makeDirTileTopology(ExtLink, dir_nodes, routers, ext_links)
         elif options.ruby_mesh_dir_location == 'diag':
             self.makeDirDiagTopology(ExtLink, dir_nodes, routers, ext_links)
+        elif options.ruby_mesh_dir_location == 'east-west-edge':
+            self.makeDirEastWestEdgeTopology(ExtLink, dir_nodes, routers, ext_links)
         else:
             print('Unsupported Dir Location.')
             assert(False)

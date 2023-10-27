@@ -124,7 +124,8 @@ def define_options(parser):
         '--ruby-mesh-dir-location',
         type=str,
         default='corner',
-        choices=['corner', 'middle', 'tile', 'diag'],
+        choices=['corner', 'middle', 'tile', 'diag',
+            'east-west-edge',],
         help='How to place directories in the mesh network.',
     )
 
