@@ -110,7 +110,7 @@ void PUMEngine::configure(MLCPUMManager *pumManager, int64_t pumContextId,
     LLC_SE_DPRINTF("[PUMEngine]   Configured with CMD %lu.\n",
                    this->commands.size());
     for (int i = 0; i < this->commands.size(); ++i) {
-      LLC_SE_DPRINTF("[PUMEngine]   CMD %ld %s.", i,
+      LLC_SE_DPRINTF("[PUMEngine]   CMD %ld %s\n", i,
                      this->commands.at(i).to_string(myBankIdx));
     }
   }

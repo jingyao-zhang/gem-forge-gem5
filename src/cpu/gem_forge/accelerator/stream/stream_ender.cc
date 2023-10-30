@@ -418,6 +418,14 @@ bool StreamRegionController::canCommitStreamEndImpl(StaticRegion &staticRegion,
       // Non-distributed IndReduce also need to check the ack.
       shouldCheckAck = true;
     }
+    /**
+     * Normally we don't need to ack for LoadS, but if this is the only stream
+     * offloaded, we check it. This is used to implement the warm up phase.
+     */
+    if (S->isOnlyDirectLoadStream() && dynS.isFloatedToCache() &&
+        !dynS.shouldRangeSync()) {
+      shouldCheckAck = true;
+    }
     if (shouldCheckAck && dynS.cacheAckedElements.size() <
                               dynS.getNumFloatedElemUntil(endElemIdx)) {
       S_ELEMENT_DPRINTF(

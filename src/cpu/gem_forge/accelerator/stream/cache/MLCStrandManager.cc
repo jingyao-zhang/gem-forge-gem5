@@ -1158,10 +1158,6 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
       auto strandAddrGenFormalParams =
           this->splitAffinePattern(context, config, strandSplit, strandIdx);
 
-      STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
-                  "[StrandSplit] StrandIdx %d AddrPat %s.\n", strandIdx,
-                  printAffinePatternParams(strandAddrGenFormalParams));
-
       strand->addrGenFormalParams = strandAddrGenFormalParams;
       strand->totalTripCount = strandSplit.getStrandTripCount(
           config->getTotalTripCount(), strandIdx);
@@ -1169,6 +1165,33 @@ MLCStrandManager::ConfigVec MLCStrandManager::splitIntoStrandsImpl(
           config->addrGenCallback
               ->genAddr(0, strandAddrGenFormalParams, getStreamValueFail)
               .front());
+
+      STRAND_LOG_(MLCRubyStrandSplit, config->dynamicId,
+                  "[StrandSplit] StrandIdx %d Trip %10ld AddrPat %s.\n",
+                  strandIdx, strand->totalTripCount,
+                  printAffinePatternParams(strandAddrGenFormalParams));
+      if (LinearAddrGenCallback::getTotalTripCount(strandAddrGenFormalParams) <
+          strand->totalTripCount) {
+        // We allow less TotalTripCount than the formal params.
+        // This is because we have special tail iterations in 1D stencil.
+        auto paramTripCount =
+            LinearAddrGenCallback::getTotalTripCount(strandAddrGenFormalParams);
+        if (strandSplit.isSplitByDim()) {
+          for (int dim = 0; dim < strandSplit.dimensions.size(); ++dim) {
+            const auto &dimension = strandSplit.dimensions.at(dim);
+            STRAND_LOG_(
+                MLCRubyStrandSplit, config->dynamicId,
+                "  Dim %2d Intrlv %ld Cnt %ld LastStrand %ld Trip %ld\n", dim,
+                dimension.splitIntrlv, dimension.splitCnt,
+                dimension.lastStrandId, dimension.trip);
+          }
+        }
+        MLC_S_PANIC_NO_DUMP(
+            strand->getStrandId(), "Mismatch between TripCount %ld %ld <- %s",
+            strand->totalTripCount, paramTripCount,
+            printAffinePatternParams(strandAddrGenFormalParams));
+      }
+
       if (config->stream->getCPUDelegator()->translateVAddrOracle(
               strand->initVAddr, strand->initPAddr)) {
         strand->initPAddrValid = true;

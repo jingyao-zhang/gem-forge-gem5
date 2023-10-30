@@ -103,6 +103,12 @@ struct LinearAddrGenCallback : public AddrGenCallback {
    * Get nested trip count.
    */
   uint64_t getNestTripCount(const DynStreamFormalParamV &params, int nestLevel);
+
+  /**
+   * Get total trip count.
+   * 
+   */
+  static uint64_t getTotalTripCount(const DynStreamFormalParamV &params);
 };
 
 class FuncAddrGenCallback : public AddrGenCallback {

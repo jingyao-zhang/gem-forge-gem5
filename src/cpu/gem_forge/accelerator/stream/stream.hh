@@ -229,6 +229,7 @@ public:
   bool isMemStream() const;
   bool isAffineIVStream() const;
   bool isDirectLoadStream() const;
+  bool isOnlyDirectLoadStream() const;
   bool isDirectStoreStream() const;
   bool isIndirectLoadStream() const;
   bool isDirectMemStream() const;

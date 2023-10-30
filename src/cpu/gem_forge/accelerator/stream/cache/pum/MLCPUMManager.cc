@@ -4442,7 +4442,7 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
                     ackElemStart, ackElemEnd);
 
       for (int64_t elemIdx = ackElemStart; elemIdx < ackElemEnd; ++elemIdx) {
-        dynS->cacheAckedElements.insert(elemIdx);
+        dynS->ackCacheElement(elemIdx);
       }
     }
 

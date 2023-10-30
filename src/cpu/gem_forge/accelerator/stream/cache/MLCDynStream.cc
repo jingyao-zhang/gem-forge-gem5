@@ -119,6 +119,11 @@ MLCDynStream::WaitType MLCDynStream::checkWaiting() const {
                         "CoreSE Not Issue. Non-Dist IndReduce. Wait Ack.\n");
           return WaitType::Ack;
         }
+      } else if (this->stream->isOnlyDirectLoadStream() &&
+                 !this->shouldRangeSync()) {
+        MLC_S_DPRINTF(this->getDynStrandId(),
+                      "CoreSE Not Issue. Only DirectLoadS. Wait Ack.\n");
+        return WaitType::Ack;
       } else {
         // Other streams does not write. Need nothing.
         MLC_S_DPRINTF(this->getDynStrandId(),

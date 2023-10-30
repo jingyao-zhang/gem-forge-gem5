@@ -961,6 +961,21 @@ bool Stream::isDirectLoadStream() const {
   return this->isLoadStream() && this->isDirectMemStream();
 }
 
+bool Stream::isOnlyDirectLoadStream() const {
+  if (!this->isDirectLoadStream()) {
+    return false;
+  }
+  if (this->isUpdateStream()) {
+    return false;
+  }
+  auto numStreams =
+      this->getSE()->getConfigStreamsInRegion(*this->streamRegion).size();
+  if (numStreams != 2) {
+    return false;
+  }
+  return true;
+}
+
 bool Stream::isDirectStoreStream() const {
   return this->isStoreStream() && this->isDirectMemStream();
 }

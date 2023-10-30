@@ -569,9 +569,11 @@ void LLCDynStream::initNextElem(Addr vaddr) {
    * delaying element releasing.
    * Therefore, I increased the threshold and also check for elements with
    * slices not released.
+   * Don't check this for OnlyDirectLoadS, which is used for prefetching.
    */
   if (this->getStaticS()->isDirectMemStream() &&
-      this->getMemElementSize() >= 64) {
+      this->getMemElementSize() >= 64 && 
+      !this->getStaticS()->isOnlyDirectLoadStream()) {
     if (this->idxToElementMap.size() >= 2048) {
       int sliceNotReleasedElements = 0;
       for (const auto &entry : this->idxToElementMap) {

@@ -576,6 +576,7 @@ void LLCStreamEngine::receiveStreamData(
    * 1. Slice - For StoreStream, perform the store and send back Ack.
    * 2. Slice - For SendTo dependence, send the slice to the
    * receiver.
+   * 3. Slice - For OnlyDirectLoadS without RangeSync, we need to send back Ack.
    * 3. Element - Evaluate LoopBoundFunc.
    * 4. Element - Trigger indirect elements if the base is ready (in
    * order).
@@ -585,6 +586,10 @@ void LLCStreamEngine::receiveStreamData(
 
   if (S->isStoreStream()) {
     this->receiveStoreStreamData(dynS, sliceId, storeValueBlock);
+  }
+
+  if (S->isOnlyDirectLoadStream() && !dynS->shouldRangeSync()) {
+    this->issueStreamAckToMLC(sliceId, false /* forceIdea */);
   }
 
   /**
@@ -827,6 +832,22 @@ bool LLCStreamEngine::canMigrateStream(LLCDynStream *dynS) const {
   }
   if (dynS->isLoopBoundBrokenOut()) {
     return false;
+  }
+  /**
+   * A heuristic that disable migration when there are
+   * many buffered/inqueue remote request.
+   * This is to handle aggressive prefetching in GEMM,
+   * where the stream aggressively migrate to next bank,
+   * which is also the forwarding direction.
+   * For example, a stream migrates to the south and
+   * forwarding data to the south at the same time would
+   * make future stream element block those issued at
+   * the previous bank, causing bad timing.
+   */
+  int maxBufferedAndInqueueIndReqsBeforeMigration = 4;
+  if (this->indReqBuffer->getNumBufferedAndInqueueReqs(dynS->getDynStrandId()) >
+      maxBufferedAndInqueueIndReqsBeforeMigration) {
+    // return false;
   }
   /**
    * We can only enable AdvanceMigrate for DirectStreams.

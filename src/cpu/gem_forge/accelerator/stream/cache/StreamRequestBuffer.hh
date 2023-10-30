@@ -38,6 +38,8 @@ public:
 
   int getTotalBufferedRequests() const { return this->totalBufferedRequests; }
 
+  int getNumBufferedAndInqueueReqs(const DynStrandId &strandId);
+
 private:
   ruby::AbstractStreamAwareController *controller;
   ruby::MessageBuffer *outBuffer;
@@ -76,6 +78,8 @@ private:
    * Get or initialize the inqueue stream map entry.
    */
   InqueueStreamMapIter getOrInitInqueueState(const RequestPtr &request);
+  InqueueStreamMapIter getOrInitInqueueState(const DynStrandId &strandId);
+  InqueueStreamMapIter getInqueueState(const DynStrandId &strandId);
 
   /**
    * Enqueue the request into the OutBuffer.

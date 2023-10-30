@@ -31,8 +31,7 @@ StrandSplitInfo::StrandSplitInfo(const IntVecT &trips,
     assert(splitDim.intrlv >= 1);
 
     auto &dim = this->dimensions.at(splitDim.dim);
-    dim.splitCnt = splitDim.cnt;
-    dim.splitIntrlv = splitDim.intrlv;
+    dim.setSplitIntrlvCnt(splitDim.cnt, splitDim.intrlv);
   }
 
   int64_t accTrip = 1;
@@ -166,8 +165,9 @@ StrandSplitInfo::mapStreamToStrandByDim(StreamElemIdx streamElemIdx) const {
   return StrandElemSplitIdx(accStrandId, accStrandElemIdx);
 }
 
-StrandSplitInfo::TripCount StrandSplitInfo::getStrandTripCountByDim(
-    StrandIdx strandIdx, int untilDim) const {
+StrandSplitInfo::TripCount
+StrandSplitInfo::getStrandTripCountByDim(StrandIdx strandIdx,
+                                         int untilDim) const {
 
   auto endDim = this->dimensions.size();
   if (untilDim != -1) {
@@ -175,16 +175,14 @@ StrandSplitInfo::TripCount StrandSplitInfo::getStrandTripCountByDim(
   }
   assert(endDim <= this->dimensions.size());
 
-  StrandIdx accSplitCnt = 1;
   TripCount accStrandTrip = 1;
 
   for (int i = 0; i < endDim; ++i) {
     const auto &dim = this->dimensions.at(i);
 
-    auto strandId = strandIdx % accSplitCnt;
+    auto strandId = (strandIdx / dim.accSplitCnt) % dim.splitCnt;
     auto strandTrip = dim.getStrandTrip(strandId);
 
-    accSplitCnt *= dim.splitCnt;
     accStrandTrip *= strandTrip;
   }
   return accStrandTrip;
@@ -197,10 +195,19 @@ StrandSplitInfo::StreamElemIdx StrandSplitInfo::mapStrandToStreamByDim(
 
   TripCount accStrandTrip = 1;
   StreamElemIdx accStreamElemIdx = 0;
-  for (const auto &dim : this->dimensions) {
+
+  for (int i = 0; i < this->dimensions.size(); ++i) {
+    const auto &dim = this->dimensions[i];
 
     auto strandId = (strandIdx / dim.accSplitCnt) % dim.splitCnt;
     auto strandTrip = dim.getStrandTrip(strandId);
+
+    if (strandTrip == 0) {
+      panic(
+          "Zero StrandTrip for %d, Dim %d: Trip %ld Intrlv %d Cnt %d Last %d.",
+          strandId, i, dim.trip, dim.splitIntrlv, dim.splitCnt,
+          dim.lastStrandId);
+    }
 
     auto strandOffset = (strandElemIdx / accStrandTrip) % strandTrip;
     auto streamOffset = dim.getStreamOffset(strandId, strandOffset);

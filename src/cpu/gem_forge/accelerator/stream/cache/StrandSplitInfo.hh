@@ -168,7 +168,7 @@ public:
   bool isSplitByDim() const { return splitByDim; }
   bool isSplitByElem() const { return splitByElem; }
 
-private:
+// private:
   int64_t totalStrands = 1;
 
   bool splitByDim = false;
@@ -185,6 +185,12 @@ private:
     // Split dimension.
     Dimension(int64_t _trip, int64_t _splitCnt, int64_t _splitIntrlv)
         : trip(_trip), splitCnt(_splitCnt), splitIntrlv(_splitIntrlv) {
+      this->lastStrandId = this->getStrandId(this->trip);
+    }
+    // Set the split cnt and intrlv.
+    void setSplitIntrlvCnt(int64_t splitCnt, int64_t splitIntrlv) {
+      this->splitCnt = splitCnt;
+      this->splitIntrlv = splitIntrlv;
       this->lastStrandId = this->getStrandId(this->trip);
     }
     // Get the strand id.

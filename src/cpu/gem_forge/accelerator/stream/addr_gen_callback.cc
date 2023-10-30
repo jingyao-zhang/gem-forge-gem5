@@ -122,13 +122,13 @@ constructFormalParamsFromStrideAndTrip(int64_t start,
 
 #define setTrip(dim, t)                                                        \
   {                                                                            \
-    params.at((dim)*2 + 1).isInvariant = true;                                 \
-    params.at((dim)*2 + 1).invariant.uint64() = t;                             \
+    params.at((dim) * 2 + 1).isInvariant = true;                               \
+    params.at((dim) * 2 + 1).invariant.uint64() = t;                           \
   }
 #define setStride(dim, t)                                                      \
   {                                                                            \
-    params.at((dim)*2).isInvariant = true;                                     \
-    params.at((dim)*2).invariant.uint64() = t;                                 \
+    params.at((dim) * 2).isInvariant = true;                                   \
+    params.at((dim) * 2).invariant.uint64() = t;                               \
   }
 #define setStart(t)                                                            \
   {                                                                            \
@@ -354,6 +354,12 @@ LinearAddrGenCallback::getNestTripCount(const DynStreamFormalParamV &params,
   uint64_t nestTripCount =
       params.at((nestLevel - 1) * 2 + 1).invariant.uint64();
   return nestTripCount;
+}
+
+uint64_t
+LinearAddrGenCallback::getTotalTripCount(const DynStreamFormalParamV &params) {
+  assert(params.size() % 2 == 1);
+  return params.at(params.size() - 2).invariant.uint64();
 }
 
 } // namespace gem5

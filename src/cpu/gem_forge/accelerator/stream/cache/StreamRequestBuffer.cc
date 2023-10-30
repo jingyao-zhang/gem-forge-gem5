@@ -102,7 +102,8 @@ void StreamRequestBuffer::dequeue(ruby::MsgPtr msg) {
     auto injectLatency = this->controller->curCycle() -
                          this->controller->ticksToCycles(msg->getTime());
     S->statistic.remoteIndReqNoCInjectDelay.sample(injectLatency);
-    S->statistic.getStaticStat().remoteIndReqNoCInjectDelay.sample(injectLatency);
+    S->statistic.getStaticStat().remoteIndReqNoCInjectDelay.sample(
+        injectLatency);
   }
 
   if (!inqueueState.buffered.empty()) {
@@ -117,13 +118,28 @@ void StreamRequestBuffer::dequeue(ruby::MsgPtr msg) {
   }
 }
 
+int StreamRequestBuffer::getNumBufferedAndInqueueReqs(
+    const DynStrandId &strandId) {
+  auto iter = this->getInqueueState(strandId);
+  if (iter == this->inqueueStreamMap.end()) {
+    return 0;
+  }
+  const auto &state = iter->second;
+  return state.inqueueRequests + state.buffered.size();
+}
+
 StreamRequestBuffer::InqueueStreamMapIter
 StreamRequestBuffer::getOrInitInqueueState(const RequestPtr &request) {
   const auto &sliceId = request->m_sliceIds.singleSliceId();
-  const auto &dynStreamId = sliceId.getDynStreamId();
+  return this->getOrInitInqueueState(sliceId.getDynStrandId());
+}
+
+StreamRequestBuffer::InqueueStreamMapIter
+StreamRequestBuffer::getOrInitInqueueState(const DynStrandId &strandId) {
+  const auto &dynStreamId = strandId.dynStreamId;
   auto inqueueIter = this->inqueueStreamMap.find(dynStreamId);
   if (inqueueIter == this->inqueueStreamMap.end()) {
-    LLC_SLICE_DPRINTF(sliceId, "[ReqBuffer] Init InqueueState.\n");
+    LLC_S_DPRINTF(strandId, "[ReqBuffer] Init InqueueState.\n");
     inqueueIter = this->inqueueStreamMap
                       .emplace(std::piecewise_construct,
                                std::forward_as_tuple(dynStreamId),
@@ -131,6 +147,12 @@ StreamRequestBuffer::getOrInitInqueueState(const RequestPtr &request) {
                       .first;
   }
   return inqueueIter;
+}
+
+StreamRequestBuffer::InqueueStreamMapIter
+StreamRequestBuffer::getInqueueState(const DynStrandId &strandId) {
+  const auto &dynStreamId = strandId.dynStreamId;
+  return this->inqueueStreamMap.find(dynStreamId);
 }
 
 void StreamRequestBuffer::enqueue(const RequestPtr &req, int &inqueueRequests) {
